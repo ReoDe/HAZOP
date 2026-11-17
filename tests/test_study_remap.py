@@ -122,9 +122,11 @@ class RemapTest(unittest.TestCase):
         self.assertIsNone(carried)
         self.assertIn("reason", report)
 
-    def test_repropose_keeps_the_snapshot_and_map_members_renames_it(self):
+    def test_repropose_keeps_the_snapshot_and_migration_renames_it(self):
+        from hazop.study import idmap
         opened = reopen01(self.first, at=AT)
-        renamed = sn.map_members(opened, {"c-tank": "c-tank-2"})
+        table = idmap.from_record({"from": "v1", "to": "v2", "renamed": {"c-tank": "c-tank-2"}}, opened["graph_id"])
+        renamed = idmap.apply(opened, idmap.SET, table)[0]
         self.assertIn("c-tank-2", [m for n in renamed["previous"][-1]["nodes"] for m in n["members"]])
 
     def test_reopening_twice_before_saving_results_still_finds_their_confirmation(self):

@@ -116,8 +116,8 @@ def propose(graph, at=None, exclude_sheets=()):
 
 
 def new_set(graph):
-    """구간이 없는 0.2 집합. graph_member_refs는 그래프 전체 구성요소의 안정 참조다(§2.1)."""
-    from hazop.study import migrate
+    """구간이 없는 집합. 판 사진(graph_member_refs·graph_member_marks·graph_member_basis)은 그래프 전체 구성요소의 것이다(§2.1)."""
+    from hazop.study import idmap
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": KIND,
@@ -129,9 +129,9 @@ def new_set(graph):
         "nodes": [],
         "batches": [],
         "batch_seq": 0,
-        "graph_member_refs": migrate.graph_refs(graph),
-        "graph_member_marks": migrate.graph_marks(graph),
+        **idmap.snapshot(graph),
         "member_digest": {},
+        "tombstones": {},
         "history": [],
     }
 
@@ -373,35 +373,6 @@ def _next_id(node_set):
     return store_io.next_id("S%d", issued_node_ids(node_set))
 
 
-def map_members(node_set, rename):
-    """구성요소 ID를 rename({옛 ID: 새 ID})으로 바꾼 사본. members와 조각 기록(absorbed·parts)을 함께 바꾼다
-    (판 이전이 members만 바꾸면 조각 기록이 옛 ID로 남아 되돌리기 근거를 잃는다)."""
-    out = copy.deepcopy(node_set)
-    for n in out["nodes"]:
-        n["members"] = sorted(rename.get(m, m) for m in n["members"])
-        for key in ("absorbed", "parts"):
-            for p in n.get(key, []):
-                p["members"] = sorted(rename.get(m, m) for m in p["members"])
-    for p in out.get("previous") or (out.get("legacy") or {}).get("previous") or []:
-        for n in p["nodes"]:
-            n["members"] = sorted(rename.get(m, m) for m in n["members"])
-    for b in out.get("batches") or []:  # 되돌리기의 after 비교가 새 ID로 맞게
-        for o in b.get("ops") or []:
-            for side in ("before", "after"):
-                if isinstance(o.get(side), dict):
-                    o[side]["members"] = sorted(rename.get(m, m) for m in o[side].get("members") or [])
-                    for key in ("absorbed", "parts"):
-                        for p in o[side].get(key, []):
-                            p["members"] = sorted(rename.get(m, m) for m in p["members"])
-    for key in ("graph_member_refs", "graph_member_marks"):
-        if out.get(key):
-            # 번호가 당겨져 옛 id를 다른 구성요소가 받으면 그 구성요소(이름이 바뀐 쪽)의 값이 그 id를 갖는다
-            moved = {rename[m]: r for m, r in out[key].items() if m in rename}
-            stay = {m: r for m, r in out[key].items() if m not in rename and m not in moved}
-            out[key] = dict(sorted(dict(stay, **moved).items(), key=lambda kv: kv[0]))
-    return out
-
-
 def merge(node_set, node_ids, at=None):
     """여러 구간을 하나로 합친다. 집합 안 순서로 첫 구간의 node_id를 남긴다."""
     out = _begin(node_set, [nid for nid in dict.fromkeys(node_ids)])
@@ -426,6 +397,9 @@ def merge(node_set, node_ids, at=None):
         for key in ("absorbed", "parts"):
             if any(key in n for n in picked):
                 keep[key] = [p for n in picked for p in n.get(key, [])]
+    lost = sorted({t for n in picked for t in n.get("lost") or []})  # 판 이전에서 잃은 구성요소의 묘비도 함께 둔다
+    if lost:
+        keep["lost"] = lost
     keep.update({
         "name": "%s 외 %d" % (keep["name"], len(picked) - 1),
         "name_by": "user",
@@ -627,7 +601,7 @@ def remove_member(node_set, node_id, entity_id, at=None):
         _settle(node)
     else:
         out["nodes"] = [n for n in out["nodes"] if n is not node]
-        detail.update(node_removed=True, **_screen_note(node))
+        detail.update(node_removed=True, **_screen_note(node), **_lost_note(node))
     return _log(out, "remove", detail, at, before=node_set)
 
 
@@ -636,6 +610,11 @@ def _screen_note(node):
     사람이 이유를 적어 내린 판정이 구간과 함께 사라져도 되짚을 수 있게 한다."""
     sc = node.get("screen")
     return {"screen": {k: sc.get(k) for k in ("status", "by", "reason")}} if sc else {}
+
+
+def _lost_note(node):
+    """없애는 구간이 판 이전에서 잃은 구성요소의 묘비 id({"lost": [...]}, 없으면 빈 dict). 묘비 기록(tombstones)은 집합에 남는다."""
+    return {"lost": list(node["lost"])} if node.get("lost") else {}
 
 
 def remove_empty(node_set, node_id, at=None):
@@ -647,12 +626,15 @@ def remove_empty(node_set, node_id, at=None):
         raise ValueError("%s는 구성요소가 있어 지울 수 없음(구성요소를 먼저 빼거나 다른 구간에 병합)" % node_id)
     _refuse_drop(node_set, [node_id], "빈 구간 지우기")
     out["nodes"] = [n for n in out["nodes"] if n is not node]
-    return _log(out, "remove_empty", dict({"node_id": node_id}, **_screen_note(node)), at, before=node_set)
+    return _log(out, "remove_empty", dict({"node_id": node_id}, **_screen_note(node), **_lost_note(node)), at,
+                before=node_set)
 
 
 def confirm_nodes(node_set, graph, node_ids, reviewer, at=None):
     """고른 적용됨 구간을 확정한다(§2.2). 구간 밖 구성요소는 막지 않는다. 그래프 판이 다르거나, 고른 구간이 없거나,
-    적용됨이 아니거나, 빈 구간·그래프에 없는 구성요소가 있으면 ValueError."""
+    적용됨이 아니거나, 빈 구간·그래프에 없는 구성요소가 있으면 ValueError.
+    판 이전에서 잃은 구성요소(lost)가 남은 구간도 확정한다(묘비를 지우는 길이 없어 막으면 확정할 수 없게 됨). 대신 그 수를
+    확정 기록(confirmed.lost)과 이력(with_lost)에 남겨 화면·인계가 '잃은 구성요소를 둔 채 확정함'을 보일 수 있게 한다."""
     reviewer = (reviewer or "").strip()
     if not reviewer:
         raise ValueError("검토자 이름 필요")
@@ -675,15 +657,20 @@ def confirm_nodes(node_set, graph, node_ids, reviewer, at=None):
     if unknown:
         raise ValueError("그래프에 없는 구성요소 %d개: %s" % (len(unknown), ", ".join(unknown[:5])))
     at = at or now_utc()
-    from hazop.study import migrate
+    from hazop.study import idmap, migrate
     for n in picked:
         n["state"] = "confirmed"
         n["confirmed"] = {"at": at, "by": reviewer, "rev": n.get("rev") or 1}
-    out["graph_member_refs"] = migrate.graph_refs(graph)
-    out["graph_member_marks"] = migrate.graph_marks(graph)
+        if n.get("lost"):
+            n["confirmed"]["lost"] = len(n["lost"])
+    out.update(idmap.snapshot(graph))
     out["member_digest"] = dict(out.get("member_digest") or {},
                                 **{n["node_id"]: migrate.node_digest(graph, n["members"]) for n in picked})
-    return _log(out, "confirm", {"reviewer": reviewer, "node_ids": wanted, "nodes": len(wanted)}, at)
+    detail = {"reviewer": reviewer, "node_ids": wanted, "nodes": len(wanted)}
+    with_lost = {n["node_id"]: len(n["lost"]) for n in picked if n.get("lost")}
+    if with_lost:
+        detail["with_lost"] = with_lost
+    return _log(out, "confirm", detail, at)
 
 
 def confirm(node_set, graph, reviewer, at=None):
@@ -854,14 +841,6 @@ def load_fp(graph):
     return doc, fp if path == store_path(graph.get("project_id"), graph.get("graph_id")) else None
 
 
-def prime_marks(graph):
-    """다시 추출하기 직전에 부른다. graph는 다시 추출하기 전(지금 저장된) 도면 그래프다. 저장된 집합이 그 판이면 읽기만으로
-    구성요소 표시(graph_member_marks)를 채워 저장한다(migrate.with_refs). 그래야 다시 추출 뒤 첫 판 이전도 위치로
-    확인한다. 표시가 있으면(또는 집합이 없으면) True."""
-    doc = load_fp(graph)[0]
-    return doc is None or isinstance(doc.get("graph_member_marks"), dict)
-
-
 def read_as_is(graph):
     """저장본을 바꾸지 않고 그대로 읽는다(0.1이면 0.1 모양, 변환·판 이전 없음). 없으면 None. 옛 도면별 집합을 프로젝트
     집합으로 옮길 때 쓴다(옛 파일은 손대지 않음)."""
@@ -951,6 +930,25 @@ def check_legacy_shape(doc, path):
         raise ValueError("검토구간 파일 형식이 맞지 않음: %s" % path)
 
 
+def _ids_map_ok(v, value_ok):
+    return v is None or (isinstance(v, dict) and all(isinstance(k, str) and value_ok(x) for k, x in v.items()))
+
+
+def _snapshot_ok(doc):
+    """판 사진·묘비의 모양. 표시는 idmap.valid_mark, 묘비 id는 'lost:'로 시작하는 문자열, lost_members(0.2 B꼴)는 목록."""
+    from hazop.extract import ids
+    from hazop.study import idmap
+    tomb_ok = lambda r: isinstance(r, dict) and (r.get("mark") is None or idmap.valid_mark(r["mark"]))  # noqa: E731
+    tombs = doc.get("tombstones")
+    return (_ids_map_ok(doc.get("graph_member_refs"), lambda x: x is None or isinstance(x, str))
+            and _ids_map_ok(doc.get("graph_member_marks"), idmap.valid_mark)
+            and _ids_map_ok(doc.get("graph_member_basis"), lambda x: x in ids.BASES)
+            and (tombs is None or (isinstance(tombs, dict)
+                                   and all(idmap.is_tomb(k) and tomb_ok(r) for k, r in tombs.items())))
+            and all(_ids_ok(n.get("lost", [])) and all(idmap.is_tomb(t) for t in n.get("lost", []))
+                    and isinstance(n.get("lost_members", []), list) for n in doc["nodes"]))
+
+
 def _check_shape(doc, path):
     """0.2 파일에서 판 이전·화면이 가리지 않고 꺼내 쓰는 값이 제 모양인지 본다. 아니면 ValueError."""
     when_ok = lambda v, keys: v is None or (isinstance(v, dict) and all(isinstance(v.get(k), str) for k in keys))  # noqa: E731
@@ -961,8 +959,7 @@ def _check_shape(doc, path):
                   for n in doc["nodes"])
           and all(isinstance(b, dict) and isinstance(b.get("batch_id"), str) and isinstance(b.get("ops"), list)
                   for b in doc["batches"])
-          and isinstance(doc.get("graph_member_refs") or {}, dict) and isinstance(doc.get("member_digest") or {}, dict)
-          and isinstance(doc.get("graph_member_marks") or {}, dict)
+          and isinstance(doc.get("member_digest") or {}, dict) and _snapshot_ok(doc)
           and (doc.get("issued_upto") is None or (type(doc["issued_upto"]) is int and doc["issued_upto"] > 0)))
     if not ok:
         raise ValueError("검토구간 파일 형식이 맞지 않음: %s" % path)

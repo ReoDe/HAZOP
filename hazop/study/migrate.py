@@ -1,91 +1,32 @@
-"""그래프 판 이전: 판이 바뀐 그래프에 검토구간과 ⑤ 결과를 source_object_id로 다시 대응시킨다.
+"""그래프 판 이전: 판이 바뀐 그래프에 검토구간과 ⑤ 결과를 다시 대응시킨다. 무엇이 무엇으로 가는지(대응표)와 어디에 id가
+있는지(등록부)는 hazop.study.idmap이 맡고, 여기서는 차례(옛 꼴 바꾸기 → 표 계산 → 적용 → 재확인 → 쓰기)만 맡는다.
 근거: 기획서/지식그래프-스키마.md §8.2 '판 이전', §9 U10(가), docs/specs/study-node-segmentation.md §2.6.
 
-- 집합(0.2)의 graph_member_refs는 그래프 전체 구성요소의 안정 참조("<도면 graph_id>#<source_object_id>")다. 그래프를 다시
-  만들면 entity_id는 바뀔 수 있어도 이 참조는 그대로라서, 판이 바뀐 뒤에도 옛 구성요소를 새 entity_id로 찾는다.
+- 집합의 판 사진(graph_member_refs·graph_member_marks·graph_member_basis)은 그래프 전체 구성요소의 안정 참조·표시·id 근거다.
+  판이 같으면 사진을 채우기만 하고(읽기만으로 구성요소를 잃지 않음), 판이 다르면 사진으로 대응표를 만든다(idmap.compute).
   구간 밖 구성요소가 늘거나 줄어도 재확인 사유가 아니다(§1 #17·#18).
-- 벡터 PDF·스캔 추출의 source_object_id는 기호 순번(pdf-p0-sym-0012)이라, 추출 규칙이 바뀌어 다시 추출하면 같은 참조가
-  다른 기호를 가리킬 수 있다. 그래서 그런 구성요소마다 표시(graph_member_marks: 구성요소 종류·도면·기호 종류·태그·위치
-  상자)도 남기고, 참조가 가리키는 새 구성요소의 표시가 조금이라도 다르면 잇지 않는다. 표시가 같은 구성요소가 새 판에
-  정확히 하나면 그것으로 잇고, 아니면 '찾지 못함'이다(놓치는 쪽은 괜찮고 다른 기호로 잇는 것은 안 된다).
-  drawio·DEXPI·사람이 더한 구성요소는 id가 고정이라 표시를 두지 않고 참조만 본다(옮겨도 같은 기호다).
-- 찾지 못한 구간 구성요소는 members에서 lost_members로 옮긴다(원래 참조·표시 보관). 새 판의 어떤 구성요소도 가리키지
-  않으므로 다음 판 이전에서 조용히 다른 기호로 굳지 않는다. 다음 판에 표시가 같은 구성요소가 하나뿐으로 다시 나오면
-  되찾아 members에 넣고 그 구간은 재확인한다(⑤의 ~lost 참조도 되찾는다).
 - 판 이전은 모든 구간에 적용하고 재확인은 구간마다 정한다. 구간마다 내용 지문(md3-: 그 구간 구성요소와 거기 닿는 관계의
-  종류·태그·배관 번호·흐름·정상 위치·고장 위치)을 남기고, 지문이 바뀌었거나 구성요소를 새 판에서 찾지 못한 구간만 rev를
+  종류·태그·배관 번호·흐름·정상 위치·고장 위치)을 남기고, 지문이 바뀌었거나 구성요소를 잃었거나 되찾은 구간만 rev를
   올린다. 그 구간이 확정이면 적용됨으로 내리고(⑤ 칸은 보관), 잠금이면 잠금을 두고 version_changed를 단다(§5.3).
-- ⑤ 결과는 판 이전 기록을 따라 판과 kg_paths의 구성요소 ID를 바꾸고, 항목의 대상 참조(원인 위치·영향 대상·보호수단 구현
-  대상)도 판 이전이 이은 구성요소의 참조로 바꾼다. 새 판에서 찾지 못한 구성요소의 참조는 LOST_MARK를 붙여 어디도 가리키지
-  않게 한다(그대로 두면 같은 순번의 다른 기호를 가리킨다). 칸의 범위 바뀜·보관은 results.reconcile이 rev로 정한다.
+- ⑤ 결과는 같은 대응표(결과가 집합과 같은 판에서 시작하면 그 표, 늦게 따라오면 이력 줄에서 만든 바뀐 것만의 표)로 옮긴다.
 - 0.1 파일의 함수(member_refs·member_digest·legacy_steps·legacy_migrate_results)는 0.1 결과를 처음 이을 때만 쓴다.
-- 같은 입력에 두 번 적용해도 결과가 같다(판이 같으면 아무것도 하지 않음).
+- 같은 입력에 두 번 적용해도 결과가 같다(판이 같으면 아무것도 하지 않음, 묘비 id는 입력에서 결정됨).
 """
 
 import copy
 import hashlib
 import json
 import logging
-import re
 
 from hazop import store_io
+from hazop.study import idmap
+from hazop.study.idmap import ref_of  # noqa: F401  여러 곳(ie·shell·refs)이 이 이름으로 부른다
 
 OP = "migrate_version"
-SEQUENCE_ID = re.compile(r"^pdf-p\d+-[a-z]+-\d+$")  # pdf_vector.build_extraction(스캔도 같은 길)이 주는 순번 id
-LOST_MARK = "~lost"  # 판 이전에서 대상을 찾지 못한 ⑤ 참조 끝에 붙인다. 그래프 어디에도 없는 참조라 '대상 없음(재확인)'으로 보인다
-_PID_ID = re.compile(r"(^|/)(entity|relation)-")
+_PID_ID = idmap._PID_ID
 POSITION_ATTRS = ("normal_position", "fail_position")
-
-
-def ref_of(node, graph_id):
-    """구성요소의 안정 참조. 도면 연결 구간은 ID 자체가 양 끝 연결점의 안정 참조로 만든 해시라 그대로 쓴다."""
-    soid = node.get("source_object_id")
-    if soid:
-        return "%s#%s" % (node.get("sheet") or graph_id, soid)
-    if (node.get("sheet_link") or {}).get("link_id") == node["entity_id"]:
-        return node["entity_id"]
-    return None
-
-
-def graph_refs(graph):
-    """{그래프 구성요소 entity_id: 안정 참조 또는 None} 그래프 전체."""
-    gid = graph.get("graph_id")
-    return dict(sorted((n["entity_id"], ref_of(n, gid)) for n in graph.get("nodes", [])))
-
-
-MARK_TOL = 1.0  # pt. 같은 기호를 다시 읽으면 상자가 그대로다
-MARK_LEN = 8
-
-
-def mark_of(node):
-    """순번 id 구성요소의 표시 [node_type, 도면(프로젝트 그래프의 sheet, 도면 그래프는 None), kind, tag, x0, y0, x1, y1]
-    (0.1pt 반올림). id가 순번이 아니거나(drawio·DEXPI·사람이 더한 것) 위치 상자가 없으면 None. 좌표는 도면마다 따로라
-    도면도 같아야 같은 자리다."""
-    b = node.get("bbox")
-    if not SEQUENCE_ID.match(str(node.get("source_object_id") or "")) or not (
-            isinstance(b, (list, tuple)) and len(b) == 4
-            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in b)):
-        return None
-    x, y, w, h = b
-    return [node.get("node_type"), node.get("sheet"), node.get("kind"), node.get("tag"),
-            round(x, 1), round(y, 1), round(x + w, 1), round(y + h, 1)]
-
-
-def _valid_mark(m):
-    return (isinstance(m, list) and len(m) == MARK_LEN
-            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in m[4:]))
-
-
-def graph_marks(graph):
-    """{그래프 구성요소 entity_id: 위치 표시} 위치 상자가 있는 구성요소만."""
-    return dict(sorted((n["entity_id"], m) for n in graph.get("nodes", []) for m in [mark_of(n)] if m is not None))
-
-
-def _fits(mark, node):
-    """표시가 같은 구성요소인가: 종류·도면·기호 종류·태그가 같고 상자가 MARK_TOL 안."""
-    m = mark_of(node)
-    return (m is not None and m[:4] == mark[:4]
-            and all(abs(a - b) <= MARK_TOL for a, b in zip(m[4:], mark[4:])))
+SCHEMA = "0.2"  # hazop.study.nodes.SCHEMA_VERSION과 같음
+SCHEMAS = ("0.2",)
 
 
 def node_digests(graph, members_by_node):
@@ -228,118 +169,71 @@ def _rename_paths(results, forward):
 # ---------------------------------------------------------------- 0.2 집합
 
 def _usable(node_set, graph):
-    return (isinstance(node_set, dict) and node_set.get("schema_version") == "0.2"
+    return (isinstance(node_set, dict) and node_set.get("schema_version") in SCHEMAS
             and graph.get("graph_version") and "nodes" in graph)
 
 
+def _upgrade(node_set):
+    """옛 꼴(A꼴 표시 없음, B꼴 lost_members)을 묘비 꼴로. 할 일이 없으면 입력 그대로."""
+    out, _rep = idmap.upgrade(node_set)
+    if out.get("schema_version") != SCHEMA:
+        out = dict(out if out is not node_set else copy.deepcopy(node_set), schema_version=SCHEMA)
+    return out
+
+
 def with_refs(node_set, graph):
-    """판이 같은 집합에 그래프 전체 참조나 확정·잠금 구간의 지문(md3-)이 모자라면 채운 사본, 아니면 입력 그대로."""
+    """판이 같은 집합을 묘비 꼴로 바꾸고, 판 사진이나 확정·잠금 구간의 지문(md3-)이 모자라면 채운 사본. 할 일이 없으면
+    입력 그대로. 묘비를 만들지 않는다(읽기만으로 구성요소를 잃지 않음)."""
     if not _usable(node_set, graph) or node_set.get("graph_version") != graph["graph_version"]:
         return node_set
-    ids = {n["entity_id"] for n in graph["nodes"]}
-    have = node_set.get("member_digest") or {}
-    todo = {n["node_id"]: n["members"] for n in node_set["nodes"]  # 적용됨 구간은 지문이 없어도 됨(판이 바뀌면 rev만 오름)
+    out = _upgrade(node_set)
+    have = out.get("member_digest") or {}
+    todo = {n["node_id"]: n["members"] for n in out["nodes"]  # 적용됨 구간은 지문이 없어도 됨(판이 바뀌면 rev만 오름)
             if n.get("state") in ("confirmed", "locked") and not str(have.get(n["node_id"]) or "").startswith("md3-")}
     fresh = node_digests(graph, todo) if todo else {}
-    if (set(node_set.get("graph_member_refs") or {}) == ids and not fresh
-            and node_set.get("graph_member_marks") == graph_marks(graph)):
+    if out is node_set and not fresh and idmap.has_snapshot(node_set, graph):
         return node_set
-    out = copy.deepcopy(node_set)
-    out["graph_member_refs"] = graph_refs(graph)
-    out["graph_member_marks"] = graph_marks(graph)
+    out = copy.deepcopy(out)
+    out.update(idmap.snapshot(graph))
     out["member_digest"] = dict(have, **fresh)
     return out
 
 
 def plan(node_set, graph):
-    """{"state": "same"|"kept"|"skip", "matched", "renamed"{옛 ID: 새 ID}, "lost"[새 판에서 찾지 못한 구간 구성요소],
-    "unmapped"[새 판에서 찾지 못한 그래프 전체 구성요소], "ref_moved"{옛 안정 참조: 새 안정 참조 또는 None(찾지 못함)} 바뀐
-    것만, "marked"(위치 표시로 확인했는가. 표시 없는 옛 집합은 참조만 믿어 False), "recheck"{node_id: 사유}, "reason"}.
-    kept는 판 이전을 적용한다는 뜻이고 재확인은 recheck에 든 구간만이다. skip은 0.2 집합이 아니거나 그래프를 비교할 수 없는 것."""
-    out = {"state": "skip", "reason": None, "matched": 0, "renamed": {}, "lost": [], "unmapped": [], "ref_moved": {},
-           "marked": False, "found_again": {}, "recheck": {}}
+    """{"state": "same"|"kept"|"skip", "reason", "matched", "table"(idmap.compute), "recheck"{node_id: 사유}}.
+    kept는 판 이전을 적용한다는 뜻이고 재확인은 recheck에 든 구간만이다. skip은 0.2 집합이 아니거나 그래프를 비교할 수
+    없는 것."""
+    out = {"state": "skip", "reason": None, "matched": 0, "table": None, "recheck": {}}
     if not _usable(node_set, graph):
         return out
     if node_set.get("graph_version") == graph["graph_version"]:
         return dict(out, state="same")
-    old = node_set.get("graph_member_refs") or {}
-    raw = node_set.get("graph_member_marks")
-    marks = {k: v for k, v in raw.items() if _valid_mark(v)} if isinstance(raw, dict) else {}  # 손상된 표시는 없는 것으로
-    by_id = {n["entity_id"]: n for n in graph["nodes"]}
-    new, by_type = {}, {}
-    for n in graph["nodes"]:
-        new.setdefault(ref_of(n, graph.get("graph_id")), []).append(n["entity_id"])
-        by_type.setdefault(n.get("node_type"), []).append(n)
-    mapping, lost = {}, set()
-    every = set(old) | {m for n in node_set["nodes"] for m in n["members"]}  # 그래프 전체(되돌리기 기록의 ID도 옮기려고)
-    for m in sorted(every):
-        r = old.get(m)
-        hits = new.get(r) if r is not None else None
-        mark = marks.get(m)
-        if mark is not None and not (hits and len(hits) == 1 and _fits(mark, by_id[hits[0]])):
-            # 참조가 다른 자리의 구성요소를 가리킨다(다시 추출로 순번이 밀림). 같은 자리의 구성요소가 하나뿐일 때만 잇는다
-            hits = [n["entity_id"] for n in by_type.get(mark[0], []) if _fits(mark, n)]
-        if not hits or len(hits) != 1:
-            lost.add(m)
-        else:
-            mapping[m] = hits[0]
-    found_again = {}  # 잃었던 구성요소를 같은 표시로 되찾음 {node_id: [(잃은 기록, 새 entity_id)]}
-    taken = set(mapping.values())
-    for n in node_set["nodes"]:
-        for x in n.get("lost_members") or []:
-            mark = x.get("mark") if isinstance(x, dict) else None
-            if not _valid_mark(mark):
-                continue
-            hits = [g["entity_id"] for g in by_type.get(mark[0], []) if _fits(mark, g)]
-            if len(hits) == 1 and hits[0] not in taken:
-                taken.add(hits[0])
-                found_again.setdefault(n["node_id"], []).append((x, hits[0]))
-    into = {}
-    for m, e in mapping.items():
-        into.setdefault(e, []).append(m)
-    for ms in into.values():
-        if len(ms) > 1:  # 옛 구성요소 둘이 새 구성요소 하나로 모이면 어느 쪽인지 모른다
-            for m in ms:
-                del mapping[m]
-                lost.add(m)
-    recorded = node_set.get("member_digest") or {}
-    legacy = (node_set.get("legacy") or {}).get("member_digest")
+    ns = _upgrade(node_set)
+    table = idmap.compute(ns, graph)
+    eid = table["eid"]
+    recorded = ns.get("member_digest") or {}
+    legacy = (ns.get("legacy") or {}).get("member_digest")
     legacy_same = bool(legacy) and digest_matches(legacy, graph)
-    fresh = node_digests(graph, {n["node_id"]: [mapping[m] for m in n["members"]]
-                                 for n in node_set["nodes"] if not set(n["members"]) & lost})
+    moved = {n["node_id"]: [eid.get(m, m) for m in n["members"]] for n in ns["nodes"]}
+    fresh = node_digests(graph, {k: v for k, v in moved.items() if not any(idmap.is_tomb(x) for x in v)})
     recheck = {}
-    for n in node_set["nodes"]:
-        nid, gone = n["node_id"], set(n["members"]) & lost
+    for n in ns["nodes"]:
+        nid = n["node_id"]
+        gone = sorted(m for m, x in zip(n["members"], moved[nid]) if idmap.is_tomb(x))
+        back = [t for t in n.get("lost") or [] if t in table["found"]]
         rec = str(recorded.get(nid) or "")
         if gone:
-            recheck[nid] = "새 판에서 찾지 못한 구성요소 %d개(%s)" % (len(gone), ", ".join(sorted(gone)[:3]))
+            recheck[nid] = "새 판에서 찾지 못한 구성요소 %d개(%s)" % (len(gone), ", ".join(gone[:3]))
+        elif back:
+            recheck[nid] = "잃었던 구성요소 %d개를 같은 자리에서 되찾음" % len(back)
         elif rec.startswith("md3-"):
             if rec != fresh.get(nid):
                 recheck[nid] = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
         elif not legacy_same and n.get("state") in ("confirmed", "locked"):
             recheck[nid] = "옛 판의 구간 내용 기록이 없음"  # 확정한 적 없는 적용됨 구간은 분석 전이라 판만 옮김
-        if nid in found_again and nid not in recheck:
-            recheck[nid] = "잃었던 구성요소 %d개를 같은 자리에서 되찾음" % len(found_again[nid])
-    member_ids = {m for n in node_set["nodes"] for m in n["members"]}
-    ref_moved = {}
-    for m, r in old.items():
-        if r is None:
-            continue
-        to = ref_of(by_id[mapping[m]], graph.get("graph_id")) if m in mapping else None
-        if to != r:
-            ref_moved[r] = to
-    renamed = {a: b for a, b in mapping.items() if a != b}
-    for pairs in found_again.values():
-        for x, e in pairs:
-            if x.get("ref"):  # 앞 판 이전이 ~lost를 붙인 ⑤ 참조도 되찾는다
-                ref_moved[x["ref"] + LOST_MARK] = ref_of(by_id[e], graph.get("graph_id"))
-            if x.get("entity_id"):
-                renamed[x["entity_id"] + LOST_MARK] = e
-    return dict(out, state="kept", matched=len(member_ids & set(mapping)), recheck=recheck,
-                renamed=renamed, lost=sorted(member_ids & lost), unmapped=sorted(lost),
-                ref_moved=dict(sorted(ref_moved.items())), marked=bool(marks),
-                found_again={k: [e for _, e in v] for k, v in sorted(found_again.items())},
-                _found_again=found_again, _marks=marks, _old=old)
+    members = {m for n in ns["nodes"] for m in n["members"]}
+    matched = sum(1 for m in members if not idmap.is_tomb(eid.get(m, m)))
+    return dict(out, state="kept", matched=matched, table=table, recheck=recheck)
 
 
 def migrate_set(node_set, graph, at=None):
@@ -348,25 +242,11 @@ def migrate_set(node_set, graph, at=None):
     p = plan(node_set, graph)
     if p["state"] != "kept":
         return node_set, p
-    from hazop.study.nodes import map_members, now_utc
+    from hazop.study.nodes import now_utc
     at = at or now_utc()
-    ren = p["renamed"]
-    out = map_members(node_set, ren)
+    table = p["table"]
+    out, rep = idmap.apply(_upgrade(node_set), idmap.SET, table)
     old_version = out.get("graph_version")
-    lost = set(p["lost"])
-    for n, before in zip(out["nodes"], node_set["nodes"]):
-        # 찾지 못한 구성요소는 옛 entity_id로 남기지 않는다(새 판에서 다른 구성요소의 id일 수 있다)
-        gone = [m for m in before["members"] if m in lost]
-        back = p["_found_again"].get(n["node_id"]) or []
-        if not gone and not back:
-            continue
-        kept = [x for x in n.get("lost_members") or [] if not any(x == y for y, _ in back)]
-        kept += [{"entity_id": m, "ref": p["_old"].get(m), "mark": p["_marks"].get(m), "from": old_version} for m in gone]
-        n["members"] = sorted(set(m for m in n["members"] if m not in gone) | {e for _, e in back})
-        if kept:
-            n["lost_members"] = kept
-        else:
-            n.pop("lost_members", None)
     demoted = []
     for n in out["nodes"]:
         why = p["recheck"].get(n["node_id"])
@@ -379,18 +259,22 @@ def migrate_set(node_set, graph, at=None):
         if n.get("state") == "confirmed":
             n["state"], n["confirmed"] = "applied", None
             demoted.append(n["node_id"])
+    tombs = dict(out.get("tombstones") or {})
+    for t, rec in table["new_tombs"].items():
+        tombs[t] = dict(rec, at=at)
+    for t, (e, r) in table["found"].items():
+        tombs[t] = dict(tombs.get(t) or {}, found={"entity_id": e, "ref": r, "version": graph["graph_version"], "at": at})
+    out["tombstones"] = dict(sorted(tombs.items()))
     out["graph_version"] = graph["graph_version"]
-    out["graph_member_refs"] = graph_refs(graph)
-    out["graph_member_marks"] = graph_marks(graph)
+    out.update(idmap.snapshot(graph))
     out["member_digest"] = node_digests(graph, {n["node_id"]: n["members"] for n in out["nodes"]})
     if (out.get("legacy") or {}).get("member_digest"):  # 한 번 이어 쓴 뒤로는 구간 지문만 쓴다
         out["legacy"] = dict(out["legacy"], member_digest=None)
     out["set_rev"] = (out.get("set_rev") or 0) + 1
-    out["history"].append(store_io.history_row(OP, {"detail": {
-        "from": old_version, "to": graph["graph_version"], "matched": p["matched"],
-        "renamed": dict(sorted(ren.items())), "unmapped": p["unmapped"], "ref_moved": p["ref_moved"],
-        "marked": p["marked"], "found_again": p["found_again"], "recheck": dict(sorted(p["recheck"].items())),
-        "demoted": demoted}}, at))
+    detail = {"from": old_version, "to": graph["graph_version"], "matched": p["matched"]}
+    detail.update(idmap.record(table))
+    detail.update(unregistered=rep["unregistered"], recheck=dict(sorted(p["recheck"].items())), demoted=demoted)
+    out["history"].append(store_io.history_row(OP, {"detail": detail}, at))
     return out, p
 
 
@@ -405,114 +289,43 @@ def _steps(results, node_set):
     return steps if steps and cur == node_set.get("graph_version") else None
 
 
-def migrate_results(results, node_set, at=None):
-    """(결과, 바꾼 kg_paths ID 수 또는 None). 0.2 결과의 판과 kg_paths ID를 판 이전 기록대로 지금 판으로 바꾼 사본.
-    판이 같거나 이어지는 기록이 없으면 입력 그대로와 None. 0.1 결과는 legacy_migrate_results로."""
+def migrate_results(results, node_set, at=None, table=None):
+    """(결과, 바꾼 근거 경로 ID 수 또는 None). 0.2·0.3 결과의 판과 등록된 id 필드(원인·영향·보호수단 참조, 잠재 후보 ID,
+    근거 경로)를 판 이전 대응대로 지금 판으로 바꾼 사본. table(이번 판 이전의 대응표)이 결과의 판에서 집합의 판으로 가면
+    그 표를, 아니면 이력 줄에서 만든 바뀐 것만의 표를 차례로 적용한다. 판이 같거나 이어지는 기록이 없으면 None이고,
+    49033f1 판의 `~lost`만 묘비로 바꾼 사본(바꿀 것이 없으면 입력 그대로)을 돌려준다. 0.1 결과는 legacy_migrate_results로."""
     if results.get("schema_version") not in ("0.2", "0.3"):  # results.CELL_SCHEMA_VERSIONS(순환 import를 피해 값으로)
         return legacy_migrate_results(results, node_set, at)
-    steps = _steps(results, node_set)
-    if steps is None:
-        return results, None
+    doc, _n = idmap.upgrade_results(results, node_set)
+    if table is not None and (table["from"], table["to"]) == (doc.get("graph_version"), node_set.get("graph_version")):
+        tables = [table]
+    else:
+        steps = _steps(doc, node_set)
+        if steps is None:
+            return doc, None
+        tables = [idmap.from_record(d, node_set.get("graph_id")) for d in steps]
     from hazop.study.nodes import now_utc
-    forward, refs_forward = {}, {}
-    for d in steps:
-        gone = set(d.get("unmapped") or [])
-
-        def step(v):
-            return v if v.endswith(LOST_MARK) else v + LOST_MARK if v in gone else d["renamed"].get(v, v)
-        forward = {k: step(v) for k, v in forward.items()}
-        for k in set(d["renamed"]) | gone:
-            forward.setdefault(k, step(k))
-        moved = d.get("ref_moved") or {}
-        refs_forward = {k: (moved.get(v, v) if v is not None else None) for k, v in refs_forward.items()}
-        for k, v in moved.items():
-            refs_forward.setdefault(k, v)
-    out = copy.deepcopy(results)
-    changed, unmapped = _rename_paths(out, forward)
-    refs_changed, refs_lost = _move_refs(out, refs_forward)
-    old_version = out.get("graph_version")
-    out["graph_version"] = node_set["graph_version"]
-    out.setdefault("version_migrations", []).append({
+    total = {"changed": 0, "lost": 0, "found": 0}
+    kg = {"changed": 0, "lost": 0}
+    unregistered = set()
+    for t in tables:
+        doc, rep = idmap.apply(doc, idmap.RESULTS, t)
+        for k in total:
+            total[k] += rep[k]
+        for k in kg:
+            kg[k] += rep["spaces"].get(idmap.EID, {}).get(k, 0)
+        unregistered.update(rep["unregistered"])
+    old_version = doc.get("graph_version")
+    doc["graph_version"] = node_set["graph_version"]
+    doc.setdefault("version_migrations", []).append({
         "at": at or now_utc(), "from": old_version, "to": node_set["graph_version"],
-        "kg_path_ids_changed": changed, "kg_path_ids_unmapped": unmapped,
-        "refs_changed": refs_changed, "refs_lost": refs_lost,
-        # 위치 표시 없이(참조만 믿고) 이은 판 이전이 끼어 있으면, 옮긴 참조도 다른 기호일 수 있다. 화면이 확인을 띄울 근거
-        "refs_unverified": any(not d.get("marked") for d in steps)})
-    return out, changed
-
-
-def _move_expectations(entry, forward):
-    """항목의 잠재 후보 ID(exp-<규칙>-<대상 참조 해시>)를 대상 참조 대응대로 바꾼다. (바꾼 수, 찾지 못한 수)."""
-    from hazop.kg import expect
-    xs = entry.get("expectation_refs")
-    if not isinstance(xs, list) or not forward:
-        return 0, 0
-    changed = lost = 0
-    out = []
-    for x in xs:
-        lost_before = isinstance(x, str) and x.endswith(LOST_MARK)
-        bare = x[:-len(LOST_MARK)] if lost_before else x
-        rule = (bare[len(expect.ID_PREFIX):].rsplit("-", 1)[0]
-                if isinstance(bare, str) and bare.startswith(expect.ID_PREFIX) else None)
-        # ~lost가 붙은 ID는 되찾은 참조(<참조>~lost 열쇠)로만 풀린다
-        old = next((r for r in forward if rule and r.endswith(LOST_MARK) == lost_before
-                    and expect.expectation_id(rule, r[:-len(LOST_MARK)] if lost_before else r) == bare), None)
-        if old is None:
-            out.append(x)
-        elif forward[old] is None:
-            out.append(x + LOST_MARK)
-            lost += 1
-        else:
-            out.append(expect.expectation_id(rule, forward[old]))
-            changed += 1
-    entry["expectation_refs"] = out
-    return changed, lost
-
-
-def refs_check(node_set, results=None):
-    """'참조 확인 필요' 요약(화면이 띄울 근거). {"needs_check", "lost_members"{node_id: 잃은 구성요소 수},
-    "lost_refs"{node_id: ~lost가 붙은 ⑤ 참조 수}, "unverified"(참조를 위치로 확인하지 않은 판 이전이 결과에 끼었는가:
-    version_migrations 줄에 refs_changed가 없거나 refs_unverified가 참)}."""
-    lost_members = {n["node_id"]: len(n["lost_members"]) for n in (node_set or {}).get("nodes") or []
-                    if n.get("lost_members")}
-    lost_refs = {}
-    for cell in (results or {}).get("cells") or []:
-        k = 0
-        for e in cell.get("entries") or []:
-            rows = [r.get("ref") for f in ("cause_refs", "consequence_refs") for r in e.get(f) or [] if isinstance(r, dict)]
-            rows += [r.get("ref") for s in e.get("safeguards") or [] if isinstance(s, dict)
-                     for r in s.get("refs") or [] if isinstance(r, dict)]
-            rows += list(e.get("expectation_refs") or [])
-            k += sum(1 for r in rows if isinstance(r, str) and r.endswith(LOST_MARK))
-        if k:
-            lost_refs[cell.get("node_id")] = lost_refs.get(cell.get("node_id"), 0) + k
-    unverified = any("refs_changed" not in m or m.get("refs_unverified")
-                     for m in (results or {}).get("version_migrations") or [])
-    return {"needs_check": bool(lost_members or lost_refs or unverified), "lost_members": lost_members,
-            "lost_refs": lost_refs, "unverified": unverified}
-
-
-def _move_refs(results, forward):
-    """results(고침) 항목의 대상 참조(원인·영향·보호수단, 잠재 후보 ID)를 forward{옛 참조: 새 참조 또는 None}로 바꾼다.
-    (바꾼 수, 찾지 못해 표시한 수)."""
-    changed = lost = 0
-    for cell in results.get("cells") or []:
-        for e in cell.get("entries") or []:
-            c, n = _move_expectations(e, forward)
-            changed, lost = changed + c, lost + n
-            rows = [r for f in ("cause_refs", "consequence_refs") for r in e.get(f) or []]
-            rows += [r for s in e.get("safeguards") or [] if isinstance(s, dict) for r in s.get("refs") or []]
-            for r in rows:
-                if not isinstance(r, dict) or r.get("ref") not in forward:
-                    continue
-                to = forward[r["ref"]]
-                if to is None:
-                    r["ref"] += LOST_MARK
-                    lost += 1
-                else:
-                    r["ref"] = to
-                    changed += 1
-    return changed, lost
+        "kg_path_ids_changed": kg["changed"] - kg["lost"], "kg_path_ids_unmapped": kg["lost"],
+        "refs_changed": total["changed"] - total["lost"] - total["found"], "refs_lost": total["lost"],
+        "refs_found": total["found"],
+        # 표시 없이 참조만 믿고 이은 옛 판 이전이 끼어 있으면 화면이 확인을 띄울 근거(idmap.needs_check)
+        "check": "ref" if any(t["check"] == "ref" for t in tables) else "mark",
+        "unregistered": sorted(unregistered)})
+    return doc, kg["changed"] - kg["lost"]
 
 
 def notice(node_set):
@@ -539,8 +352,9 @@ def unwritten(node_set, graph):
 
 def on_load(node_set, graph, path, fp):
     """nodes.load_fp가 부른다. fp는 node_set을 읽은 바이트의 지문이다. (집합, 지금 파일의 지문)을 돌려준다.
-    참조를 채우거나 판을 이전했으면 옛 파일을 백업한 뒤 읽은 파일 자리에 쓰고, ⑤ 결과 파일의 판·kg_paths도 함께 이전한다.
-    쓸 일이 없으면 아무것도 쓰지 않는다. 읽은 뒤 파일이 바뀌었으면 쓰지 않는다."""
+    옛 꼴을 바꾸거나 참조를 채우거나 판을 이전했으면 옛 파일을 백업한 뒤 읽은 파일 자리에 원자적으로 쓰고(실패하면 원본
+    그대로 두고 읽은 집합을 돌려줌), ⑤ 결과 파일도 같은 대응표로 옮겨 쓴다. 쓸 일이 없으면 아무것도 쓰지 않는다.
+    읽은 뒤 파일이 바뀌었으면 쓰지 않는다."""
     from hazop.study import results as res
     out = with_refs(node_set, graph)
     out, p = migrate_set(out, graph)
@@ -552,18 +366,17 @@ def on_load(node_set, graph, path, fp):
     except (OSError, store_io.Conflict) as exc:  # 백업·쓰기를 못 하면 이전하지 않는다. 부른 쪽은 unwritten으로 알아보고 알린다
         _log.warning("검토구간 판 이전을 저장하지 못함: %s (%s)", path, exc)
         return node_set, fp
-    if p["state"] == "kept":
-        rpath = res._readable_path(out.get("project_id"), out["graph_id"])
-        try:
-            doc, rfp = res.read_fp(rpath)
-        except (OSError, ValueError):  # 읽지 못하는 결과는 그대로 두고 화면이 지금처럼 문제로 보여 준다
-            doc = None
-        if doc is not None and doc.get("graph_id") == out["graph_id"] and doc.get("schema_version") in ("0.2", "0.3"):
-            moved, n = migrate_results(doc, out)
-            if n is not None:
-                try:
-                    store_io.backup_file(rpath, BACKUP_LABEL)
-                    res.write(rpath, moved, expect=rfp)
-                except (OSError, store_io.Conflict) as exc:  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
-                    _log.warning("분석 결과 판 이전을 저장하지 못함: %s (%s)", rpath, exc)
+    rpath = res._readable_path(out.get("project_id"), out["graph_id"])
+    try:
+        doc, rfp = res.read_fp(rpath)
+    except (OSError, ValueError):  # 읽지 못하는 결과는 그대로 두고 화면이 지금처럼 문제로 보여 준다
+        doc = None
+    if doc is not None and doc.get("graph_id") == out["graph_id"] and doc.get("schema_version") in ("0.2", "0.3"):
+        moved, _n = migrate_results(doc, out, table=p["table"])
+        if moved is not doc:
+            try:
+                store_io.backup_file(rpath, BACKUP_LABEL)
+                res.write(rpath, moved, expect=rfp)
+            except (OSError, store_io.Conflict) as exc:  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
+                _log.warning("분석 결과 판 이전을 저장하지 못함: %s (%s)", rpath, exc)
     return out, fp

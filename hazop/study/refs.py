@@ -13,7 +13,7 @@
 - 대상이 그래프에서 사라진 참조는 지우지 않고 '대상 없음(재확인)'으로 보인다.
 """
 
-from hazop.study import migrate
+from hazop.study import idmap, migrate
 
 ROLES = {"preventive": "예방", "mitigative": "완화", "unknown": "미정"}
 ACTUATIONS = {"automatic": "자동", "operator": "운전원", "passive": "자체작동", "unknown": "미확인"}
@@ -134,8 +134,8 @@ def label(ref, idx, drawing_numbers=None, short=None):
     짧은 번호}도 있으면 "RC-PSV101(102)". 대상이 없으면 "대상 없음(재확인): <ref>"."""
     n = idx.get(ref)
     if n is None:
-        if isinstance(ref, str) and ref.endswith(migrate.LOST_MARK):  # 판 이전에서 대상을 찾지 못한 참조
-            return "%s: %s (확인 필요)" % (MISSING, ref[:-len(migrate.LOST_MARK)])
+        if idmap.is_tomb(ref):  # 판 이전에서 대상을 찾지 못한 참조(묘비)
+            return idmap.label(ref)
         return "%s: %s" % (MISSING, ref)
     text = node_text(n)
     dn = (drawing_numbers or {}).get(n.get("sheet") or drawing_of(ref))

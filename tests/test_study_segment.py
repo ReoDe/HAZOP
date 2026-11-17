@@ -385,13 +385,15 @@ class ScreenRecordTest(unittest.TestCase):
         self.assertEqual(dropped, [])
         self.assertEqual(by_member(again, keep["members"][0])["screen"]["status"], "excluded")
 
-    def test_map_members_renames_piece_records_too(self):
+    def test_migration_renames_piece_records_too(self):
+        from hazop.study import idmap
         keep = next(n for n in self.ns["nodes"] if n.get("absorbed"))
         old = keep["absorbed"][0]["members"][0]
-        out = sn.map_members(self.ns, {old: "새-ID"})
+        table = idmap.from_record({"from": "v1", "to": "v2", "renamed": {old: "새-ID"}}, self.ns["graph_id"])
+        out = idmap.apply(self.ns, idmap.SET, table)[0]
         node = by_member(out, "새-ID")
         self.assertIn("새-ID", node["absorbed"][0]["members"])
-        self.assertNotIn(old, json.dumps(out))
+        self.assertNotIn(old, json.dumps([out["nodes"], out["batches"]]))
 
 
 class ExcludedDrawingsTest(unittest.TestCase):
