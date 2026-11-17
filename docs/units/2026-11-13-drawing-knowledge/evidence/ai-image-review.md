@@ -1030,7 +1030,7 @@ R3는 보류 6쪽을 돌리지도 보지도 않았다. d-read가 잰 합계를 �
 
 ## 앱 실제 실행: AI 검토 패널에서 실제 구독 연결로 한 번 (s-viewer, 2026-11-18)
 
-조건: 새 화면 실제 창(1366×768, `desktop_lease.py run --purpose aireview-images-live`), 임시 작업 루트의 합성 견본 프로젝트(SNP-M-101 drawio + SNP-M-102 벡터 PDF를 `SNP-PDF-1`로 추출, APR1400 자료 없음). 연결은 칩 '구독 · Opus · 한도 가까움'(주간 한도 사용 0.85)이고 모델은 Opus 5.5다. 도면당 상한 5(켠 실행)와 4(끈 실행), 호출은 합쳐 3회. 요청 기록은 실제 클라이언트를 감싸 기록만 하는 대리자로 남겼다(스크립트 `D:\HAZOP-trials\2026-11-18-aireview-images\capture_live.py`, 결과 `live-result.json`).
+조건: 새 화면 실제 창(1366×768, `desktop_lease.py run --purpose aireview-images-live`), 임시 작업 루트의 합성 견본 프로젝트(SNP-M-101 drawio + SNP-M-102 벡터 PDF를 `SNP-PDF-1`로 추출, APR1400 자료 없음). 연결은 칩 '구독 · Opus · 한도 가까움'(주간 한도 사용 0.85)이고 모델은 Opus 5.5다. 도면당 상한 5(켠 실행)와 4(끈 실행), 호출은 합쳐 3회. 요청 기록은 실제 클라이언트를 감싸 기록만 하는 대리자로 남겼다(스크립트는 저장소 밖 시험 폴더 `2026-11-18-aireview-images`의 `capture_live.py`, 결과 `live-result.json`).
 
 | 항목 | 그림 스위치 켬 | 스위치 끔 |
 | --- | --- | --- |
