@@ -134,6 +134,8 @@ def label(ref, idx, drawing_numbers=None, short=None):
     짧은 번호}도 있으면 "RC-PSV101(102)". 대상이 없으면 "대상 없음(재확인): <ref>"."""
     n = idx.get(ref)
     if n is None:
+        if isinstance(ref, str) and ref.endswith(migrate.LOST_MARK):  # 판 이전에서 대상을 찾지 못한 참조
+            return "%s: %s (확인 필요)" % (MISSING, ref[:-len(migrate.LOST_MARK)])
         return "%s: %s" % (MISSING, ref)
     text = node_text(n)
     dn = (drawing_numbers or {}).get(n.get("sheet") or drawing_of(ref))

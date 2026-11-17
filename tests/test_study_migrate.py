@@ -45,7 +45,7 @@ def graph(version, objects=OBJECTS, pipes=PIPES, shift=0):
 
 
 def entity(g, soid):
-    return next(n["entity_id"] for n in g["nodes"] if n["source_object_id"] == soid)
+    return next(n["entity_id"] for n in g["nodes"] if n["source_object_id"] in (soid, SID.get(soid)))
 
 
 def results_for(ns, g):
@@ -256,14 +256,27 @@ UNTAGGED = [("TK", "tank", "equipment"), ("V1", "manual_valve", "valve"), ("V2",
 UNTAGGED_PIPES = [("L1", "TK", "V1"), ("L2", "V1", "V2"), ("L3", "V2", "V3"), ("L4", "V3", "PP")]
 
 
-def drawn(version, at):
-    """태그 없는 같은 종류 밸브 셋이 있는 PDF 도면 그래프. at {source_object_id: 상자 [x, y, w, h]}. 다시 추출해 기호
-    순번이 밀리면 같은 source_object_id가 다른 자리의 밸브를 가리킨다(종류·태그·연결은 그대로라 구간 지문이 같다)."""
-    g = graph(version, objects=UNTAGGED, pipes=UNTAGGED_PIPES)
+SID = {"TK": "pdf-p0-sym-0001", "V1": "pdf-p0-sym-0002", "V2": "pdf-p0-sym-0003", "V3": "pdf-p0-sym-0004",
+       "PP": "pdf-p0-sym-0005", "L1": "pdf-p0-conn-0001", "L2": "pdf-p0-conn-0002", "L3": "pdf-p0-conn-0003",
+       "L4": "pdf-p0-conn-0004"}
+
+
+def REF(name):
+    return "graph-T#" + SID[name]
+
+
+def drawn(version, at, objects=UNTAGGED, fixed_ids=False):
+    """태그 없는 같은 종류 밸브 셋이 있는 도면 그래프. at {이름: 상자 [x, y, w, h]}. 벡터 PDF처럼 source_object_id가
+    순번(pdf-p0-sym-0002)이라 다시 추출해 순번이 밀리면 같은 id가 다른 자리의 밸브를 가리킨다(종류·태그·연결은 그대로라
+    구간 지문이 같다). fixed_ids면 drawio처럼 이름이 곧 고정 id다."""
+    g = graph(version, objects=objects, pipes=UNTAGGED_PIPES)
     for n in g["nodes"]:
-        n["bbox"] = at.get(n["source_object_id"])
+        name = n["source_object_id"]
+        n["bbox"] = at.get(name)
         if n["kind"] == "manual_valve":
             n["tag"] = n["label_text"] = None
+        if not fixed_ids:
+            n["source_object_id"] = SID[name]
     return g
 
 
@@ -336,7 +349,7 @@ class ShiftedSymbolTest(unittest.TestCase):
     def cause_refs_after(self, g2):
         """V1·V2를 원인 위치로 가리킨 ⑤ 항목을 저장하고, g2로 판 이전한 뒤 그 참조가 가리키는 상자."""
         doc = results_for(self.ns, self.g1)
-        doc["cells"][0]["entries"][0]["cause_refs"] = [{"ref": "graph-T#V1"}, {"ref": "graph-T#V2"}]
+        doc["cells"][0]["entries"][0]["cause_refs"] = [{"ref": REF("V1")}, {"ref": REF("V2")}]
         rpath = res.save(doc, None)
         sn.load(g2)
         with open(rpath, encoding="utf-8") as fh:
@@ -358,7 +371,7 @@ class ShiftedSymbolTest(unittest.TestCase):
         from hazop.kg import expect
         doc = results_for(self.ns, self.g1)
         e = doc["cells"][0]["entries"][0]
-        e["expectation_refs"] = [expect.expectation_id("R-1", "graph-T#V1"), expect.expectation_id("R-1", "graph-T#V2")]
+        e["expectation_refs"] = [expect.expectation_id("R-1", REF("V1")), expect.expectation_id("R-1", REF("V2"))]
         e["ai_basis"]["kg_paths"] = [[entity(self.g1, "V1"), entity(self.g1, "V2"), "cond-001"]]
         rpath = res.save(doc, None)
         g2 = drawn("v-2", dict(PLACES, V1=PLACES["V3"], V3=PLACES["V1"], V2=[200, 0, 5, 5]))
@@ -366,7 +379,7 @@ class ShiftedSymbolTest(unittest.TestCase):
         with open(rpath, encoding="utf-8") as fh:
             moved = json.load(fh)
         got = moved["cells"][0]["entries"][0]
-        self.assertEqual(got["expectation_refs"][0], expect.expectation_id("R-1", "graph-T#V3"))
+        self.assertEqual(got["expectation_refs"][0], expect.expectation_id("R-1", REF("V3")))
         self.assertTrue(got["expectation_refs"][1].endswith(migrate.LOST_MARK))
         ids = {n["entity_id"] for n in g2["nodes"]}
         path = got["ai_basis"]["kg_paths"][0]
@@ -389,6 +402,135 @@ class ShiftedSymbolTest(unittest.TestCase):
         sn.save(bare)
         got = sn.load(self.g1)
         self.assertEqual(got.get("graph_member_marks"), migrate.graph_marks(self.g1))
+
+    def test_prime_marks_before_reextraction(self):
+        bare = dict(self.ns)
+        bare.pop("graph_member_marks", None)
+        sn.save(bare)
+        self.assertTrue(sn.prime_marks(self.g1))
+        with open(sn.store_path(None, "graph-T"), encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["graph_member_marks"], migrate.graph_marks(self.g1))
+
+
+class LostMemberTest(unittest.TestCase):
+    """검토 차단 1~4·(a)~(c): 고정 id 도면, 같은 자리 다른 기호, 잃은 구성요소, 참조 확인 필요."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self._old = os.environ.get(paths.ENV_WORK_ROOT)
+        os.environ[paths.ENV_WORK_ROOT] = self.tmp
+        devs = mock.patch.object(res, "load_deviations", lambda path=None: copy.deepcopy(DEVS))
+        devs.start()
+        self.addCleanup(devs.stop)
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop(paths.ENV_WORK_ROOT, None)
+        else:
+            os.environ[paths.ENV_WORK_ROOT] = self._old
+        shutil.rmtree(self.tmp)
+
+    def start(self, g1):
+        self.g1 = g1
+        self.ns = sn.confirm(sn.propose(g1, at=AT), g1, "김검토", at=AT)
+        sn.save(self.ns)
+        doc = results_for(self.ns, g1)
+        gid = g1["graph_id"]
+        doc["cells"][0]["entries"][0]["cause_refs"] = [{"ref": "%s#%s" % (gid, entity_soid(g1, "V1"))}]
+        self.rpath = res.save(doc, None)
+
+    def cause_ref(self):
+        with open(self.rpath, encoding="utf-8") as fh:
+            return json.load(fh)["cells"][0]["entries"][0]["cause_refs"][0]["ref"]
+
+    def test_block1_fixed_id_drawing_keeps_a_moved_symbol(self):
+        self.start(drawn("v-1", PLACES, fixed_ids=True))
+        g2 = drawn("v-2", dict(PLACES, V1=[30, 0, 5, 5]), fixed_ids=True)
+        got = sn.load(g2)
+        self.assertEqual(got["history"][-1]["detail"]["recheck"], {}, "drawio처럼 id가 고정이면 옮겨도 같은 기호")
+        self.assertEqual(self.cause_ref(), "graph-T#V1")
+
+    def test_block2_other_symbol_on_the_same_place_is_not_the_same(self):
+        self.start(drawn("v-1", PLACES))
+        cv = [("TK", "tank", "equipment"), ("V1", "control_valve", "valve")] + UNTAGGED[2:]
+        g2 = drawn("v-2", PLACES, objects=cv)
+        node = next(n for n in g2["nodes"] if n["source_object_id"] == SID["V1"])
+        node["tag"] = "CV-9"
+        got = sn.load(g2)
+        holder = sn.nodes_of(self.ns, entity(self.g1, "V1"))
+        self.assertEqual(sorted(got["history"][-1]["detail"]["recheck"]), holder)
+        self.assertNotEqual(self.cause_ref(), REF("V1"), "⑤ 원인이 같은 자리의 CV-9를 가리키면 안 됨")
+
+    def test_block3_lost_member_stays_lost_over_next_migration(self):
+        self.start(drawn("v-1", PLACES))
+        gone = entity(self.g1, "V2")
+        holder = sn.nodes_of(self.ns, gone)[0]
+        g2 = drawn("v-2", dict(PLACES, V2=[200, 0, 5, 5]))
+        b = sn.load(g2)
+        node = next(n for n in b["nodes"] if n["node_id"] == holder)
+        self.assertNotIn(gone, node["members"], "찾지 못한 구성요소는 새 판의 어떤 기호도 가리키지 않음")
+        self.assertEqual([x["ref"] for x in node["lost_members"]], [REF("V2")])
+        g3 = drawn("v-3", dict(PLACES, V2=[200, 0, 5, 5], V1=[20, 0, 5, 5]))
+        g3["nodes"][0]["tag"] = "TK-NEW"  # 판만 바꾸는 다른 고침
+        c = sn.load(g3)
+        node = next(n for n in c["nodes"] if n["node_id"] == holder)
+        self.assertNotIn(gone, node["members"])
+        self.assertEqual(node["state"], "applied", "사람이 다시 확인할 때까지 재확인 상태")
+        self.assertTrue(node["lost_members"])
+
+    def test_a_lost_member_comes_back_when_its_symbol_returns(self):
+        self.start(drawn("v-1", PLACES))
+        gone = entity(self.g1, "V1")
+        holder = sn.nodes_of(self.ns, gone)[0]
+        sn.load(drawn("v-2", dict(PLACES, V1=[200, 0, 5, 5])))
+        self.assertTrue(self.cause_ref().endswith(migrate.LOST_MARK))
+        g3 = drawn("v-3", PLACES)
+        c = sn.load(g3)
+        node = next(n for n in c["nodes"] if n["node_id"] == holder)
+        self.assertIn(entity(g3, "V1"), node["members"])
+        self.assertFalse(node.get("lost_members"))
+        self.assertEqual(node["state"], "applied", "되찾아도 재확인")
+        self.assertEqual(self.cause_ref(), REF("V1"), "⑤ 잃은 참조도 되찾음")
+
+    def test_block4_check_needed_reports_nodes_and_counts(self):
+        self.start(drawn("v-1", PLACES))
+        g2 = drawn("v-2", dict(PLACES, V1=[200, 0, 5, 5]))
+        ns2 = sn.load(g2)
+        doc = res.load(ns2)
+        got = migrate.refs_check(ns2, doc)
+        holder = sn.nodes_of(self.ns, entity(self.g1, "V1"))[0]
+        self.assertEqual(got["lost_members"], {holder: 1})
+        self.assertEqual(got["lost_refs"], {doc["cells"][0]["node_id"]: 1})
+        self.assertFalse(got["unverified"])
+        self.assertTrue(got["needs_check"])
+
+    def test_c_damaged_marks_are_ignored(self):
+        self.start(drawn("v-1", PLACES))
+        with open(sn.store_path(None, "graph-T"), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc["graph_member_marks"] = {k: {"x": 1} for k in doc["graph_member_marks"]}
+        with open(sn.store_path(None, "graph-T"), "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        got = sn.load(drawn("v-2", PLACES))
+        self.assertEqual(got["graph_version"], "v-2")
+
+    def test_b_lost_ref_label_says_check_needed(self):
+        from hazop.study import refs
+        text = refs.label(REF("V1") + migrate.LOST_MARK, {})
+        self.assertNotIn(migrate.LOST_MARK, text)
+        self.assertIn("확인 필요", text)
+
+    def test_b_initiating_event_does_not_show_lost_ref_as_tag(self):
+        from hazop.ie import model
+        o = {"basic_events": {}, "counters": {"BE": 0}}
+        model._add_be(o, {}, {}, REF("V1") + migrate.LOST_MARK, "fail_closed", "hazop", "k", None)
+        be = next(iter(o["basic_events"].values()))
+        self.assertEqual(be["tag"], "확인 필요")
+        self.assertNotIn(migrate.LOST_MARK, be["name"])
+
+
+def entity_soid(g, name):
+    return next(n["source_object_id"] for n in g["nodes"] if n["entity_id"] == entity(g, name))
 
 
 if __name__ == "__main__":

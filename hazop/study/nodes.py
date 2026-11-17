@@ -851,6 +851,14 @@ def load_fp(graph):
     return doc, fp if path == store_path(graph.get("project_id"), graph.get("graph_id")) else None
 
 
+def prime_marks(graph):
+    """다시 추출하기 직전에 부른다. graph는 다시 추출하기 전(지금 저장된) 도면 그래프다. 저장된 집합이 그 판이면 읽기만으로
+    구성요소 표시(graph_member_marks)를 채워 저장한다(migrate.with_refs). 그래야 다시 추출 뒤 첫 판 이전도 위치로
+    확인한다. 표시가 있으면(또는 집합이 없으면) True."""
+    doc = load_fp(graph)[0]
+    return doc is None or isinstance(doc.get("graph_member_marks"), dict)
+
+
 def read_as_is(graph):
     """저장본을 바꾸지 않고 그대로 읽는다(0.1이면 0.1 모양, 변환·판 이전 없음). 없으면 None. 옛 도면별 집합을 프로젝트
     집합으로 옮길 때 쓴다(옛 파일은 손대지 않음)."""

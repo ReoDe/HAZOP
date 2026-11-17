@@ -4,10 +4,14 @@
 - 집합(0.2)의 graph_member_refs는 그래프 전체 구성요소의 안정 참조("<도면 graph_id>#<source_object_id>")다. 그래프를 다시
   만들면 entity_id는 바뀔 수 있어도 이 참조는 그대로라서, 판이 바뀐 뒤에도 옛 구성요소를 새 entity_id로 찾는다.
   구간 밖 구성요소가 늘거나 줄어도 재확인 사유가 아니다(§1 #17·#18).
-- PDF 추출의 source_object_id는 기호 순번이라, 추출 규칙이 바뀌어 다시 추출하면 같은 참조가 다른 기호를 가리킬 수 있다.
-  그래서 구성요소마다 위치 표시(graph_member_marks: 구성요소 종류와 위치 상자)도 남기고, 참조가 가리키는 새 구성요소의
-  표시가 다르면 잇지 않는다. 같은 표시를 가진 구성요소가 새 판에 정확히 하나면 그것으로 잇고, 아니면 '찾지 못함'으로
-  남긴다(확신하지 못하면 가리키지 않는다). 표시가 없는 옛 집합과 상자가 없는 구성요소는 참조만 본다.
+- 벡터 PDF·스캔 추출의 source_object_id는 기호 순번(pdf-p0-sym-0012)이라, 추출 규칙이 바뀌어 다시 추출하면 같은 참조가
+  다른 기호를 가리킬 수 있다. 그래서 그런 구성요소마다 표시(graph_member_marks: 구성요소 종류·도면·기호 종류·태그·위치
+  상자)도 남기고, 참조가 가리키는 새 구성요소의 표시가 조금이라도 다르면 잇지 않는다. 표시가 같은 구성요소가 새 판에
+  정확히 하나면 그것으로 잇고, 아니면 '찾지 못함'이다(놓치는 쪽은 괜찮고 다른 기호로 잇는 것은 안 된다).
+  drawio·DEXPI·사람이 더한 구성요소는 id가 고정이라 표시를 두지 않고 참조만 본다(옮겨도 같은 기호다).
+- 찾지 못한 구간 구성요소는 members에서 lost_members로 옮긴다(원래 참조·표시 보관). 새 판의 어떤 구성요소도 가리키지
+  않으므로 다음 판 이전에서 조용히 다른 기호로 굳지 않는다. 다음 판에 표시가 같은 구성요소가 하나뿐으로 다시 나오면
+  되찾아 members에 넣고 그 구간은 재확인한다(⑤의 ~lost 참조도 되찾는다).
 - 판 이전은 모든 구간에 적용하고 재확인은 구간마다 정한다. 구간마다 내용 지문(md3-: 그 구간 구성요소와 거기 닿는 관계의
   종류·태그·배관 번호·흐름·정상 위치·고장 위치)을 남기고, 지문이 바뀌었거나 구성요소를 새 판에서 찾지 못한 구간만 rev를
   올린다. 그 구간이 확정이면 적용됨으로 내리고(⑤ 칸은 보관), 잠금이면 잠금을 두고 version_changed를 단다(§5.3).
@@ -27,6 +31,7 @@ import re
 from hazop import store_io
 
 OP = "migrate_version"
+SEQUENCE_ID = re.compile(r"^pdf-p\d+-[a-z]+-\d+$")  # pdf_vector.build_extraction(스캔도 같은 길)이 주는 순번 id
 LOST_MARK = "~lost"  # 판 이전에서 대상을 찾지 못한 ⑤ 참조 끝에 붙인다. 그래프 어디에도 없는 참조라 '대상 없음(재확인)'으로 보인다
 _PID_ID = re.compile(r"(^|/)(entity|relation)-")
 POSITION_ATTRS = ("normal_position", "fail_position")
@@ -49,17 +54,26 @@ def graph_refs(graph):
 
 
 MARK_TOL = 1.0  # pt. 같은 기호를 다시 읽으면 상자가 그대로다
+MARK_LEN = 8
 
 
 def mark_of(node):
-    """구성요소의 위치 표시 [node_type, 도면(프로젝트 그래프의 sheet, 도면 그래프는 None), x0, y0, x1, y1](0.1pt 반올림).
-    위치 상자가 없으면 None. 좌표는 도면마다 따로라 도면도 같아야 같은 자리다."""
+    """순번 id 구성요소의 표시 [node_type, 도면(프로젝트 그래프의 sheet, 도면 그래프는 None), kind, tag, x0, y0, x1, y1]
+    (0.1pt 반올림). id가 순번이 아니거나(drawio·DEXPI·사람이 더한 것) 위치 상자가 없으면 None. 좌표는 도면마다 따로라
+    도면도 같아야 같은 자리다."""
     b = node.get("bbox")
-    if not (isinstance(b, (list, tuple)) and len(b) == 4
+    if not SEQUENCE_ID.match(str(node.get("source_object_id") or "")) or not (
+            isinstance(b, (list, tuple)) and len(b) == 4
             and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in b)):
         return None
     x, y, w, h = b
-    return [node.get("node_type"), node.get("sheet"), round(x, 1), round(y, 1), round(x + w, 1), round(y + h, 1)]
+    return [node.get("node_type"), node.get("sheet"), node.get("kind"), node.get("tag"),
+            round(x, 1), round(y, 1), round(x + w, 1), round(y + h, 1)]
+
+
+def _valid_mark(m):
+    return (isinstance(m, list) and len(m) == MARK_LEN
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in m[4:]))
 
 
 def graph_marks(graph):
@@ -68,9 +82,10 @@ def graph_marks(graph):
 
 
 def _fits(mark, node):
+    """표시가 같은 구성요소인가: 종류·도면·기호 종류·태그가 같고 상자가 MARK_TOL 안."""
     m = mark_of(node)
-    return (m is not None and len(mark) == len(m) and m[:2] == mark[:2]
-            and all(abs(a - b) <= MARK_TOL for a, b in zip(m[2:], mark[2:])))
+    return (m is not None and m[:4] == mark[:4]
+            and all(abs(a - b) <= MARK_TOL for a, b in zip(m[4:], mark[4:])))
 
 
 def node_digests(graph, members_by_node):
@@ -242,13 +257,14 @@ def plan(node_set, graph):
     것만, "marked"(위치 표시로 확인했는가. 표시 없는 옛 집합은 참조만 믿어 False), "recheck"{node_id: 사유}, "reason"}.
     kept는 판 이전을 적용한다는 뜻이고 재확인은 recheck에 든 구간만이다. skip은 0.2 집합이 아니거나 그래프를 비교할 수 없는 것."""
     out = {"state": "skip", "reason": None, "matched": 0, "renamed": {}, "lost": [], "unmapped": [], "ref_moved": {},
-           "marked": False, "recheck": {}}
+           "marked": False, "found_again": {}, "recheck": {}}
     if not _usable(node_set, graph):
         return out
     if node_set.get("graph_version") == graph["graph_version"]:
         return dict(out, state="same")
     old = node_set.get("graph_member_refs") or {}
-    marks = node_set.get("graph_member_marks") or {}
+    raw = node_set.get("graph_member_marks")
+    marks = {k: v for k, v in raw.items() if _valid_mark(v)} if isinstance(raw, dict) else {}  # 손상된 표시는 없는 것으로
     by_id = {n["entity_id"]: n for n in graph["nodes"]}
     new, by_type = {}, {}
     for n in graph["nodes"]:
@@ -267,6 +283,17 @@ def plan(node_set, graph):
             lost.add(m)
         else:
             mapping[m] = hits[0]
+    found_again = {}  # 잃었던 구성요소를 같은 표시로 되찾음 {node_id: [(잃은 기록, 새 entity_id)]}
+    taken = set(mapping.values())
+    for n in node_set["nodes"]:
+        for x in n.get("lost_members") or []:
+            mark = x.get("mark") if isinstance(x, dict) else None
+            if not _valid_mark(mark):
+                continue
+            hits = [g["entity_id"] for g in by_type.get(mark[0], []) if _fits(mark, g)]
+            if len(hits) == 1 and hits[0] not in taken:
+                taken.add(hits[0])
+                found_again.setdefault(n["node_id"], []).append((x, hits[0]))
     into = {}
     for m, e in mapping.items():
         into.setdefault(e, []).append(m)
@@ -291,6 +318,8 @@ def plan(node_set, graph):
                 recheck[nid] = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
         elif not legacy_same and n.get("state") in ("confirmed", "locked"):
             recheck[nid] = "옛 판의 구간 내용 기록이 없음"  # 확정한 적 없는 적용됨 구간은 분석 전이라 판만 옮김
+        if nid in found_again and nid not in recheck:
+            recheck[nid] = "잃었던 구성요소 %d개를 같은 자리에서 되찾음" % len(found_again[nid])
     member_ids = {m for n in node_set["nodes"] for m in n["members"]}
     ref_moved = {}
     for m, r in old.items():
@@ -299,9 +328,18 @@ def plan(node_set, graph):
         to = ref_of(by_id[mapping[m]], graph.get("graph_id")) if m in mapping else None
         if to != r:
             ref_moved[r] = to
+    renamed = {a: b for a, b in mapping.items() if a != b}
+    for pairs in found_again.values():
+        for x, e in pairs:
+            if x.get("ref"):  # 앞 판 이전이 ~lost를 붙인 ⑤ 참조도 되찾는다
+                ref_moved[x["ref"] + LOST_MARK] = ref_of(by_id[e], graph.get("graph_id"))
+            if x.get("entity_id"):
+                renamed[x["entity_id"] + LOST_MARK] = e
     return dict(out, state="kept", matched=len(member_ids & set(mapping)), recheck=recheck,
-                renamed={a: b for a, b in mapping.items() if a != b}, lost=sorted(member_ids & lost),
-                unmapped=sorted(lost), ref_moved=dict(sorted(ref_moved.items())), marked=bool(marks))
+                renamed=renamed, lost=sorted(member_ids & lost), unmapped=sorted(lost),
+                ref_moved=dict(sorted(ref_moved.items())), marked=bool(marks),
+                found_again={k: [e for _, e in v] for k, v in sorted(found_again.items())},
+                _found_again=found_again, _marks=marks, _old=old)
 
 
 def migrate_set(node_set, graph, at=None):
@@ -315,6 +353,20 @@ def migrate_set(node_set, graph, at=None):
     ren = p["renamed"]
     out = map_members(node_set, ren)
     old_version = out.get("graph_version")
+    lost = set(p["lost"])
+    for n, before in zip(out["nodes"], node_set["nodes"]):
+        # 찾지 못한 구성요소는 옛 entity_id로 남기지 않는다(새 판에서 다른 구성요소의 id일 수 있다)
+        gone = [m for m in before["members"] if m in lost]
+        back = p["_found_again"].get(n["node_id"]) or []
+        if not gone and not back:
+            continue
+        kept = [x for x in n.get("lost_members") or [] if not any(x == y for y, _ in back)]
+        kept += [{"entity_id": m, "ref": p["_old"].get(m), "mark": p["_marks"].get(m), "from": old_version} for m in gone]
+        n["members"] = sorted(set(m for m in n["members"] if m not in gone) | {e for _, e in back})
+        if kept:
+            n["lost_members"] = kept
+        else:
+            n.pop("lost_members", None)
     demoted = []
     for n in out["nodes"]:
         why = p["recheck"].get(n["node_id"])
@@ -337,7 +389,8 @@ def migrate_set(node_set, graph, at=None):
     out["history"].append(store_io.history_row(OP, {"detail": {
         "from": old_version, "to": graph["graph_version"], "matched": p["matched"],
         "renamed": dict(sorted(ren.items())), "unmapped": p["unmapped"], "ref_moved": p["ref_moved"],
-        "marked": p["marked"], "recheck": dict(sorted(p["recheck"].items())), "demoted": demoted}}, at))
+        "marked": p["marked"], "found_again": p["found_again"], "recheck": dict(sorted(p["recheck"].items())),
+        "demoted": demoted}}, at))
     return out, p
 
 
@@ -397,8 +450,13 @@ def _move_expectations(entry, forward):
     changed = lost = 0
     out = []
     for x in xs:
-        rule = x[len(expect.ID_PREFIX):].rsplit("-", 1)[0] if isinstance(x, str) and x.startswith(expect.ID_PREFIX) else None
-        old = next((r for r in forward if rule and expect.expectation_id(rule, r) == x), None)
+        lost_before = isinstance(x, str) and x.endswith(LOST_MARK)
+        bare = x[:-len(LOST_MARK)] if lost_before else x
+        rule = (bare[len(expect.ID_PREFIX):].rsplit("-", 1)[0]
+                if isinstance(bare, str) and bare.startswith(expect.ID_PREFIX) else None)
+        # ~lost가 붙은 ID는 되찾은 참조(<참조>~lost 열쇠)로만 풀린다
+        old = next((r for r in forward if rule and r.endswith(LOST_MARK) == lost_before
+                    and expect.expectation_id(rule, r[:-len(LOST_MARK)] if lost_before else r) == bare), None)
         if old is None:
             out.append(x)
         elif forward[old] is None:
@@ -409,6 +467,29 @@ def _move_expectations(entry, forward):
             changed += 1
     entry["expectation_refs"] = out
     return changed, lost
+
+
+def refs_check(node_set, results=None):
+    """'참조 확인 필요' 요약(화면이 띄울 근거). {"needs_check", "lost_members"{node_id: 잃은 구성요소 수},
+    "lost_refs"{node_id: ~lost가 붙은 ⑤ 참조 수}, "unverified"(참조를 위치로 확인하지 않은 판 이전이 결과에 끼었는가:
+    version_migrations 줄에 refs_changed가 없거나 refs_unverified가 참)}."""
+    lost_members = {n["node_id"]: len(n["lost_members"]) for n in (node_set or {}).get("nodes") or []
+                    if n.get("lost_members")}
+    lost_refs = {}
+    for cell in (results or {}).get("cells") or []:
+        k = 0
+        for e in cell.get("entries") or []:
+            rows = [r.get("ref") for f in ("cause_refs", "consequence_refs") for r in e.get(f) or [] if isinstance(r, dict)]
+            rows += [r.get("ref") for s in e.get("safeguards") or [] if isinstance(s, dict)
+                     for r in s.get("refs") or [] if isinstance(r, dict)]
+            rows += list(e.get("expectation_refs") or [])
+            k += sum(1 for r in rows if isinstance(r, str) and r.endswith(LOST_MARK))
+        if k:
+            lost_refs[cell.get("node_id")] = lost_refs.get(cell.get("node_id"), 0) + k
+    unverified = any("refs_changed" not in m or m.get("refs_unverified")
+                     for m in (results or {}).get("version_migrations") or [])
+    return {"needs_check": bool(lost_members or lost_refs or unverified), "lost_members": lost_members,
+            "lost_refs": lost_refs, "unverified": unverified}
 
 
 def _move_refs(results, forward):

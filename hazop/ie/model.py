@@ -22,7 +22,7 @@ import re
 
 from hazop import store_io
 from hazop.kg.build import dump_bytes
-from hazop.study import refs
+from hazop.study import migrate, refs
 from hazop.study import results as res
 from hazop.study.nodes import now_utc
 
@@ -571,7 +571,8 @@ def _add_be(o, bes, idx, ref, mode, kind, key, heading):
     if bkey not in bes:
         bid = _next_id(o, "BE")
         node = idx.get(ref)
-        tag = refs.node_text(node) if node else ref.partition("#")[2]
+        # 판 이전에서 대상을 찾지 못한 참조(~lost)는 옛 id를 태그로 내지 않는다
+        tag = refs.node_text(node) if node else "확인 필요" if ref.endswith(migrate.LOST_MARK) else ref.partition("#")[2]
         o["basic_events"][bid] = {"key": bkey, "ref": ref, "tag": tag, "name": _be_name(node, tag, mode),
                                   "equipment_kind": (node or {}).get("kind") or "",
                                   "system": tag.partition("-")[0] if "-" in tag else "", "failure_mode": mode or "",
