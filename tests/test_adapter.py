@@ -667,17 +667,19 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(sorted(n["kind"] or "-" for n in ext["nodes"]), ["-", "-"])
         self.assertEqual(len(ext["relations"]), 1)
         self.assertTrue(all(e["node_local_id"] for e in ext["relations"][0]["endpoints"]))
-        def run(rest_len):
+        def run(rest_len, pipe_dash=False):
             box = pdf_vector._Sym([{"id": "b", "pts": [(0, 0), (1, 1)], "bbox": (0, 0, 1, 1), "kind_": "body"}])
             tee, free = ("tee", 0), ("free", 0)
             chains = [{"pts": [(-rest_len, 0), (0, 0)], "ends": [(("sym", box), (-rest_len, 0), "x"), (tee, (0, 0), "j")],
-                       "evidence": ["p1"]},
+                       "evidence": ["p1"], "pipe_dash": pipe_dash},
                       {"pts": [(0, 0), (0, 3)], "ends": [(tee, (0, 0), "j"), (free, (0, 3), "j")], "evidence": ["p2"]},
                       {"pts": [(0, 0), (0, -3)], "ends": [(tee, (0, 0), "j"), (free, (0, -3), "j")], "evidence": ["p2"]}]
             made, left, tees = pdf_vector._stub_ends([(0, 0)], chains)
             return len(made), len(left), len(tees)
         self.assertEqual(run(30), (1, 1, 0))
         self.assertEqual(run(5), (0, 3, 1))
+        # 배관 굵기 점선 사슬 끝의 가로대는 끝 기호로 만들지 않는다(신호 점선 끝 눈금, 022쪽 ESF-CIAS 끝)
+        self.assertEqual(run(30, pipe_dash=True), (0, 3, 1))
 
     def test_part_drawn_between_two_plates_is_one_inline_node(self):
         # APR1400 097쪽 Y형 거름망 ST01A: 배관이 두 판 '|  |' 가운데에서 끊기고, 판 사이에 축 선과 아래로 빠진 다리·눈금이
@@ -894,77 +896,173 @@ class PdfVectorRuleTest(unittest.TestCase):
         relations, unresolved = run([circle(106, 210, 14)], [word("PT", 101, 202), word("101", 101, 209)])
         self.assertEqual((relations, unresolved), ([("signal_connection", "pdf_dashed")], []))
 
+    @staticmethod
+    def bowtie(x, y):
+        """두 삼각형이 가운데 꼭짓점을 맞댄 가로 밸브 몸통(폭 36, 높이 22)."""
+        return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+
+    @staticmethod
+    def dashed(*pts, width=0.32, pattern=(10.67, 5.33)):
+        return dict(line(*pts, width=width), dash=[list(pattern), 0.0])
+
+    @staticmethod
+    def kinds(ext):
+        """관계 (kind, line_type, 근거) 목록."""
+        return sorted((r["kind"], r["line_type"], r["evidence"]["classification_basis"]) for r in ext["relations"])
+
+    PIPE_DASH = ("physical_connection", "pdf_dashed", "pipe_dash_path")
+
     def test_pipe_width_dashed_line_is_pipe(self):
         # APR1400 141쪽 기체 방사성폐기물 묶음 ZG01: 묶음 안 배관을 쪽 배관 굵기(0.32pt)의 대시 점선으로 그렸다. 이런 점선은
         # 분기까지 실선 배관처럼 잇는다. 가는 점선(0.16pt), 같은 굵기라도 일점쇄선, 계기에서 끝나는 점선이 든 무리, 종류를
         # 아는 기호에 닿지 않는 무리(구역 경계선 등)는 배관으로 보지 않는다
         def run(pen, pattern, end=None, words=(), valve=True):
-            def dashed(*pts):
-                return dict(line(*pts, width=pen), dash=[pattern, 0.0])
-            body = [prim([(120, 199), (138, 210), (120, 221), (120, 199)], closed=True),
-                    prim([(156, 199), (138, 210), (156, 221), (156, 199)], closed=True)] if valve else                 [rect(120, 200, 140, 220)]
+            body = self.bowtie(120, 199) if valve else [rect(120, 200, 140, 220)]
             ext = pdf_run([rect(20, 20, 40, 40), rect(120, 20, 140, 40), line((40, 30), (120, 30), width=0.32),
                            end or rect(20, 200, 40, 220), rect(70, 300, 90, 320),
-                           dashed((40, 210), (120, 210)), dashed((80, 210), (80, 300))] + body, words)
-            return sorted((r["kind"], r["line_type"]) for r in ext["relations"]),                 [n["kind"] for n in ext["nodes"]].count("tee")
-        pipe = ("physical_connection", "pdf_solid")
-        self.assertEqual(run(0.32, [10.67, 5.33]), ([("physical_connection", "pdf_dashed")] * 3 + [pipe], 1))
-        self.assertEqual(run(0.16, [10.67, 5.33])[1], 0)  # 조각 사슬로 남아 분기점을 만들지 않는다
-        self.assertEqual(run(0.32, [10.67, 5.33, 1.33, 5.33])[1], 0)
-        relations, _ = run(0.32, [10.67, 5.33], circle(26, 210, 12), [word("PT", 21, 202), word("101", 21, 209)])
-        self.assertIn(("signal_connection", "pdf_dashed"), relations)
-        self.assertNotIn(("physical_connection", "pdf_dashed"), relations)
-        self.assertNotIn(("physical_connection", "pdf_dashed"), run(0.32, [10.67, 5.33], valve=False)[0])
+                           self.dashed((40, 210), (120, 210), width=pen, pattern=pattern),
+                           self.dashed((80, 210), (80, 300), width=pen, pattern=pattern)] + body, words)
+            return self.kinds(ext), [n["kind"] for n in ext["nodes"]].count("tee")
+        relations, tees = run(0.32, (10.67, 5.33))
+        self.assertEqual((relations.count(self.PIPE_DASH), tees), (3, 1))
+        self.assertEqual(run(0.16, (10.67, 5.33))[1], 0)  # 조각 사슬로 남아 분기점을 만들지 않는다
+        self.assertEqual(run(0.32, (10.67, 5.33, 1.33, 5.33))[1], 0)
+        relations, _ = run(0.32, (10.67, 5.33), circle(26, 210, 12), [word("PT", 21, 202), word("101", 21, 209)])
+        self.assertIn(("signal_connection", "pdf_dashed", "pipe_dash_path"), relations)
+        self.assertNotIn(self.PIPE_DASH, relations)
+        self.assertNotIn(self.PIPE_DASH, run(0.32, (10.67, 5.33), valve=False)[0])
+
+    def test_pipe_width_dashed_rule_needs_pipe_width_above_instrument_lines(self):
+        # 실선 사슬이 0.16pt 계기선뿐인 쪽: 쪽 배관 굵기가 0.16pt로 잡혀 0.16pt 신호 대시가 배관이 되던 자리. 쪽 배관 굵기가
+        # 하한(0.2pt)보다 가늘면 규칙을 걸지 않는다
+        def run(pen):
+            ext = pdf_run([rect(20, 20, 40, 40), rect(120, 20, 140, 40), line((40, 30), (120, 30), width=pen),
+                           rect(20, 200, 40, 222), self.dashed((40, 211), (120, 211), width=pen, pattern=(3, 2))]
+                          + self.bowtie(120, 200))
+            return self.kinds(ext).count(self.PIPE_DASH)
+        self.assertEqual(run(0.32), 1)
+        self.assertEqual(run(0.16), 0)
+
+    def test_pipe_width_dashed_into_valve_side_is_signal(self):
+        # 예전 점선 규칙(_dashed_pipe)처럼 밸브·인라인 기호에는 흐름 축을 따라 몸통 가운데로 드는 점선만 배관이다. 미분류 상자에서
+        # 밸브 윗면(옆구리)으로 드는 점선, 배관 위 탭(분기점)에서 밸브 옆구리로 내려오는 점선은 신호선이다
+        def run(*dashes):
+            ext = pdf_run([rect(20, 20, 40, 40), rect(120, 20, 140, 40), line((40, 30), (120, 30), width=0.32),
+                           rect(200, 100, 220, 122), rect(300, 100, 320, 122), line((220, 111), (300, 111), width=0.32),
+                           rect(110, 150, 130, 170)] + self.bowtie(200, 200) + list(dashes))
+            return self.kinds(ext)
+        self.assertIn(self.PIPE_DASH, run(self.dashed((130, 160), (160, 160), (160, 211), (200, 211))))
+        self.assertNotIn(self.PIPE_DASH, run(self.dashed((130, 160), (218, 160), (218, 200))))
+        self.assertNotIn(self.PIPE_DASH, run(self.dashed((260, 111), (260, 150), (218, 150), (218, 200))))
+        self.assertIn(self.PIPE_DASH, run(self.dashed((260, 111), (260, 211), (236, 211))))
+
+    def test_pipe_width_dashed_gap_beside_valve_is_not_attached(self):
+        # APR1400 141쪽: 한 경로로 그린 나비꼴 수동 밸브 3pt 아래를 지나는 점선 배관이 밸브 밑에서 3pt 끊겼다. 끊긴 두 끝은
+        # 밸브 몸통에 붙지 않고(붙으면 옆구리 끝이라 무리가 통째로 신호선이 된다) 무늬 빈칸 안이라 한 배관으로 이어진다
+        hourglass = prim([(200, 105), (200, 111), (214, 105), (214, 111), (200, 105)], closed=True)
+        ext = pdf_run([rect(20, 20, 40, 40), rect(120, 20, 140, 40), line((40, 30), (120, 30), width=0.32),
+                       hourglass, rect(100, 108, 120, 117), self.dashed((120, 112.7), (205.5, 112.7)),
+                       self.dashed((208.5, 112.7), (300, 112.7))] + self.bowtie(300, 101.7))
+        x = {n["local_id"]: n["geometry"]["x"] for n in ext["nodes"]}
+        self.assertEqual([(r["kind"], sorted(x[e["node_local_id"]] for e in r["endpoints"]))
+                          for r in ext["relations"] if r["line_type"] == "pdf_dashed"], [("physical_connection", [100, 300])])
+
+    def test_pipe_width_dashed_end_on_frame_wall(self):
+        # 부품을 품은 틀(019쪽 SUPPLY AHU 꼴) 벽에서 시작하는 배관 굵기 점선: 틀 노드는 빠지므로 무리 판정도 본 루프처럼 벽
+        # 끝을 안쪽 부품으로 옮겨 본다(옮기지 않으면 없는 노드를 찾아 KeyError). 점선 방향과 상관없이 결과가 같다
+        def run(reverse):
+            pts = [(320, 140), (380, 140)]
+            ext = pdf_run([rect(80, 60, 320, 180), circle(100, 100, 8), circle(300, 140, 8), rect(10, 95, 20, 105),
+                           line((20, 100), (80, 100), width=0.32), self.dashed(*(pts[::-1] if reverse else pts)),
+                           rect(10, 250, 30, 270), line((30, 260), (100, 260), width=0.32), rect(100, 250, 120, 270)]
+                          + self.bowtie(380, 129), [word("PI", 96, 97, size=4), word("TI", 296, 137, size=4)])
+            return self.kinds(ext)
+        self.assertEqual(run(False), run(True))
+        self.assertIn(("signal_connection", "pdf_dashed", "pipe_dash_path"), run(False))  # 벽 끝은 안쪽 TI로 옮겨진다
 
     @staticmethod
     def dashed_group(branch, words=()):
         """배관 굵기(0.32pt) 대시 점선 무리: 왼쪽 상자 – 분기점(218, 40) – 오른쪽 수동 밸브, 분기점에서 아래로 branch 끝까지.
-        아래에는 0.32pt 실선 배관에 놓인 밸브(200~236, 100~122)가 있다 → 관계 (kind, line_type, 근거) 목록."""
-        def bowtie(x, y):
-            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
-                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
-        def dashed(*pts):
-            return dict(line(*pts, width=0.32), dash=[[10.67, 5.33], 0.0])
-        ext = pdf_run(bowtie(200, 100) + bowtie(300, 29) + branch
+        아래에는 0.32pt 실선 배관에 놓인 밸브(200~236, 100~122)가 있다."""
+        t = PdfVectorRuleTest
+        ext = pdf_run(t.bowtie(200, 100) + t.bowtie(300, 29) + branch
                       + [rect(130, 100, 150, 122), rect(300, 100, 320, 122), rect(130, 30, 150, 50),
                          line((150, 111), (200, 111), width=0.32), line((236, 111), (300, 111), width=0.32),
-                         dashed((150, 40), (300, 40)), dashed((218, 40), (218, 70))],
+                         t.dashed((150, 40), (300, 40)), t.dashed((218, 40), (218, 70))],
                       [word("MV-1", 205, 125)] + list(words))
-        return sorted((r["kind"], r["line_type"], r["evidence"]["classification_basis"]) for r in ext["relations"])
+        return t.kinds(ext)
 
     def test_pipe_width_dashed_group_reaching_actuator_is_signal(self):
         # APR1400 022쪽 ESF-CIAS·QIAS-P: 쪽 배관 굵기와 같은 신호 대시 점선이 분기점을 거쳐 전동 구동부 M과 다른 밸브에
-        # 닿는다. M은 밸브에 합쳐져 무리가 종류 있는 기호에 닿은 것처럼 보이지만, 구동부에 닿는 무리는 통째로 신호선이다
-        motor = [rect(212, 70, 224, 82), line((218, 82), (218, 111))]
-        relations = self.dashed_group(motor, [word("M", 216, 73)])
+        # 닿는다. 구동부(밸브 몸통 축 밖)에 닿는 무리는 통째로 신호선이다
+        relations = self.dashed_group([rect(212, 70, 224, 82), line((218, 82), (218, 111))], [word("M", 216, 73)])
         self.assertIn(("signal_connection", "pdf_dashed", "pipe_dash_path"), relations)
-        self.assertNotIn(("physical_connection", "pdf_dashed", "pipe_dash_path"), relations)
+        self.assertNotIn(self.PIPE_DASH, relations)
         # 구동부 대신 아무 상자에서 끝나면 무리는 배관이고, 점선이었다는 표시(line_type·근거)가 관계에 남는다
-        plain = self.dashed_group([rect(208, 70, 228, 90)])
-        self.assertEqual(plain.count(("physical_connection", "pdf_dashed", "pipe_dash_path")), 3)
+        self.assertEqual(self.dashed_group([rect(208, 70, 228, 90)]).count(self.PIPE_DASH), 3)
+
+    def test_pipe_width_dashed_group_merged_actuator_is_signal(self):
+        # 사전 구동부를 밸브에 합친 자리(_apply_merges)는 끝 기호가 구동부 자신이라 몸통 축 검사가 닿지 않는다. 합친 구동부에
+        # 닿는 끝(driven)이 하나라도 있으면 무리 전체가 신호선이다
+        actuator, box = object(), object()
+        chains = [{"pipe_dash": True, "pipe_dash_objects": ["a"], "pts": [(0, 0), (10, 0)],
+                   "ends": [(("sym", box), (0, 0), None), (("tee", 0), (10, 0), None)]},
+                  {"pipe_dash": True, "pipe_dash_objects": ["b"], "pts": [(10, 0), (10, 10)],
+                   "ends": [(("tee", 0), (10, 0), None), (("sym", actuator), (10, 10), None)]}]
+        nodes = {"box": {"kind": "tank", "category": "equipment"},
+                 "valve": {"kind": "motor_operated_valve", "category": "valve"}}
+        names = {id(box): "box", id(actuator): "valve"}
+
+        def resolve(v, pt):
+            return (names[id(v[1])] if v[0] == "sym" else "tee-1"), None
+        prm = dict(pdf_vector.PARAMS)
+        self.assertEqual(pdf_vector._pipe_dash_groups(chains, resolve, nodes.get, set(),
+                                                      lambda v: v[0] == "sym" and v[1] is actuator, prm), set())
+        self.assertEqual(pdf_vector._pipe_dash_groups(chains, resolve, nodes.get, set(), lambda v: False, prm),
+                         {id(ch) for ch in chains})
 
     def test_pipe_width_dashed_group_reaching_alarm_or_light_is_signal(self):
-        # APR1400 125쪽: HS·ZL에서 밸브로 가는 신호 대시 점선이 분기점을 거친다. 무리 안 한 끝이라도 계기·경보·파일럿등·
-        # 변환기면 무리 전체가 신호선이다
-        for text, kind in (("ZL", "pilot_light"), ("PAL", "alarm"), ("SY", "relay_converter")):
-            with self.subTest(kind=kind):
-                relations = self.dashed_group([circle(218, 84, 14)], [word(text, 213, 80)])
-                self.assertNotIn(("physical_connection", "pdf_dashed", "pipe_dash_path"), relations)
+        # APR1400 125쪽: HS·ZL에서 밸브로 가는 신호 대시 점선이 분기점을 거친다. 무리 안 한 끝이라도 계기(경보·파일럿등·변환기,
+        # 원 모양이든 비석 모양이든)면 무리 전체가 신호선이다
+        tomb = prim([(208, 90), (208, 77), (211, 72), (218, 70), (225, 72), (228, 77), (228, 90), (208, 90)],
+                    closed=True, curved=True)
+        for shape in ("circle", "tombstone"):
+            for text, kind in (("ZL", "pilot_light"), ("PAL", "alarm"), ("SY", "relay_converter")):
+                with self.subTest(shape=shape, kind=kind):
+                    body = circle(218, 84, 14) if shape == "circle" else tomb
+                    relations = self.dashed_group([body], [word(text, 213, 78 if shape == "circle" else 76, size=4)])
+                    self.assertNotIn(self.PIPE_DASH, relations)
+
+    def test_mixed_solid_and_dashed_chain_to_pilot_light_is_signal(self):
+        # 실선과 배관 굵기 점선이 끝끼리 이어진 사슬도 무리 판정을 거친다. 파일럿등에 닿으면 계측 연결(실선 규칙)이 아니라
+        # 신호선이고 점선이었다는 표시가 남는다
+        ext = pdf_run([rect(20, 20, 40, 40), rect(120, 20, 140, 40), line((40, 30), (120, 30), width=0.32),
+                       rect(20, 200, 40, 222), line((40, 211), (100, 211), width=0.32),
+                       self.dashed((100, 211), (186, 211)), circle(200, 211, 14)], [word("ZL", 195, 207, size=4)])
+        rel = [r for r in ext["relations"] if "pipe_dash_objects" in r["evidence"]]
+        self.assertEqual([(r["kind"], r["line_type"]) for r in rel], [("signal_connection", "pdf_dashed")])
 
     def test_pipe_width_dashed_end_arrow_makes_no_end_node(self):
-        # APR1400 022·024쪽: 배관 굵기 점선 끝 화살촉·끝 눈금마다 끝 기호(미분류 노드)가 생겼다. 실선 배관의 대기 방출 끝·
-        # 끝 기호 규칙은 점선 끝에 쓰지 않는다
-        def bowtie(x, y):
-            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
-                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        # APR1400 024·025쪽: 배관 굵기 점선 끝 화살촉마다 끝 기호(미분류 노드)가 생겼다. 실선 배관의 대기 방출 끝(_vent_ends)
+        # 규칙은 점선 끝에 쓰지 않는다(끝 눈금 쪽 _stub_ends는 test_short_lines_hanging_at_pipe_end_become_end_symbol)
         def run(dash):
             far = dict(line((136, 211), (240, 211), width=0.32), **({"dash": [[10.67, 5.33], 0.0]} if dash else {}))
-            ext = pdf_run(bowtie(100, 200) + [rect(20, 200, 40, 222), line((40, 211), (100, 211), width=0.32), far,
-                                              prim([(240, 210.3), (242.9, 211), (240, 211.7), (240, 210.3)],
-                                                   closed=True, fill=True)])
+            ext = pdf_run(self.bowtie(100, 200) + [rect(20, 200, 40, 222), line((40, 211), (100, 211), width=0.32), far,
+                                                   prim([(240, 210.3), (242.9, 211), (240, 211.7), (240, 210.3)],
+                                                        closed=True, fill=True)])
             return [n["kind"] for n in ext["nodes"]].count(None)
         self.assertEqual(run(False), 2)  # 왼쪽 상자와 실선 끝 화살촉(대기 방출 끝)
         self.assertEqual(run(True), 1)
+
+    def test_pipe_width_dashed_end_takes_no_thin_dashed_continuation(self):
+        # 배관 굵기 점선 끝에 가는 점선(묶음 안 기기 노즐)이 이어지면, 예전 점선 이어 그리기(_dashed_continuations)로 가는
+        # 점선이 배관이 되어 큰 상자(묶음 테두리)에 붙던 자리(141쪽). 배관 굵기 점선 끝은 이어 그리기를 받지 않는다
+        ext = pdf_run([rect(20, 20, 40, 40), rect(120, 20, 140, 40), line((40, 30), (120, 30), width=0.32),
+                       rect(20, 200, 40, 222), self.dashed((40, 211), (150, 211)),
+                       self.dashed((150, 211), (150, 260), width=0.16, pattern=(4.67, 3.33)), rect(140, 260, 160, 280)])
+        self.assertNotIn("physical_connection", [r["kind"] for r in ext["relations"]
+                                                 if r["evidence"]["classification_basis"] == "dash_chain"])
 
     def test_hop_over_line_is_not_a_branch(self):
         # APR1400 141쪽: 엇갈리는 배관 한쪽이 다른 배관 위를 짧은 반원으로 넘는다. 반원 양 끝이 넘는 선에서 1.5pt 안이어도
@@ -982,15 +1080,20 @@ class PdfVectorRuleTest(unittest.TestCase):
         for dash in (False, True):
             self.assertIn([20, 260], run(dash))
 
+    def test_short_arc_branch_from_pipe_middle_keeps_tee(self):
+        # 본관 중간에서 8pt 이하 짧은 호로 시작하는 분기는 뛰어넘기가 아니다. 호 한 끝이 본관 중간에 얹혀 분기점이 남는다
+        ext = pdf_run([rect(20, 90, 40, 110), rect(260, 90, 280, 110), line((40, 100), (260, 100), width=0.32),
+                       prim([(150, 100), (153, 103), (154, 106)], curved=True, width=0.32),
+                       line((154, 106), (154, 200), width=0.32), rect(144, 200, 164, 220)])
+        self.assertEqual([n["kind"] for n in ext["nodes"]].count("tee"), 1)
+        self.assertEqual(ext["unresolved_connectors"], [])
+
     def test_pipe_width_dashed_paths_split_within_pattern_gap_are_one_pipe(self):
         # APR1400 141쪽 ZG01 아래 배관: 한 점선 배관을 두 경로로 나눠 그리며 무늬 빈칸(5.33pt)보다 짧게 끊었다
-        def dashed(*pts):
-            return dict(line(*pts, width=0.32), dash=[[10.67, 5.33], 0.0])
         def run(gap):
             ext = pdf_run([rect(20, 20, 40, 40), rect(140, 20, 160, 40), line((40, 30), (140, 30), width=0.32),
-                           rect(20, 200, 40, 220), prim([(260, 199), (278, 210), (260, 221), (260, 199)], closed=True),
-                           prim([(296, 199), (278, 210), (296, 221), (296, 199)], closed=True),
-                           dashed((40, 210), (150, 210)), dashed((150 + gap, 210), (260, 210))])
+                           rect(20, 200, 40, 220), self.dashed((40, 210), (150, 210)),
+                           self.dashed((150 + gap, 210), (260, 210))] + self.bowtie(260, 199))
             return [r["kind"] for r in ext["relations"]].count("physical_connection")
         self.assertEqual(run(2.7), 2)
         self.assertEqual(run(8.0), 1)

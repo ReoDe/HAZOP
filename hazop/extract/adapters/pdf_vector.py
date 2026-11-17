@@ -97,6 +97,9 @@ PARAMS = {
     "dash_attach_tol": 8.0,      # 점선 끝 조각과 기호 사이 거리 상한(점선 끝 빈칸·구동부 여백 포함)
     "dash_pipe_axis_ratio": 1.5,    # 점선 배관: 밸브 몸통의 긴 변/짧은 변이 이만큼은 돼야 흐름 축을 안다
     "dash_pipe_pen_ratio": 0.75,    # 점선 배관: 선 굵기 ≥ 쪽 배관 굵기 × 비율이면 배관 굵기 점선(_pipe_dash_paths)
+    # 쪽 배관 굵기 하한(pt). 이보다 가늘면 그 쪽은 실선 사슬이 계기선뿐이라 보고 점선 배관 규칙을 걸지 않는다. APR1400 87쪽의
+    # 물리 관계 선 굵기 최빈값이 0.16 이하 12쪽, 0.25 이상 75쪽이고 그 사이는 없다. 계기·신호선은 0.12~0.16pt다
+    "dash_pipe_pen_min": 0.2,
     "label_gap_max": 15.0,       # 글자 문단과 기호 사이 거리 상한
     "bare_code_gap_max": 5.0,    # 쌍점 없는 두 글자 계통 약어를 연결 표시 글자로 볼 거리 상한(바로 옆만)
     "continuation_name_gap_max": 1.5,  # 연결 화살표에 맞닿은 이름 문단 거리 상한(137쪽: 0pt 446개, 1pt 안팎 24개)
@@ -1207,7 +1210,7 @@ def _arrow_lands(arrow, i, pieces, prm):
 def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     """→ (tees [(x, y)], chains [{pts, ends:[(vertex, point, basis)], evidence}])."""
     # 선 끝 분류
-    pieces = [{"pts": list(p["pts"]), "id": p["id"], "width": p.get("width"),
+    pieces = [{"pts": list(p["pts"]), "id": p["id"], "width": p.get("width"), "dash": bool(p.get("dash")),
                "hop": bool(p.get("curved")) and _poly_length(p) <= prm["hop_arc_max"]} for p in polys]
     pieces, att = _cut_through_bodies(pieces, syms, prm)
     ends = []  # (piece index, k, point)
@@ -1273,6 +1276,8 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
             s = None
         if s is not None and s.rings and through_wall(i, k, pt):
             s = None
+        if s is not None and pieces[i]["dash"] and _passes_beside(pieces[i]["pts"], k, s, prm):
+            s = None
         if s is not None:
             att[(i, k)] = (s, basis)
         elif arrow and _arrow_lands(arrow, i, pieces, prm):
@@ -1293,11 +1298,23 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     gap_bridges += [(pt, over[mate][1]) for ik, (mate, pt) in over.items() if ik < mate]
     bridges = list(bridges) + gap_bridges
     # 엇갈림 뛰어넘기(도면 관례: 한쪽 선이 다른 선 위를 짧은 반원으로 넘음)의 반원과 그 양 끝에 맞댄 선 끝은 넘는 선에
-    # 닿아도 분기가 아니다(APR1400 141쪽 묶음 ZG01 점선 배관이 엇갈릴 때마다 반원으로 넘는다)
-    hop_ends = [e for pc in pieces if pc.get("hop") for e in (pc["pts"][0], pc["pts"][-1])]
+    # 닿아도 분기가 아니다(APR1400 141쪽 묶음 ZG01 점선 배관이 엇갈릴 때마다 반원으로 넘는다). 뛰어넘기는 짧은 곡선의 두
+    # 끝이 모두 다른 선 끝과 맞닿고 두 끝 사이(현)를 다른 선이 지나는 자리뿐이다. 본관 중간에서 짧은 호로 시작하는 분기,
+    # 배관 끝의 ≀ 표지는 뛰어넘기가 아니다
+    def meets_end(i, e):
+        return any(j != i and min(math.hypot(e[0] - q["pts"][0][0], e[1] - q["pts"][0][1]),
+                                  math.hypot(e[0] - q["pts"][-1][0], e[1] - q["pts"][-1][1])) <= prm["end_tol"]
+                   for j, q in enumerate(pieces))
+
+    def is_hop(i):
+        a, b = pieces[i]["pts"][0], pieces[i]["pts"][-1]
+        return pieces[i].get("hop") and meets_end(i, a) and meets_end(i, b) and \
+            any(j != i and _seg_cross(a, b, p, q) for j, pc in enumerate(pieces) for p, q in _segs(pc["pts"]))
+    hops = {i for i in range(len(pieces)) if pieces[i].get("hop") and is_hop(i)}
+    hop_ends = [e for i in hops for e in (pieces[i]["pts"][0], pieces[i]["pts"][-1])]
 
     def at_hop(i, pt):
-        return pieces[i].get("hop") or any(math.hypot(pt[0] - e[0], pt[1] - e[1]) <= prm["end_tol"] for e in hop_ends)
+        return i in hops or any(math.hypot(pt[0] - e[0], pt[1] - e[1]) <= prm["end_tol"] for e in hop_ends)
     # 선 끝이 다른 선 중간에 닿으면 그 선을 나눈다(분기)
     splits = {}
     for i, k, pt in free:
@@ -1563,36 +1580,89 @@ def _stroke_chains(pieces, prm, boxes=()):
     return out
 
 
-SIGNAL_END_KINDS = frozenset({"alarm", "pilot_light", "relay_converter"})  # 이 종류에 닿는 배관 굵기 점선은 신호선
+AXIS_KINDS = frozenset({"orifice", "reducer", "flow_element", "strainer"})  # 밸브 말고도 흐름 축으로만 배관이 드는 인라인 기호
 
 
-def _pipe_dash_groups(chains, ref, kind_of, signal_ids, driven):
-    """배관으로 둘 배관 굵기 점선 사슬. 사슬을 분기점으로 이은 무리마다 본다. 무리 안 사슬 끝이 계기·경보(signal_ids)나
-    밸브 구동부(driven(끝, 점))에 하나라도 닿으면 신호선 무리다(APR1400 125쪽: HS·ZL에서 밸브 구동부로 가는 신호 대시
-    점선이 쪽 배관 굵기와 같고 분기점을 거쳐 밸브에 닿는다. 022쪽 ESF-CIAS 신호가 분기점을 거쳐 전동 구동부 M에 닿는다). 종류를 아는 기호(분기점 빼고)에 하나도 닿지 않는 무리는 경계선·구조선이나 범례 보기일 수 있어 뺀다
-    (022쪽 구역 경계 점선, 003쪽 범례 신호선 보기). → 배관으로 둘 사슬 id(ch) 집합."""
-    dash = [ch for ch in chains if ch.get("pipe_dash")]
+def _pipe_dash_groups(chains, resolve, node_of, signal_ids, driven, prm):
+    """배관으로 둘 배관 굵기 점선 사슬 id(ch) 집합. 점선 경로가 든 사슬(점선만, 실선과 섞인 것 모두)을 분기점으로 이은
+    무리마다 본다. 아래 가운데 하나면 무리 전체를 신호선으로 둔다.
+    - 끝이 계기(signal_ids, 경보·파일럿등·변환기도 계기 분류다)에 닿는다(APR1400 125쪽 HS·ZL에서 밸브로 가는 신호 대시
+      점선이 분기점을 거친다).
+    - 끝이 밸브에 합친 구동부(driven)에 닿는다(022쪽 ESF-CIAS 신호가 전동 구동부 M에 닿는다).
+    - 점선만으로 된 사슬 끝이 밸브·인라인 기호에 흐름 축을 따라 들지 않는다(몸통 옆구리·구동부로 드는 선. 예전
+      _dashed_pipe와 같은 막음).
+    - 점선만으로 된 무리가 종류를 아는 기호(분기점 빼고)에 하나도 닿지 않는다(022쪽 구역 경계 점선, 003쪽 범례 보기).
+    resolve(끝, 점) → (노드 local id 또는 None, 그 끝 기호 또는 None). 틀에 닿은 끝은 본 루프처럼 안쪽 부품으로 옮긴다."""
+    dash = [ch for ch in chains if ch.get("pipe_dash_objects")]
     tees = [{v[1] for v, _, _ in ch["ends"] if v[0] == "tee"} for ch in dash]
     out = set()
     for g in _uf_groups(len(dash), lambda a, b: bool(tees[a] & tees[b])):
-        if any(driven(v, pt) for n in g for v, pt, _ in dash[n]["ends"]):
-            continue
-        ends = [(ref(v) or (None,))[0] for n in g for v, _, _ in dash[n]["ends"]]
-        if not any(i in signal_ids for i in ends) and any(i and kind_of(i) not in (None, "tee") for i in ends):
+        signal, known = False, False
+        for n in g:
+            ch = dash[n]
+            for k, (v, pt, _) in enumerate(ch["ends"]):
+                lid, sym = resolve(v, pt)
+                node = node_of(lid)
+                if lid in signal_ids or driven(v):
+                    signal = True
+                elif node is not None and node["kind"] not in (None, "tee"):
+                    known = True
+                    if ch.get("pipe_dash") and sym is not None and \
+                            (node["category"] == "valve" or node["kind"] in AXIS_KINDS) and \
+                            not _enters_along_axis(ch, k, sym, pt, prm):
+                        signal = True
+        if not signal and (known or not all(dash[n].get("pipe_dash") for n in g)):
             out.update(id(dash[n]) for n in g)
     return out
 
 
-def _off_valve_body(s, pt, prm):
-    """기호가 삼각형 둘 이상의 밸브 몸통을 품고 점 pt가 그 몸통 상자에서 attach_tol보다 멀면 몸통 밖(구동부·손잡이)에
-    닿은 끝이다. 구동부를 기호 묶기에서 밸브에 넣은 전동 밸브(M 원·상자)도 같다."""
-    tris = [b["bbox"] for b in s.bodies if _is_triangle(b)]
-    if len(tris) < 2:
+def _valve_body(sym):
+    """밸브 몸통 상자: 삼각형 둘 이상의 묶음, 또는 두 빗변이 엇갈린 꼭짓점 넷 닫힌 경로 하나(나비꼴을 한 경로로 그린 몸통,
+    APR1400 141쪽 수동 밸브). 없으면 None."""
+    tris = [b["bbox"] for b in sym.bodies if _is_triangle(b)]
+    if len(tris) >= 2:
+        body = tris[0]
+        for b in tris[1:]:
+            body = _union(body, b)
+        return body
+    for b in sym.bodies:
+        p = b["pts"][:-1] if len(b["pts"]) == 5 and b["pts"][0] == b["pts"][-1] else b["pts"]
+        if b.get("closed") and len(p) == 4 and _seg_cross(p[1], p[2], p[3], p[0]):
+            return b["bbox"]
+    return None
+
+
+def _passes_beside(pts, k, sym, prm):
+    """배관 굵기 점선 끝 k가 밸브 몸통(_valve_body)의 긴 축과 나란히 와서 몸통 가운데 줄에서 몸통 반 폭 넘게 비켜 끝나면 몸통
+    옆을 지나는 선의 끊긴 끝이다(APR1400 141쪽: 수동 밸브 3pt 아래를 지나는 점선 배관이 그 자리에서 3pt 끊겨 두 끝이 밸브에
+    붙었다). 밸브에 붙이지 않는다(끊긴 두 끝은 _dash_gap_bridges가 잇는다). 밸브 몸통이 아닌 기호는 보지 않는다."""
+    body = _valve_body(sym)
+    if body is None or max(_w(body), _h(body)) < prm["dash_pipe_axis_ratio"] * min(_w(body), _h(body)):
         return False
-    body = tris[0]
-    for b in tris[1:]:
-        body = _union(body, b)
-    return _pt_box_dist(pt, body) > prm["attach_tol"]
+    seq = pts if k == 0 else pts[::-1]
+    a = seq[0]
+    b = next((q for q in seq[1:] if math.hypot(q[0] - a[0], q[1] - a[1]) > 1e-6), None)
+    if b is None:
+        return False
+    vertical = _h(body) > _w(body)
+    if (abs(b[1] - a[1]) > abs(b[0] - a[0])) != vertical:
+        return False
+    c = _center(body)
+    return abs(a[0] - c[0] if vertical else a[1] - c[1]) > 0.5 * min(_w(body), _h(body))
+
+
+def _enters_along_axis(ch, k, sym, pt, prm):
+    """사슬 끝 k(점 pt)가 기호 몸통의 가운데 줄(긴 축, 흐름 방향) 위에서 닿는가. 가운데 줄에서 몸통 짧은 변의 1/4 넘게 비켜
+    닿은 끝(옆면·구동부로 드는 선)은 아니다. 끝 선분 방향은 보지 않는다. 밸브 포트 바로 앞에서 꺾여 드는 배관은 끝 선분이
+    축과 어긋나고(APR1400 141쪽 수동 밸브 오른쪽 포트로 세로 배관이 2.7pt 앞에서 꺾여 든다), 몸통을 꿰는 배관은 끝이 몸통
+    한가운데에 놓인다(141쪽 세로 밸브). 몸통은 삼각형 둘 이상이면 그 묶음 상자, 아니면 기호 상자다. 긴 축이 뚜렷하지 않은
+    몸통(앵글 밸브 등)은 막지 않는다(예전 _dashed_pipe와 같다)."""
+    body = _valve_body(sym) or sym.bbox
+    if max(_w(body), _h(body)) < prm["dash_pipe_axis_ratio"] * min(_w(body), _h(body)):
+        return True
+    c = _center(body)
+    across = pt[0] - c[0] if _h(body) > _w(body) else pt[1] - c[1]
+    return abs(across) <= 0.25 * min(_w(body), _h(body))
 
 
 def _plain_dash(dash):
@@ -1628,7 +1698,7 @@ def _pipe_dash_paths(paths, dashes, polys, chains, prm):
     배관 0.32pt 대시 10.67/5.33). 이런 선은 조각 사슬(_build_dashed)이 아니라 실선처럼 이어 분기점·기호 자르기를 받는다.
     신호 점선은 가는 선(141쪽 0.16pt)이고 신호 일점쇄선은 무늬로 가른다. 기호 묶기에 조각이 모두 흡수된 경로는 뺀다."""
     pen = _pipe_pen(chains, polys)
-    if not pen:
+    if not pen or pen < prm["dash_pipe_pen_min"]:
         return []
     free = {d["src"] for d in dashes if "src" in d}
     return [p for p in paths if p["id"] in free and p.get("width") and _plain_dash(p["dash"])
@@ -3888,10 +3958,14 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     ordered = sorted(chains, key=lambda c: (bool(c.get("dashed")), c["evidence"][0]))
     relations, unresolved = [], []
     node_by_local = {nd["local_id"]: nd for nd in node_out}
-    pipe_dash = _pipe_dash_groups(chains, ref, lambda i: node_by_local[i]["kind"],
-                                  instrument_ids | {i for i, nd in node_by_local.items() if nd["kind"] in SIGNAL_END_KINDS},
-                                  lambda v, pt: v[0] == "sym" and (id(v[1]) in merge_into and id(v[1]) not in box_ids
-                                                                   or _off_valve_body(v[1], pt, prm)))
+    def resolve(v, pt):  # 본 루프와 같이 틀에 닿은 끝은 안쪽 부품으로 옮겨 노드를 찾는다
+        if v[0] == "sym" and id(v[1]) in frames:
+            part = _frame_part(pt, frames[id(v[1])][1])
+            v = ("sym", part) if part is not None else ("frame", None)
+        r = ref(v)
+        return (r[0] if r else None), (v[1] if v[0] == "sym" else None)
+    pipe_dash = _pipe_dash_groups(chains, resolve, node_by_local.get, instrument_ids,
+                                  lambda v: v[0] == "sym" and id(v[1]) in merge_into and id(v[1]) not in box_ids, prm)
     for n, ch in enumerate(ordered, 1):
         local_id, sid = "local-edge-%03d" % n, "pdf-p%d-conn-%04d" % (page, n)
         why = _merged_line(ch, merge_into, number_ids)
@@ -3934,9 +4008,10 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             rel_kind, line_type = "signal_connection", "pdf_dashed"
         elif moved:  # 합친 구동부로 들어가던 선은 구동 신호다(배관 분기로 보지 않는다)
             rel_kind, line_type = "signal_connection", "pdf_solid"
+        elif ch.get("pipe_dash_objects") and id(ch) not in pipe_dash:
+            rel_kind, line_type = "signal_connection", "pdf_dashed"  # 신호선 무리(_pipe_dash_groups)
         elif ch.get("pipe_dash"):
-            rel_kind = "physical_connection" if id(ch) in pipe_dash else "signal_connection"
-            line_type = "pdf_dashed"
+            rel_kind, line_type = "physical_connection", "pdf_dashed"
         elif ch.get("pneumatic"):
             rel_kind, line_type = "signal_connection", "pdf_pneumatic"
         elif any(i in instrument_ids for i in ids if i):
