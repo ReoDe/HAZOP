@@ -265,11 +265,11 @@ def REF(name):
     return "graph-T#" + SID[name]
 
 
-def drawn(version, at, objects=UNTAGGED, fixed_ids=False):
+def drawn(version, at, objects=UNTAGGED, fixed_ids=False, shift=0):
     """태그 없는 같은 종류 밸브 셋이 있는 도면 그래프. at {이름: 상자 [x, y, w, h]}. 벡터 PDF처럼 source_object_id가
     순번(pdf-p0-sym-0002)이라 다시 추출해 순번이 밀리면 같은 id가 다른 자리의 밸브를 가리킨다(종류·태그·연결은 그대로라
     구간 지문이 같다). fixed_ids면 drawio처럼 이름이 곧 고정 id다."""
-    g = graph(version, objects=objects, pipes=UNTAGGED_PIPES)
+    g = graph(version, objects=objects, pipes=UNTAGGED_PIPES, shift=shift)
     for n in g["nodes"]:
         name = n["source_object_id"]
         n["bbox"] = at.get(name)
@@ -477,6 +477,22 @@ class LostMemberTest(unittest.TestCase):
         self.assertNotIn(gone, node["members"])
         self.assertEqual(node["state"], "applied", "사람이 다시 확인할 때까지 재확인 상태")
         self.assertTrue(node["lost_members"])
+
+    def test_lost_member_id_reused_by_a_moved_member(self):
+        """잃은 구성요소의 옛 entity_id를 새 판의 다른 구성요소가 받아도(번호가 한 칸 당겨짐) 이전이 멈추지 않는다."""
+        self.start(drawn("v-1", PLACES))
+        g2 = drawn("v-2", dict(PLACES, V1=[200, 0, 5, 5]), shift=-1)
+        got = sn.load(g2)
+        self.assertEqual(got["graph_version"], "v-2")
+        self.assertEqual(got["graph_member_marks"], migrate.graph_marks(g2))
+
+    def test_map_members_lets_the_renamed_component_own_a_reused_id(self):
+        ns = {"nodes": [], "graph_member_refs": {"e1": None, "e2": "graph-T#x"},
+              "graph_member_marks": {"e1": ["drawing_object", None, "tank", "T", 0, 0, 1, 1],
+                                     "e2": ["drawing_object", None, "tank", None, 5, 0, 6, 1]}}
+        got = sn.map_members(ns, {"e2": "e1"})
+        self.assertEqual(got["graph_member_refs"], {"e1": "graph-T#x"})
+        self.assertEqual(got["graph_member_marks"], {"e1": ns["graph_member_marks"]["e2"]})
 
     def test_a_lost_member_comes_back_when_its_symbol_returns(self):
         self.start(drawn("v-1", PLACES))

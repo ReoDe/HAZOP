@@ -395,7 +395,10 @@ def map_members(node_set, rename):
                             p["members"] = sorted(rename.get(m, m) for m in p["members"])
     for key in ("graph_member_refs", "graph_member_marks"):
         if out.get(key):
-            out[key] = dict(sorted((rename.get(m, m), r) for m, r in out[key].items()))
+            # 번호가 당겨져 옛 id를 다른 구성요소가 받으면 그 구성요소(이름이 바뀐 쪽)의 값이 그 id를 갖는다
+            moved = {rename[m]: r for m, r in out[key].items() if m in rename}
+            stay = {m: r for m, r in out[key].items() if m not in rename and m not in moved}
+            out[key] = dict(sorted(dict(stay, **moved).items(), key=lambda kv: kv[0]))
     return out
 
 
