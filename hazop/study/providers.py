@@ -94,8 +94,10 @@ def halts(error_kinds):
 
 
 def fixed_key(request):
-    """고정 응답 파일 이름: 요청(맥락+편차, 그림이 있으면 그림 이름표·내용까지) 해시 앞 16자."""
-    text = request.get("context", "") + "\n" + request["user"]
+    """고정 응답 파일 이름: 요청 전체(프롬프트 system, 답 스키마, 맥락, 지시, 그림이 있으면 그림 이름표·내용) 해시 앞 16자.
+    프롬프트나 스키마가 바뀌면 열쇠가 바뀌어, 옛 판으로 받아 둔 응답을 다시 쓰지 않고 새로 묻는다."""
+    text = "\n".join((request.get("system") or "", json.dumps(request.get("schema"), ensure_ascii=False, sort_keys=True),
+                      request.get("context", ""), request["user"]))
     for img in request.get("images") or []:
         text += "\n%s:%s" % (img["label"], hashlib.sha256(img["data"].encode("ascii")).hexdigest())
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]

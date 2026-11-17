@@ -565,6 +565,27 @@ class ImageInputTest(unittest.TestCase):
         self.assertNotEqual(providers.fixed_key(dict(req, images=[img])),
                             providers.fixed_key(dict(req, images=[dict(img, data="QUJE")])))
 
+    def test_saved_response_is_not_reused_after_prompt_or_schema_change(self):
+        """프롬프트(system)나 답 스키마가 바뀌면 같은 맥락이라도 저장한 응답을 다시 쓰지 않고 새로 묻는다."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        req = {"system": "판 1", "context": "c", "user": "u", "schema": {"type": "object"},
+               "images": [{"label": "범례판 1/1", "media_type": "image/png", "data": "QUJD"}]}
+        inner = StubClient(lambda r: {"answers": [r["system"]]})
+        rec = providers.RecordingClient(inner, tmp)
+        rec.analyze(req)
+        for changed in (dict(req, system="판 2"), dict(req, schema={"type": "object", "required": ["match"]}),
+                        dict(req, images=[dict(req["images"][0], data="QUJE")])):
+            before = len(inner.requests)
+            out = rec.analyze(changed)
+            self.assertEqual(len(inner.requests), before + 1, "바뀐 요청은 새로 부름: %r" % sorted(changed))
+            self.assertFalse(rec.calls[-1]["cached"])
+            self.assertEqual(out["output"]["answers"], [changed["system"]])
+        self.assertEqual(providers.FixedCellsClient(tmp).analyze(dict(req, system="판 3"))["error_kind"], "not_ready")
+        again = rec.analyze(req)
+        self.assertTrue(rec.calls[-1]["cached"])
+        self.assertEqual(again["output"]["answers"], ["판 1"])
+
 
 class AcceptTest(unittest.TestCase):
     """실제 SNP-M-102 PDF 추출(임시 작업 루트)에서 수락·되돌리기가 사람 수정 기록으로 들어가는지."""
