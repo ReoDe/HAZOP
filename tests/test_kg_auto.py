@@ -224,8 +224,10 @@ class RebuildCacheTest(unittest.TestCase):
         return r, _files(r["dir"])
 
     def fresh(self, out):
+        from hazop.graph import project
         auto.forget_graphs()
         auto.forget_heads()
+        project.clear_sheet_cache()   # 도면 읽기가 프로젝트 그래프의 pickle 캐시를 타지 않게 처음부터 읽는다
         return self.build(out)
 
     def test_cached_rebuild_equals_a_fresh_build(self):

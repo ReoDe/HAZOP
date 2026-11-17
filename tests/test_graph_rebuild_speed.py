@@ -125,9 +125,11 @@ class SheetCacheSameTest(unittest.TestCase):
         plain = canon(project.load(self.pid, self.root))
         project.clear_sheet_cache()
         with gcpause.paused():
-            paused = canon(project.load(self.pid, self.root))
+            paused = canon(project.load(self.pid, self.root))      # 캐시가 빈 채로
+            warm = canon(project.load(self.pid, self.root))        # 캐시를 타고
         self.assertTrue(gc.isenabled())
         self.assertEqual(paused, plain)
+        self.assertEqual(warm, plain)
 
     def test_callers_cannot_spoil_the_cache(self):
         pg = project.load(self.pid, self.root)
