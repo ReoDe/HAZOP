@@ -445,6 +445,12 @@ class ImageInputTest(unittest.TestCase):
         for stretched in ("tank", "vessel", "continuation", "heat_exchanger"):
             self.assertNotIn(stretched, kinds)
 
+    def test_solenoid_valve_is_not_an_image_answer_but_stays_in_viewer(self):
+        from hazop.extract import ai_images, ai_review
+        self.assertNotIn("solenoid_valve", ai_images.answer_kinds())
+        self.assertIn("solenoid_valve", ai_images.viewer_kinds())
+        self.assertNotIn("solenoid_valve", ai_review.WIDE_KINDS)
+
     def test_legend_sample_is_median_size_and_answers_follow_board(self):
         from hazop.extract import ai_images
 

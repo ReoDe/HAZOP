@@ -27,6 +27,12 @@ SIZE_GAP = 2.0         # 같은 모양 무리에서 넓이가 이 배 넘게 차
 OUTLINE = (230, 0, 0)
 
 
+# 그림 입력 답에서 뺄 종류. solenoid_valve는 두 표본에서 0/16(개발용 0/8, 보류 0/8)으로 모두 틀렸다. 범례의 'S' 네모는
+# 밸브 구동부 표시일 뿐이고 정답지는 'S 파일럿 + 공기 구동'을 air_operated_valve로 적는다. 기호 그림·manifest·레지스트리는 그대로
+# 두어 화면의 정리된 보기(viewer_kinds)에는 계속 쓴다.
+NOT_IMAGE_ANSWER = frozenset({"solenoid_valve"})
+
+
 def viewer_kinds():
     """보기가 그림을 가진 종류(resources/library/drawing-symbols/manifest.json) 가운데 레지스트리에 있는 것.
     그림 없이 점으로 그리는 이음점(junction, tee)은 기호가 아니라 뺀다."""
@@ -40,7 +46,7 @@ def answer_kinds():
     그리는 설비 외곽(fit "stretch": 탱크·용기·열교환기·냉동기·도면 밖 연결 표기 등)은 견본 하나로 모양을 대 볼 수 없어 뺀다."""
     with open(paths.folder("drawing-symbols", "manifest.json"), encoding="utf-8") as fh:
         keep = {r["kind"] for r in json.load(fh)["symbols"] if r.get("fit") == "keep"}
-    return sorted(set(viewer_kinds()) & keep)
+    return sorted((set(viewer_kinds()) & keep) - NOT_IMAGE_ANSWER)
 
 
 def _png(img):

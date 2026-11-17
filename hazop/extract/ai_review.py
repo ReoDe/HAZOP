@@ -43,8 +43,7 @@ NOT_SYMBOL = "not_symbol"  # 종류 답 가운데 '기호가 아님(다른 기�
 UNKNOWN = "unknown"        # 종류 답 가운데 '기호인지조차 모름' 또는 '기호지만 그 종류가 목록에 없음'. 후보를 만들지 않는다
 NO_KIND = (NOT_SYMBOL, UNKNOWN)
 MATCH = ("legend", "other")  # 종류 후보 표시: 범례판의 그 종류 견본과 모양이 같다고 본 것(높음)과 그 밖(보통)
-WIDE_KINDS = ("manual_valve", "isolation_valve", "control_valve", "motor_operated_valve", "air_operated_valve",
-              "solenoid_valve")  # 몸통이 같고 구동부로 갈리는 밸브
+WIDE_KINDS = ("manual_valve", "isolation_valve", "control_valve", "motor_operated_valve", "air_operated_valve")  # 몸통이 같고 구동부로 갈리는 밸브
 TASK_LABELS = {"kind": "못 읽은 기호의 종류", "tag": "태그·속성", "split": "큰 덩어리 안 기호", "connection": "끊긴 연결",
                "recheck": "다시 확인"}
 SECONDS_PER_CALL = 30     # 예상 시간 어림(호출 하나). 실측은 evidence/ai-review-measure.md
@@ -282,7 +281,8 @@ SYSTEM_IMAGE = """너는 원자력 발전소 P&ID(배관계장도)를 읽는 검
   그 종류로 답한다. 'isolation'은 쓰임새 이름이지 모양이 아니다. 차단 밸브로 보이거나 FC·FO·FL 글자가 있다는 까닭만으로
   isolation_valve를 고르지 않는다(고장 위치 글자는 어느 동력 구동 밸브에나 붙는다). 어느 밸브 칸 견본에도 없는 구동부가
   달린 밸브는 'unknown'. 'S'가 든 네모 구동부가 몸통 축에 바로 붙고 공기 구동부(다이어프램 돔·실린더 네모)가 없으면
-  solenoid_valve, 공기 구동부가 있고 'S' 네모가 파일럿으로 곁에 붙거나 계기용 공기(IA) 공급이 있으면 air_operated_valve다.
+  목록에 맞는 종류가 없어 'unknown'이다. 공기 구동부가 있고 'S' 네모가 파일럿으로 곁에 붙거나 계기용 공기(IA) 공급이 있으면
+  air_operated_valve다.
 - flexible_hose는 배관 위 양 끝 막대 사이에 둥근 물결이 든 모양이다. 꺾인 선 끝에 화살촉이 달린 것은 덕트 밖 공기 흐름
   표시라 air_flow_arrow다.
 - 빨간 테두리 안이 기호 전체가 아니라 이웃 기호의 일부(구동부 머리 'S'·'M', 번호 원, 태그판), 선 위 흐름 방향 화살촉,
