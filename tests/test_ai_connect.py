@@ -221,6 +221,14 @@ class RunTest(unittest.TestCase):
         self.assertEqual(ar._op_for(conn[0]), ("add_relation", {"kind": "physical_connection", "line_type": "process",
                                                                 "from": "v1", "to": "t1"}))
 
+    def test_connect_candidate_is_never_bulk_but_open_end_still_is(self):
+        doc, _ = self.run_ar(["1"])
+        conn = next(c for c in doc["candidates"] if c["field"] == "connection")
+        self.assertEqual(ar.bulk_block(dict(conn, confidence=0.99)), "연결 묻기 후보는 하나씩 확정함")
+        self.assertNotIn(conn["cand_id"], sum(ar.bulk_groups({"candidates": [conn]}).values(), []))
+        open_end = dict(conn, cand_id="c-r1:connection", open_end="target", confidence=0.99)
+        self.assertIsNone(ar.bulk_block(open_end))
+
     def test_target_without_line_linked_neighbor_is_not_asked(self):
         with mock.patch.object(ac.Lines, "from_pdf", return_value=ac.Lines([])):
             self.assertEqual(ac.page_items(ex_fixture(), FakePage()), [])

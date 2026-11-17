@@ -777,7 +777,9 @@ def bulk_block(c, threshold=DEFAULT_THRESHOLD):
     """묶어 수락하지 않을 까닭(글) 또는 None. 낱개로는 여전히 수락할 수 있다.
     - 제안 상태가 아님, 확신도가 threshold 아래
     - 기호 종류: 확신과 관계없이 늘 하나씩 확정한다(검토 차단 1: 미분류 조각·이웃 기호의 일부에 붙인 종류가 오검출의 대부분)
-    - 다시 확인: 스크립트가 읽은 값과 AI 값이 다른 것(어느 쪽이 맞는지 사람이 봐야 함)"""
+    - 다시 확인: 스크립트가 읽은 값과 AI 값이 다른 것(어느 쪽이 맞는지 사람이 봐야 함)
+    - 연결 묻기 후보(ai_connect, 열린 끝 없이 새 배관을 만드는 것): 선이 이어진 이웃 가운데 AI가 고른 것이라 오답도 선 확인을
+      지난다(개발용 019쪽 모의 채점에서 번호를 모두 고르면 오검출 +48)"""
     if c["status"] != "proposed":
         return "이미 정함"
     if c["confidence"] < threshold:
@@ -786,6 +788,8 @@ def bulk_block(c, threshold=DEFAULT_THRESHOLD):
         return "다시 확인에서 스크립트와 다른 값이 나와 하나씩 봄"
     if c["task"] == "split":
         return "덩어리 나누기는 하나씩 확정함"
+    if c["field"] == "connection" and not c.get("open_end"):
+        return "연결 묻기 후보는 하나씩 확정함"
     if c["field"] == "kind":
         if c.get("near_symbol"):
             return "기호 종류는 하나씩 확정함. 이웃 기호(%s)에 붙어 있어 그 기호의 일부일 수 있음" % c["near_symbol"]
