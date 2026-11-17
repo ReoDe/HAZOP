@@ -40,10 +40,11 @@ DEFAULT_RECHECK = 5       # 다시 확인 표본 수
 DEFAULT_THRESHOLD = 0.85  # 묶어 수락하는 확신도 하한
 NEAR_PART = 8.0           # 이 거리(pt) 안에 종류가 정해진 기호가 있으면 그 기호의 일부(구동부 머리·번호 원·태그판)일 수 있다
 NOT_SYMBOL = "not_symbol"  # 종류 답 가운데 '기호가 아님(다른 기호의 일부·글자 상자·선 조각)'. 후보를 만들지 않는다
-UNKNOWN = "unknown"        # 종류 답 가운데 '기호인지 아닌지조차 판단할 수 없음'. 후보를 만들지 않는다
+UNKNOWN = "unknown"        # 종류 답 가운데 '기호인지조차 모름' 또는 '기호지만 그 종류가 목록에 없음'. 후보를 만들지 않는다
 NO_KIND = (NOT_SYMBOL, UNKNOWN)
 MATCH = ("legend", "other")  # 종류 후보 표시: 범례판의 그 종류 견본과 모양이 같다고 본 것(높음)과 그 밖(보통)
-WIDE_KINDS = ("manual_valve", "isolation_valve", "control_valve", "motor_operated_valve")  # 몸통이 같고 구동부로 갈리는 밸브
+WIDE_KINDS = ("manual_valve", "isolation_valve", "control_valve", "motor_operated_valve", "air_operated_valve",
+              "solenoid_valve")  # 몸통이 같고 구동부로 갈리는 밸브
 TASK_LABELS = {"kind": "못 읽은 기호의 종류", "tag": "태그·속성", "connection": "끊긴 연결", "recheck": "다시 확인"}
 SECONDS_PER_CALL = 30     # 예상 시간 어림(호출 하나). 실측은 evidence/ai-review-measure.md
 RUN_CAP = 300             # 한 번 실행(여러 도면)의 호출 상한(규격 'AI 검토 호출 수')
@@ -275,9 +276,18 @@ SYSTEM_IMAGE = """너는 원자력 발전소 P&ID(배관계장도)를 읽는 검
 규칙
 - item마다 ask에 적힌 필드만 답한다. values의 첫 값이 너의 답이고, 다음 값은 차선이다.
 - kind는 아래 목록에서만 고른다: {kinds}. 빨간 테두리 안 기호를 범례판 견본과 견줘 고른다.
+- 밸브({valves})는 몸통이 같고 몸통에 붙은 구동부로 갈린다.
+  구동부가 없거나 손 구동부(T자)뿐이면 manual_valve다. 그 밖은 구동부가 범례판 그 종류 칸 견본의 구동부와 같은 모양일 때만
+  그 종류로 답한다. 'isolation'은 쓰임새 이름이지 모양이 아니다. 차단 밸브로 보이거나 FC·FO·FL 글자가 있다는 까닭만으로
+  isolation_valve를 고르지 않는다(고장 위치 글자는 어느 동력 구동 밸브에나 붙는다). 어느 밸브 칸 견본에도 없는 구동부가
+  달린 밸브는 'unknown'. 'S'가 든 네모 구동부가 몸통 축에 바로 붙고 공기 구동부(다이어프램 돔·실린더 네모)가 없으면
+  solenoid_valve, 공기 구동부가 있고 'S' 네모가 파일럿으로 곁에 붙거나 계기용 공기(IA) 공급이 있으면 air_operated_valve다.
+- flexible_hose는 배관 위 양 끝 막대 사이에 둥근 물결이 든 모양이다. 꺾인 선 끝에 화살촉이 달린 것은 덕트 밖 공기 흐름
+  표시라 air_flow_arrow다.
 - 빨간 테두리 안이 기호 전체가 아니라 이웃 기호의 일부(구동부 머리 'S'·'M', 번호 원, 태그판), 선 위 흐름 방향 화살촉,
-  선 조각, 글자 상자로 보이면 kind에 'not_symbol'이라고 답한다(종류를 지어내지 않는다). 목록에 맞는 것이 없어도 'not_symbol'.
-- 'unknown'은 빨간 테두리 안이 기호인지 아닌지조차 판단할 수 없을 때만 쓴다.
+  선 조각, 글자 상자로 보이면 kind에 'not_symbol'이라고 답한다(종류를 지어내지 않는다).
+- 'unknown'은 두 경우에만 쓴다. (1) 빨간 테두리 안이 기호인지 아닌지조차 판단할 수 없을 때. (2) 기호는 분명하지만 그 종류가
+  목록에 아예 없을 때. 범례판 견본과 모양이 조금 달라도 목록에 같은 종류가 있으면 'unknown'이 아니라 그 종류로 답한다.
 - match: kind 답이 목록의 종류이고 빨간 테두리 안 기호가 범례판의 그 종류 칸 견본과 모양이 같으면 'legend', 그 밖은 'other'
   (같은 종류로 보지만 견본과 모양이 다르거나 범례판에 그 종류 견본이 없음, kind가 아닌 필드, 'not_symbol'·'unknown').
 - tag는 그 항목 그림에 실제로 보이고 texts_near에도 있는 글자만 그대로 쓴다. 지어내지 않는다.
@@ -310,8 +320,9 @@ def schema(images=False):
 
 
 def system_text(images=None):
+    kinds = images.kinds if images else sorted(rules.KIND_CATEGORY)
     return (SYSTEM_IMAGE if images else SYSTEM).format(
-        kinds=", ".join(images.kinds if images else sorted(rules.KIND_CATEGORY)),
+        kinds=", ".join(kinds), valves=", ".join(k for k in WIDE_KINDS if k in kinds),
         npos="/".join(POSITION_VALUES["normal_position"]), fpos="/".join(POSITION_VALUES["fail_position"]))
 
 
