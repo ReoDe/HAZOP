@@ -8,7 +8,8 @@
   python scripts/check_read_quality.py --only SNP-M-102 --ai-run subscription --ai-cap 10 --ai-save <폴더>
       AI 검토를 실제로 돌려 두 값을 냄(구독 호출. 기준값 비교 없음). 시험은 --ai-run fixed --ai-fixed-dir <폴더>
       --ai-images: 항목마다 노드 조각 그림과 범례판을 싣는다(kind·tag만). --ai-wide는 밸브 종류 답을 넓힌 조각으로
-      한 번 더 묻는다. --ai-save를 주면 응답을
+      한 번 더 묻는다. --ai-legend-samples N은 범례판에 종류마다 모양이 다른 견본을 N개까지 싣는다(기본 1).
+      종류 후보 가운데 AI가 범례판 견본과 모양이 같다고 본 것(match legend)만 더한 '높음만' 줄도 낸다. --ai-save를 주면 응답을
       <폴더>/responses에 고정 응답 꼴로 남겨 --ai-run fixed --ai-fixed-dir <폴더>/responses로 같은 답을 다시 잴 수 있다
   python scripts/check_read_quality.py tiles <쪽.pdf> <출력 폴더>   # 정답지 쓰기용 격자 타일(추출 결과를 쓰지 않음)
   python scripts/check_read_quality.py sample <출력 폴더> [--per-page 20] [--seed 20261113]
@@ -582,6 +583,11 @@ def apply_candidates(ex, cands):
     return out
 
 
+def high_only(cands):
+    """후보 가운데 높음(AI가 범례판의 그 종류 견본과 모양이 같다고 본 종류 후보, match legend)만."""
+    return dict(cands, candidates=[c for c in cands.get("candidates", []) if c.get("match") == "legend"])
+
+
 def ai_candidates(ex, client, cap, images=None):
     """추출 결과 하나에 AI 검토(hazop.extract.ai_review)를 돌려 이 검사의 후보 꼴과 실행 통계를 돌려준다."""
     from hazop.extract import ai_review
@@ -829,17 +835,18 @@ def snp_folders(samples_dir):
 
 
 def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=20, only=None, ai_save=None,
-        key_dir=None, ai_images=False, ai_wide=False):
+        key_dir=None, ai_images=False, ai_wide=False, legend_samples=1):
     """only: 이 이름의 쪽만(APR1400 'apr1400-012', SNP 'SNP-M-102'). ai_client를 주면 쪽마다 AI 검토를 돌려
     '스크립트 + AI 후보' 값을 내고, ai_save 폴더에 후보(<이름>.json)와 실행 통계를 남긴다(--ai-candidates로 다시 잼).
     ai_save가 있으면 응답도 <ai_save>/responses에 남기고 쪽마다 호출 시간을 통계에 적는다.
     ai_images: 노드 조각과 범례판(그 쪽과 같은 도면 묶음에서 고른 견본)을 싣는다. 종류 답은 범례판에 견본이 있는 종류만.
-    ai_wide: 밸브 종류 답을 넓힌 조각으로 한 번 더 묻는다(ai_images와 함께)."""
+    ai_wide: 밸브 종류 답을 넓힌 조각으로 한 번 더 묻는다(ai_images와 함께). legend_samples: 범례판의 종류별 견본 수 상한.
+    ai_pages는 후보 전부, ai_high_pages는 높음 후보만 더한 값이다."""
     import extract_drawio
     from hazop.extract.adapters import pdf_vector
     work = tempfile.mkdtemp(prefix="hazop-read-quality-")
     os.environ["HAZOP_WORK_ROOT"] = work
-    res = {"pages": {}, "ai_pages": {}, "missing": []}
+    res = {"pages": {}, "ai_pages": {}, "ai_high_pages": {}, "missing": []}
     try:
         jobs = []
         for name, k in load_keys(pages, key_dir):
@@ -872,9 +879,9 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
                     from hazop.extract import ai_images as images_mod
                     family = "SNP" if name.startswith("SNP-") else "APR1400"
                     if family not in boards:
-                        boards[family] = images_mod.legend_boards(legend_sources(family, input_dir, samples_dir, work))
-                    legend, kinds = boards[family]
-                    images = images_mod.ImageInput(images_mod.PageImages(pdf), legend, kinds=kinds, wide=ai_wide)
+                        boards[family] = images_mod.legend_boards(legend_sources(family, input_dir, samples_dir, work),
+                                                                  per_kind=legend_samples)[0]
+                    images = images_mod.ImageInput(images_mod.PageImages(pdf), boards[family], wide=ai_wide)
                 before = len(getattr(ai_client, "calls", []))
                 cands, stats = ai_candidates(ex, ai_client, ai_cap, images)
                 calls = getattr(ai_client, "calls", [])[before:]
@@ -882,6 +889,7 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
                     stats = dict(stats, seconds=round(sum(c["seconds"] for c in calls), 1),
                                  real_calls=sum(1 for c in calls if not c.get("cached")), call_log=calls)
                 res["ai_pages"][name] = score_page(k, apply_candidates(ex, cands))
+                res["ai_high_pages"][name] = score_page(k, apply_candidates(ex, high_only(cands)))
                 res.setdefault("ai_stats", {})[name] = stats
                 if ai_save:
                     os.makedirs(ai_save, exist_ok=True)
@@ -891,7 +899,9 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
             cand_path = os.path.join(ai_dir, name + ".json") if ai_dir else None
             if cand_path and os.path.isfile(cand_path):
                 with open(cand_path, encoding="utf-8") as fh:
-                    res["ai_pages"][name] = score_page(k, apply_candidates(ex, json.load(fh)))
+                    cands = json.load(fh)
+                res["ai_pages"][name] = score_page(k, apply_candidates(ex, cands))
+                res["ai_high_pages"][name] = score_page(k, apply_candidates(ex, high_only(cands)))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return res
@@ -913,7 +923,10 @@ def fmt(c):
 
 def report(res, at):
     lines = []
-    for label, pages in (("스크립트만", res["pages"]), ("스크립트 + AI 후보", res["ai_pages"])):
+    for label, pages in (("스크립트만", res["pages"]), ("스크립트 + AI 후보(전부)", res["ai_pages"]),
+                         ("스크립트 + AI 후보(높음만)", res.get("ai_high_pages") or {})):
+        if not pages and label.endswith("(높음만)"):
+            continue
         if not pages:
             lines.append("%s: 후보 파일 없음(값은 스크립트만과 같다)" % label)
             continue
@@ -1041,6 +1054,7 @@ def main(argv=None):
     ap.add_argument("--ai-save", help="AI 후보와 실행 통계를 쓸 폴더(<이름>.json). 응답은 <폴더>/responses")
     ap.add_argument("--ai-images", action="store_true", help="노드 조각 그림과 범례판을 실어 묻는다(kind·tag만)")
     ap.add_argument("--ai-wide", action="store_true", help="--ai-images에 더해 밸브 종류 답을 넓힌 조각으로 다시 묻는다")
+    ap.add_argument("--ai-legend-samples", type=int, default=1, help="범례판에 종류마다 실을 견본 수 상한(모양이 다른 것, 기본 1)")
     ap.add_argument("--baseline", default=BASELINE)
     ap.add_argument("--update", action="store_true")
     ap.add_argument("--force", action="store_true", help="HEAD와 다른(커밋 안 한) 기준값도 --update로 덮음")
@@ -1066,7 +1080,7 @@ def main(argv=None):
     extra = os.path.abspath(args.extra_keys) if args.extra_keys else None
     res = run(input_dir, os.path.abspath(args.samples_dir or default_samples_dir()), pages, args.ai_candidates,
               ai_client=client, ai_cap=args.ai_cap, only=only, ai_save=args.ai_save, key_dir=extra,
-              ai_images=args.ai_images, ai_wide=args.ai_wide)
+              ai_images=args.ai_images, ai_wide=args.ai_wide, legend_samples=args.ai_legend_samples)
     if extra:
         print("추가 표본(저장소 밖 정답지 %d쪽, 기준값과 견주지 않음)" % len(load_keys(key_dir=extra)))
     print(report(res, head_commit()))

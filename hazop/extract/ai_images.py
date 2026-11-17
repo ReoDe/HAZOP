@@ -1,9 +1,10 @@
 """AI 검토에 싣는 그림: 노드 조각과 범례판(docs/specs/extraction.md 'AI 검토', 계획 aiplan 2026-11-17).
 
 조각: 노드 상자 둘레에 PAD pt를 더해 SCALE배로 그린 PNG. 상자 테두리를 빨갛게 그어 어느 기호를 묻는지 보인다.
-범례판: 종류(kind)마다 견본 조각 하나에 kind 이름을 적은 칸을 모아 범주별로 한 장씩 만든다. 견본 자리(종류, 상자)는
-부르는 쪽이 준다(APR1400은 저장소 정답지 12쪽의 기호, SNP는 SNP 도면들의 추출 결과). 답으로 받는 종류는 모양이 일정한
-종류(answer_kinds) 가운데 범례판에 견본이 실린 것뿐이다. 이 모듈은 그림을 만들기만 하고 보내지 않는다.
+범례판: 종류(kind)마다 견본 조각(기본 하나, 많으면 모양이 다른 것 몇 개)에 kind 이름을 적은 칸을 모아 범주별로 한 장씩
+만든다. 견본 자리(종류, 상자)는 부르는 쪽이 준다(APR1400은 저장소 정답지 12쪽의 기호, SNP는 SNP 도면들의 추출 결과).
+답으로 받는 종류는 모양이 일정한 종류(answer_kinds)이고, 범례판에 견본이 없는 종류도 답할 수 있다.
+이 모듈은 그림을 만들기만 하고 보내지 않는다.
 """
 
 import base64
@@ -21,6 +22,8 @@ SAMPLE_PAD = 6.0
 CELL = (200, 150)      # 범례판 칸 크기(px). 아래 18px는 이름 글자
 BOARD_COLS = 5
 BOARD_CELLS = 20       # 범례판 한 장의 칸 수 상한
+SHAPE_RATIO = 1.4      # 견본 모양 무리: 가로가 세로의 이 배 이상이면 눕힌 모양, 세로가 가로의 이 배 이상이면 세운 모양
+SIZE_GAP = 2.0         # 같은 모양 무리에서 넓이가 이 배 넘게 차이 나야 다른 크기의 견본으로 더 싣는다
 OUTLINE = (230, 0, 0)
 
 
@@ -112,10 +115,38 @@ def node_samples(ex):
             if n.get("kind") and _box(n)]
 
 
-def pick_samples(sources, kinds):
-    """sources [(PageImages, [(kind, bbox)])] -> {kind: (PageImages, bbox)}. 종류마다 모든 자리를 상자 넓이로 줄 세워
-    가운데 것 하나를 고른다. 가장 큰 상자는 이웃 조각까지 묶인 자리이기 쉽고 가장 작은 상자는 기호 일부이기 쉬워서,
-    그 종류의 흔한 크기를 견본으로 쓴다."""
+def _shape(b):
+    w, h = b[2] - b[0], b[3] - b[1]
+    return "wide" if w >= h * SHAPE_RATIO else "tall" if h >= w * SHAPE_RATIO else "square"
+
+
+def _middle(rows):
+    return rows[(len(rows) - 1) // 2]
+
+
+def _spread(rows, n):
+    """넓이순 자리 rows에서 견본 n개까지. 첫째는 넓이가 가운데인 것(가장 큰 상자는 이웃 조각까지 묶인 자리이기 쉽고 가장
+    작은 상자는 기호 일부이기 쉬워서 그 종류의 흔한 크기를 쓴다). 다음은 가로세로비 무리(두 자리 넘게 나온 것, 큰 무리부터)마다
+    넓이가 가운데인 것. 그래도 모자라면 가장 큰 무리의 작은 쪽·큰 쪽 사분위 자리 가운데 고른 견본들과 넓이가 SIZE_GAP배 넘게
+    다른 것."""
+    out = [_middle(rows)]
+    groups = {}
+    for r in rows:
+        groups.setdefault(_shape(r[4]), []).append(r)
+    ranked = sorted(groups.items(), key=lambda g: (-len(g[1]), g[0]))
+    for shape, g in ranked:
+        if len(out) < n and len(g) >= 2 and shape not in {_shape(o[4]) for o in out}:
+            out.append(_middle(g))
+    big = ranked[0][1]
+    for r in (big[len(big) // 4], big[(3 * len(big)) // 4]):
+        if len(out) < n and all(max(r[0], o[0]) > SIZE_GAP * max(min(r[0], o[0]), 1e-6) for o in out):
+            out.append(r)
+    return out
+
+
+def pick_samples(sources, kinds, per_kind=1):
+    """sources [(PageImages, [(kind, bbox)])] -> {kind: [(PageImages, bbox)]}. 종류마다 모든 자리를 상자 넓이로 줄 세워
+    모양이 다른 견본을 per_kind개까지 고른다(_spread). per_kind 1이면 넓이가 가운데인 것 하나."""
     seen = {}
     for pi, (page, spots) in enumerate(sources):
         for si, (k, b) in enumerate(spots):
@@ -124,8 +155,7 @@ def pick_samples(sources, kinds):
     out = {}
     for k, rows in seen.items():
         rows.sort(key=lambda r: r[:3])
-        mid = rows[(len(rows) - 1) // 2]
-        out[k] = (mid[3], mid[4])
+        out[k] = [(r[3], r[4]) for r in _spread(rows, max(1, per_kind))]
     return out
 
 
@@ -146,20 +176,20 @@ def board(cells):
     return _png(out)
 
 
-def legend_boards(sources, kinds=None):
-    """범례판 PNG 바이트 목록(범주 순, 한 장 BOARD_CELLS칸까지)과 견본이 있는 종류 목록(답으로 받을 종류)."""
+def legend_boards(sources, kinds=None, per_kind=1):
+    """범례판 PNG 바이트 목록(범주 순, 한 장 BOARD_CELLS칸까지)과 견본이 실린 종류 목록. 종류마다 견본 per_kind개까지."""
     kinds = set(kinds or answer_kinds())
-    picked = pick_samples(sources, kinds)
-    crops = {k: page.crop(b, pad=SAMPLE_PAD, outline=False) for k, (page, b) in picked.items()}
-    order = sorted((k for k, c in crops.items() if c is not None), key=lambda k: (rules.KIND_CATEGORY.get(k) or "", k))
-    cells = [(k, crops[k]) for k in order]
+    crops = {k: [c for c in (page.crop(b, pad=SAMPLE_PAD, outline=False) for page, b in spots) if c is not None]
+             for k, spots in pick_samples(sources, kinds, per_kind).items()}
+    order = sorted((k for k, c in crops.items() if c), key=lambda k: (rules.KIND_CATEGORY.get(k) or "", k))
+    cells = [(k, c) for k in order for c in crops[k]]
     boards = [board(cells[i:i + BOARD_CELLS]) for i in range(0, len(cells), BOARD_CELLS)]
     return boards, order
 
 
 class ImageInput:
-    """AI 검토 한 쪽에 실을 그림: 그 쪽 조각(page)과 범례판(legend, PNG 바이트 목록), 답으로 받을 종류(kinds,
-    범례판에 견본이 실린 종류). wide면 구동부로 갈리는 밸브 종류(ai_review.WIDE_KINDS) 답을 넓힌 조각으로 한 번 더 묻는다."""
+    """AI 검토 한 쪽에 실을 그림: 그 쪽 조각(page)과 범례판(legend, PNG 바이트 목록), 답으로 받을 종류(kinds, 기본은
+    모양이 일정한 종류 전부). wide면 구동부로 갈리는 밸브 종류(ai_review.WIDE_KINDS) 답을 넓힌 조각으로 한 번 더 묻는다."""
 
     def __init__(self, page, legend=(), kinds=None, wide=False):
         self.page = page

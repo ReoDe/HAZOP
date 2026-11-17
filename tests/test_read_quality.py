@@ -264,6 +264,22 @@ class AiRunTest(unittest.TestCase):
         self.assertIsNone(e["nodes"][0]["kind"])  # 원본 추출은 그대로
 
 
+class HighOnlyTest(unittest.TestCase):
+    """'스크립트 + AI 후보(높음만)' 줄: 범례판 견본과 모양이 같다고 본 종류 후보만 더한다."""
+
+    def test_high_line_counts_only_legend_match(self):
+        k = key([sym(1, "manual_valve", (100, 100, 110, 108)), sym(2, "pump", (200, 100, 220, 120))])
+        e = ex([dict(node(1, None, (100, 100, 110, 108)), source_object_id="p1"),
+                dict(node(2, None, (200, 100, 220, 120)), source_object_id="p2")])
+        cands = {"candidates": [{"node_local_id": "n1", "field": "kind", "values": ["manual_valve"], "match": "legend"},
+                                {"node_local_id": "n2", "field": "kind", "values": ["pump"], "match": "other"},
+                                {"node_local_id": "n2", "field": "tag", "values": ["P1"]}]}
+        self.assertEqual([c["node_local_id"] for c in rq.high_only(cands)["candidates"]], ["n1"])
+        high = rq.score_page(k, rq.apply_candidates(e, rq.high_only(cands)))
+        every = rq.score_page(k, rq.apply_candidates(e, cands))
+        self.assertEqual((high["kind"]["correct"], every["kind"]["correct"]), (1, 2))
+
+
 class SnpImageReplayTest(unittest.TestCase):
     """그림 입력 고정 응답(tests/fixtures/ai-review/snp-images, SNP 6쪽 구독 실행 저장본)을 다시 돌려 같은 두 줄을 낸다.
     SNP 추출이나 범례판이 바뀌면 요청이 달라져 저장본과 짝이 맞지 않는다. 그때는 건너뛰고 다시 받는 명령을 알린다

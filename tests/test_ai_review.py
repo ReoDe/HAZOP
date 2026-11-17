@@ -13,6 +13,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from hazop import paths
 from hazop.extract import ai_review as ar
@@ -456,10 +457,65 @@ class ImageInputTest(unittest.TestCase):
         spots = [("manual_valve", [0, 0, w, w]) for w in (2, 10, 40)] + [("tank", [0, 0, 50, 80]),
                                                                           ("check_valve", None)]
         picked = ai_images.pick_samples([(page, spots)], {"manual_valve", "tank", "check_valve"})
-        self.assertEqual(picked["manual_valve"][1], [0, 0, 10, 10])
+        self.assertEqual([b for _, b in picked["manual_valve"]], [[0, 0, 10, 10]])
         self.assertNotIn("check_valve", picked)
         boards, kinds = ai_images.legend_boards([(page, spots)])
         self.assertEqual((len(boards), kinds), (1, ["manual_valve"]))  # tank는 늘려 그리는 종류라 답 목록에 없다
+
+    def test_extra_samples_differ_in_shape_or_size(self):
+        from hazop.extract import ai_images
+        square = [("fan", [0, 0, w, w]) for w in (8, 9, 10, 11, 30, 32)]
+        wide = [("fan", [0, 0, 3 * h, h]) for h in (5, 6, 7)]
+        lone_tall = [("fan", [0, 0, 4, 20])]
+        page = object()
+        pick = lambda n: [b for _, b in ai_images.pick_samples([(page, square + wide + lone_tall)], {"fan"}, n)["fan"]]
+        self.assertEqual(pick(1), [[0, 0, 10, 10]])
+        self.assertEqual(pick(2), [[0, 0, 10, 10], [0, 0, 18, 6]], "둘째는 다른 가로세로비 무리의 가운데 크기")
+        three = pick(3)
+        self.assertEqual(three[:2], pick(2))
+        self.assertNotIn([0, 0, 4, 20], three, "한 번만 나온 모양은 견본으로 싣지 않는다")
+        self.assertEqual(len(three), 3)
+        area = lambda b: (b[2] - b[0]) * (b[3] - b[1])
+        self.assertTrue(all(max(area(three[2]), area(b)) > 2 * min(area(three[2]), area(b)) for b in three[:2]))
+
+    def test_legend_cells_repeat_kind_for_each_sample(self):
+        from hazop.extract import ai_images
+
+        class Page:
+            def crop(self, bbox, pad=0, outline=True):
+                from PIL import Image
+                return Image.new("RGB", (max(1, int(bbox[2] - bbox[0])), max(1, int(bbox[3] - bbox[1]))), "white")
+
+        spots = [("fan", [0, 0, w, w]) for w in (8, 10, 12)] + [("fan", [0, 0, 3 * h, h]) for h in (5, 6)]
+        with mock.patch.object(ai_images, "board", side_effect=lambda cells: [n for n, _ in cells]):
+            one, kinds = ai_images.legend_boards([(Page(), spots)], kinds=["fan"])
+            two, kinds2 = ai_images.legend_boards([(Page(), spots)], kinds=["fan"], per_kind=2)
+        self.assertEqual((one, kinds), ([["fan"]], ["fan"]))
+        self.assertEqual((two, kinds2), ([["fan", "fan"]], ["fan"]))
+
+    def test_match_marks_kind_candidates_high_or_normal(self):
+        def answers(req):
+            self.assertIn("match", req["schema"]["properties"]["answers"]["items"]["required"])
+            out = []
+            for it in ids_in(req):
+                if it["task"] == "kind":
+                    out.append({"item_id": it["item_id"], "field": "kind", "values": ["manual_valve"],
+                                "confidence": 0.9, "reason": "x",
+                                "match": "legend" if it["target"] == "n1" else "other"})
+            return {"answers": out}
+        ex = ex_fixture()
+        ex["nodes"].append(node("n8", None, (600, 100, 610, 108)))
+        doc = ar.run(ex, StubClient(answers), cap=5, recheck=0, images=self.images())
+        got = {c["target"]: c["match"] for c in doc["candidates"] if c["field"] == "kind"}
+        self.assertEqual(got, {"n1": "legend", "n8": "other"})
+        check = ar.to_check_candidates(doc)["candidates"]
+        self.assertEqual(sorted(c["match"] for c in check if c["field"] == "kind"), ["legend", "other"])
+        self.assertNotIn("match", ar.schema()["properties"]["answers"]["items"]["properties"], "글 입력 스키마는 그대로")
+
+    def test_missing_match_counts_as_normal(self):
+        doc = ar.run(ex_fixture(), StubClient(good_answers), cap=5, recheck=0, images=self.images())
+        self.assertTrue(all(c["match"] == "other" for c in doc["candidates"] if c["field"] == "kind"))
+        self.assertTrue(all("match" not in c for c in doc["candidates"] if c["field"] != "kind"))
 
     def test_only_kind_tag_and_crop_per_item(self):
         stub = StubClient(good_answers)
