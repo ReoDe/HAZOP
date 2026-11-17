@@ -117,6 +117,79 @@ class BareSystemCode(unittest.TestCase):
         """9.3.3-1 시트 7 'MAKE-UP DEMIN. WATER' 화살표 옆 밸브 표기 'DE'는 계통 약어가 아니다."""
         self.assertEqual(self.attrs("DE", 145.0, own="MAKE-UP\nDEMIN. WATER"), {})
 
+    def test_code_line_inside_the_arrow_text_is_the_system(self):
+        """037쪽 'CC\\nSHEET 4', 080쪽 'VO\\nSHEET 1 "A"': 약어와 시트 표기가 한 문단이다."""
+        self.assertEqual(self.attrs("", 135.0, own="CC\nSHEET 4"), {"to_system": "CC", "to_label": "CC SHEET 4"})
+        self.assertEqual(self.attrs("", 135.0, own="AA\nB"), {})
+
+
+def arrow_node(local_id, box, label):
+    return {"local_id": local_id, "kind": "continuation", "label_text": label, "attributes": {},
+            "geometry": {"x": box[0], "y": box[1], "width": box[2] - box[0], "height": box[3] - box[1]}}
+
+
+class NameAboveArrow(unittest.TestCase):
+    """134쪽 'ACID ADDITION' 위 'SHEET 4"Q"' 화살표, 051쪽 'CD CONDENSER A\\nHOTWELL' 위 'SHEET 1' 화살표: 화살표 글자 자리에
+    맞닿은 이름 문단이 행선이다. 정답지 규약처럼 '이름 / 자기 글자'로 적는다."""
+
+    def run_names(self, nodes, blocks):
+        from hazop.extract.adapters.pdf_vector_connectors import attach_continuation_names
+        attach_continuation_names(nodes, blocks, list(range(len(blocks))), 1.5)
+        return [n["attributes"] for n in nodes]
+
+    def test_touching_name_above_is_the_destination(self):
+        got = self.run_names([arrow_node("a", (476, 122, 506, 128), 'SHEET 4"Q"')],
+                             [{"text": "ACID ADDITION", "bbox": (480, 119, 503, 122)}])
+        self.assertEqual(got, [{"to_label": 'ACID ADDITION / SHEET 4"Q"'}])
+
+    def test_leading_two_letter_code_is_the_system(self):
+        got = self.run_names([arrow_node("a", (218, 143, 250, 150), "SHEET 1")],
+                             [{"text": "CD CONDENSER A\nHOTWELL", "bbox": (218, 137, 248, 143)}])
+        self.assertEqual(got, [{"to_system": "CD", "to_label": "CD CONDENSER A HOTWELL / SHEET 1"}])
+
+    def test_rotated_name_left_of_an_upright_arrow(self):
+        got = self.run_names([arrow_node("a", (395, 179, 401, 207), 'SHEET 3"M"')],
+                             [{"text": "DEMIN. WATER", "bbox": (392, 184, 395, 207)}])
+        self.assertEqual(got, [{"to_label": 'DEMIN. WATER / SHEET 3"M"'}])
+
+    def test_not_attached_when_far_below_or_shared(self):
+        self.assertEqual(self.run_names([arrow_node("a", (476, 133, 506, 139), 'SHEET 4"R"')],
+                                        [{"text": "ACID ADDITION", "bbox": (480, 119, 503, 122)}]), [{}])
+        self.assertEqual(self.run_names([arrow_node("a", (476, 122, 506, 128), "SHEET 4")],
+                                        [{"text": "TO RMS", "bbox": (476, 126, 506, 132)}]), [{}])
+        # 이름 문단 하나에 두 화살표가 같은 거리로 맞닿음: 어느 쪽 행선인지 모른다
+        self.assertEqual(self.run_names([arrow_node("a", (476, 122, 490, 128), "SHEET 4"),
+                                         arrow_node("b", (492, 122, 506, 128), "SHEET 5")],
+                                        [{"text": "ACID ADDITION", "bbox": (485, 119, 497, 122)}]), [{}, {}])
+
+    def test_arrow_that_already_has_a_system_keeps_it(self):
+        node = arrow_node("a", (476, 122, 506, 128), "SHEET 4")
+        node["attributes"] = {"to_system": "DE", "to_label": "DE:SUMP"}
+        self.assertEqual(self.run_names([node], [{"text": "ACID ADDITION", "bbox": (480, 119, 503, 122)}]),
+                         [{"to_system": "DE", "to_label": "DE:SUMP"}])
+
+
+class WaveBreak(unittest.TestCase):
+    """077·080쪽 배관 끝 물결 끊김 둘(공급·환수) 옆 'FROM & TO\\nWI': 두 물결 모두 WI로 가는 연결 표시다."""
+
+    def test_bent_strokes_only(self):
+        from hazop.extract.adapters.pdf_vector_connectors import is_wave_mark
+        s = [{"pts": [(311.61, 261.01), (311.88, 259.77), (311.19, 259.35)]},
+             {"pts": [(312.03, 262.67), (311.21, 261.68), (311.61, 261.01)]}]
+        self.assertTrue(is_wave_mark(s))
+        self.assertFalse(is_wave_mark(s + [{"pts": [(0, 0), (5, 0)]}]))
+        self.assertFalse(is_wave_mark([{"pts": [(0, 0), (1, 0), (2, 0)]}]))
+
+    def test_both_waves_take_the_shared_text_and_other_codes_block(self):
+        from hazop.extract.adapters.pdf_vector_connectors import wave_break_targets
+        text = {"text": "FROM & TO\nWI", "bbox": (314, 262, 335, 270)}
+        got = wave_break_targets([("a", (311, 259, 312, 263)), ("b", (311, 267, 312, 270))], [text], 15.0)
+        self.assertEqual(got, {k: {"to_system": "WI", "to_label": "FROM & TO WI"} for k in "ab"})
+        other = {"text": "FROM & TO\nWO", "bbox": (314, 272, 335, 280)}
+        self.assertEqual(wave_break_targets([("b", (311, 267, 312, 270))], [text, other], 15.0), {})
+        self.assertEqual(wave_break_targets([("a", (311, 259, 312, 263))], [{"text": "FROM & TO\nFC", "bbox": text["bbox"]}],
+                                            15.0), {})
+
 
 if __name__ == "__main__":
     unittest.main()

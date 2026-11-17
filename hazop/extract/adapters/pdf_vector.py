@@ -50,7 +50,8 @@ from .pdf_vector_grouping import (
     _pt_ring_dist,
 )
 from .pdf_vector_connectors import (
-    SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes, same_sheet_letter_pairs,
+    SHEET_WORD_RE, CONTINUATION_RE, SYSTEM_LABEL_RE, BARE_SYSTEM_RE, _continuation_attributes, attach_continuation_names,
+    is_wave_mark, same_sheet_letter_pairs, wave_break_targets,
 )
 from .pdf_vector_flow import (_chain_flow, _end_symbol_flows, _inline_unclassified, _propagate_flows, _revert_contradictions,
                                _through_instruments, _vent_ends, arrow_axis,
@@ -96,6 +97,8 @@ PARAMS = {
     "dash_pipe_axis_ratio": 1.5,    # 점선 배관: 밸브 몸통의 긴 변/짧은 변이 이만큼은 돼야 흐름 축을 안다
     "label_gap_max": 15.0,       # 글자 문단과 기호 사이 거리 상한
     "bare_code_gap_max": 5.0,    # 쌍점 없는 두 글자 계통 약어를 연결 표시 글자로 볼 거리 상한(바로 옆만)
+    "continuation_name_gap_max": 1.5,  # 연결 화살표에 맞닿은 이름 문단 거리 상한(137쪽: 0pt 446개, 1pt 안팎 24개)
+    "wave_break_max": 10.0,      # 물결 끊김 표시(굽은 선으로만 그린 작은 기호) 긴 변 상한
     "appendage_gap_ratio": 0.1,  # 연결 없는 작은 기호를 옆 큰 기호에 합치는 거리 = 큰 기호 긴 변 × 비율
     "container_min": 20.0,       # 담는 외곽: 짧은 변이 이 이상인 곧은 변 닫힌 외곽(밸브·계기 원은 11pt 안팎)
     "container_hold_ratio": 0.5,  # 담는 외곽 안의 몸체가 담긴 것: 넓이가 외곽의 이 비율 이하(겹선 외곽은 담긴 것이 아니다)
@@ -3580,6 +3583,12 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                                         drop, prm, set(numbers_on))
     node_out, locations, local_of, instrument_ids, dropped, label_lines = [], [], {}, set(), [], {}
     noise = _noise_symbols(syms, degree, label_of, prm)
+    # 배관 끝 물결 끊김 옆 'FROM & TO WI': 굽은 선으로만 그린 작은 미분류 기호를 그 계통으로 가는 연결 표시로 본다
+    wave_of = wave_break_targets(
+        [(si, s.bbox) for si, s in enumerate(syms) if shape_of[si][0] is None and id(s) not in noise
+         and degree.get(id(s)) and max(_w(s.bbox), _h(s.bbox)) <= prm["wave_break_max"]
+         and not (si in hits and hits[si].outcome == "matched")
+         and is_wave_mark(s.bodies + s.strokes + s.markers + s.dashes)], blocks, prm["label_gap_max"])
     class_marks = {}
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
@@ -3670,6 +3679,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             # 검게 칠한 몸통이 뜻하는 정상 위치만 남긴다
             symbol_attrs = {k: v for k, v in sorted(seed.attributes.items()) if k == "normal_position"}
             basis, valve_body = "black_body:%s" % seed.entry.id, True
+        if kind is None and symbol_id is None and not valve_body and n - 1 in wave_of:
+            kind, basis = "continuation", "wave_break_text"
         if rules.KIND_CATEGORY.get(kind) == "instrument" or (kind is None and shape_of[n - 1][0] == "instrument"):
             instrument_ids.add(local_id)  # 측정 연결 판정: 계기로 분류됐거나 원형이고 다른 종류 근거가 없는 기호
         category = rules.KIND_CATEGORY.get(kind)
@@ -3685,7 +3696,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             "category": category, "kind": kind, "tag": None, "label": text, "label_text": text,
             "label_location": ({"bbox": _box_out(blocks[bi]["bbox"]), "approximate": False,
                                 "method": "pdf_text_block"} if bi is not None else None),
-            "attributes": (_continuation_attributes(s, blocks, prm, blocks[bi] if bi is not None else None, arrows)
+            "attributes": (dict(wave_of[n - 1]) if basis == "wave_break_text"
+                           else _continuation_attributes(s, blocks, prm, blocks[bi] if bi is not None else None, arrows)
                            if kind == "continuation" else symbol_attrs),
             "style": None, "parent": None,
             "geometry": dict(zip(("x", "y", "width", "height"), _box_out(s.bbox))),
@@ -3868,6 +3880,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     taken |= attach_line_labels(blocks, [bi for bi in range(len(blocks)) if bi not in taken
                                          and roles.get(bi) not in ("title_block", "symbol_mark")], relations + unresolved)
     attach_continuation_line_numbers(node_out, relations + unresolved)
+    attach_continuation_names(node_out, blocks, [bi for bi in range(len(blocks)) if bi not in taken and bi not in roles],
+                              prm["continuation_name_gap_max"])
     _flow_elements(node_out, relations, unknowns)
 
     text_out = []
