@@ -1,0 +1,10 @@
+{
+ "note": "AI 검토 범례판에만 쓰는 변형 그림. 직접 그린 SVG이고 도면 조각을 오리거나 따라 그리지 않았다. standard가 false면 표준 그림(drawing-symbols) 칸을 빼고 변형만 싣는다. 근거는 docs/units/2026-11-13-drawing-knowledge/evidence/ai-image-review.md 실측 16·17.",
+ "kinds": {
+  "drain": {"standard": false, "files": ["variants/drain-hub.svg", "variants/drain-cup.svg"]},
+  "sparger": {"standard": true, "files": ["variants/sparger-row.svg"]},
+  "air_flow_arrow": {"standard": true, "files": ["variants/air-flow-arrow-bar.svg"]},
+  "check_valve": {"standard": true, "files": ["variants/check-valve-flap.svg"]},
+  "transmitter": {"standard": false, "files": ["variants/transmitter-letters.svg"]}
+ }
+}

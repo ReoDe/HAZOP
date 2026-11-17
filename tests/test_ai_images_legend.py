@@ -47,8 +47,27 @@ class SymbolBoardTest(unittest.TestCase):
         with open(paths.folder("ai-legend", ai_images.LEGEND_INDEX), encoding="utf-8") as fh:
             index = json.load(fh)
         self.assertEqual(index["source"], paths.folder_rel("drawing-symbols"))
-        self.assertEqual(sorted(index["cells"]), ai_images.answer_kinds())
-        self.assertEqual(sorted(os.listdir(paths.folder("ai-legend"))), sorted(index["boards"] + [ai_images.LEGEND_INDEX]))
+        self.assertEqual(sorted(index["kinds"]), ai_images.answer_kinds())
+        self.assertEqual(sorted(os.listdir(paths.folder("ai-legend"))),
+                         sorted(index["boards"] + [ai_images.LEGEND_INDEX, "cells", "variants", build_ai_legend.VARIANTS]))
+        self.assertEqual(sorted(os.listdir(paths.folder("ai-legend", "cells"))), sorted(c["file"][6:] for c in index["cells"]))
+        self.assertTrue(all(f.endswith(".svg") for f in os.listdir(paths.folder("ai-legend", "variants"))),
+                        "변형 그림은 직접 그린 SVG만 둔다")
+
+    def test_variants_replace_or_join_standard_cells_and_boards_fit_image_limit(self):
+        from PIL import Image
+        import io
+        with open(paths.folder("ai-legend", ai_images.LEGEND_INDEX), encoding="utf-8") as fh:
+            cells = json.load(fh)["cells"]
+        by = {}
+        for c in cells:
+            by.setdefault(c["kind"], []).append(c["from"])
+        self.assertEqual(by["drain"], ["variants/drain-hub.svg", "variants/drain-cup.svg"], "표준 drain(다이오드 꼴)은 뺀다")
+        self.assertEqual(by["transmitter"], ["variants/transmitter-letters.svg"], "글자 없는 빈 원 칸은 뺀다")
+        self.assertEqual(by["check_valve"], ["standard", "variants/check-valve-flap.svg"])
+        self.assertEqual(by["manual_valve"], ["standard"])
+        for png in ai_images.symbol_legend():
+            self.assertLessEqual(max(Image.open(io.BytesIO(png)).size), 1568)
 
 
 class EntryTest(unittest.TestCase):
@@ -75,20 +94,28 @@ class EntryTest(unittest.TestCase):
     def test_project_board_wins_and_is_cached_in_given_folder(self):
         drawings = [(snp_pdf(), 0, project_ex())]
         got = ai_images.image_input_for(snp_pdf(), 0, drawings=drawings, cache_dir=self.tmp)
-        self.assertEqual(got.legend_source, "project")
+        self.assertEqual(got.legend_source, "project+symbols")
         self.assertTrue(got.legend and got.legend != ai_images.symbol_legend())
         index = [f for f in os.listdir(self.tmp) if f.endswith(".json")]
         self.assertEqual(len(index), 1)
         with open(os.path.join(self.tmp, index[0]), encoding="utf-8") as fh:
-            self.assertEqual(sorted(json.load(fh)["kinds"]), ["manual_valve", "pump"], "답 목록 밖 종류(tank)는 싣지 않는다")
+            doc = json.load(fh)
+        self.assertEqual(sorted(doc["kinds"]), ai_images.answer_kinds(), "견본 없는 종류는 표준 칸으로 채운다")
+        self.assertEqual(sorted(set(ai_images.answer_kinds()) - set(doc["from_symbols"])), ["manual_valve", "pump"],
+                         "프로젝트 견본이 있는 종류는 표준 칸을 섞지 않고, 답 목록 밖 종류(tank)는 싣지 않는다")
         with mock.patch.object(ai_images.PageImages, "image", side_effect=AssertionError("캐시가 있으면 쪽을 다시 그리지 않는다")):
             again = ai_images.image_input_for(snp_pdf(), 0, drawings=drawings, cache_dir=self.tmp)
         self.assertEqual(again.legend, got.legend)
         moved = project_ex()
         moved["nodes"][0]["geometry"]["x"] += 5
-        third = ai_images.project_legend([(snp_pdf(), 0, moved)], self.tmp)
-        self.assertTrue(third)
+        third, source = ai_images.project_legend([(snp_pdf(), 0, moved)], self.tmp)
+        self.assertTrue(third and source == "project+symbols")
         self.assertEqual(len([f for f in os.listdir(self.tmp) if f.endswith(".json")]), 2, "견본 자리가 바뀌면 다시 만든다")
+
+    def test_project_alone_when_symbol_cells_are_missing(self):
+        with mock.patch.object(ai_images, "symbol_cells", return_value={}):
+            boards, source = ai_images.project_legend([(snp_pdf(), 0, project_ex())])
+        self.assertEqual((bool(boards), source), (True, "project"))
 
     def test_project_without_confirmed_symbols_falls_back_to_symbol_board(self):
         ex = {"nodes": [node("c", "check_valve", (300, 100, 320, 112), basis="lines+marker")]}
@@ -98,7 +125,7 @@ class EntryTest(unittest.TestCase):
 
     def test_unreadable_project_pdf_is_skipped(self):
         got = ai_images.project_legend([(os.path.join(self.tmp, "gone.pdf"), 0, project_ex())], self.tmp)
-        self.assertEqual(got, [])
+        self.assertEqual(got, ([], None))
 
 
 if __name__ == "__main__":

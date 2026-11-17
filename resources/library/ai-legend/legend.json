@@ -1,7 +1,8 @@
 {
  "note": "AI 검토 그림 입력의 표준 기호 범례판. scripts/build_ai_legend.py가 만든다. 손으로 고치지 않는다.",
  "source": "resources/library/drawing-symbols",
- "inputs_sha256": "d8fb98de277a15f6aa02c8d0f6574a6f9cb0d0711c88d35f2d457c3fcc9f4490",
+ "variants": "variants.json",
+ "inputs_sha256": "bf8a7ca6ef506afed2584bf9c462f669e1682f836f589d227a07067699109253",
  "answer_kinds": [
   "air_flow_arrow",
   "air_operated_valve",
@@ -45,7 +46,7 @@
   "transmitter",
   "vent"
  ],
- "cells": [
+ "kinds": [
   "compressor",
   "fan",
   "humidifier",
@@ -88,7 +89,233 @@
   "relief_valve",
   "rupture_disc"
  ],
- "per_kind": 1,
+ "cells": [
+  {
+   "kind": "compressor",
+   "file": "cells/compressor-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "fan",
+   "file": "cells/fan-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "humidifier",
+   "file": "cells/humidifier-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "pump",
+   "file": "cells/pump-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "diaphragm_seal",
+   "file": "cells/diaphragm-seal-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "drain",
+   "file": "cells/drain-1.png",
+   "from": "variants/drain-hub.svg"
+  },
+  {
+   "kind": "drain",
+   "file": "cells/drain-2.png",
+   "from": "variants/drain-cup.svg"
+  },
+  {
+   "kind": "expansion_joint",
+   "file": "cells/expansion-joint-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "flame_arrestor",
+   "file": "cells/flame-arrestor-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "flexible_hose",
+   "file": "cells/flexible-hose-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "flow_element",
+   "file": "cells/flow-element-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "hose_connection",
+   "file": "cells/hose-connection-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "orifice",
+   "file": "cells/orifice-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "reducer",
+   "file": "cells/reducer-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "sight_glass",
+   "file": "cells/sight-glass-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "silencer",
+   "file": "cells/silencer-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "slip_joint",
+   "file": "cells/slip-joint-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "sparger",
+   "file": "cells/sparger-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "sparger",
+   "file": "cells/sparger-2.png",
+   "from": "variants/sparger-row.svg"
+  },
+  {
+   "kind": "strainer",
+   "file": "cells/strainer-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "test_connection",
+   "file": "cells/test-connection-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "vent",
+   "file": "cells/vent-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "alarm",
+   "file": "cells/alarm-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "controller",
+   "file": "cells/controller-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "indicator",
+   "file": "cells/indicator-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "level_element",
+   "file": "cells/level-element-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "pilot_light",
+   "file": "cells/pilot-light-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "relay_converter",
+   "file": "cells/relay-converter-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "sample_probe",
+   "file": "cells/sample-probe-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "temperature_element",
+   "file": "cells/temperature-element-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "transmitter",
+   "file": "cells/transmitter-1.png",
+   "from": "variants/transmitter-letters.svg"
+  },
+  {
+   "kind": "air_flow_arrow",
+   "file": "cells/air-flow-arrow-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "air_flow_arrow",
+   "file": "cells/air-flow-arrow-2.png",
+   "from": "variants/air-flow-arrow-bar.svg"
+  },
+  {
+   "kind": "pipe_cap",
+   "file": "cells/pipe-cap-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "air_operated_valve",
+   "file": "cells/air-operated-valve-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "check_valve",
+   "file": "cells/check-valve-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "check_valve",
+   "file": "cells/check-valve-2.png",
+   "from": "variants/check-valve-flap.svg"
+  },
+  {
+   "kind": "control_valve",
+   "file": "cells/control-valve-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "damper",
+   "file": "cells/damper-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "isolation_valve",
+   "file": "cells/isolation-valve-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "manual_valve",
+   "file": "cells/manual-valve-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "motor_operated_valve",
+   "file": "cells/motor-operated-valve-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "psv",
+   "file": "cells/psv-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "relief_valve",
+   "file": "cells/relief-valve-1.png",
+   "from": "standard"
+  },
+  {
+   "kind": "rupture_disc",
+   "file": "cells/rupture-disc-1.png",
+   "from": "standard"
+  }
+ ],
  "boards": [
   "symbols-01.png",
   "symbols-02.png",
