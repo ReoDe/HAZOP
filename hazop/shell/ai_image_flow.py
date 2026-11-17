@@ -165,6 +165,19 @@ class Factory:
         return img
 
 
+def _tolerant(progress, name):
+    """호출 사이의 진행 알림. 작업 멈춤 요청이 서 있으면 알림이 JobStopped를 올리는데, 그것이 ai_review.run 안으로 번지면 그 도면에서 이미 받은 답을
+    저장하지 못하고 버린다(구독 한도만 쓰고 결과가 없다). 여기서 삼키면 run이 곧바로 should_stop을 보고 새 호출 없이 멈추며, 받은 답은 저장된다."""
+    from hazop.shell import api
+
+    def on(d, t, left):
+        try:
+            progress(name, d, t, left)
+        except api.JobStopped:
+            pass
+    return on
+
+
 def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=False):
     """도면마다 AI 검토를 돌려 후보 문서에 합쳐 저장한다(ai_review.run_many와 같은 순서). 그림 입력은 설정(enabled)이 켜졌을 때만이고,
     범례판 출처·그림 실패는 그 실행 기록(runs[].images)에 저장과 함께 적힌다. 실행 상한이 바닥난 도면은 그림을 만들지 않는다.
@@ -184,8 +197,7 @@ def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=F
             else:
                 info = {"legend_source": img.legend_source}
         result = ai_review.run(ex, client, cap=limit, budget=budget, exclude=ai_review.decided_targets(name),
-                               on_progress=(lambda d, t, left, n=name: progress(n, d, t, left)) if progress else None,
-                               should_stop=should_stop, images=img)
+                               on_progress=_tolerant(progress, name) if progress else None, should_stop=should_stop, images=img)
         stats = result["stats"]
         used += stats["calls"]
         if info is not None:
