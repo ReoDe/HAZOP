@@ -1333,8 +1333,10 @@ class FarApartTrianglesTest(unittest.TestCase):
         self.assertIsNone(big["kind"])
 
     def test_letters_inside_that_symbol_are_not_taken_as_valve_marks(self):
-        """밸브로 읽히면 상자 안 글자가 모두 밸브 표기(symbol_marks)가 되어 다른 기호의 라벨·태그로 쓰이지 못한다."""
-        big = max(self.run_page([self.FRAME] + self.FAR)["nodes"], key=lambda n: n["geometry"]["width"])
+        """밸브로 읽히면 상자 안 글자가 모두 밸브 표기(symbol_marks)가 되어 다른 기호의 라벨·태그로 쓰이지 못한다. 배관이
+        닿게 그린다. 선이 하나도 닿지 않는 큰 빈 상자는 노드가 아니라 틀이다(pdf_vector._frames)."""
+        pipe = prim([(220, 70), (300, 70)])
+        big = max(self.run_page([self.FRAME, pipe] + self.FAR)["nodes"], key=lambda n: n["geometry"]["width"])
         self.assertEqual((big["evidence"]["symbol_marks"], big["label_text"].split()), ([], ["TI", "101"]))
 
     def test_triangles_with_a_ball_between_them_are_still_a_valve_body(self):

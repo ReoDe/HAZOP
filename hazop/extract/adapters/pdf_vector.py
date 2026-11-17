@@ -2389,6 +2389,7 @@ PATTERN_RUN = 3          # 격자: 같은 모양이 같은 간격으로 한 방�
 PATTERN_SIZE_TOL = 0.3   # 같은 모양: 너비·높이 차 상한(pt)
 PATTERN_PITCH_TOL = 0.15  # 같은 간격: 간격 차 ≤ 간격 × 비율
 PATTERN_PITCH_MAX = 3.0  # 무늬 간격 상한 = 낱개 긴 변 × 배수
+FRAME_BASIS = "pdf_frame_part"  # 틀에 닿던 선 끝을 안쪽 부품으로 옮김(_frames)
 STRAY_FLAT = 0.05        # 넓이 없는 조각: 짧은 변 상한(pt)
 FRAME_MIN = 50.0         # 빈 틀: 짧은 변 하한(pt). 선이 아직 안 붙은 기기 상자(40pt 안팎)보다 크다
 
@@ -2692,6 +2693,69 @@ def _noise_symbols(syms, degree, label_of, prm):
                 s.bodies[0].get("closed") and not s.bodies[0].get("curved") and min(_w(s.bbox), _h(s.bbox)) >= FRAME_MIN:
             out[id(s)] = "bare_outline"
     return out
+
+
+FRAME_PARTS_MIN = 2       # 틀: 안에 든 종류 붙은 부품 수 하한
+FRAME_EMPTY_LONG = 100.0  # 선이 닿지 않는 큰 사각형을 틀로 보는 긴 변 하한(pt)
+FRAME_REACH = 40.0        # 틀에 닿던 선 끝을 안쪽 부품으로 옮기는 거리 상한(pt). 공조기 벽에서 첫 판까지 40pt 안쪽
+FRAME_TIE = 1.0           # 가장 가까운 부품 둘의 거리 차가 이 값 이하면 어느 쪽인지 정하지 않는다(pt)
+STRIP_MAX = 5.0           # 가는 띠: 짧은 변 상한(pt)
+STRIP_LONG = 100.0        # 가는 띠: 긴 변 하한(pt)
+
+
+def _frames(syms, nodes, local_of, chains, width, height):
+    """노드로 두지 않을 큰 도형 {id(기호): (까닭, 안쪽 부품 기호 목록)}. nodes는 노드 목록(종류가 정해진 뒤)이다.
+    - frame: 종류 없는 곧은 사각형 하나(닫힌 몸체 하나뿐). 선이 닿지 않고 긴 변이 FRAME_EMPTY_LONG을 넘는 방·일정표 상자,
+      또는 종류 붙은 부품을 FRAME_PARTS_MIN 이상 품고 닿은 선 끝의 절반 이상을 안쪽 부품(_frame_part)으로 옮길 수 있는
+      함체(APR1400 019쪽 SUPPLY AHU)다. 안의 코일·팬은 따로 노드라서 함체는 안팎 연결을 가로챌 뿐이다. 선 끝 대부분이
+      부품에서 먼 상자는 설비다(049쪽 시료 싱크 LP04 안의 계기 원).
+    - thin_strip: 종류 없고 선이 닿지 않는 짧은 변 STRIP_MAX 이하, 긴 변 STRIP_LONG 이상 띠(쪽 테두리 세로선, 030쪽 빗금 벽).
+    - off_page: 쪽 밖으로 쪽 크기 넘게 떨어진 도형(023쪽 검은 채움 상자, 수만 pt 밖). 보이지 않는다. 가장자리에 걸친
+      그림은 건드리지 않는다."""
+    kind_of = {n["local_id"]: n.get("kind") for n in nodes}
+    live = [s for s in syms if id(s) in local_of and local_of[id(s)][0] in kind_of]
+    ends = {}
+    for ch in chains:
+        for v, pt, _ in ch["ends"]:
+            if v[0] == "sym":
+                ends.setdefault(id(v[1]), []).append(pt)
+    out, boxes = {}, {}
+    for s in live:
+        b, touched = s.bbox, ends.get(id(s), [])
+        if b[2] < -width or b[3] < -height or b[0] > 2 * width or b[1] > 2 * height:
+            out[id(s)] = ("off_page", [])
+        elif kind_of[local_of[id(s)][0]] is not None:
+            continue
+        elif not touched and min(_w(b), _h(b)) <= STRIP_MAX and max(_w(b), _h(b)) >= STRIP_LONG:
+            out[id(s)] = ("thin_strip", [])
+        elif _bare_rect(s):
+            boxes[id(s)] = (s, touched)
+    for k, (s, touched) in boxes.items():
+        parts = [t for t in live if t is not s and id(t) not in boxes and _inside(_center(t.bbox), s.bbox)]
+        if not touched:
+            if max(_w(s.bbox), _h(s.bbox)) > FRAME_EMPTY_LONG:
+                out[k] = ("frame", parts)
+        elif sum(1 for t in parts if kind_of[local_of[id(t)][0]] is not None) >= FRAME_PARTS_MIN and \
+                2 * sum(1 for pt in touched if _frame_part(pt, parts) is not None) >= len(touched):
+            out[k] = ("frame", parts)
+    for k, (s, _) in boxes.items():  # 틀이 되지 못한 상자는 바깥 틀의 부품이다
+        if k in out:
+            out[k] = ("frame", [t for t in live if t is not s and id(t) not in out and _inside(_center(t.bbox), s.bbox)])
+    return out
+
+
+def _bare_rect(s):
+    body = s.bodies[0] if len(s.bodies) == 1 else None
+    return body is not None and not (s.strokes or s.markers or s.dashes) and body.get("closed") \
+        and not body.get("curved") and _is_axis_rect(body, 0.5)
+
+
+def _frame_part(pt, parts):
+    """틀에 닿던 선 끝 pt를 옮길 안쪽 부품. FRAME_REACH 안에 가장 가까운 부품 하나가 분명할 때만 고른다."""
+    near = sorted((_pt_box_dist(pt, t.bbox), k) for k, t in enumerate(parts))
+    if not near or near[0][0] > FRAME_REACH or (len(near) > 1 and near[1][0] - near[0][0] <= FRAME_TIE):
+        return None
+    return parts[near[0][1]]
 
 
 # ---------------------------------------------------------------- 태그
@@ -3558,6 +3622,17 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     merge_into, number_ids = _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains,
                                acts_on, numbers_on, boxes_on)
     _apply_positions(syms, node_out, unknowns, local_of, positions, blocks)
+    frames = _frames(syms, node_out, local_of, chains, width, height)
+    gone = {local_of[k][0] for k in local_of if k in frames}
+    for s in syms:
+        if id(s) in frames:
+            node = next(nd for nd in node_out if nd["local_id"] == local_of[id(s)][0])
+            dropped.append({"source_object_id": node["source_object_id"], "label_text": node["label_text"],
+                            "bbox": _box_out(s.bbox), "reason": frames[id(s)][0]})
+    node_out[:] = [nd for nd in node_out if nd["local_id"] not in gone]
+    locations[:] = [loc for loc in locations if loc["local_id"] not in gone]
+    unknowns[:] = [u for u in unknowns if u.get("target") not in gone]
+    instrument_ids -= gone
     _assign_tags(node_out, unknowns, instrument_ids, {local_of[id(syms[si])][0] for si in numbered}, label_lines)
     tee_ids = {}
     for k, (x, y) in enumerate(tees):
@@ -3608,8 +3683,19 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             continue  # 구동부 축·번호 원 지시선: 합친 밸브 안의 선이다(관계 번호는 비워 둔다)
         # 합친 구동부로 들어가던 선은 구동 신호로 본다. 글자 상자로 들어가던 선(P 상자의 파일럿 배관)은 제 선 종류를 지킨다
         moved = any(v[0] == "sym" and id(v[1]) in merge_into and id(v[1]) not in box_ids for v, _, _ in ch["ends"])
+        ends = []
+        for v, pt, basis in ch["ends"]:
+            if v[0] == "sym" and id(v[1]) in frames:  # 틀에 닿던 끝은 안쪽 부품으로. 못 고르면 미확인 끝점
+                part = _frame_part(pt, frames[id(v[1])][1])
+                v, basis = (("sym", part), FRAME_BASIS) if part is not None else (("frame", None), basis)
+            ends.append((v, pt, basis))
+        if any(v[0] == "sym" and id(v[1]) in frames for v, _, _ in ch["ends"]) and ends[0][0][0] == "sym" \
+                and ends[0][0][1] is ends[1][0][1]:
+            dropped.append({"source_object_id": sid, "label_text": "", "bbox": _box_out(_bbox_pts(ch["pts"])),
+                            "reason": "frame_inner_line"})
+            continue  # 틀 벽과 안쪽 부품 사이 선: 틀을 빼면 부품 안의 선이다
         endpoints, resolved = [], True
-        for end, (v, pt, basis) in zip(("source", "target"), ch["ends"]):
+        for end, (v, pt, basis) in zip(("source", "target"), ends):
             r = ref(v)
             ep = {"end": end, "node_local_id": r[0] if r else None, "source_object_id": r[1] if r else None,
                   "constraint": None, "point": [_num(pt[0]), _num(pt[1])], "point_basis": basis,

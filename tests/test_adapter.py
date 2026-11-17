@@ -526,6 +526,26 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertEqual(reasons, ["bare_outline", "hatch_block", "stray_stroke"])
         self.assertEqual(sorted(n["geometry"]["x"] for n in ext["nodes"] if n["kind"] != "tee"), [200, 300, 500])
 
+    def test_box_holding_parts_is_frame_and_its_lines_move_to_parts(self):
+        # APR1400 019쪽 SUPPLY AHU: 사각형 하나로 그린 함체가 안의 부품을 품으면 함체는 노드가 아니라 틀이다. 함체 벽에 닿던 선
+        # 끝은 가까운 안쪽 부품으로 옮기고, 가까운 부품이 없으면 미확인 끝점으로 둔다. 선이 닿지 않는 큰 이름 상자(방),
+        # 쪽 테두리 세로선 같은 가는 띠, 쪽 밖에 놓인 상자도 노드가 아니다
+        prims = [rect(80, 60, 320, 180), circle(100, 100, 8), circle(300, 140, 8),
+                 rect(10, 95, 20, 105), line((20, 100), (80, 100)), rect(380, 135, 390, 145), line((320, 140), (380, 140)),
+                 rect(10, 165, 20, 175), line((20, 170), (80, 170)),
+                 rect(400, 250, 560, 300), rect(590, 10, 590.7, 390), rect(-500, -500, -480, -480)]
+        words = [word("PI", 96, 97, size=4), word("TI", 296, 137, size=4), word("PUMP ROOM", 420, 260)]
+        ext = pdf_run(prims, words)
+        reasons = sorted(o["reason"] for o in ext["drawing"]["ignored_objects"]
+                         if o.get("reason") in ("frame", "thin_strip", "off_page"))
+        self.assertEqual(reasons, ["frame", "frame", "off_page", "thin_strip"])
+        x = {n["local_id"]: n["geometry"]["x"] for n in ext["nodes"]}
+        self.assertEqual(sorted(x.values()), [10, 10, 92, 292, 380])
+        pairs = sorted(sorted(x[e["node_local_id"]] for e in r["endpoints"]) for r in ext["relations"])
+        self.assertEqual(pairs, [[10, 92], [292, 380]])
+        [loose] = ext["unresolved_connectors"]
+        self.assertEqual(sorted(e["status"] for e in loose["endpoints"]), ["connected", "unconnected"])
+
     def test_triangle_row_on_line_is_one_sparger(self):
         # 범례 1.7-1 SPRAY NOZZLE OR SPARGER(008쪽 SPARGER): 막대 하나에 같은 삼각형이 같은 간격으로 매달린 것은 분사구 하나다.
         # 삼각형마다 노드가 생기지 않고, 막대 가운데로 들어온 공급 배관은 그 분사구에 닿는다
