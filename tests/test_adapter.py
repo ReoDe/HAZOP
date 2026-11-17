@@ -546,6 +546,37 @@ class PdfVectorRuleTest(unittest.TestCase):
         [loose] = ext["unresolved_connectors"]
         self.assertEqual(sorted(e["status"] for e in loose["endpoints"]), ["connected", "unconnected"])
 
+    def test_box_that_took_merged_letter_box_stays_a_node(self):
+        # 글자 상자(G)를 축으로 합쳐 받은 상자는 틀로도 쪽 밖 도형으로도 빼지 않는다. 빼면 합친 상자에 닿은 점선이 없는
+        # 노드를 가리킨다(쪽 밖 상자도 같다)
+        for dx in (0, 2000):
+            def sh(*pts):
+                return [(x + dx, y) for x, y in pts]
+            dash = dict(line(*sh((103, 47), (180, 47))), dash=[[3.0, 2.0], 0.0])
+            prims = [prim(sh((80, 60), (320, 60), (320, 180), (80, 180), (80, 60)), closed=True),
+                     circle(100 + dx, 100, 8), circle(300 + dx, 140, 8),
+                     prim(sh((10, 95), (20, 95), (20, 105), (10, 105), (10, 95)), closed=True), line(*sh((20, 100), (80, 100))),
+                     prim(sh((380, 135), (390, 135), (390, 145), (380, 145), (380, 135)), closed=True),
+                     line(*sh((320, 140), (380, 140))),
+                     prim(sh((10, 165), (20, 165), (20, 175), (10, 175), (10, 165)), closed=True), line(*sh((20, 170), (80, 170))),
+                     prim(sh((97, 44), (103, 44), (103, 50), (97, 50), (97, 44)), closed=True), line(*sh((100, 50), (100, 60))), dash,
+                     prim(sh((180, 42), (190, 42), (190, 52), (180, 52), (180, 42)), closed=True)]
+            words = [word("PI", 96 + dx, 97, size=4), word("TI", 296 + dx, 137, size=4), word("G", 98.5 + dx, 45, size=4)]
+            with self.subTest(dx=dx):
+                ext = pdf_run(prims, words)
+                ids = {n["local_id"] for n in ext["nodes"]}
+                ends = [e["node_local_id"] for r in ext["relations"] + ext["unresolved_connectors"] for e in r["endpoints"]]
+                self.assertTrue(all(i in ids for i in ends if i), ends)
+                self.assertIn(80 + dx, [n["geometry"]["x"] for n in ext["nodes"]])
+
+    def test_empty_box_with_tag_label_is_a_node(self):
+        # 선이 닿지 않는 큰 상자라도 태그 꼴 라벨(TK-101, TK01A)이 있으면 설비다. 틀로 빼지 않는다
+        for tag in ("TK-101", "TK01A", "ROOM"):
+            with self.subTest(tag=tag):
+                ext = pdf_run([rect(100, 100, 260, 200)], [word(tag, 150, 140)])
+                labels = [n["label_text"] for n in ext["nodes"]]
+                self.assertEqual(labels, [] if tag == "ROOM" else [tag])
+
     def test_triangle_row_on_line_is_one_sparger(self):
         # 범례 1.7-1 SPRAY NOZZLE OR SPARGER(008쪽 SPARGER): 막대 하나에 같은 삼각형이 같은 간격으로 매달린 것은 분사구 하나다.
         # 삼각형마다 노드가 생기지 않고, 막대 가운데로 들어온 공급 배관은 그 분사구에 닿는다

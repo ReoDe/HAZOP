@@ -57,7 +57,7 @@ from .pdf_vector_flow import (_chain_flow, _end_symbol_flows, _inline_unclassifi
                                continuation_flow, end_arrow)
 from .pdf_vector_lines import attach_continuation_line_numbers, attach_line_labels, parse_label
 from .pdf_vector_labels import (ALARM_COLUMN_TOL, ALARM_RE, ISA_LABEL_RE, PAREN_TOKEN_RE, PLATE_PART_RE, POSITION_CODE_RE, POSITION_TEXT_RE, NUMBER_PLATE_RE,
-                                VALVE_TAG_RE,
+                                VALVE_TAG_RE, EQUIPMENT_TAG_RE,
                                 _text_blocks, _upright_blocks, _bubble_like, _assign_tags, _join_bubble_number)
 
 SCHEMA_VERSION = drawio.SCHEMA_VERSION
@@ -2701,9 +2701,10 @@ FRAME_REACH = 40.0        # 틀에 닿던 선 끝을 안쪽 부품으로 옮기�
 FRAME_TIE = 1.0           # 가장 가까운 부품 둘의 거리 차가 이 값 이하면 어느 쪽인지 정하지 않는다(pt)
 STRIP_MAX = 5.0           # 가는 띠: 짧은 변 상한(pt)
 STRIP_LONG = 100.0        # 가는 띠: 긴 변 하한(pt)
+BOX_TAG_RE = re.compile(r"[A-Z]{1,5}-[A-Z]{0,6}\d{1,5}[A-Z]?(?:-[A-Z0-9]+)?")  # 상자 라벨의 설비 번호 꼴(TK-101, CS-PP01A)
 
 
-def _frames(syms, nodes, local_of, chains, width, height):
+def _frames(syms, nodes, local_of, chains, hosts, width, height):
     """노드로 두지 않을 큰 도형 {id(기호): (까닭, 안쪽 부품 기호 목록)}. nodes는 노드 목록(종류가 정해진 뒤)이다.
     - frame: 종류 없는 곧은 사각형 하나(닫힌 몸체 하나뿐). 선이 닿지 않고 긴 변이 FRAME_EMPTY_LONG을 넘는 방·일정표 상자,
       또는 종류 붙은 부품을 FRAME_PARTS_MIN 이상 품고 닿은 선 끝의 절반 이상을 안쪽 부품(_frame_part)으로 옮길 수 있는
@@ -2711,8 +2712,11 @@ def _frames(syms, nodes, local_of, chains, width, height):
       부품에서 먼 상자는 설비다(049쪽 시료 싱크 LP04 안의 계기 원).
     - thin_strip: 종류 없고 선이 닿지 않는 짧은 변 STRIP_MAX 이하, 긴 변 STRIP_LONG 이상 띠(쪽 테두리 세로선, 030쪽 빗금 벽).
     - off_page: 쪽 밖으로 쪽 크기 넘게 떨어진 도형(023쪽 검은 채움 상자, 수만 pt 밖). 보이지 않는다. 가장자리에 걸친
-      그림은 건드리지 않는다."""
-    kind_of = {n["local_id"]: n.get("kind") for n in nodes}
+      그림은 건드리지 않는다.
+    hosts(구동부·글자 상자·번호 원을 합쳐 받은 기호 id)는 어느 것으로도 빼지 않는다. 빼면 합친 기호에 닿은 선이 없는 노드를
+    가리킨다. 라벨에 설비 번호 꼴(TAG_RE·EQUIPMENT_TAG_RE·BOX_TAG_RE) 낱말이 있는 상자는 설비라서 틀로 보지 않는다."""
+    nodes_by_id = {n["local_id"]: n for n in nodes}
+    kind_of = {k: n.get("kind") for k, n in nodes_by_id.items()}
     live = [s for s in syms if id(s) in local_of and local_of[id(s)][0] in kind_of]
     ends = {}
     for ch in chains:
@@ -2722,13 +2726,15 @@ def _frames(syms, nodes, local_of, chains, width, height):
     out, boxes = {}, {}
     for s in live:
         b, touched = s.bbox, ends.get(id(s), [])
+        if id(s) in hosts:
+            continue
         if b[2] < -width or b[3] < -height or b[0] > 2 * width or b[1] > 2 * height:
             out[id(s)] = ("off_page", [])
         elif kind_of[local_of[id(s)][0]] is not None:
             continue
         elif not touched and min(_w(b), _h(b)) <= STRIP_MAX and max(_w(b), _h(b)) >= STRIP_LONG:
             out[id(s)] = ("thin_strip", [])
-        elif _bare_rect(s):
+        elif _bare_rect(s) and not _tag_label(nodes_by_id[local_of[id(s)][0]]["label_text"]):
             boxes[id(s)] = (s, touched)
     for k, (s, touched) in boxes.items():
         parts = [t for t in live if t is not s and id(t) not in boxes and _inside(_center(t.bbox), s.bbox)]
@@ -2742,6 +2748,11 @@ def _frames(syms, nodes, local_of, chains, width, height):
         if k in out:
             out[k] = ("frame", [t for t in live if t is not s and id(t) not in out and _inside(_center(t.bbox), s.bbox)])
     return out
+
+
+def _tag_label(text):
+    words = re.split(r"[\s,]+", text or "")
+    return bool(TAG_RE.search(text or "")) or any(EQUIPMENT_TAG_RE.fullmatch(w) or BOX_TAG_RE.fullmatch(w) for w in words)
 
 
 def _bare_rect(s):
@@ -3622,7 +3633,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     merge_into, number_ids = _apply_merges(syms, node_out, locations, unknowns, dropped, instrument_ids, local_of, chains,
                                acts_on, numbers_on, boxes_on)
     _apply_positions(syms, node_out, unknowns, local_of, positions, blocks)
-    frames = _frames(syms, node_out, local_of, chains, width, height)
+    frames = _frames(syms, node_out, local_of, chains, {id(v) for v in merge_into.values()}, width, height)
     gone = {local_of[k][0] for k in local_of if k in frames}
     for s in syms:
         if id(s) in frames:
