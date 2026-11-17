@@ -595,7 +595,8 @@ class ClaudeCliClient:
     # ---- 호출
 
     def command(self, request, system_file):
-        return ["-p", "--output-format", "stream-json", "--verbose",
+        stream_in = ["--input-format", "stream-json"] if request.get("images") else []
+        return ["-p"] + stream_in + ["--output-format", "stream-json", "--verbose",
                 "--json-schema", json.dumps(request["schema"], ensure_ascii=False, separators=(",", ":")),
                 "--system-prompt-file", system_file,
                 "--model", self.model, "--effort", self.effort,
@@ -635,7 +636,7 @@ class ClaudeCliClient:
                 fh.write(request["system"])
             work = os.path.join(run_dir, "cwd")
             os.makedirs(work)
-            stdin = (request.get("context", "") + "\n\n" + request["user"]).encode("utf-8")
+            stdin = request_stdin(request)
             try:
                 tree = self._spawn(base + self.command(request, system_file), work, subprocess.PIPE, gen)
             except OSError as exc:
@@ -724,6 +725,23 @@ class ClaudeCliClient:
                 save_limit(self.limits_path, limit)
             except OSError:
                 pass
+
+
+def request_stdin(request):
+    """요청 -> stdin 바이트. 그림이 없으면 글 그대로, 있으면 stream-json 사용자 메시지 한 줄(그림 블록들 + 글 블록).
+    images: [{"label", "media_type", "data"(base64)}]. 그림마다 앞에 이름표 글 블록을 둬 어느 항목의 그림인지 알린다.
+    그림은 메시지 안에 실려 가므로 도구(파일 읽기)는 계속 끈 채로 둔다."""
+    text = request.get("context", "") + "\n\n" + request["user"]
+    if not request.get("images"):
+        return text.encode("utf-8")
+    content = []
+    for img in request["images"]:
+        content.append({"type": "text", "text": img["label"]})
+        content.append({"type": "image", "source": {"type": "base64", "media_type": img["media_type"],
+                                                    "data": img["data"]}})
+    content.append({"type": "text", "text": text})
+    msg = {"type": "user", "message": {"role": "user", "content": content}}
+    return (json.dumps(msg, ensure_ascii=False) + "\n").encode("utf-8")
 
 
 def _write_stdin(pipe, data):

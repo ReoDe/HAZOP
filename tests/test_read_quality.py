@@ -264,6 +264,28 @@ class AiRunTest(unittest.TestCase):
         self.assertIsNone(e["nodes"][0]["kind"])  # 원본 추출은 그대로
 
 
+class SnpImageReplayTest(unittest.TestCase):
+    """그림 입력 고정 응답(tests/fixtures/ai-review/snp-images, SNP 6쪽 구독 실행 저장본)을 다시 돌려 같은 두 줄을 낸다.
+    SNP 추출이나 범례판이 바뀌면 요청이 달라져 저장본과 짝이 맞지 않는다. 그때는 건너뛰고 다시 받는 명령을 알린다
+    (재현 경로 자체는 test_ai_review.ImageInputTest가 가짜 클라이언트로 늘 본다)."""
+
+    def test_replay_gives_same_two_lines(self):
+        from hazop.study import providers
+        fixed = os.path.join(REPO_ROOT, "tests", "fixtures", "ai-review", "snp-images")
+        samples = os.path.join(REPO_ROOT, "resources", "references", "pid-samples")
+        res = rq.run(os.path.join(REPO_ROOT, "no-apr1400"), samples, ai_client=providers.FixedCellsClient(fixed),
+                     ai_cap=20, ai_images=True)
+        stats = res["ai_stats"]
+        if any(st["errors"] for st in stats.values()):
+            self.skipTest("SNP 요청이 저장본과 달라짐. 다시 받기: check_read_quality.py --only <SNP 6쪽> --ai-run "
+                          "subscription --ai-images --ai-save <폴더> 뒤 <폴더>/responses를 이 고정 응답 폴더로 바꾼다")
+        script, with_ai = rq.totals(res["pages"]), rq.totals(res["ai_pages"])
+        self.assertEqual(with_ai["kind"]["correct"] - script["kind"]["correct"], 2)  # SNP-M-401 원심 펌프 2개
+        self.assertEqual(with_ai["kind"]["false_pos"], script["kind"]["false_pos"])
+        for it in ("tag", "connection", "attribute"):
+            self.assertEqual(with_ai[it], script[it], it)
+
+
 class BaselineTest(unittest.TestCase):
     def page(self, c, u, f):
         return {it: {"correct": c, "units": u, "false_pos": f} for it in rq.ITEMS}

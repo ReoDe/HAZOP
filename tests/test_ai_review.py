@@ -317,6 +317,69 @@ class FixedResponseTest(unittest.TestCase):
         self.assertIn("후보", req["system"])
 
 
+class StubPage:
+    """조각 그림 대신 상자 좌표를 글자로 담은 바이트(요청에 어느 자리가 실렸는지 본다)."""
+
+    def crop_png(self, bbox):
+        return ("crop:%s" % ",".join("%g" % v for v in bbox)).encode("ascii")
+
+
+class ImageInputTest(unittest.TestCase):
+    """그림 입력(ai_images.ImageInput): kind·tag만, 항목마다 조각, 종류를 물을 때만 범례판, 종류는 목록 안에서만."""
+
+    def images(self, kinds=("manual_valve", "pump")):
+        from hazop.extract import ai_images
+        return ai_images.ImageInput(StubPage(), [b"legend-1"], kinds=list(kinds))
+
+    def test_only_kind_tag_and_crop_per_item(self):
+        stub = StubClient(good_answers)
+        ar.run(ex_fixture(), stub, cap=5, images=self.images())
+        asked = [it for req in stub.requests for it in ids_in(req)]
+        self.assertEqual({it["task"] for it in asked}, {"kind", "tag"})
+        for req in stub.requests:
+            labels = [im["label"] for im in req["images"]]
+            crops = [lb for lb in labels if lb.startswith("그림 ")]
+            self.assertEqual(crops, ["그림 " + it["item_id"] for it in ids_in(req)])
+            has_kind = any("kind" in it["ask"] for it in ids_in(req))
+            self.assertEqual(any(lb.startswith("범례판") for lb in labels), has_kind)
+            self.assertIn("범례판", req["system"])
+            self.assertTrue(all(im["media_type"] == "image/png" for im in req["images"]))
+        self.assertTrue(all(len(ids_in(r)) <= ar.IMAGE_BATCH for r in stub.requests))
+
+    def test_kind_outside_viewer_list_is_dropped(self):
+        def answers(req):
+            return {"answers": [{"item_id": it["item_id"], "field": "kind", "values": ["check_valve"], "confidence": 0.9,
+                                 "reason": "x"} for it in ids_in(req) if it["task"] == "kind"]}
+        doc = ar.run(ex_fixture(), StubClient(answers), cap=5, recheck=0, images=self.images())
+        self.assertEqual(doc["candidates"], [])
+        self.assertGreater(doc["stats"]["dropped"], 0)
+        doc = ar.run(ex_fixture(), StubClient(answers), cap=5, recheck=0, images=self.images(("check_valve",)))
+        self.assertEqual([c["values"][0] for c in doc["candidates"]], ["check_valve"])
+
+    def test_recorded_responses_replay_to_same_candidates(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        rec = providers.RecordingClient(StubClient(good_answers), tmp)
+        first = ar.run(ex_fixture(), rec, cap=5, images=self.images())
+        self.assertEqual(len(rec.calls), first["stats"]["calls"])
+        self.assertTrue(all(c["images"] >= 1 for c in rec.calls))
+        again = ar.run(ex_fixture(), providers.FixedCellsClient(tmp), cap=5, images=self.images())
+        self.assertEqual(again["stats"]["errors"], 0)
+        self.assertEqual(again["candidates"], first["candidates"])
+        dead = StubClient(good_answers, errors=["limit_reached"] * 9)  # 다시 부르면 실패하는 안쪽
+        resumed = providers.RecordingClient(dead, tmp)
+        third = ar.run(ex_fixture(), resumed, cap=5, images=self.images())
+        self.assertEqual((dead.requests, third["candidates"]), ([], first["candidates"]), "저장한 응답을 다시 씀")
+        self.assertTrue(all(c["cached"] for c in resumed.calls))
+
+    def test_fixed_key_follows_image_content(self):
+        req = {"context": "c", "user": "u"}
+        img = {"label": "그림 k-1", "media_type": "image/png", "data": "QUJD"}
+        self.assertNotEqual(providers.fixed_key(req), providers.fixed_key(dict(req, images=[img])))
+        self.assertNotEqual(providers.fixed_key(dict(req, images=[img])),
+                            providers.fixed_key(dict(req, images=[dict(img, data="QUJE")])))
+
+
 class AcceptTest(unittest.TestCase):
     """실제 SNP-M-102 PDF 추출(임시 작업 루트)에서 수락·되돌리기가 사람 수정 기록으로 들어가는지."""
 

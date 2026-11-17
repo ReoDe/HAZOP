@@ -6,6 +6,7 @@
 import hashlib
 import json
 import os
+import time
 
 from hazop import paths
 from hazop.analysis import ai
@@ -93,9 +94,49 @@ def halts(error_kinds):
 
 
 def fixed_key(request):
-    """고정 응답 파일 이름: 요청(맥락+편차) 해시 앞 16자."""
+    """고정 응답 파일 이름: 요청(맥락+편차, 그림이 있으면 그림 이름표·내용까지) 해시 앞 16자."""
     text = request.get("context", "") + "\n" + request["user"]
+    for img in request.get("images") or []:
+        text += "\n%s:%s" % (img["label"], hashlib.sha256(img["data"].encode("ascii")).hexdigest())
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+class RecordingClient:
+    """다른 클라이언트를 감싸 응답을 고정 응답 꼴(<response_dir>/<fixed_key>.json)로 남기고 호출마다 걸린 시간을 적는다.
+    같은 요청을 FixedCellsClient(response_dir)로 다시 돌리면 같은 답이 나온다(재현). 연결 방식(describe)은 안쪽 것을 그대로 쓴다.
+    폴더에 이미 그 요청의 응답이 있으면 부르지 않고 그것을 쓴다(한도에 걸려 멈춘 실행을 같은 자리에서 이어 감, cached)."""
+
+    def __init__(self, inner, response_dir):
+        self.inner = inner
+        self.response_dir = response_dir
+        self.calls = []  # [{key, seconds, status, error_kind, images, cached}]
+
+    def describe(self):
+        return self.inner.describe() if hasattr(self.inner, "describe") else {}
+
+    def check(self):
+        return self.inner.check()
+
+    def cancel(self):
+        self.inner.cancel()
+
+    def analyze(self, request):
+        key = fixed_key(request)
+        n_images = len(request.get("images") or [])
+        if os.path.isfile(os.path.join(self.response_dir, key + ".json")):
+            res = FixedCellsClient(self.response_dir).analyze(request)
+            self.calls.append({"key": key, "seconds": 0.0, "status": res.get("status"),
+                               "error_kind": res.get("error_kind"), "images": n_images, "cached": True})
+            return res
+        started = time.monotonic()
+        res = self.inner.analyze(request)
+        self.calls.append({"key": key, "seconds": round(time.monotonic() - started, 1), "status": res.get("status"),
+                           "error_kind": res.get("error_kind"), "images": n_images, "cached": False})
+        if res.get("status") == "completed":
+            os.makedirs(self.response_dir, exist_ok=True)
+            with open(os.path.join(self.response_dir, key + ".json"), "w", encoding="utf-8") as fh:
+                json.dump({"output": res.get("output")}, fh, ensure_ascii=False, indent=1)
+        return res
 
 
 class FixedCellsClient:
