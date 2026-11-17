@@ -32,7 +32,7 @@
    - 모델은 연결 기본값 `claude-opus-5-5`, 추론 강도 `medium`(`--ai-effort` 기본값). 바꾸지 않는다.
    - 사용 한도에 걸려 멈추면(`멈춤(limit_reached)`) 재설정 뒤 **같은 명령, 같은 저장 폴더**로 다시 돌린다. 받은 응답은 `responses/`에서 다시 쓰고 부르지 않는다(출력의 '실제 호출' 수로 확인).
 5. 저장 위치 규칙: 조각 그림과 응답 저장본은 저장소 밖 시험 폴더에만 둔다(`<시험 폴더 루트>\<날짜>-<주제>\...`, 폴더 README에 주인·목적·keep_until). 저장소에는 코드와 SNP 고정 응답(`tests/fixtures/ai-review/snp-images`)만 넣는다.
-6. 다시 재기: `python scripts/check_read_quality.py --input-dir <APR1400 by-drawing 폴더> --extra-keys <정답지 폴더> --ai-run fixed --ai-fixed-dir <저장 폴더>\responses --ai-images --ai-legend-samples 3 --ai-wide`. 고정 응답 열쇠(`providers.fixed_key`)는 프롬프트(system)·답 스키마·맥락·지시·그림 내용을 모두 넣는다(2026-11-17 고침). 프롬프트나 스키마가 바뀌면 옛 저장본 응답은 열쇠가 맞지 않아 쓰이지 않고 새로 부른다. 고치기 전 열쇠로 저장한 폴더는 지금 코드에서 모두 '응답 없음'이 된다.
+6. 다시 재기: `python scripts/check_read_quality.py --input-dir <APR1400 by-drawing 폴더> --extra-keys <정답지 폴더> --ai-run fixed --ai-fixed-dir <저장 폴더>\responses --ai-images --ai-legend-samples 3 --ai-wide`. 고정 응답 열쇠(`providers.fixed_key`)는 프롬프트(system)·답 스키마·맥락·지시·그림 내용을 모두 넣는다(2026-11-17 고침). 프롬프트나 스키마가 바뀌면 옛 저장본 응답은 열쇠가 맞지 않아 쓰이지 않고 새로 부른다. 그림 요청은 고치기 전 열쇠로 저장한 응답을 받지 않는다(이 문서의 측정은 모두 그림 요청이라 옛 저장 폴더는 '응답 없음'이 된다). 글만 보내는 요청은 사용자 자료 호환을 위해 이전 판 열쇠도 읽고 `legacy_key`로 표시한다.
 7. 후보별 판정(맞게 바꿈·틀리게 바꿈·없던 자리에 틀리게 붙임): 시험 폴더 `2026-11-14-r3-read-quality\aisnp\apr-run6-recall\diffcheck3.py <저장소> <PDF 폴더> <정답지 폴더> <저장 폴더>`(종류 후보를 높음·보통으로 나눠 셈).
 8. 보류 쪽은 그림을 열어 원인을 찾지 않는다. 합계만 적는다.
 

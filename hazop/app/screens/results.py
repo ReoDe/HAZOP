@@ -1513,7 +1513,7 @@ class ResultsScreen(QWidget):
         except OSError:
             have = set()
         keep = [u for u in units
-                if providers.fixed_key(ai_cells.build_request(u, ctxs[u["node_id"]], self.deviations)) in have]
+                if any(k in have for k in providers.stored_keys(ai_cells.build_request(u, ctxs[u["node_id"]], self.deviations)))]
         missing = sum(len(u["deviation_ids"]) for u in units if u not in keep)
         return keep, missing
 

@@ -586,6 +586,52 @@ class ImageInputTest(unittest.TestCase):
         self.assertTrue(rec.calls[-1]["cached"])
         self.assertEqual(again["output"]["answers"], ["판 1"])
 
+    def write_legacy(self, folder, request, output):
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, providers.legacy_key(request) + ".json"), "w", encoding="utf-8") as fh:
+            json.dump({"output": output}, fh)
+
+    def test_text_request_reads_folder_saved_with_previous_key(self):
+        """사용자가 예전에 받아 둔 글 요청 고정 응답(이전 판 열쇠)은 그대로 읽히고, 이전 판 열쇠로 찾았다고 표시한다."""
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        req = {"system": "s", "context": "c", "user": "u", "schema": {"type": "object"}}
+        self.write_legacy(tmp, req, {"answers": ["예전"]})
+        res = providers.FixedCellsClient(tmp).analyze(req)
+        self.assertEqual((res["status"], res["output"], res["legacy_key"]), ("completed", {"answers": ["예전"]}, True))
+        self.assertEqual(providers.stored_keys(req), [providers.fixed_key(req), providers.legacy_key(req)])
+        inner = StubClient(lambda r: {"answers": ["새로"]})
+        rec = providers.RecordingClient(inner, tmp)
+        self.assertEqual(rec.analyze(req)["output"], {"answers": ["예전"]})
+        self.assertEqual((inner.requests, rec.calls[-1]["cached"], rec.calls[-1]["legacy_key"]), ([], True, True))
+
+    def test_image_request_never_reads_previous_key(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        req = {"system": "s", "context": "c", "user": "u", "schema": {"type": "object"},
+               "images": [{"label": "그림 k-1", "media_type": "image/png", "data": "QUJD"}]}
+        self.write_legacy(tmp, req, {"answers": ["예전"]})
+        self.assertEqual(providers.stored_keys(req), [providers.fixed_key(req)])
+        self.assertEqual(providers.FixedCellsClient(tmp).analyze(req)["error_kind"], "not_ready")
+        inner = StubClient(lambda r: {"answers": ["새로"]})
+        rec = providers.RecordingClient(inner, tmp)
+        self.assertEqual(rec.analyze(req)["output"], {"answers": ["새로"]})
+        self.assertEqual(len(inner.requests), 1)
+        self.assertTrue(os.path.isfile(os.path.join(tmp, providers.fixed_key(req) + ".json")), "저장은 새 열쇠로")
+
+    def test_new_saves_use_new_key_and_run_counts_previous_key_hits(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        ex = ex_fixture()
+        first = StubClient(good_answers)
+        ar.run(ex, providers.RecordingClient(first, tmp), cap=5)
+        names = sorted(n[:-5] for n in os.listdir(tmp))
+        self.assertEqual(names, sorted(providers.fixed_key(r) for r in first.requests))
+        for r in first.requests:  # 같은 응답을 이전 판 열쇠 이름으로만 남긴 폴더
+            os.replace(os.path.join(tmp, providers.fixed_key(r) + ".json"), os.path.join(tmp, providers.legacy_key(r) + ".json"))
+        doc = ar.run(ex, providers.FixedCellsClient(tmp), cap=5)
+        self.assertEqual((doc["stats"]["errors"], doc["stats"]["legacy_key_hits"]), (0, len(first.requests)))
+
 
 class AcceptTest(unittest.TestCase):
     """실제 SNP-M-102 PDF 추출(임시 작업 루트)에서 수락·되돌리기가 사람 수정 기록으로 들어가는지."""

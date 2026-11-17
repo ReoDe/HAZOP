@@ -98,9 +98,34 @@ def fixed_key(request):
     프롬프트나 스키마가 바뀌면 열쇠가 바뀌어, 옛 판으로 받아 둔 응답을 다시 쓰지 않고 새로 묻는다."""
     text = "\n".join((request.get("system") or "", json.dumps(request.get("schema"), ensure_ascii=False, sort_keys=True),
                       request.get("context", ""), request["user"]))
+    return _key_hash(text, request)
+
+
+def legacy_key(request):
+    """2026-11-17 전 열쇠(맥락·지시·그림만, system·스키마 없음). 사용자가 예전에 받아 둔 고정 응답 폴더를 읽을 때만 쓴다."""
+    return _key_hash(request.get("context", "") + "\n" + request["user"], request)
+
+
+def _key_hash(text, request):
     for img in request.get("images") or []:
         text += "\n%s:%s" % (img["label"], hashlib.sha256(img["data"].encode("ascii")).hexdigest())
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def stored_keys(request):
+    """고정 응답 폴더에서 찾을 열쇠, 찾는 순서대로. 새 열쇠 먼저. 글만 보내는 요청(결과 화면 AI 칸 등)은 사용자가 이전 판
+    열쇠로 받아 둔 폴더를 잃지 않게 이전 판 열쇠도 받는다. 그림 요청은 프롬프트가 바뀐 옛 답을 쓰지 않게 새 열쇠만.
+    저장은 늘 새 열쇠(fixed_key)로 한다."""
+    return [fixed_key(request)] if request.get("images") else [fixed_key(request), legacy_key(request)]
+
+
+def _stored_path(response_dir, request):
+    """(있는 파일 경로, 이전 판 열쇠로 찾았나) 또는 (None, False)."""
+    for n, key in enumerate(stored_keys(request)):
+        path = os.path.join(response_dir, key + ".json")
+        if os.path.isfile(path):
+            return path, n > 0
+    return None, False
 
 
 class RecordingClient:
@@ -125,15 +150,16 @@ class RecordingClient:
     def analyze(self, request):
         key = fixed_key(request)
         n_images = len(request.get("images") or [])
-        if os.path.isfile(os.path.join(self.response_dir, key + ".json")):
+        if _stored_path(self.response_dir, request)[0]:
             res = FixedCellsClient(self.response_dir).analyze(request)
             self.calls.append({"key": key, "seconds": 0.0, "status": res.get("status"),
-                               "error_kind": res.get("error_kind"), "images": n_images, "cached": True})
+                               "error_kind": res.get("error_kind"), "images": n_images, "cached": True,
+                               "legacy_key": bool(res.get("legacy_key"))})
             return res
         started = time.monotonic()
         res = self.inner.analyze(request)
         self.calls.append({"key": key, "seconds": round(time.monotonic() - started, 1), "status": res.get("status"),
-                           "error_kind": res.get("error_kind"), "images": n_images, "cached": False})
+                           "error_kind": res.get("error_kind"), "images": n_images, "cached": False, "legacy_key": False})
         if res.get("status") == "completed":
             os.makedirs(self.response_dir, exist_ok=True)
             with open(os.path.join(self.response_dir, key + ".json"), "w", encoding="utf-8") as fh:
@@ -164,13 +190,15 @@ class FixedCellsClient:
         res = {"status": None, "output": None, "usage": None, "model": None, "error_type": None, "status_code": None,
                "error": None, "via": "fixed", "billing": "none", "error_kind": None, "conn_state": None,
                "cost_usd": None, "api_equiv_usd": None, "model_requested": None, "limit": None}
-        path = os.path.join(self.response_dir, fixed_key(request) + ".json")
+        path, legacy = _stored_path(self.response_dir, request)
+        if legacy:
+            res["legacy_key"] = True  # 이전 판 열쇠로 찾음(프롬프트 판을 확인할 수 없는 옛 저장본)
         try:
-            with open(path, encoding="utf-8") as fh:
+            with open(path or os.path.join(self.response_dir, fixed_key(request) + ".json"), encoding="utf-8") as fh:
                 doc = json.load(fh)
         except OSError:
             return dict(res, status="api_error", error_kind="not_ready", conn_state="no_folder",
-                        error="고정 응답 파일 없음: %s" % os.path.basename(path))
+                        error="고정 응답 파일 없음: %s.json" % fixed_key(request))
         except ValueError:
             return dict(res, status="parse_error", error_kind="bad_output", error=ai.user_message("parse_error"))
         stop = doc.get("stop_reason")

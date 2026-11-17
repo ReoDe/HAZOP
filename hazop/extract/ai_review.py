@@ -410,6 +410,7 @@ def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
     described = {i["item_id"]: describe(ex, i) for i in call}
     res = _call(client, build_request(ex, call, described, images, wide))
     stats["calls"] += 1
+    stats["legacy_key_hits"] += bool(res.get("legacy_key"))
     kind = res.get("error_kind")
     if kind is None and res.get("status") != "completed":
         kind = providers.api_error_kind(res)[0] or "other"
@@ -491,7 +492,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
     stats = {"items": 0, "planned_calls": 0, "needed_calls": 0, "calls": 0, "errors": 0, "dropped": 0, "confirmed": 0,
              "halted": False, "stopped": False, "left": 0, "error_kinds": [], "refused": refuse_reason(client),
              "excluded": 0, "kind_items": 0, NOT_SYMBOL: 0, UNKNOWN: 0, "wide_calls": 0, "wide_changed": 0,
-             "wide_dropped": 0, "no_image": 0}
+             "wide_dropped": 0, "no_image": 0, "legacy_key_hits": 0}
     if stats["refused"]:
         return {"candidates": [], "stats": stats}
     ex = copy.deepcopy(ex)
