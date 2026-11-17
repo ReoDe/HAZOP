@@ -608,13 +608,16 @@ def _recheck_pass(ex, client, images, answer_kinds, stats, kinds, limit, batch, 
 
 
 def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_progress=None,
-        should_stop=None, budget=None, exclude=(), images=None):
+        should_stop=None, budget=None, exclude=(), images=None, connect=0):
     """AI 검토 한 번. ex는 바꾸지 않는다. → {candidates, stats}.
     cap: 도면당 호출 상한, budget: 이번 실행에 남은 호출 수(RUN_CAP에서 앞 도면이 쓴 만큼 뺀 값). 둘 중 작은 값까지만 부른다.
     exclude: 묻지 않을 대상 source_object_id(사람이 고친 자리).
     images(ai_images.ImageInput): 그림 입력. 과제는 IMAGE_TASKS만, 묶음 기본은 IMAGE_BATCH, 종류 답은 images.kinds 안에서만.
     images.wide면 남은 호출로 밸브 종류 답(WIDE_KINDS)을 넓힌 조각으로 다시 묻는다(_wide_pass). 그 뒤 images.recheck면
     남은 호출로 RECHECK_RULES가 정한 종류를 다시 확인한다(_recheck_pass).
+    connect: 그림 입력에서 연결 묻기(ai_connect, 배관 관계가 없는 기호의 이웃 고르기)에 떼어 둘 호출 수. 첫 묻기는 이 몫(연결
+    묻기에 필요한 호출 수를 넘지 않음)을 뺀 상한까지 부르고, 연결 묻기는 첫 묻기 뒤 넓혀 다시 묻기보다 먼저 남은 호출로 돈다.
+    0이면 연결 묻기를 하지 않는다(그 전과 같은 요청).
     on_progress(끝낸 호출 수, 이번 호출 수, 남은 항목 수), should_stop() → True면 다음 호출 전에 멈춘다.
     멈춤은 응답 상태와 관계없이 error_kind로 providers.halts를 따른다. 호출은 끝났는데 한도·초과 사용이 온 응답은 받은
     답은 반영하고 남은 호출은 멈춘다."""
@@ -640,7 +643,12 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
     limit = cap if budget is None else max(0, min(cap, budget))
     batch = batch or (IMAGE_BATCH if images else DEFAULT_BATCH)
     answer_kinds = set(images.kinds) if images else None
-    p = plan(items, limit, batch)
+    connect_items, reserve = [], 0
+    if images is not None and connect > 0:
+        from hazop.extract import ai_connect
+        connect_items = ai_connect.page_items(ex, images.page, exclude)
+        reserve = min(connect, ai_connect.calls_needed(len(connect_items)))
+    p = plan(items, max(0, limit - reserve), batch)
     cands, kinds = [], []
     stats.update(items=len(items), planned_calls=len(p["calls"]), needed_calls=p["needed"], left=len(items),
                  kind_items=sum(1 for i in items if i["task"] == "kind"))
@@ -661,6 +669,9 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
             stats["halted"] = True
             break
     stats["left"] = len(items) - done_items
+    if connect_items and not (stats["halted"] or stats["stopped"]):
+        cands += ai_connect.run(ex, client, connect_items, images, stats, kinds, limit, should_stop)
+        stats["halted"] = providers.halts(kinds)
     if images is not None and images.wide and not (stats["halted"] or stats["stopped"]):
         cands = _wide_pass(ex, client, cands, items, images, answer_kinds, stats, kinds, limit, batch, should_stop)
         stats["halted"] = providers.halts(kinds)
@@ -880,8 +891,10 @@ def _op_for(c):
         return "set_tag", {"tag": v}
     if c["field"] in POSITION_VALUES:
         return "set_" + c["field"], {"value": v}
-    if c["field"] == "connection":
+    if c["field"] == "connection" and c.get("open_end"):
         return "set_endpoint", {"end": c["open_end"], "node": v}
+    if c["field"] == "connection":  # 배관 관계가 없던 기호와 고른 이웃 사이 새 배관(ai_connect)
+        return "add_relation", {"kind": "physical_connection", "line_type": "process", "from": c["target"], "to": v}
     if c["field"] == "split":  # 덩어리 안 기호를 새 노드로 더한다. 덩어리 노드는 지우지 않는다
         b = c["new_bbox"]
         return "add_node", {"kind": v, "category": rules.KIND_CATEGORY[v], "bbox": [b[0], b[1], b[2] - b[0], b[3] - b[1]]}
@@ -930,8 +943,8 @@ def accept(doc, cand_ids, original_ex, name, by, at=None):
                 failed.append((c["cand_id"], "이미 수정 기록에 있음"))
                 continue
             try:
-                new = corrections.make_op(original_ex, op, None if op == "add_node" else c["target"], value, by, at=at,
-                                          existing_ops=ops, name=name)
+                target = None if op in ("add_node", "add_relation") else c["target"]
+                new = corrections.make_op(original_ex, op, target, value, by, at=at, existing_ops=ops, name=name)
             except ValueError as exc:
                 failed.append((c["cand_id"], str(exc)))
                 continue
