@@ -14,12 +14,12 @@ from typing import Callable
 from hazop import paths, store_io
 from hazop.extract import rules
 from hazop.extract.drawio import summarize
+from hazop.extract.ids import MANUAL_PREFIX
 from hazop.kg.schema import REGISTRY
 from hazop.study.nodes import now_utc
 
 KIND = "hazop_drawing_corrections"
 SCHEMA_VERSION = "0.1"
-MANUAL_PREFIX = "manual-"
 RELATION_KINDS = ("physical_connection", "signal_connection", "measurement_connection")
 ENDS = ("source", "target")
 

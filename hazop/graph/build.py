@@ -13,6 +13,8 @@
   (기획서/지식그래프-스키마.md §3). 둘 다 추출 결과(graph_version 입력)에서 정해지므로 BUILDER_VERSION은 올리지 않는다.
   올리면 수정이 없는 도면까지 판이 바뀌어 구간 JSON·mentions 기록이 모두 재확인으로 간다.
 - 계기 노드의 isa(태그에서 읽은 ISA-5.1 식 문자, hazop.extract.isa)도 태그에서만 정해지므로 같은 이유로 올리지 않는다.
+- 노드의 id_basis(source_object_id가 다시 추출하면 바뀔 수 있는 순번인지: sequence|source, hazop.extract.ids)도
+  추출 결과(source.format·source_object_id)에서만 정해지므로 같은 이유로 올리지 않는다. 그래프 머리 source 틀은 그대로 둔다.
 같은 입력이면 같은 결과(ID·순서)가 나오도록 결정적으로 만든다.
 """
 
@@ -20,7 +22,7 @@ import hashlib
 import json
 import math
 
-from hazop.extract import isa
+from hazop.extract import ids, isa
 
 SCHEMA_VERSION = "0.1"
 BUILDER = "hazop.graph.build"
@@ -92,6 +94,7 @@ def build_graph(extraction, extraction_file=None):
 
     nodes, edges, mapping = [], [], []
     entity_of = {}  # extraction local_id -> entity_id
+    fmt = (extraction.get("source") or {}).get("format")
 
     for i, n in enumerate(extraction["nodes"], 1):
         eid = "entity-node-%03d" % i
@@ -101,7 +104,7 @@ def build_graph(extraction, extraction_file=None):
             "entity_id": eid, "node_type": "drawing_object", "kind": n["kind"], "category": n["category"],
             "classification": n["classification"], "tag": n["tag"], "label_text": n["label_text"],
             "attributes": dict(n["attributes"]), "local_id": n["local_id"],
-            "source_object_id": n["source_object_id"],
+            "source_object_id": n["source_object_id"], "id_basis": ids.basis(fmt, n["source_object_id"]),
             "bbox": loc["bbox"] if loc else None,
             "position": _center(loc["bbox"]) if loc else None,
             **_origin(n),
@@ -139,7 +142,7 @@ def build_graph(extraction, extraction_file=None):
                 "category": "pipe_segment", "classification": "classified", "tag": r["line_no"],
                 "label_text": r["label_text"], "line_no": r["line_no"], "line_type": r["line_type"],
                 "flow_direction": flow, "attributes": dict(r["attributes"]), "local_id": r["local_id"],
-                "source_object_id": r["source_object_id"],
+                "source_object_id": r["source_object_id"], "id_basis": ids.basis(fmt, r["source_object_id"]),
                 "bbox": loc["bbox"] if loc else None,
                 "position": _polyline_midpoint(pts),
                 **_origin(r),
