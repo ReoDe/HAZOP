@@ -1564,6 +1564,21 @@ def _stroke_chains(pieces, prm, boxes=()):
 SIGNAL_END_KINDS = frozenset({"alarm", "pilot_light", "relay_converter"})  # 이 종류에 닿는 배관 굵기 점선은 신호선
 
 
+def _pipe_dash_groups(chains, ref, kind_of, signal_ids):
+    """배관으로 둘 배관 굵기 점선 사슬. 사슬을 분기점으로 이은 무리마다 본다. 무리 안 사슬 끝이 계기·경보(signal_ids)에
+    하나라도 닿으면 신호선 무리다(APR1400 125쪽: HS·ZL에서 밸브 구동부로 가는 신호 대시 점선이 쪽 배관 굵기와 같고 분기점을
+    거쳐 밸브에 닿는다). 종류를 아는 기호(분기점 빼고)에 하나도 닿지 않는 무리는 경계선·구조선이나 범례 보기일 수 있어 뺀다
+    (022쪽 구역 경계 점선, 003쪽 범례 신호선 보기). → 배관으로 둘 사슬 id(ch) 집합."""
+    dash = [ch for ch in chains if ch.get("pipe_dash")]
+    tees = [{v[1] for v, _, _ in ch["ends"] if v[0] == "tee"} for ch in dash]
+    out = set()
+    for g in _uf_groups(len(dash), lambda a, b: bool(tees[a] & tees[b])):
+        ends = [(ref(v) or (None,))[0] for n in g for v, _, _ in dash[n]["ends"]]
+        if not any(i in signal_ids for i in ends) and any(i and kind_of(i) not in (None, "tee") for i in ends):
+            out.update(id(dash[n]) for n in g)
+    return out
+
+
 def _plain_dash(dash):
     """그리는 칸 길이가 하나뿐인 점선 무늬(같은 대시만 되풀이)인가. 일점쇄선(긴 대시와 짧은 대시가 번갈아)은 신호선
     무늬이고, 그리는 칸이 0인 점찍기 무늬도 배관으로 보지 않는다."""
@@ -3856,6 +3871,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     ordered = sorted(chains, key=lambda c: (bool(c.get("dashed")), c["evidence"][0]))
     relations, unresolved = [], []
     node_by_local = {nd["local_id"]: nd for nd in node_out}
+    pipe_dash = _pipe_dash_groups(chains, ref, lambda i: node_by_local[i]["kind"],
+                                  instrument_ids | {i for i, nd in node_by_local.items() if nd["kind"] in SIGNAL_END_KINDS})
     for n, ch in enumerate(ordered, 1):
         local_id, sid = "local-edge-%03d" % n, "pdf-p%d-conn-%04d" % (page, n)
         why = _merged_line(ch, merge_into, number_ids)
@@ -3898,11 +3915,9 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             rel_kind, line_type = "signal_connection", "pdf_dashed"
         elif moved:  # 합친 구동부로 들어가던 선은 구동 신호다(배관 분기로 보지 않는다)
             rel_kind, line_type = "signal_connection", "pdf_solid"
-        elif ch.get("pipe_dash") and any(i in instrument_ids or node_by_local[i]["kind"] in SIGNAL_END_KINDS
-                                         for i in ids if i):
-            rel_kind, line_type = "signal_connection", "pdf_dashed"  # 계기·경보에서 끝나는 점선은 굵어도 신호선이다
         elif ch.get("pipe_dash"):
-            rel_kind, line_type = "physical_connection", "pdf_dashed"
+            rel_kind = "physical_connection" if id(ch) in pipe_dash else "signal_connection"
+            line_type = "pdf_dashed"
         elif ch.get("pneumatic"):
             rel_kind, line_type = "signal_connection", "pdf_pneumatic"
         elif any(i in instrument_ids for i in ids if i):

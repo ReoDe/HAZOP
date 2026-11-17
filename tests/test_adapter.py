@@ -896,21 +896,25 @@ class PdfVectorRuleTest(unittest.TestCase):
 
     def test_pipe_width_dashed_line_is_pipe(self):
         # APR1400 141쪽 기체 방사성폐기물 묶음 ZG01: 묶음 안 배관을 쪽 배관 굵기(0.32pt)의 대시 점선으로 그렸다. 이런 점선은
-        # 분기까지 실선 배관처럼 잇는다. 가는 점선(0.16pt), 같은 굵기라도 일점쇄선, 계기에서 끝나는 점선은 신호선이다
-        def run(pen, pattern, end=None, words=()):
+        # 분기까지 실선 배관처럼 잇는다. 가는 점선(0.16pt), 같은 굵기라도 일점쇄선, 계기에서 끝나는 점선이 든 무리, 종류를
+        # 아는 기호에 닿지 않는 무리(구역 경계선 등)는 배관으로 보지 않는다
+        def run(pen, pattern, end=None, words=(), valve=True):
             def dashed(*pts):
                 return dict(line(*pts, width=pen), dash=[pattern, 0.0])
+            body = [prim([(120, 199), (138, 210), (120, 221), (120, 199)], closed=True),
+                    prim([(156, 199), (138, 210), (156, 221), (156, 199)], closed=True)] if valve else                 [rect(120, 200, 140, 220)]
             ext = pdf_run([rect(20, 20, 40, 40), rect(120, 20, 140, 40), line((40, 30), (120, 30), width=0.32),
-                           end or rect(20, 200, 40, 220), rect(120, 200, 140, 220), rect(70, 300, 90, 320),
-                           dashed((40, 210), (120, 210)), dashed((80, 210), (80, 300))], words)
+                           end or rect(20, 200, 40, 220), rect(70, 300, 90, 320),
+                           dashed((40, 210), (120, 210)), dashed((80, 210), (80, 300))] + body, words)
             return sorted((r["kind"], r["line_type"]) for r in ext["relations"]),                 [n["kind"] for n in ext["nodes"]].count("tee")
         pipe = ("physical_connection", "pdf_solid")
         self.assertEqual(run(0.32, [10.67, 5.33]), ([("physical_connection", "pdf_dashed")] * 3 + [pipe], 1))
-        self.assertNotIn(("physical_connection", "pdf_dashed"), run(0.16, [10.67, 5.33])[0])
-        self.assertNotIn(("physical_connection", "pdf_dashed"), run(0.32, [10.67, 5.33, 1.33, 5.33])[0])
+        self.assertEqual(run(0.16, [10.67, 5.33])[1], 0)  # 조각 사슬로 남아 분기점을 만들지 않는다
+        self.assertEqual(run(0.32, [10.67, 5.33, 1.33, 5.33])[1], 0)
         relations, _ = run(0.32, [10.67, 5.33], circle(26, 210, 12), [word("PT", 21, 202), word("101", 21, 209)])
         self.assertIn(("signal_connection", "pdf_dashed"), relations)
-        self.assertEqual(relations.count(("physical_connection", "pdf_dashed")), 2)
+        self.assertNotIn(("physical_connection", "pdf_dashed"), relations)
+        self.assertNotIn(("physical_connection", "pdf_dashed"), run(0.32, [10.67, 5.33], valve=False)[0])
 
     def test_hop_over_line_is_not_a_branch(self):
         # APR1400 141쪽: 엇갈리는 배관 한쪽이 다른 배관 위를 짧은 반원으로 넘는다. 반원 양 끝이 넘는 선에서 1.5pt 안이어도
@@ -934,7 +938,8 @@ class PdfVectorRuleTest(unittest.TestCase):
             return dict(line(*pts, width=0.32), dash=[[10.67, 5.33], 0.0])
         def run(gap):
             ext = pdf_run([rect(20, 20, 40, 40), rect(140, 20, 160, 40), line((40, 30), (140, 30), width=0.32),
-                           rect(20, 200, 40, 220), rect(260, 200, 280, 220),
+                           rect(20, 200, 40, 220), prim([(260, 199), (278, 210), (260, 221), (260, 199)], closed=True),
+                           prim([(296, 199), (278, 210), (296, 221), (296, 199)], closed=True),
                            dashed((40, 210), (150, 210)), dashed((150 + gap, 210), (260, 210))])
             return [r["kind"] for r in ext["relations"]].count("physical_connection")
         self.assertEqual(run(2.7), 2)
