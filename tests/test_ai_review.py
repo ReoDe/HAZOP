@@ -794,6 +794,28 @@ class ImageEstimateTest(unittest.TestCase):
                          "분류가 빈 조각만 있어도 넓혀 다시 묻기 몫을 1 이상 센다")
         self.assertEqual(ar.estimate(dict(ex, nodes=[]), cap=20, images=images)["passes"]["wide"], 0)
 
+    def test_estimate_is_never_below_actual_calls(self):
+        ex = self.ex()
+        ex["nodes"] += [node("u%02d" % i, None, (100 + 12 * i, 300, 108 + 12 * i, 308)) for i in range(25)]
+
+        def answers(pick):
+            def answer(req):
+                return {"answers": [{"item_id": it["item_id"], "field": it["ask"][0], "confidence": 0.9, "reason": "x",
+                                     "match": "legend", "values": [pick(it) if it["ask"][0] == "kind" else "V200"]}
+                                    for it in ids_in(req) if it["ask"][0] in ("kind", "tag")]}
+            return answer
+        modes = {"전부 밸브": lambda it: "manual_valve", "전부 기호 아님": lambda it: "not_symbol",
+                 "섞임": lambda it: "manual_valve" if sum(map(ord, it["target"])) % 2 else "pump"}
+        for name, pick in modes.items():
+            for cap in (5, 20):
+                for wide, recheck in ((True, False), (True, True), (False, True)):
+                    images = self.images(wide, recheck)
+                    doc = ar.run(copy.deepcopy(ex), StubClient(answers(pick)), cap=cap, recheck=0, images=images)
+                    est = ar.estimate(copy.deepcopy(ex), cap=cap, images=images)
+                    self.assertLessEqual(doc["stats"]["calls"], est["calls"], (name, cap, wide, recheck))
+                    if name == "전부 밸브" and cap == 20 and wide and not recheck:
+                        self.assertEqual((doc["stats"]["wide_calls"], est["calls"]), (3, doc["stats"]["calls"]))
+
     def test_estimate_pages_counts_image_passes_within_caps(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
