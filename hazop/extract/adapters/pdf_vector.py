@@ -1566,19 +1566,31 @@ SIGNAL_END_KINDS = frozenset({"alarm", "pilot_light", "relay_converter"})  # 이
 
 def _pipe_dash_groups(chains, ref, kind_of, signal_ids, driven):
     """배관으로 둘 배관 굵기 점선 사슬. 사슬을 분기점으로 이은 무리마다 본다. 무리 안 사슬 끝이 계기·경보(signal_ids)나
-    밸브에 합친 구동부(driven(끝))에 하나라도 닿으면 신호선 무리다(APR1400 125쪽: HS·ZL에서 밸브 구동부로 가는 신호 대시
+    밸브 구동부(driven(끝, 점))에 하나라도 닿으면 신호선 무리다(APR1400 125쪽: HS·ZL에서 밸브 구동부로 가는 신호 대시
     점선이 쪽 배관 굵기와 같고 분기점을 거쳐 밸브에 닿는다. 022쪽 ESF-CIAS 신호가 분기점을 거쳐 전동 구동부 M에 닿는다). 종류를 아는 기호(분기점 빼고)에 하나도 닿지 않는 무리는 경계선·구조선이나 범례 보기일 수 있어 뺀다
     (022쪽 구역 경계 점선, 003쪽 범례 신호선 보기). → 배관으로 둘 사슬 id(ch) 집합."""
     dash = [ch for ch in chains if ch.get("pipe_dash")]
     tees = [{v[1] for v, _, _ in ch["ends"] if v[0] == "tee"} for ch in dash]
     out = set()
     for g in _uf_groups(len(dash), lambda a, b: bool(tees[a] & tees[b])):
-        if any(driven(v) for n in g for v, _, _ in dash[n]["ends"]):
+        if any(driven(v, pt) for n in g for v, pt, _ in dash[n]["ends"]):
             continue
         ends = [(ref(v) or (None,))[0] for n in g for v, _, _ in dash[n]["ends"]]
         if not any(i in signal_ids for i in ends) and any(i and kind_of(i) not in (None, "tee") for i in ends):
             out.update(id(dash[n]) for n in g)
     return out
+
+
+def _off_valve_body(s, pt, prm):
+    """기호가 삼각형 둘 이상의 밸브 몸통을 품고 점 pt가 그 몸통 상자에서 attach_tol보다 멀면 몸통 밖(구동부·손잡이)에
+    닿은 끝이다. 구동부를 기호 묶기에서 밸브에 넣은 전동 밸브(M 원·상자)도 같다."""
+    tris = [b["bbox"] for b in s.bodies if _is_triangle(b)]
+    if len(tris) < 2:
+        return False
+    body = tris[0]
+    for b in tris[1:]:
+        body = _union(body, b)
+    return _pt_box_dist(pt, body) > prm["attach_tol"]
 
 
 def _plain_dash(dash):
@@ -3342,7 +3354,8 @@ def analyze(width, height, words, prims, params=None, splits=None):
         tees, chains = _build_solid(syms, polys + pipe_dashes, markers, prm,
                                     cls["bridges"] + _dash_gap_bridges(pipe_dashes, prm), cls["mouths"])
         for ch in chains:
-            if ch["evidence"] and all(e in drawn for e in ch["evidence"]):
+            ch["pipe_dash_objects"] = [e for e in ch["evidence"] if e in drawn]
+            if ch["pipe_dash_objects"] and len(ch["pipe_dash_objects"]) == len(ch["evidence"]):
                 ch["pipe_dash"] = True
     for ch in chains:
         # 빗금 선으로만 되고 그 사슬 위에 빗금 묶음이 실제로 있는 사슬 = 공압 신호선. 배관과 섞이거나, 원래 경로가
@@ -3875,7 +3888,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     node_by_local = {nd["local_id"]: nd for nd in node_out}
     pipe_dash = _pipe_dash_groups(chains, ref, lambda i: node_by_local[i]["kind"],
                                   instrument_ids | {i for i, nd in node_by_local.items() if nd["kind"] in SIGNAL_END_KINDS},
-                                  lambda v: v[0] == "sym" and id(v[1]) in merge_into and id(v[1]) not in box_ids)
+                                  lambda v, pt: v[0] == "sym" and (id(v[1]) in merge_into and id(v[1]) not in box_ids
+                                                                   or _off_valve_body(v[1], pt, prm)))
     for n, ch in enumerate(ordered, 1):
         local_id, sid = "local-edge-%03d" % n, "pdf-p%d-conn-%04d" % (page, n)
         why = _merged_line(ch, merge_into, number_ids)
@@ -3950,6 +3964,8 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                                                   "pipe_dash_path" if ch.get("pipe_dash") else
                                                   "touching_bodies" if ch.get("contact") else "solid_path"),
                          "pdf_objects": list(ch["evidence"]),
+                         # 배관 굵기 점선으로 그린 경로(실선과 섞인 사슬 포함). 묶음·남의 계통 경계를 가를 근거로 남긴다
+                         **({"pipe_dash_objects": ch["pipe_dash_objects"]} if ch.get("pipe_dash_objects") else {}),
                          # 선이 지나는 실제 점(양 끝 포함, 점선은 조각 중심). ② 배경 SVG의 관계 경로로 그린다
                          "pdf_path": [[_num(p[0]), _num(p[1])] for p in ch["pts"]]},
         }

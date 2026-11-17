@@ -916,6 +916,41 @@ class PdfVectorRuleTest(unittest.TestCase):
         self.assertNotIn(("physical_connection", "pdf_dashed"), relations)
         self.assertNotIn(("physical_connection", "pdf_dashed"), run(0.32, [10.67, 5.33], valve=False)[0])
 
+    @staticmethod
+    def dashed_group(branch, words=()):
+        """배관 굵기(0.32pt) 대시 점선 무리: 왼쪽 상자 – 분기점(218, 40) – 오른쪽 수동 밸브, 분기점에서 아래로 branch 끝까지.
+        아래에는 0.32pt 실선 배관에 놓인 밸브(200~236, 100~122)가 있다 → 관계 (kind, line_type, 근거) 목록."""
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        def dashed(*pts):
+            return dict(line(*pts, width=0.32), dash=[[10.67, 5.33], 0.0])
+        ext = pdf_run(bowtie(200, 100) + bowtie(300, 29) + branch
+                      + [rect(130, 100, 150, 122), rect(300, 100, 320, 122), rect(130, 30, 150, 50),
+                         line((150, 111), (200, 111), width=0.32), line((236, 111), (300, 111), width=0.32),
+                         dashed((150, 40), (300, 40)), dashed((218, 40), (218, 70))],
+                      [word("MV-1", 205, 125)] + list(words))
+        return sorted((r["kind"], r["line_type"], r["evidence"]["classification_basis"]) for r in ext["relations"])
+
+    def test_pipe_width_dashed_group_reaching_actuator_is_signal(self):
+        # APR1400 022쪽 ESF-CIAS·QIAS-P: 쪽 배관 굵기와 같은 신호 대시 점선이 분기점을 거쳐 전동 구동부 M과 다른 밸브에
+        # 닿는다. M은 밸브에 합쳐져 무리가 종류 있는 기호에 닿은 것처럼 보이지만, 구동부에 닿는 무리는 통째로 신호선이다
+        motor = [rect(212, 70, 224, 82), line((218, 82), (218, 111))]
+        relations = self.dashed_group(motor, [word("M", 216, 73)])
+        self.assertIn(("signal_connection", "pdf_dashed", "pipe_dash_path"), relations)
+        self.assertNotIn(("physical_connection", "pdf_dashed", "pipe_dash_path"), relations)
+        # 구동부 대신 아무 상자에서 끝나면 무리는 배관이고, 점선이었다는 표시(line_type·근거)가 관계에 남는다
+        plain = self.dashed_group([rect(208, 70, 228, 90)])
+        self.assertEqual(plain.count(("physical_connection", "pdf_dashed", "pipe_dash_path")), 3)
+
+    def test_pipe_width_dashed_group_reaching_alarm_or_light_is_signal(self):
+        # APR1400 125쪽: HS·ZL에서 밸브로 가는 신호 대시 점선이 분기점을 거친다. 무리 안 한 끝이라도 계기·경보·파일럿등·
+        # 변환기면 무리 전체가 신호선이다
+        for text, kind in (("ZL", "pilot_light"), ("PAL", "alarm"), ("SY", "relay_converter")):
+            with self.subTest(kind=kind):
+                relations = self.dashed_group([circle(218, 84, 14)], [word(text, 213, 80)])
+                self.assertNotIn(("physical_connection", "pdf_dashed", "pipe_dash_path"), relations)
+
     def test_hop_over_line_is_not_a_branch(self):
         # APR1400 141쪽: 엇갈리는 배관 한쪽이 다른 배관 위를 짧은 반원으로 넘는다. 반원 양 끝이 넘는 선에서 1.5pt 안이어도
         # 그 선을 나누지 않는다(넘는 선은 두 기호 사이 관계 하나로 남는다)
