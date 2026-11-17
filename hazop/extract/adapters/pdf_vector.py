@@ -2130,6 +2130,69 @@ def _mark_class_boundaries(cls, blocks, prm):
                 cls["bodies"][j] = dict(b, class_mark=n)
 
 
+CLASS_THROUGH_COS = -0.7  # 마름모를 꿰는 배관: 마름모 가운데에서 본 두 선 끝 방향의 cos 상한(맞은편)
+CLASS_BODY_TOL = 1.0      # 지시선 끝이 마름모 몸통(삼각형 둘) 상자에 닿았다고 보는 여유(pt)
+CLASS_REATTACH = 4.0      # 마름모 칸막이선에서 떼어 낸 배관 끝을 옆 기호에 다시 잇는 거리 상한(pt, 플랜지 틈)
+
+
+def _class_mark_lines(chains, class_marks, dropped, others=()):
+    """안전등급 경계 마름모(class_marks: {id(기호): 등급 글자})에 닿은 선을 정리한다. 마름모를 맞은편으로 꿰는 실선 둘은
+    한 배관으로 잇고, 그 밖의 선(마름모에서 배관·밸브로 긋는 지시선, 신호선)은 관계로 두지 않는다. 지시선을 배관으로
+    두면 배관에 가짜 분기와 가짜 연결이 생긴다(APR1400 134쪽 DII|DIII). → (새 사슬 목록, [(지시선 반대 끝, 등급 글자)])."""
+    if not class_marks:
+        return chains, []
+    at = {}
+    for ch in chains:
+        for k, (v, _, _) in enumerate(ch["ends"]):
+            if v[0] == "sym" and id(v[1]) in class_marks:
+                at.setdefault(id(v[1]), []).append((ch, k))
+    gone, joined, marked = set(), [], []
+    for key, hits in at.items():
+        solid = [(ch, k) for ch, k in hits if not ch.get("dashed")]
+        sym = hits[0][0]["ends"][hits[0][1]][0][1]
+        c = _center(sym.bbox)
+        body = _expand(_union(*[b["bbox"] for b in sym.bodies]), CLASS_BODY_TOL) if sym.bodies else sym.bbox
+        if len(hits) == 2 and len(solid) == 2 and all(id(ch) not in gone and _inside(ch["ends"][k][1], body)
+                                                      for ch, k in solid):
+            (a, ka), (b, kb) = solid
+            pa, pb = a["ends"][ka][1], b["ends"][kb][1]
+            u = (pa[0] - c[0], pa[1] - c[1])
+            w = (pb[0] - c[0], pb[1] - c[1])
+            la, lb = math.hypot(*u), math.hypot(*w)
+            if a is not b and la > 0 and lb > 0 and (u[0] * w[0] + u[1] * w[1]) / (la * lb) <= CLASS_THROUGH_COS:
+                pts_a = a["pts"] if ka == 1 else a["pts"][::-1]  # 마름모 쪽 끝이 마지막
+                pts_b = b["pts"] if kb == 0 else b["pts"][::-1]  # 마름모 쪽 끝이 처음
+                fa = a.get("flow") if ka == 1 else (-a["flow"] if a.get("flow") else None)
+                fb = b.get("flow") if kb == 0 else (-b["flow"] if b.get("flow") else None)
+                joined.append(dict(a, pts=list(pts_a) + list(pts_b), evidence=list(a["evidence"]) + list(b["evidence"]),
+                                   ends=[a["ends"][1 - ka], b["ends"][1 - kb]],
+                                   flow=fa if fa == fb or fb is None else fb if fa is None else None))
+                gone.update((id(a), id(b)))
+                continue
+        for ch, k in hits:
+            if id(ch) in gone:
+                continue
+            gone.add(id(ch))
+            if not _inside(ch["ends"][k][1], body):
+                # 마름모 몸통 밖(칸막이선 끝)에 닿은 선은 지시선이 아니라 그 끝을 지나던 배관이다(141쪽 RD01 뒤 2"). 배관은
+                # 남기고 그 끝은 바로 옆(CLASS_REATTACH 안) 다른 기호에 잇는다. 없으면 닿지 않은 끝으로 둔다(분석 결과는
+                # 함께 쓰므로 사슬을 고치지 않고 새로 만든다)
+                ends = list(ch["ends"])
+                pt = ends[k][1]
+                near = min(((_pt_box_dist(pt, o.bbox), i) for i, o in enumerate(others) if o is not sym), default=None)
+                v = ("sym", others[near[1]]) if near and near[0] <= CLASS_REATTACH else ("free", None)
+                ends[k] = (v, pt, ends[k][2])
+                joined.append(dict(ch, ends=ends))
+                continue
+            other = ch["ends"][1 - k][0]
+            if not ch.get("dashed") and other[0] in ("sym", "tee"):
+                marked.append((other, class_marks[key]))
+            dropped.append({"source_object_id": ch["evidence"][0] if ch["evidence"] else "",
+                            "label_text": class_marks[key], "bbox": _box_out(_bbox_pts(ch["pts"])),
+                            "reason": "safety_class_leader"})
+    return [ch for ch in chains if id(ch) not in gone] + joined, marked
+
+
 BOUNDARY_TIP_TOL = 0.1      # 두 화살촉 꼭짓점이 한 점에서 만난다고 보는 거리(pt)
 BOUNDARY_ELONGATION = 1.5   # 경계 표시 화살촉: 축 방향 길이 ≥ 폭 × 이 값(검게 칠한 나비 밸브 삼각형은 축 방향이 더 짧다)
 BOUNDARY_PARALLEL = 0.05    # 선 방향과 화살촉 축이 나란하다고 보는 사인 값 상한
@@ -3377,6 +3440,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
                                         drop, prm, set(numbers_on))
     node_out, locations, local_of, instrument_ids, dropped, label_lines = [], [], {}, set(), [], {}
     noise = _noise_symbols(syms, degree, label_of, prm)
+    class_marks = {}
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
         sid = "pdf-p%d-sym-%04d" % (page, n)
@@ -3401,7 +3465,11 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
         mark_lines = ["".join(m.partition("\n")[0].split()) for m in marks.get(n - 1, [])]
         class_mark = basis == "valve_body" and any(SAFETY_CLASS_RE.fullmatch(t) for t in mark_lines + ["".join(mark_lines)])
         if class_mark:
-            kind, basis = None, SAFETY_CLASS_BASIS
+            # 안전등급 경계 마름모는 공정 기호가 아니다. 노드로 두지 않고, 닿은 선은 아래에서 경계 표시로 정리한다
+            class_marks[id(s)] = "|".join(t for t in mark_lines if t) or "".join(mark_lines)
+            dropped.append({"source_object_id": sid, "label_text": class_marks[id(s)], "bbox": _box_out(s.bbox),
+                            "reason": SAFETY_CLASS_BASIS})
+            continue
         symbol_id, symbol_attrs = None, {}
         valve_body = False  # 몸통이 밸브인 것은 알지만 종류를 정하지 못함
         if getattr(s, "plate_valve", None):
@@ -3511,7 +3579,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
 
 
     def ref(v):
-        if v[0] == "sym" and id(v[1]) in noise:
+        if v[0] == "sym" and (id(v[1]) in noise or id(v[1]) in class_marks):
             return None
         if v[0] == "sym":
             return local_of[id(merge_into.get(id(v[1]), v[1]))]  # 합친 구동부에 닿은 선(신호선 등)은 밸브로
@@ -3519,6 +3587,15 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
             return tee_ids[v[1]]
         return None
 
+    chains, marked_ends = _class_mark_lines(chains, class_marks, dropped,
+                                            [o for o in syms if id(o) not in class_marks and id(o) not in noise])
+    by_local_id = {nd["local_id"]: nd for nd in node_out}
+    for v, text in marked_ends:  # 지시선이 가리킨 기호·분기점에 등급 경계 글자를 근거로 남긴다
+        r = ref(v)
+        if r and r[0] in by_local_id:
+            marks_here = by_local_id[r[0]]["evidence"].setdefault(SAFETY_CLASS_BASIS, [])
+            if text not in marks_here:
+                marks_here.append(text)
     ordered = sorted(chains, key=lambda c: (bool(c.get("dashed")), c["evidence"][0]))
     relations, unresolved = [], []
     node_by_local = {nd["local_id"]: nd for nd in node_out}

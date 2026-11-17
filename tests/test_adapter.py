@@ -889,9 +889,47 @@ class PdfVectorRuleTest(unittest.TestCase):
         ext = pdf_run(bowtie(100, 100) + [line((118, 100), (118, 122)), line((40, 111), (100, 111)),
                                           line((136, 111), (200, 111))],
                       [word("CI", 103, 107), word("DII", 122, 107)])
-        body = [n for n in ext["nodes"] if n["geometry"]["x"] == 100][0]
-        self.assertIsNone(body["kind"])
-        self.assertEqual(body["evidence"]["classification_basis"], "safety_class_boundary")
+        # 안전등급 경계 마름모는 노드가 아니다. 마름모를 맞은편으로 꿰는 배관 둘은 한 배관으로 잇는다
+        self.assertEqual([n for n in ext["nodes"] if n["geometry"]["x"] == 100], [])
+        self.assertIn(("CI|DII", "safety_class_boundary"),
+                      [(o.get("label_text"), o.get("reason")) for o in ext["drawing"]["ignored_objects"]])
+        lines = ext["relations"] + ext["unresolved_connectors"]
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(sorted(p[0] for p in lines[0]["evidence"]["pdf_path"])[::len(lines[0]["evidence"]["pdf_path"]) - 1],
+                         [40, 200])
+
+    def test_safety_class_leader_is_not_a_pipe_branch(self):
+        # APR1400 134쪽 DII|DIII: 마름모에서 배관으로 긋는 지시선은 배관 분기가 아니다. 지시선을 빼고, 가리킨 배관 쪽에
+        # 등급 경계 글자를 근거로 남긴다
+        def bowtie(x, y):
+            return [prim([(x, y), (x + 18, y + 11), (x, y + 22), (x, y)], closed=True),
+                    prim([(x + 36, y), (x + 18, y + 11), (x + 36, y + 22), (x + 36, y)], closed=True)]
+        ext = pdf_run(bowtie(100, 100) + [line((118, 100), (118, 122)), line((118, 122), (118, 160)),
+                                          line((40, 160), (200, 160))],
+                      [word("CI", 103, 107), word("DII", 122, 107)])
+        self.assertEqual([n for n in ext["nodes"] if n["geometry"]["x"] == 100], [])
+        self.assertEqual(len(ext["relations"]) + len(ext["unresolved_connectors"]), 2)  # 지시선 없이 배관 두 토막
+        marked = [n for n in ext["nodes"] if n["evidence"].get("safety_class_boundary")]
+        self.assertEqual([(n["kind"], n["evidence"]["safety_class_boundary"]) for n in marked], [("tee", ["CI|DII"])])
+
+    def test_pipe_touching_class_divider_tip_is_kept(self):
+        # APR1400 141쪽 RD01 뒤 2": 마름모 칸막이선 끝이 배관 첫머리(플랜지 틈)에 닿는다. 배관은 지시선이 아니라
+        # 남기고, 그 끝은 바로 옆 기호에 잇는다
+        class Sym:
+            def __init__(self, bbox, bodies=()):
+                self.bbox, self.bodies = bbox, [{"bbox": b} for b in bodies]
+        diamond = Sym((100, 90, 136, 122), [(100, 100, 118, 122), (118, 100, 136, 122)])  # 칸막이선이 y=90까지
+        disc = Sym((104, 87, 115, 99))
+        pipe = {"pts": [(118, 90), (200, 90)], "evidence": ["p"], "ends": [(("sym", diamond), (118, 90), "e"),
+                                                                           (("free", None), (200, 90), "e")]}
+        leader = {"pts": [(118, 122), (118, 140)], "evidence": ["l"], "ends": [(("sym", diamond), (118, 122), "e"),
+                                                                               (("tee", 0), (118, 140), "j")]}
+        dropped = []
+        kept, marked = pdf_vector._class_mark_lines([pipe, leader], {id(diamond): "CI|DII"}, dropped, [disc])
+        self.assertEqual([ch["evidence"] for ch in kept], [["p"]])
+        self.assertIs(kept[0]["ends"][0][0][1], disc)
+        self.assertEqual(marked, [(("tee", 0), "CI|DII")])
+        self.assertIs(pipe["ends"][0][0][1], diamond)  # 함께 쓰는 분석 결과의 사슬은 고치지 않는다
 
     def test_position_label_does_not_push_valve_number_to_class_diamond(self):
         # APR1400 016쪽 V290: 밸브 바로 밑 'LC'가 밸브 라벨을 먼저 차지하면 그 밑 번호는 다음으로 가까운 안전등급 마름모로
@@ -921,8 +959,8 @@ class PdfVectorRuleTest(unittest.TestCase):
         bodies = sorted(len(s.bodies) for s in analysis["symbols"])
         self.assertEqual(bodies, [1, 1, 2])  # 원 하나, 밸브 하나, 마름모(삼각형 둘)
         ext = pdf_vector.build_extraction(analysis, 600.0, 400.0, 1, 0, "synthetic.pdf", "0" * 64)
-        diamond_node = [n for n in ext["nodes"] if abs(n["geometry"]["x"] - 428.13) < 0.01][0]
-        self.assertEqual(diamond_node["evidence"]["classification_basis"], "safety_class_boundary")
+        self.assertEqual([n for n in ext["nodes"] if abs(n["geometry"]["x"] - 428.13) < 0.01], [])
+        self.assertIn("safety_class_boundary", [o.get("reason") for o in ext["drawing"]["ignored_objects"]])
 
     def test_spring_ticks_next_to_number_bubble_corner_stay_on_valve(self):
         # APR1400 008쪽 POSRV 파일럿 안전밸브: 스프링 빗금 끝이 밸브 번호 원의 상자 귀퉁이 옆(2.2pt)에 있지만 원

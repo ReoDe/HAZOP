@@ -1652,8 +1652,10 @@ class ValveLabelTest(unittest.TestCase):
                  word("I", 108.2, 98.5, 2.0), word("V751", 101.0, 106.0)]
         ex = extract_with_words(diamond, words)
         self.assertEqual([n for n in ex["nodes"] if n["category"] == "valve"], [])
-        (mark,) = [n for n in ex["nodes"] if n["evidence"]["classification_basis"] == "safety_class_boundary"]
-        self.assertEqual((mark["kind"], mark["tag"]), (None, None))
+        # 마름모는 노드가 아니라 경계 표시로 남는다(ignored_objects)
+        self.assertEqual([n for n in ex["nodes"] if n["evidence"]["classification_basis"] == "safety_class_boundary"], [])
+        self.assertIn("safety_class_boundary", [o.get("reason") for o in ex["drawing"]["ignored_objects"]])
+        self.assertEqual([n for n in ex["nodes"] if n.get("tag") == "V751"], [])
 
     def test_labels_of_other_symbols_do_not_change(self):
         """위치 약어가 다른 기호의 라벨이면 그대로 둔다(밸브만 손본다)."""
