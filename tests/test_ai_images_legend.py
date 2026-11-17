@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 
 from hazop import paths
-from hazop.extract import ai_images
+from hazop.extract import ai_images, legend_page
 from scripts import build_ai_legend
 
 
@@ -121,11 +121,134 @@ class EntryTest(unittest.TestCase):
         ex = {"nodes": [node("c", "check_valve", (300, 100, 320, 112), basis="lines+marker")]}
         got = ai_images.image_input_for(snp_pdf(), 0, drawings=[(snp_pdf(), 0, ex)], cache_dir=self.tmp)
         self.assertEqual(got.legend_source, "symbols")
-        self.assertEqual(os.listdir(self.tmp), [])
+        self.assertEqual([f for f in os.listdir(self.tmp) if f != ai_images.LEGEND_PAGE_DIR], [], "판 캐시를 남기지 않는다")
 
     def test_unreadable_project_pdf_is_skipped(self):
         got = ai_images.project_legend([(os.path.join(self.tmp, "gone.pdf"), 0, project_ex())], self.tmp)
         self.assertEqual(got, ([], None))
+
+
+# ---------------------------------------------------------------- 범례 쪽 판(합성 범례 쪽, 도면 조각 없음)
+
+FONT = b"/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> "
+W, H = 400, 300
+VALVES = ("GATE", "GLOBE", "CHECK", "ANGLE CHECK VALVE", "STRAINER", "REDUCER", "ROOF VENTILATOR WITH PARALLEL BLADE DAMPER")
+PIPES = ("WELDED CAP", "FLOOR DRAIN", "EXPANSION JOINT", "FLEXIBLE HOSE", "SILENCER", "SPRAY NOZZLE OR SPARGER", "FLAME ARRESTOR")
+
+
+def make_pdf(content):
+    objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] /Contents 4 0 R %s>>" % (W, H, FONT),
+            b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream"]
+    out, offsets = bytearray(b"%PDF-1.4\n"), []
+    for i, obj in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + obj + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    out += b"".join(b"%010d 00000 n \n" % off for off in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+    return bytes(out)
+
+
+def text(s, x, top, size=3.3):
+    return b"BT /F1 %.1f Tf %.1f %.1f Td (%s) Tj ET\n" % (size, x, H - top - size, s.encode("ascii"))
+
+
+def seg(x0, top0, x1, top1):
+    return b"%.1f %.1f m %.1f %.1f l S\n" % (x0, H - top0, x1, H - top1)
+
+
+def legend_sheet(heads=("VALVE SYMBOLS", "PIPE LINE SYMBOLS"), pictures=True, names=(VALVES, PIPES)):
+    """두 판짜리 범례 쪽: 판 머리글 아래 줄마다 왼쪽에 기호 그림(작은 사각형과 선), 오른쪽에 이름 글자."""
+    c = b"0.5 w\n"
+    for x in (20, 200, 380):
+        c += seg(x, 20, x, 280)
+    for y in (20, 35, 280):
+        c += seg(20, y, 380, y)
+    for i, head in enumerate(heads):
+        c += text(head, 60 + 180 * i, 25, size=6)
+    for i, rows in enumerate(names):
+        x0 = 20 + 180 * i
+        for r, name in enumerate(rows):
+            top = 50 + 30 * r
+            if pictures:
+                c += b"%.1f %.1f 14 6 re S\n" % (x0 + 20, H - top - 6) + seg(x0 + 14, top + 3, x0 + 40, top + 3)
+            c += text(name, x0 + 70, top + 1)
+    return make_pdf(c)
+
+
+class LegendPageTest(unittest.TestCase):
+    """범례 쪽 알아보기·칸 자르기·이름 잇기(hazop/extract/legend_page.py)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="hazop-legend-page-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def pdf(self, data, name="sheet.pdf"):
+        path = os.path.join(self.tmp, name)
+        with open(path, "wb") as fh:
+            fh.write(data)
+        return path
+
+    def test_names_map_to_kinds_and_narrow_or_ambiguous_names_are_handled(self):
+        cases = {"ANGLE CHECK VALVE": "check_valve", "GATE": "manual_valve", "SPRAY NOZZLE OR SPARGER (UPWARD)": "sparger",
+                 "CONCENTRIC REDUCER OR ENLARGER": "reducer", "ANGLE SAFETY OR RELIEF": "psv",
+                 "TRAP DT : DRAIN TRAP RT : RESIN TRAP": None, "ROOF VENTILATOR WITH PARALLEL BLADE DAMPER": None,
+                 "COMPRESSION TANK VENT FITTING": None, "SHARED HSI (HAND SWITCH, INDICATOR, ALARM)": None,
+                 "DUCTED AIR FLOW": "air_flow_arrow", "MOTOR OPERATOR AC MOTOR": "motor_operated_valve", "SWING PANEL": None}
+        self.assertEqual({n: legend_page.kind_of(n) for n in cases}, cases)
+
+    def test_legend_sheet_cells_pair_each_picture_with_its_name(self):
+        cells = legend_page.legend_cells(self.pdf(legend_sheet()))
+        got = {c["name"]: c["kind"] for c in cells}
+        self.assertEqual(got, {n: legend_page.kind_of(n) for n in VALVES + PIPES if legend_page.kind_of(n)})
+        self.assertNotIn("ROOF VENTILATOR WITH PARALLEL BLADE DAMPER", got, "이름이 애매한 칸은 버린다")
+        for c in cells:
+            row = (VALVES + PIPES).index(c["name"]) % 7
+            self.assertTrue(50 + 30 * row - 1 <= c["box"][1] and c["box"][3] <= 50 + 30 * row + 7, c)
+            self.assertLess(c["box"][2], 20 + 180 * ((VALVES + PIPES).index(c["name"]) // 7) + 70, "그림은 이름 왼쪽만")
+
+    def test_not_a_legend_sheet_falls_back_to_no_cells(self):
+        one_heading = legend_sheet(heads=("3. NOZZLE SYMBOLS :", "NOTES"))
+        table = legend_sheet(heads=("LEGEND", "ABBREVIATIONS"), pictures=False,
+                             names=(["AC = ACCUMULATOR", "CD = CONDENSER", "PP = PUMP"] * 2, ["TK = TANK", "SG = STEAM GENERATOR"] * 3))
+        few = legend_sheet(names=(VALVES[:3], PIPES[:3]))
+        for name, data in (("one-heading", one_heading), ("text-table", table), ("few-cells", few)):
+            self.assertEqual(legend_page.legend_cells(self.pdf(data, name + ".pdf")), [], name)
+        self.assertEqual(legend_page.legend_cells(os.path.join(self.tmp, "gone.pdf")), [])
+
+    def test_legend_cells_come_first_and_legend_page_extraction_is_not_a_sample(self):
+        sheet = self.pdf(legend_sheet())
+        on_sheet = {"nodes": [node("p", "pump", (40, 50, 60, 60), basis="symbol:apr1400.pump")]}
+        drawings = [(sheet, 0, on_sheet), (snp_pdf(), 0, project_ex())]
+        cache = os.path.join(self.tmp, "cache")
+        got = ai_images.image_input_for(snp_pdf(), 0, drawings=drawings, cache_dir=cache)
+        self.assertEqual(got.legend_source, "legend+project+symbols")
+        self.assertIn(got.legend_source, ai_images.LEGEND_SOURCES)
+        index = [f for f in os.listdir(cache) if f.endswith(".json")]
+        with open(os.path.join(cache, index[0]), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        self.assertIn("manual_valve", doc["from_legend"], "범례 쪽 칸과 확정 견본이 겹치면 범례 쪽 칸")
+        self.assertEqual(sorted(set(ai_images.answer_kinds()) - set(doc["from_legend"]) - set(doc["from_symbols"])), ["pump"],
+                         "범례 쪽에 없는 종류만 확정 견본(project_ex의 pump), 범례 쪽 추출의 pump는 견본이 아니다")
+        self.assertEqual(len(os.listdir(os.path.join(cache, ai_images.LEGEND_PAGE_DIR))), 2, "쪽마다 범례 쪽 판정을 남긴다")
+        with mock.patch.object(legend_page, "legend_cells", side_effect=AssertionError("캐시가 있으면 PDF를 다시 자르지 않는다")), \
+                mock.patch.object(ai_images.PageImages, "image", side_effect=AssertionError("판 캐시")):
+            again = ai_images.image_input_for(snp_pdf(), 0, drawings=drawings, cache_dir=cache)
+        self.assertEqual(again.legend, got.legend)
+
+    def test_valve_cell_with_open_and_closed_pictures_gives_first_pictures_first(self):
+        crops = ai_images.legend_page_cells([], pages=[(snp_pdf(), 0, None, [
+            {"kind": "manual_valve", "parts": [[10, 10, 20, 20], [60, 10, 70, 20]]},
+            {"kind": "manual_valve", "parts": [[10, 40, 20, 50], [60, 40, 70, 50]]}])], per_kind=3)
+        self.assertEqual(len(crops["manual_valve"]), 3)
+        with mock.patch.object(ai_images.PageImages, "crop", side_effect=lambda b, **k: tuple(b)):
+            order = ai_images.legend_page_cells([], pages=[(snp_pdf(), 0, None, [
+                {"kind": "manual_valve", "parts": [[10, 10, 20, 20], [60, 10, 70, 20]]},
+                {"kind": "manual_valve", "parts": [[10, 40, 20, 50]]}, {"kind": "tank", "parts": [[1, 1, 9, 9]]}])])
+        self.assertEqual(order, {"manual_valve": [(10, 10, 20, 20), (10, 40, 20, 50), (60, 10, 70, 20)]},
+                         "칸마다 첫 그림 먼저, 답 목록 밖 종류는 싣지 않는다")
 
 
 if __name__ == "__main__":
