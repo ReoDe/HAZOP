@@ -148,6 +148,14 @@ class BlockerTest(PdfBase):
         self.assertTrue(ar.load_doc(self.pname)["runs"][-1]["images"]["failed"])
         self.assertEqual(self.view_of(self.pgid)["last_run"]["legend"], "그림을 만들지 못해 글만 보냄")
 
+    def test_x_every_legend_source_has_a_label_and_an_unknown_one_a_default(self):
+        from hazop.shell import ai_image_flow
+        for src, text in (("project+symbols", "범례판: 이 프로젝트 도면 견본과 표준 기호 그림"), ("project", "범례판: 이 프로젝트 도면에서 만든 견본"),
+                          ("symbols", "범례판: 표준 기호 그림"), ("none", "범례판: 범례판 없이"), ("새로운-출처", "범례판: " + ai_image_flow.UNKNOWN_LEGEND)):
+            self.assertEqual(AR._legend_text({"legend_source": src}), text, src)
+        self.assertIsNone(AR._legend_text({"legend_source": None}))
+        self.assertIsNone(AR._legend_text(None))
+
     def test_x_project_drawing_list_failure_is_remembered_not_retried(self):
         from hazop.shell import ai_image_flow
         calls = []

@@ -22,7 +22,9 @@ from hazop.extract import ai_images, ai_review, corrections
 
 LOG = logging.getLogger("hazop.shell.ai_image_flow")
 KEY = "ai_review_images"
-LEGEND_LABELS = {"project": "이 프로젝트 도면에서 만든 견본", "symbols": "표준 기호 그림", "none": "범례판 없이"}
+LEGEND_LABELS = {"project": "이 프로젝트 도면에서 만든 견본", "project+symbols": "이 프로젝트 도면 견본과 표준 기호 그림",
+                 "symbols": "표준 기호 그림", "none": "범례판 없이"}
+UNKNOWN_LEGEND = "출처를 알 수 없는 범례판"      # 새 출처 값이 와도 화면은 이 기본 표시로 보인다
 FAILED_TEXT = "그림을 만들지 못해 글만 보냄"
 NOT_PDF_TEXT = "이 도면은 PDF 도면이 아니라 글만 보냅니다."
 NO_ORIGINAL_TEXT = "원본 PDF가 없어 글만 보냅니다."

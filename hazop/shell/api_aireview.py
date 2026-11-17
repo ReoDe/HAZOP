@@ -138,8 +138,10 @@ def _legend_text(info):
         return None
     if info.get("failed"):
         return ai_image_flow.FAILED_TEXT
-    src = ai_image_flow.LEGEND_LABELS.get(info.get("legend_source"))
-    return "범례판: " + src if src else None
+    value = info.get("legend_source")
+    if not isinstance(value, str) or not value:
+        return None
+    return "범례판: " + ai_image_flow.LEGEND_LABELS.get(value, ai_image_flow.UNKNOWN_LEGEND)
 
 
 def overview(engine):
