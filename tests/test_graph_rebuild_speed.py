@@ -114,6 +114,21 @@ class SheetCacheSameTest(unittest.TestCase):
         self.assertEqual(ids[project.nid(g["graph_id"], node["entity_id"])]["tag"], node["tag"])
         self.assertEqual(canon(warm), canon(self.fresh()))
 
+    def test_gc_pause_does_not_change_the_project_graph(self):
+        """프로젝트 그래프를 지을 때 순환 수거를 멈추는 것(hazop.gcpause)은 결과를 바꾸지 않는다."""
+        import gc
+        from hazop import gcpause
+        was = gc.isenabled()
+        self.addCleanup(lambda: gc.enable() if was else gc.disable())
+        gc.enable()
+        project.clear_sheet_cache()
+        plain = canon(project.load(self.pid, self.root))
+        project.clear_sheet_cache()
+        with gcpause.paused():
+            paused = canon(project.load(self.pid, self.root))
+        self.assertTrue(gc.isenabled())
+        self.assertEqual(paused, plain)
+
     def test_callers_cannot_spoil_the_cache(self):
         pg = project.load(self.pid, self.root)
         want = canon(pg)

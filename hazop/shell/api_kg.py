@@ -21,7 +21,7 @@ import json
 import logging
 import os
 
-from hazop import paths
+from hazop import gcpause, paths
 from hazop.kg import expect, screen
 
 LOG = logging.getLogger("hazop.shell.api_kg")
@@ -113,7 +113,11 @@ def _context(engine, study=False):
     exp_fp = hashlib.sha256("\n".join("%s %s %s" % (i["id"], i["digest"], i["state"]) for i in items).encode("utf-8")).hexdigest()
     key = (pid, pg.get("graph_version"), len(pg.get("nodes") or ()), (kg or {}).get("kg_version"), ver, exp_fp, judge_problem)
     hit = _CACHE.get("key") == key
-    model = _CACHE["model"] if hit else screen.panel_model(pg, kg, expectations)
+    if hit:
+        model = _CACHE["model"]
+    else:
+        with gcpause.paused():   # 큰 모델을 처음 지을 때 순환 수거를 멈춘다(gcpause 설명)
+            model = screen.panel_model(pg, kg, expectations)
     if not hit:
         _CACHE.clear()
         _CACHE.update(key=key, model=model)
@@ -129,7 +133,8 @@ def _context(engine, study=False):
         skey = (key, fkey) if fkey is not None else None
         if skey is None or _CACHE.get("study_key") != skey:
             # 검토 층 원본(구간·결과·초기사건 파일)의 바뀐 시각·크기가 같으면 결과 읽기·초기사건 묶음 만들기·모델 짓기를 다시 하지 않는다
-            _CACHE.update(study_key=skey, study_model=screen.panel_with_study(model, _study(pg), pg))
+            with gcpause.paused():   # 결과 읽기·초기사건 묶음·모델 짓기: 수거를 멈추면 같은 일이 절반쯤 걸린다
+                _CACHE.update(study_key=skey, study_model=screen.panel_with_study(model, _study(pg), pg))
         ctx["model"] = _CACHE["study_model"]
     return ctx, None
 

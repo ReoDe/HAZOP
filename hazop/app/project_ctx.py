@@ -14,7 +14,7 @@ import json
 import os
 import threading
 
-from hazop import paths, store_io
+from hazop import gcpause, paths, store_io
 from hazop.graph import project, sources
 from hazop.study import migrate
 from hazop.study import nodes as sn
@@ -160,7 +160,8 @@ def project_graph(project_id):
     hit = _PROJECT_GRAPHS.get(project_id)
     if hit is not None and hit[0] == key:
         return hit[1]
-    pg, names = project.load_with_names(project_id)
+    with gcpause.paused():   # 143쪽을 읽고 짓는 동안 순환 수거를 멈춘다(gcpause 설명)
+        pg, names = project.load_with_names(project_id)
     _NAMES[project_id] = (key, names)  # 같은 파일을 읽어 고른 이름(graph_names가 다시 읽지 않게)
     _names_to_disk(project_id, _names_fingerprint(project_id, key), names)
     if hit is not None:  # 옛 그래프를 붙잡은 표기 사본은 버린다(143쪽 그래프가 메모리에 여러 벌 남지 않게)

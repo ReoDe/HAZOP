@@ -20,7 +20,7 @@ import logging
 import os
 import threading
 
-from hazop import paths, store_io
+from hazop import gcpause, paths, store_io
 
 LOG = logging.getLogger("hazop.shell.sheet_refresh")
 _LOCKS = {}
@@ -96,13 +96,14 @@ def project_recheck(project_id):
 
 def rebuild(name):
     from hazop.app import data
-    graph, _ = data.script_module("build_graph").build_one(data.extraction_path(name), paths.output_root("graph"))
-    if graph.get("project_id"):
-        try:
-            data.build_project_kg(graph["project_id"])
-        except (OSError, ValueError, KeyError) as exc:
-            raise RuntimeError("지식그래프를 다시 만들지 못함: %s" % str(exc)[:120]) from exc
-    return [], project_recheck(graph.get("project_id")) if graph.get("project_id") else []
+    with gcpause.paused():   # 143쪽 프로젝트에서 수거를 멈추면 같은 일이 2.0초 → 1.1초(gcpause 설명)
+        graph, _ = data.script_module("build_graph").build_one(data.extraction_path(name), paths.output_root("graph"))
+        if graph.get("project_id"):
+            try:
+                data.build_project_kg(graph["project_id"])
+            except (OSError, ValueError, KeyError) as exc:
+                raise RuntimeError("지식그래프를 다시 만들지 못함: %s" % str(exc)[:120]) from exc
+        return [], project_recheck(graph.get("project_id")) if graph.get("project_id") else []
 
 
 def _busy():

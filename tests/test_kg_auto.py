@@ -247,6 +247,19 @@ class RebuildCacheTest(unittest.TestCase):
         self.assertEqual(cached, fresh)
         self.assertIn(g["graph_version"], json.dumps(r["kg"]["graph_refs"]))
 
+    def test_gc_state_changes_neither_the_output_nor_the_gc_setting(self):
+        """build_project는 짓는 동안 순환 수거를 멈추고 끝나면 되돌린다. 수거가 켜져 있든 꺼져 있든 결과 바이트는 같다."""
+        import gc
+        was = gc.isenabled()
+        self.addCleanup(lambda: gc.enable() if was else gc.disable())
+        gc.enable()
+        _, on = self.fresh("on")
+        self.assertTrue(gc.isenabled())
+        gc.disable()
+        _, off = self.fresh("off")
+        self.assertFalse(gc.isenabled())      # 처음부터 꺼져 있던 것을 켜지 않는다
+        self.assertEqual(on, off)
+
     def test_build_does_not_change_the_cached_graphs(self):
         self.build("a")
         graphs, _ = auto.project_graphs(PROJECT, self.groot)

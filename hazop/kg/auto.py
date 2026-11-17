@@ -18,7 +18,7 @@ import json
 import os
 import threading
 
-from hazop import paths
+from hazop import gcpause, paths
 from hazop.kg import build, docextract, inputs, link
 from hazop.kg.schema import REGISTRY
 
@@ -38,6 +38,13 @@ BUILD_LOCK = threading.Lock()
 def _read(path):
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def _read_sheet(path):
+    """도면 graph.json. 프로젝트 그래프의 쪽별 캐시(pickle)에 있으면 거기서 새 dict로 풀어 쓴다(JSON 파싱의 5분의 1).
+    없으면 읽어 그 캐시도 채운다. 어느 쪽이든 새 객체이고 내용은 같다."""
+    from hazop.graph import project
+    return project._read_graph(path)[0]
 
 
 def _scan(root, filename):
@@ -114,7 +121,7 @@ def _scan_graphs(root):
         hit = _GRAPHS.get(p)
         if hit is None or hit[0] != key:
             try:
-                hit = (key, _read(p))
+                hit = (key, _read_sheet(p))
             except (OSError, ValueError):
                 _GRAPHS.pop(p, None)
                 continue
@@ -291,7 +298,7 @@ def assemble(project_id, graphs, documents, csv_dir=None, graph_notes=(), replac
 
 def build_project(project_id, graph_root, doc_root, csv_root, out_root):
     """프로젝트 하나를 조립·빌드·저장한다. 반환 {"kg", "dir", "notes"}. 도면도 문서도 없으면 ValueError."""
-    with BUILD_LOCK:
+    with BUILD_LOCK, gcpause.paused():
         return _build_project(project_id, graph_root, doc_root, csv_root, out_root)
 
 
