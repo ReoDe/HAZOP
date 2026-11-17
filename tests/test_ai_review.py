@@ -451,6 +451,21 @@ class ImageInputTest(unittest.TestCase):
         self.assertIn("solenoid_valve", ai_images.viewer_kinds())
         self.assertNotIn("solenoid_valve", ai_review.WIDE_KINDS)
 
+    def test_prompt_splits_pipe_flow_arrowhead_from_legend_air_flow_arrow(self):
+        """배관 선 위 흐름 방향 화살촉은 기호 아님, 범례 2/4 덕트·비덕트 공기 흐름 표시는 air_flow_arrow다.
+        두 줄이 서로 덮어 air_flow_arrow 정답이 not_symbol로 나온 적이 있다(실측 3 대비 실측 12, 개발용 12쪽)."""
+        from hazop.extract import ai_images, ai_review
+        text = ai_review.SYSTEM_IMAGE.format(kinds=", ".join(ai_images.answer_kinds()), valves="", npos="", fpos="")
+        bullets = [" ".join(b.split()) for b in ("\n" + text).split("\n- ")[1:]]
+        air = next(b for b in bullets if b.startswith("air_flow_arrow"))
+        self.assertIn("DUCTED AIR FLOW", air)
+        self.assertIn("NON-DUCTED AIR FLOW", air)
+        pipe = next(b for b in bullets if "배관" in b and "화살촉" in b and "not_symbol" in b)
+        self.assertNotIn("air_flow_arrow", pipe)
+        for b in bullets:
+            if "화살촉" in b and "not_symbol" in b:
+                self.assertIn("배관", b)
+
     def test_legend_sample_is_median_size_and_answers_follow_board(self):
         from hazop.extract import ai_images
 
