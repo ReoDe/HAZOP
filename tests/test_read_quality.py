@@ -270,9 +270,10 @@ class SnpImageReplayTest(unittest.TestCase):
     (재현 경로 자체는 test_ai_review.ImageInputTest가 가짜 클라이언트로 늘 본다)."""
 
     def test_replay_gives_same_two_lines(self):
+        from hazop import paths
         from hazop.study import providers
         fixed = os.path.join(REPO_ROOT, "tests", "fixtures", "ai-review", "snp-images")
-        samples = os.path.join(REPO_ROOT, "resources", "references", "pid-samples")
+        samples = paths.folder("references", "pid-samples")
         res = rq.run(os.path.join(REPO_ROOT, "no-apr1400"), samples, ai_client=providers.FixedCellsClient(fixed),
                      ai_cap=20, ai_images=True)
         stats = res["ai_stats"]
