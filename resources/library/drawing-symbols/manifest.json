@@ -887,6 +887,88 @@
    "label": "none"
   },
   {
+   "kind": "air_operated_valve",
+   "file": "air-operated-valve.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 70
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 70
+    },
+    {
+     "name": "actuator",
+     "x": 50,
+     "y": 14
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "solenoid_valve",
+   "file": "solenoid-valve.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 0,
+     "y": 70
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 70
+    },
+    {
+     "name": "actuator",
+     "x": 50,
+     "y": 4
+    }
+   ],
+   "label": "below"
+  },
+  {
+   "kind": "relief_valve",
+   "file": "relief-valve.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 50,
+     "y": 100
+    },
+    {
+     "name": "out",
+     "x": 100,
+     "y": 62
+    }
+   ],
+   "label": "right"
+  },
+  {
+   "kind": "rupture_disc",
+   "file": "rupture-disc.svg",
+   "fit": "keep",
+   "ports": [
+    {
+     "name": "in",
+     "x": 30,
+     "y": 100
+    },
+    {
+     "name": "out",
+     "x": 30,
+     "y": 0
+    }
+   ],
+   "label": "right"
+  },
+  {
    "kind": "generic",
    "file": "generic.svg",
    "fit": "stretch",
