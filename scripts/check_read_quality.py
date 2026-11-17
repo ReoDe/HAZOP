@@ -643,10 +643,11 @@ def high_only(cands):
     return dict(cands, candidates=[c for c in cands.get("candidates", []) if c.get("match") == "legend"])
 
 
-def ai_candidates(ex, client, cap, images=None):
-    """추출 결과 하나에 AI 검토(hazop.extract.ai_review)를 돌려 이 검사의 후보 꼴과 실행 통계를 돌려준다."""
+def ai_candidates(ex, client, cap, images=None, connect=0):
+    """추출 결과 하나에 AI 검토(hazop.extract.ai_review)를 돌려 이 검사의 후보 꼴과 실행 통계를 돌려준다.
+    connect: 연결 묻기(hazop.extract.ai_connect)에 떼어 둘 호출 수(그림 입력에서만, 0이면 하지 않음)."""
     from hazop.extract import ai_review
-    doc = ai_review.run(ex, client, cap=cap, images=images)
+    doc = ai_review.run(ex, client, cap=cap, images=images, connect=connect)
     return ai_review.to_check_candidates(doc), doc["stats"]
 
 
@@ -914,7 +915,7 @@ def snp_folders(samples_dir):
 
 def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=20, only=None, ai_save=None,
         key_dir=None, ai_images=False, ai_wide=False, legend_samples=1, ai_split=False, ai_recheck=False,
-        ai_legend="keys"):
+        ai_legend="keys", ai_connect=0):
     """only: 이 이름의 쪽만(APR1400 'apr1400-012', SNP 'SNP-M-102'). ai_client를 주면 쪽마다 AI 검토를 돌려
     '스크립트 + AI 후보' 값을 내고, ai_save 폴더에 후보(<이름>.json)와 실행 통계를 남긴다(--ai-candidates로 다시 잼).
     ai_save가 있으면 응답도 <ai_save>/responses에 남기고 쪽마다 호출 시간을 통계에 적는다.
@@ -925,6 +926,8 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
     ai_legend: 범례판 출처(LEGEND_MODES). keys는 legend_sources의 정답지 판(legend_samples), symbols·project는 앱과 같은
     ai_images.image_input_for(project는 잴 쪽 가운데 같은 도면 묶음의 쪽 추출 결과를 프로젝트 도면으로 넘기고, legendpage는
     거기에 범례 쪽 PDF(legend_page_pdfs)를 더한다).
+    ai_connect: 연결 묻기 몫(ai_review.run의 connect, ai_images와 함께). 끈 줄과 켠 줄을 같은 ai_save 폴더로 차례로 돌리면
+    첫 묻기 요청이 같아 끈 줄 응답을 다시 쓰고 연결 묻기만 새로 부른다.
     다른 종류 답(다시 확인 후보)도 ai_pages에 더한다.
     ai_pages는 후보 전부, ai_high_pages는 높음 후보만 더한 값이다."""
     import extract_drawio
@@ -981,9 +984,10 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
                         if ai_legend == "legendpage":
                             drawings += [(p, 0, extract(p)) for p in legend_page_pdfs(family, input_dir)]
                         images = images_mod.image_input_for(pdf, 0, drawings, os.path.join(work, "legend-cache"),
-                                                            wide=ai_wide, recheck=ai_recheck, split=ai_split)
+                                                            wide=ai_wide, recheck=ai_recheck, split=ai_split,
+                                                            with_legend_pages=ai_legend == "legendpage")
                 before = len(getattr(ai_client, "calls", []))
-                cands, stats = ai_candidates(ex, ai_client, ai_cap, images)
+                cands, stats = ai_candidates(ex, ai_client, ai_cap, images, connect=ai_connect if images else 0)
                 calls = getattr(ai_client, "calls", [])[before:]
                 if calls:
                     stats = dict(stats, seconds=round(sum(c["seconds"] for c in calls), 1),
@@ -1171,6 +1175,9 @@ def main(argv=None):
     ap.add_argument("--ai-split", action="store_true", help="--ai-images에 더해 남은 호출로 큰 미분류 노드를 나눈다")
     ap.add_argument("--ai-recheck", action="store_true",
                     help="--ai-images에 더해 남은 호출로 틀리기 쉬운 규칙이 정한 종류를 다시 확인한다")
+    ap.add_argument("--ai-connect", type=int, default=0,
+                    help="--ai-images에 더해 배관 관계가 없는 기호의 이웃을 묻는 연결 묻기에 떼어 둘 호출 수(기본 0, 끔). "
+                         "끈 줄을 먼저 같은 --ai-save 폴더로 돌리면 첫 묻기 응답을 다시 쓴다")
     ap.add_argument("--ai-legend-samples", type=int, default=1, help="범례판에 종류마다 실을 견본 수 상한(모양이 다른 것, 기본 1)")
     ap.add_argument("--ai-legend", choices=LEGEND_MODES, default="keys",
                     help="범례판 출처: keys 정답지 판(기본), symbols 표준 기호 판, project 프로젝트 판 흉내(사전 견본에 맞춘 기호), legendpage project에 범례 쪽 1.7-1을 더함")
@@ -1200,7 +1207,7 @@ def main(argv=None):
     res = run(input_dir, os.path.abspath(args.samples_dir or default_samples_dir()), pages, args.ai_candidates,
               ai_client=client, ai_cap=args.ai_cap, only=only, ai_save=args.ai_save, key_dir=extra,
               ai_images=args.ai_images, ai_wide=args.ai_wide, legend_samples=args.ai_legend_samples,
-              ai_split=args.ai_split, ai_recheck=args.ai_recheck, ai_legend=args.ai_legend)
+              ai_split=args.ai_split, ai_recheck=args.ai_recheck, ai_legend=args.ai_legend, ai_connect=args.ai_connect)
     if extra:
         print("추가 표본(저장소 밖 정답지 %d쪽, 기준값과 견주지 않음)" % len(load_keys(key_dir=extra)))
     print(report(res, head_commit()))
@@ -1219,6 +1226,10 @@ def main(argv=None):
         if "split_targets" in st:
             print("    나누기: 대상 %d · 호출 %d · 받은 기호 %d · 버림 %d · 후보 %d"
                   % (st["split_targets"], st["split_calls"], st["split_symbols"], st["split_dropped"], st["split_new"]))
+        if "connect_items" in st:
+            print("    연결 묻기: 대상 %d · 호출 %d · 물음 %d · 이음 %d · 없음 %d"
+                  % (st["connect_items"], st["connect_calls"], st.get("connect_asked", 0), st["connect_links"],
+                     st["connect_none"]))
         if st.get("recheck_items"):
             print("    다시 확인: 대상 %d(%s) · 호출 %d · 물음 %d · 기호 아님·모름 %d"
                   % (st["recheck_items"], ", ".join("%s %d" % kv for kv in sorted(st["recheck_rules"].items())),

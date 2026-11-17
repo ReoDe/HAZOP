@@ -455,5 +455,51 @@ class AnswerKeyFileTest(unittest.TestCase):
                     self.assertIn(c.get("text"), ("NO", "LO", "LT"))
 
 
+class ConnectReplayTest(unittest.TestCase):
+    """--ai-connect 측정 순서: 끈 줄을 먼저 같은 --ai-save 폴더(RecordingClient)로 돌리고 켠 줄을 돌리면, 연결 몫이 첫 묻기를
+    줄여도 남는 첫 묻기 요청은 바이트까지 같아 저장 응답을 다시 쓰고 연결 묻기만 새로 부른다(가짜 클라이언트, 호출 없음)."""
+
+    def test_on_line_reuses_first_pass_of_off_line_and_calls_only_connect(self):
+        import json
+        import shutil
+        import tempfile
+        from unittest import mock
+        from hazop.extract import ai_connect, ai_images
+        from hazop.study import providers
+        from tests import test_ai_connect as tc
+        ex = tc.ex_fixture()
+        ex["nodes"] += [tc.node("k%d" % i, None, (100 + 20 * i, 600, 108 + 20 * i, 608)) for i in range(30)]  # 종류 묻기 3묶음
+        save = tempfile.mkdtemp(prefix="hazop-connect-replay-")
+        self.addCleanup(shutil.rmtree, save, True)
+        responses = os.path.join(save, "responses")
+        is_connect = lambda req: "links" in json.dumps(req["schema"])  # noqa: E731
+
+        def run(connect, answer):
+            inner = tc.StubClient(answer)
+            client = providers.RecordingClient(inner, responses)
+            images = ai_images.ImageInput(tc.FakePage(), [b"legend"], kinds=["manual_valve", "pump"])
+            with mock.patch.object(ai_connect.Lines, "from_pdf", return_value=ac_lines()):
+                _, stats = rq.ai_candidates(ex, client, 3, images, connect=connect)
+            return inner.requests, client.calls, stats
+
+        def ac_lines():
+            return ai_connect.Lines([tc.line((212, 204), (250, 204))])
+
+        off_reqs, off_calls, off_stats = run(0, lambda req: {"answers": []})
+        self.assertEqual(len(off_reqs), 3)
+        self.assertNotIn("connect_items", off_stats)
+
+        def only_connect(req):
+            self.assertTrue(is_connect(req), "첫 묻기는 끈 줄 응답을 다시 써야 한다")
+            return tc.answers(["1"])(req)
+
+        on_reqs, on_calls, on_stats = run(2, only_connect)
+        self.assertEqual(len(on_reqs), 1)
+        self.assertEqual([c["cached"] for c in on_calls], [True, True, False])
+        self.assertEqual([c["key"] for c in on_calls[:2]], [c["key"] for c in off_calls[:2]],
+                         "남은 첫 묻기 요청은 끈 줄의 앞 두 요청과 열쇠(요청 바이트)가 같다")
+        self.assertEqual((on_stats["planned_calls"], on_stats["connect_calls"], on_stats["connect_links"]), (2, 1, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@
 """
 
 import glob
+import hashlib
 import json
 import os
 import shutil
@@ -121,7 +122,7 @@ class EntryTest(unittest.TestCase):
         ex = {"nodes": [node("c", "check_valve", (300, 100, 320, 112), basis="lines+marker")]}
         got = ai_images.image_input_for(snp_pdf(), 0, drawings=[(snp_pdf(), 0, ex)], cache_dir=self.tmp)
         self.assertEqual(got.legend_source, "symbols")
-        self.assertEqual([f for f in os.listdir(self.tmp) if f != ai_images.LEGEND_PAGE_DIR], [], "판 캐시를 남기지 않는다")
+        self.assertEqual(os.listdir(self.tmp), [])
 
     def test_unreadable_project_pdf_is_skipped(self):
         got = ai_images.project_legend([(os.path.join(self.tmp, "gone.pdf"), 0, project_ex())], self.tmp)
@@ -223,7 +224,7 @@ class LegendPageTest(unittest.TestCase):
         on_sheet = {"nodes": [node("p", "pump", (40, 50, 60, 60), basis="symbol:apr1400.pump")]}
         drawings = [(sheet, 0, on_sheet), (snp_pdf(), 0, project_ex())]
         cache = os.path.join(self.tmp, "cache")
-        got = ai_images.image_input_for(snp_pdf(), 0, drawings=drawings, cache_dir=cache)
+        got = ai_images.image_input_for(snp_pdf(), 0, drawings=drawings, cache_dir=cache, with_legend_pages=True)
         self.assertEqual(got.legend_source, "legend+project+symbols")
         self.assertIn(got.legend_source, ai_images.LEGEND_SOURCES)
         index = [f for f in os.listdir(cache) if f.endswith(".json")]
@@ -235,8 +236,26 @@ class LegendPageTest(unittest.TestCase):
         self.assertEqual(len(os.listdir(os.path.join(cache, ai_images.LEGEND_PAGE_DIR))), 2, "쪽마다 범례 쪽 판정을 남긴다")
         with mock.patch.object(legend_page, "legend_cells", side_effect=AssertionError("캐시가 있으면 PDF를 다시 자르지 않는다")), \
                 mock.patch.object(ai_images.PageImages, "image", side_effect=AssertionError("판 캐시")):
-            again = ai_images.image_input_for(snp_pdf(), 0, drawings=drawings, cache_dir=cache)
+            again = ai_images.image_input_for(snp_pdf(), 0, drawings=drawings, cache_dir=cache, with_legend_pages=True)
         self.assertEqual(again.legend, got.legend)
+
+    def test_legend_pages_off_by_default_keeps_board_source_and_cache_key(self):
+        sheet = self.pdf(legend_sheet())
+        on_sheet = {"nodes": [node("p", "pump", (40, 50, 60, 60), basis="symbol:apr1400.pump")]}
+        drawings = [(sheet, 0, on_sheet), (snp_pdf(), 0, project_ex())]
+        cache = os.path.join(self.tmp, "cache")
+        with mock.patch.object(legend_page, "legend_cells", side_effect=AssertionError("끄면 범례 쪽을 읽지 않는다")):
+            got = ai_images.image_input_for(snp_pdf(), 0, drawings=drawings, cache_dir=cache)
+        self.assertEqual(got.legend_source, "project+symbols")
+        sig = [[ai_images._stamp(p), 0, [(k, b) for k, b in ai_images.confirmed_samples(ex) if k in ai_images.answer_kinds()]]
+               for p, _, ex in drawings]
+        key = hashlib.sha256(json.dumps([2, ai_images.PROJECT_PER_KIND, ai_images.answer_kinds(), sig,
+                                         ai_images._symbol_index().get("inputs_sha256")], sort_keys=True).encode("utf-8")).hexdigest()[:16]
+        self.assertEqual(sorted(os.listdir(cache)), sorted([key + ".json"] + ["%s-%02d.png" % (key, i + 1) for i in range(len(got.legend))]),
+                         "끈 판의 캐시 열쇠·파일은 범례 쪽 판을 들이기 전과 같다")
+        with open(os.path.join(cache, key + ".json"), encoding="utf-8") as fh:
+            self.assertEqual(sorted(json.load(fh)), ["boards", "from_symbols", "kinds", "per_kind", "source"])
+        self.assertEqual(ai_images.project_legend(drawings, cache), (got.legend, "project+symbols"))
 
     def test_valve_cell_with_open_and_closed_pictures_gives_first_pictures_first(self):
         crops = ai_images.legend_page_cells([], pages=[(snp_pdf(), 0, None, [
