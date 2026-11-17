@@ -747,6 +747,7 @@ class StudyScreensTest(unittest.TestCase):
         ns["graph_version"] = "v-old"
         lost = sorted(m for n in ns["nodes"] for m in n["members"])[0]
         ns["graph_member_refs"][lost] = "graph-gone#x"  # 새 판에 대응 없음 -> 그 구간만 재확인
+        ns["graph_member_marks"].pop(lost, None)  # 같은 자리로도 다시 찾지 못하게
         nodes.save(ns)
         win = self.window()
         win.go(RESULTS)

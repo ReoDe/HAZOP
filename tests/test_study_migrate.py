@@ -251,5 +251,145 @@ class MigrateTest(unittest.TestCase):
         self.assertIsNone(migrate.ref_of({"entity_id": "x"}, "project-P"))
 
 
+UNTAGGED = [("TK", "tank", "equipment"), ("V1", "manual_valve", "valve"), ("V2", "manual_valve", "valve"),
+            ("V3", "manual_valve", "valve"), ("PP", "pump", "equipment")]
+UNTAGGED_PIPES = [("L1", "TK", "V1"), ("L2", "V1", "V2"), ("L3", "V2", "V3"), ("L4", "V3", "PP")]
+
+
+def drawn(version, at):
+    """태그 없는 같은 종류 밸브 셋이 있는 PDF 도면 그래프. at {source_object_id: 상자 [x, y, w, h]}. 다시 추출해 기호
+    순번이 밀리면 같은 source_object_id가 다른 자리의 밸브를 가리킨다(종류·태그·연결은 그대로라 구간 지문이 같다)."""
+    g = graph(version, objects=UNTAGGED, pipes=UNTAGGED_PIPES)
+    for n in g["nodes"]:
+        n["bbox"] = at.get(n["source_object_id"])
+        if n["kind"] == "manual_valve":
+            n["tag"] = n["label_text"] = None
+    return g
+
+
+PLACES = {"TK": [0, 0, 10, 10], "V1": [20, 0, 5, 5], "V2": [40, 0, 5, 5], "V3": [60, 0, 5, 5], "PP": [80, 0, 10, 10],
+          "L1": [10, 2, 10, 1], "L2": [25, 2, 15, 1], "L3": [45, 2, 15, 1], "L4": [65, 2, 15, 1]}
+
+
+class ShiftedSymbolTest(unittest.TestCase):
+    """규칙 판이 바뀐 다시 추출로 순번이 밀려도, 구간 구성요소가 조용히 다른 기호를 가리키지 않는다."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self._old = os.environ.get(paths.ENV_WORK_ROOT)
+        os.environ[paths.ENV_WORK_ROOT] = self.tmp
+        devs = mock.patch.object(res, "load_deviations", lambda path=None: copy.deepcopy(DEVS))
+        devs.start()
+        self.addCleanup(devs.stop)
+        self.g1 = drawn("v-1", PLACES)
+        self.ns = sn.confirm(sn.propose(self.g1, at=AT), self.g1, "김검토", at=AT)
+        sn.save(self.ns)
+
+    def tearDown(self):
+        if self._old is None:
+            os.environ.pop(paths.ENV_WORK_ROOT, None)
+        else:
+            os.environ[paths.ENV_WORK_ROOT] = self._old
+        shutil.rmtree(self.tmp)
+
+    def places(self, ns, g):
+        box = {n["entity_id"]: n["bbox"] for n in g["nodes"]}
+        return sorted(box[m] for n in ns["nodes"] for m in n["members"])
+
+    def landed(self, got, g2):
+        """옛 구성요소마다 판 이전이 이은 새 구성요소의 상자."""
+        renamed = got["history"][-1]["detail"]["renamed"]
+        box = {n["entity_id"]: n["bbox"] for n in g2["nodes"]}
+        return {m: box[renamed.get(m, m)] for n in self.ns["nodes"] for m in n["members"]}
+
+    def test_members_keep_their_drawn_symbol_when_ids_shift(self):
+        shifted = dict(PLACES, V1=PLACES["V2"], V2=PLACES["V3"], V3=PLACES["V1"])
+        g2 = drawn("v-2", shifted)
+        got = sn.load(g2)
+        before = {n["entity_id"]: n["bbox"] for n in self.g1["nodes"]}
+        self.assertEqual(self.landed(got, g2), {m: before[m] for m in self.landed(got, g2)},
+                         "구성요소는 같은 자리의 밸브를 가리켜야 함")
+
+    def test_member_without_a_unique_place_is_reported_not_guessed(self):
+        moved = dict(PLACES, V2=[200, 0, 5, 5])
+        g2 = drawn("v-2", moved)
+        got = sn.load(g2)
+        holder = sn.nodes_of(self.ns, entity(self.g1, "V2"))
+        detail = got["history"][-1]["detail"]
+        self.assertEqual(sorted(detail["recheck"]), holder)
+        self.assertIn("새 판에서 찾지 못한", detail["recheck"][holder[0]])
+        self.assertTrue(all(n["state"] == "applied" for n in got["nodes"] if n["node_id"] in holder))
+
+    def test_same_place_on_another_drawing_is_not_the_same_symbol(self):
+        g2 = drawn("v-2", dict(PLACES, V2=[200, 0, 5, 5]))
+        g2["nodes"].append({"entity_id": "graph-X/entity-node-001", "node_type": "drawing_object", "kind": "manual_valve",
+                            "sheet": "graph-X", "source_object_id": "V9", "bbox": PLACES["V2"], "position": [0.0, 0.0]})
+        lost = sn.nodes_of(self.ns, entity(self.g1, "V2"))
+        self.assertEqual(sorted(migrate.plan(sn.load(self.g1), g2)["recheck"]), lost)
+
+    def test_same_places_keep_confirmation(self):
+        g2 = drawn("v-2", PLACES)
+        got = sn.load(g2)
+        self.assertEqual(got["history"][-1]["detail"]["recheck"], {})
+        self.assertEqual(self.places(got, g2), self.places(self.ns, self.g1))
+
+    def cause_refs_after(self, g2):
+        """V1·V2를 원인 위치로 가리킨 ⑤ 항목을 저장하고, g2로 판 이전한 뒤 그 참조가 가리키는 상자."""
+        doc = results_for(self.ns, self.g1)
+        doc["cells"][0]["entries"][0]["cause_refs"] = [{"ref": "graph-T#V1"}, {"ref": "graph-T#V2"}]
+        rpath = res.save(doc, None)
+        sn.load(g2)
+        with open(rpath, encoding="utf-8") as fh:
+            moved = json.load(fh)
+        from hazop.study import refs
+        idx = refs.index(g2)
+        return [(idx[r["ref"]]["bbox"] if r["ref"] in idx else None)
+                for r in moved["cells"][0]["entries"][0]["cause_refs"]]
+
+    def test_result_refs_follow_the_drawn_symbol(self):
+        shifted = dict(PLACES, V1=PLACES["V2"], V2=PLACES["V3"], V3=PLACES["V1"])
+        self.assertEqual(self.cause_refs_after(drawn("v-2", shifted)), [PLACES["V1"], PLACES["V2"]])
+
+    def test_result_ref_to_a_symbol_not_found_does_not_point_elsewhere(self):
+        self.assertEqual(self.cause_refs_after(drawn("v-2", dict(PLACES, V2=[200, 0, 5, 5]))), [PLACES["V1"], None])
+
+    def test_other_result_pointers_do_not_point_elsewhere(self):
+        """잠재 후보 ID와 근거 경로의 구성요소 ID도 같은 대응으로 옮기고, 찾지 못한 것은 어디도 가리키지 않게 표시한다."""
+        from hazop.kg import expect
+        doc = results_for(self.ns, self.g1)
+        e = doc["cells"][0]["entries"][0]
+        e["expectation_refs"] = [expect.expectation_id("R-1", "graph-T#V1"), expect.expectation_id("R-1", "graph-T#V2")]
+        e["ai_basis"]["kg_paths"] = [[entity(self.g1, "V1"), entity(self.g1, "V2"), "cond-001"]]
+        rpath = res.save(doc, None)
+        g2 = drawn("v-2", dict(PLACES, V1=PLACES["V3"], V3=PLACES["V1"], V2=[200, 0, 5, 5]))
+        sn.load(g2)
+        with open(rpath, encoding="utf-8") as fh:
+            moved = json.load(fh)
+        got = moved["cells"][0]["entries"][0]
+        self.assertEqual(got["expectation_refs"][0], expect.expectation_id("R-1", "graph-T#V3"))
+        self.assertTrue(got["expectation_refs"][1].endswith(migrate.LOST_MARK))
+        ids = {n["entity_id"] for n in g2["nodes"]}
+        path = got["ai_basis"]["kg_paths"][0]
+        self.assertEqual(path[0], entity(g2, "V3"))
+        self.assertNotIn(path[1], ids, "찾지 못한 구성요소 ID가 새 판의 다른 구성요소를 가리키면 안 됨")
+        self.assertFalse(moved["version_migrations"][-1]["refs_unverified"])
+
+    def test_migration_without_marks_is_flagged_unverified(self):
+        bare = dict(self.ns)
+        bare.pop("graph_member_marks", None)
+        sn.save(bare)
+        rpath = res.save(results_for(self.ns, self.g1), None)
+        sn.load(drawn("v-2", PLACES))
+        with open(rpath, encoding="utf-8") as fh:
+            self.assertTrue(json.load(fh)["version_migrations"][-1]["refs_unverified"])
+
+    def test_set_saved_without_marks_gets_them_on_same_version_load(self):
+        bare = dict(self.ns)
+        bare.pop("graph_member_marks", None)
+        sn.save(bare)
+        got = sn.load(self.g1)
+        self.assertEqual(got.get("graph_member_marks"), migrate.graph_marks(self.g1))
+
+
 if __name__ == "__main__":
     unittest.main()

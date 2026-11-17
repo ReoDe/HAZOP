@@ -130,6 +130,7 @@ def new_set(graph):
         "batches": [],
         "batch_seq": 0,
         "graph_member_refs": migrate.graph_refs(graph),
+        "graph_member_marks": migrate.graph_marks(graph),
         "member_digest": {},
         "history": [],
     }
@@ -392,8 +393,9 @@ def map_members(node_set, rename):
                     for key in ("absorbed", "parts"):
                         for p in o[side].get(key, []):
                             p["members"] = sorted(rename.get(m, m) for m in p["members"])
-    if out.get("graph_member_refs"):
-        out["graph_member_refs"] = dict(sorted((rename.get(m, m), r) for m, r in out["graph_member_refs"].items()))
+    for key in ("graph_member_refs", "graph_member_marks"):
+        if out.get(key):
+            out[key] = dict(sorted((rename.get(m, m), r) for m, r in out[key].items()))
     return out
 
 
@@ -675,6 +677,7 @@ def confirm_nodes(node_set, graph, node_ids, reviewer, at=None):
         n["state"] = "confirmed"
         n["confirmed"] = {"at": at, "by": reviewer, "rev": n.get("rev") or 1}
     out["graph_member_refs"] = migrate.graph_refs(graph)
+    out["graph_member_marks"] = migrate.graph_marks(graph)
     out["member_digest"] = dict(out.get("member_digest") or {},
                                 **{n["node_id"]: migrate.node_digest(graph, n["members"]) for n in picked})
     return _log(out, "confirm", {"reviewer": reviewer, "node_ids": wanted, "nodes": len(wanted)}, at)
@@ -948,6 +951,7 @@ def _check_shape(doc, path):
           and all(isinstance(b, dict) and isinstance(b.get("batch_id"), str) and isinstance(b.get("ops"), list)
                   for b in doc["batches"])
           and isinstance(doc.get("graph_member_refs") or {}, dict) and isinstance(doc.get("member_digest") or {}, dict)
+          and isinstance(doc.get("graph_member_marks") or {}, dict)
           and (doc.get("issued_upto") is None or (type(doc["issued_upto"]) is int and doc["issued_upto"] > 0)))
     if not ok:
         raise ValueError("검토구간 파일 형식이 맞지 않음: %s" % path)
