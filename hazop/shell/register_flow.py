@@ -12,6 +12,7 @@ from hazop import paths
 from hazop.app import data
 from hazop.extract import ai_review
 from hazop.register import registry
+from hazop.shell import ai_image_flow
 
 LOG = logging.getLogger("hazop.shell.register_flow")
 
@@ -54,10 +55,13 @@ def review_if_wanted(engine, pages, progress):
         reason = ai_review.refuse_reason(client)
         if reason:
             return {"ran": False, "candidates": 0, "skipped": reason}
-        est = ai_review.estimate_pages(pages, cap=cap, run_cap=ai_review.RUN_CAP)   # 사람이 고친 자리를 뺀 호출 수(실제 부르기 전 예상)
+        images = ai_image_flow.factory(engine, pages)   # 벡터 PDF 도면은 조각 그림 입력으로(설정에서 끄면 글 입력). 구독 연결로만 간다
+        est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, images is not None)   # 사람이 고친 자리를 뺀 호출 수(실제 부르기 전 예상)
         progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, None)
         done = ai_review.run_many(pages, client, cap=cap, run_cap=ai_review.RUN_CAP, should_stop=engine.stop_requested,
-                                  on_progress=lambda name, d, t, left: progress("AI 검토 %s" % name, d, t))
+                                  on_progress=lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), images=images)
+        for n in (images.used if images is not None else {}):
+            ai_image_flow.stamp_run(n, {"legend_source": images.used[n]})
     except Exception as exc:  # noqa: BLE001 - AI 검토 실패는 등록·추출을 되돌리지 않는다
         LOG.exception("AI 검토 오류")
         return {"ran": False, "candidates": 0, "skipped": "error: %s" % type(exc).__name__}

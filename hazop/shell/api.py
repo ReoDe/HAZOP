@@ -476,8 +476,13 @@ def _h_set_ai_review(engine, a):
         engine.settings["extract_ai_review"] = a["enabled"]
     if "cap" in a:
         engine.settings["extract_ai_cap"] = a["cap"]
+    if "images" in a:
+        engine.settings["ai_review_images"] = a["images"]      # 도면 조각 그림을 AI에 보낼지(기본 켬, 켜고 끄는 선택은 이것 하나)
     engine.save_settings()
-    return {"enabled": bool(engine.settings.get("extract_ai_review")), "cap": engine.settings.get("extract_ai_cap")}
+    if "images" in a:
+        engine.changed("aireview", None)                         # 열려 있는 AI 검토 패널이 예상 호출 수와 안내를 다시 읽는다
+    return {"enabled": bool(engine.settings.get("extract_ai_review")), "cap": engine.settings.get("extract_ai_cap"),
+            "images": engine.settings.get("ai_review_images") is not False}
 
 
 def _h_pick_files(engine, a):
@@ -514,8 +519,8 @@ COMMANDS = {
     "chat.action.approve": Command({"token": (v_str(1, 80), True)}, _h_action_approve, "채팅이 제안한 동작의 확인 상자에서 '실행'"),
     "chat.action.decline": Command({"token": (v_str(1, 80), True)}, _h_action_decline, "채팅이 제안한 동작의 확인 상자에서 '하지 않음'"),
     "chat.set_model": Command({"model": (v_enum(*CHAT_MODELS), True)}, _h_chat_model, "채팅 모델(빠름·보통·깊게)"),
-    "extract.set_ai_review": Command({"enabled": (v_bool(), False), "cap": (v_int(1, 200), False)}, _h_set_ai_review,
-                                     "추출 뒤 AI 검토 토글과 도면당 호출 상한"),
+    "extract.set_ai_review": Command({"enabled": (v_bool(), False), "cap": (v_int(1, 200), False), "images": (v_bool(), False)}, _h_set_ai_review,
+                                     "추출 뒤 AI 검토 토글, 도면당 호출 상한, 도면 조각 그림을 AI에 보낼지"),
     "register.pick": Command({}, _h_pick_files, "파일 고르기 창을 열어 고른 파일을 등록한다"),
     "app.open_classic": Command({}, _h_open_classic, "이전 위젯 화면으로 연다(이 창은 닫힌다)"),
 }
@@ -673,7 +678,7 @@ class ReadApi:
         e = self.engine
         s = e.settings
         return {"version": APP_VERSION, "reviewer": e.reviewer(), "project_id": e.project_id(), "current_sheet": e.current_sheet,
-                "ui": e.ui_state(), "chat_model": s.get("chat_model") or "fast", "ai_review": bool(s.get("extract_ai_review")),
+                "ui": e.ui_state(), "chat_model": s.get("chat_model") or "fast", "ai_review": bool(s.get("extract_ai_review")), "ai_review_images": s.get("ai_review_images") is not False,
                 "ai_review_cap": s.get("extract_ai_cap") or ai_review.DEFAULT_CAP, "ai_review_run_cap": ai_review.RUN_CAP,
                 "ui_shell": s.get("ui_shell") is not False, "debug": bool(os.environ.get("HAZOP_DEBUG"))}
 

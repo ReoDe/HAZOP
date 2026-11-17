@@ -29,4 +29,10 @@ export const tests = [
     const old = draw(Object.assign({}, base, { match: undefined, match_label: undefined, match_hint: undefined }));       // match 필드가 아예 없는 응답
     assert.equal([...old.querySelectorAll(".chip")].length, 2);
   } },
+  { name: "AI 검토: 다시 확인 후보는 '다시 확인: 스크립트 X → AI Y' 꼴로 보인다", run(assert) {
+    const host = draw(Object.assign({}, base, { task: "recheck", cand_id: "rr-a:kind", values: ["check_valve"], script_value: "manual_valve", current: "manual_valve", bulk_block: "다시 확인에서 스크립트와 다른 값이 나와 하나씩 봄" }));
+    const line = host.querySelector(".ai-main b").textContent.replace(/\s+/g, " ").trim();
+    assert.equal(line, "다시 확인: 기호 종류 스크립트 manual_valve → AI check_valve");
+    assert(host.textContent.includes("하나씩 볼 것"), "묶음에서 빠지는 까닭");
+  } },
 ];

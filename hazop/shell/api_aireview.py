@@ -14,6 +14,7 @@ import logging
 
 from hazop import store_io
 from hazop.extract import ai_review, corrections
+from hazop.shell import ai_image_flow
 from hazop.shell.sheet_refresh import ensure_graph, lock, refresh, ver_of  # noqa: F401  (ver_of는 채팅·시험도 이 이름으로 부른다)
 
 LOG = logging.getLogger("hazop.shell.api_aireview")
@@ -72,7 +73,7 @@ def _row(c, shown):
             "current": _current(shown, c), "values": list(c["values"])[:3], "confidence": round(float(c["confidence"]), 2),
             "reason": (c.get("reason") or "")[:300], "status": c["status"], "status_label": STATUS_LABELS.get(c["status"], c["status"]),
             "local_id": c.get("local_id"), "bulk_ok": block is None, "bulk_block": block if c["status"] == "proposed" else None,
-            "decided_by": c.get("decided_by"), "match": c.get("match") if match else None,
+            "decided_by": c.get("decided_by"), "script_value": c.get("script_value"), "match": c.get("match") if match else None,
             "match_label": match[0] if match else None, "match_hint": match[1] if match else None}
 
 
@@ -127,7 +128,14 @@ def candidates(engine, graph_id):
     runs = doc.get("runs") or []
     last = runs[-1] if runs else {}
     return dict(base, available=True, counts=counts, groups=groups, bulk=bulk, threshold=ai_review.DEFAULT_THRESHOLD,
-                last_run={k: last.get(k) for k in ("at", "calls", "left", "needed_calls", "halted", "stopped", "not_symbol")} if last else None)
+                last_run=dict({k: last.get(k) for k in ("at", "calls", "left", "needed_calls", "halted", "stopped", "not_symbol")},
+                              legend=_legend_text(last.get("images"))) if last else None)
+
+
+def _legend_text(info):
+    """실행 결과 줄에 작게 보일 범례판 출처 글. 그림 입력이 아니었으면 None."""
+    src = (info or {}).get("legend_source") if isinstance(info, dict) else None
+    return ai_image_flow.LEGEND_LABELS.get(src) if src else None
 
 
 def overview(engine):
@@ -143,7 +151,7 @@ def overview(engine):
                      "proposed": sum(1 for c in cands if c["status"] == "proposed"), "total": len(cands),
                      "accepted": sum(1 for c in cands if c["status"] == "accepted"), "ran": bool((doc or {}).get("runs"))})
     return {"drawings": rows, "cap": int(engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP), "run_cap": ai_review.RUN_CAP,
-            "seconds_per_call": ai_review.SECONDS_PER_CALL}
+            "seconds_per_call": ai_review.SECONDS_PER_CALL, "images": ai_image_flow.enabled(engine)}
 
 
 def estimate(engine, cap, graph_ids=None):
@@ -156,12 +164,15 @@ def estimate(engine, cap, graph_ids=None):
             pages.append((names[gid], _original(names[gid])))
         except (OSError, ValueError):
             continue
-    est = ai_review.estimate_pages(pages, cap=cap, run_cap=ai_review.RUN_CAP)
+    on = ai_image_flow.enabled(engine)
+    est, mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, on)
     to_gid = {names[g]: g for g in pick}
     from hazop.shell import api_settings
     return {"cap": cap, "run_cap": ai_review.RUN_CAP, "calls": est["calls"], "seconds": est["seconds"], "capped": est["capped"],
             "conn": api_settings.run_conn(engine, "ai_review", calls=est["calls"]),
-            "pages": [{"graph_id": to_gid.get(p["name"]), "items": p["items"], "calls": p["calls"], "needed": p["needed"]} for p in est["pages"]]}
+            "images": {"on": on, "pages": sum(1 for v in mode.values() if v)},
+            "pages": [{"graph_id": to_gid.get(p["name"]), "items": p["items"], "calls": p["calls"], "needed": p["needed"],
+                       "image": bool(mode.get(p["name"]))} for p in est["pages"]]}
 
 
 def read(engine, parts, query):
@@ -311,15 +322,20 @@ def run_review(engine, graph_ids, cap, progress):
         raise RuntimeError(reason)
     names = engine.graph_names()
     pages = [(names[g], _original(names[g])) for g in graph_ids if g in names]
-    est = ai_review.estimate_pages(pages, cap=cap, run_cap=ai_review.RUN_CAP)
+    images = ai_image_flow.factory(engine)
+    est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, images is not None)
     progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, est["calls"] or None)
     to_gid = {v: k for k, v in names.items()}
     done = ai_review.run_many(pages, client, cap=cap, run_cap=ai_review.RUN_CAP, should_stop=engine.stop_requested,
-                              on_progress=lambda name, d, t, left: progress("AI 검토 %s" % name, d, t))
+                              on_progress=lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), images=images)
+    used = images.used if images is not None else {}
+    for n in used:
+        ai_image_flow.stamp_run(n, {"legend_source": used[n]})
     engine.changed("aireview", None)
     return {"drawings": [{"graph_id": to_gid.get(n), "candidates": count, "calls": st.get("calls", 0), "left": st.get("left", 0),
-                          "halted": bool(st.get("halted"))} for n, count, st in done],
-            "calls": sum(st.get("calls", 0) for _n, _c, st in done), "capped": est["capped"]}
+                          "halted": bool(st.get("halted")), "images": n in used, "legend_source": used.get(n)} for n, count, st in done],
+            "calls": sum(st.get("calls", 0) for _n, _c, st in done), "estimate": est["calls"], "capped": est["capped"],
+            "image_failed": list(images.failed) if images is not None else []}
 
 
 def _unwrap(out):

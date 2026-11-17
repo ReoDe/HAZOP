@@ -65,6 +65,11 @@ async function loadEstimate(mine) {
   if (mine === seq) ai.set({ estimate: e });
 }
 
+/** 도면 조각 그림을 AI에 보낼지(설정, 기본 켬). 바뀌면 엔진이 changed("aireview")를 보내 예상 호출 수와 안내를 다시 읽는다. */
+export async function setImages(on) {
+  try { await cmd("extract.set_ai_review", { images: !!on }); } catch (e) { ai.set({ error: errorText(e) }); }
+}
+
 export function pickDrawing(gid) { ai.set({ graphId: gid, asking: null, error: null, notice: null, picked: null }); refresh(); }
 export function setCap(n) { ai.set({ cap: Math.max(1, Math.min(200, n || 20)) }); refresh(); }
 export function dismiss() { ai.set({ error: null, notice: null }); }

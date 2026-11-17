@@ -121,7 +121,7 @@ class CommandCheckTest(EngineBase):
         self.assertEqual(e.reviewer(), "검토자A")
         self.assertIn("state", self.events.names())
         r = e.dispatch("extract.set_ai_review", {"enabled": True, "cap": 30})
-        self.assertEqual(r["data"], {"enabled": True, "cap": 30})
+        self.assertEqual(r["data"], {"enabled": True, "cap": 30, "images": True})   # 도면 조각 그림은 기본 켬
         again = api.Engine(settings_path=e.settings_path)
         self.assertEqual((again.reviewer(), again.settings["extract_ai_review"], again.settings["extract_ai_cap"]), ("검토자A", True, 30))
 
