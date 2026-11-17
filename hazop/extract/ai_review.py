@@ -9,7 +9,8 @@
 - kind: 종류를 못 정한 기호(미분류 노드)
 - tag: 이름표가 없는 밸브·계기·설비, 정상·고장 위치가 필요한데 없는 밸브
 - connection: 한쪽 끝이 비어 있는 배관(열린 끝 근처 기호 가운데 하나를 고름), 목적지를 못 읽은 도면 밖 연결 표기
-- recheck: 읽은 결과 표본(도면 이름으로 정한 씨앗)을 다시 확인. 같으면 '확인'으로만 세고 후보를 만들지 않는다
+- recheck: 읽은 결과를 다시 확인. 같으면 '확인'으로만 세고 후보를 만들지 않는다. 글 입력은 도면 이름으로 정한 씨앗의
+  표본, 그림 입력은 틀리기 쉬운 규칙(RECHECK_RULES)이 정한 종류
 
 글 입력(기본): 그 자리의 벡터 자료(상자 좌표, 주변 글자와 위치, 이웃 기호의 종류·태그, 열린 끝 근처 기호)를 글로 풀어 보낸다.
 그림 입력(images=ai_images.ImageInput): 같은 글에 더해 항목마다 노드 조각 그림과 범례판을 싣는다. 구독 CLI는 그림을
@@ -44,6 +45,16 @@ UNKNOWN = "unknown"        # 종류 답 가운데 '기호인지조차 모름' �
 NO_KIND = (NOT_SYMBOL, UNKNOWN)
 MATCH = ("legend", "other")  # 종류 후보 표시: 범례판의 그 종류 견본과 모양이 같다고 본 것(높음)과 그 밖(보통)
 WIDE_KINDS = ("manual_valve", "isolation_valve", "control_valve", "motor_operated_valve", "air_operated_valve")  # 몸통이 같고 구동부로 갈리는 밸브
+# 그림 입력 다시 확인 대상 규칙. 스크립트가 종류를 정한 근거(evidence.classification_basis, '+'로 이은 조각) 가운데
+# 그 규칙이 보는 것만으로는 답 목록의 여러 종류를 가를 수 없는 것. 범례 사전 견본에 대 본 규칙(symbol:…)은 넣지 않는다.
+# - valve_body: 사전 견본에 대지 않은 일반 밸브 몸통 규칙. 맞댄 두 삼각형 몸통은 구동부로 갈리는 밸브(WIDE_KINDS)와
+#   댐퍼가 함께 쓰고, 붙은 구동부(원·박막)도 사전 견본과 대 보지 않는다
+# - isa_function: 계기 원 글자의 뒤 기능 문자 가운데 하나를 정한 차례(출력 > 판독)로 고른다. 글자에 기능이 여럿이다
+# - isa_letters_multi: ISA 표기의 마지막 기능 문자로 정한다. 뒤 글자에 기능이 둘 이상이면(LEIT, PTIS) 하나만 고른 것이다.
+#   TE·TEW로 시작하는 표기는 범례가 정한 온도 측정점 규칙이라 넣지 않는다
+RECHECK_RULES = ("valve_body", "isa_function", "isa_letters_multi")
+ISA_MODIFIERS = frozenset("DFJKQ")         # ISA 변수 수식 문자(pdf_vector.VARIABLE_MODIFIERS_ISA와 같음)
+ISA_FUNCTIONS = frozenset("ACEGIKLRST")    # ISA 뒤 글자 가운데 기능 문자(경보·조절·검출·유리·지시·조작반·표시등·기록·스위치·전송)
 TASK_LABELS = {"kind": "못 읽은 기호의 종류", "tag": "태그·속성", "split": "큰 덩어리 안 기호", "connection": "끊긴 연결",
                "recheck": "다시 확인"}
 SECONDS_PER_CALL = 30     # 예상 시간 어림(호출 하나). 실측은 evidence/ai-review-measure.md
@@ -195,6 +206,37 @@ def collect_items(ex, recheck=DEFAULT_RECHECK):
     return items
 
 
+def _isa_functions(letters):
+    funcs = letters[1:]
+    if funcs[:1] in ISA_MODIFIERS and len(funcs) > 1:
+        funcs = funcs[1:]
+    return set(funcs) & ISA_FUNCTIONS
+
+
+def recheck_rule(n):
+    """노드 종류를 정한 근거가 RECHECK_RULES의 어느 규칙인가. 아니면 None."""
+    parts = ((n.get("evidence") or {}).get("classification_basis") or "").split("+")
+    if parts[0] == "valve_body":
+        return "valve_body"
+    for p in parts:
+        name, _, letters = p.partition(":")
+        if name == "isa_function":
+            return "isa_function"
+        if name == "isa_letters" and not letters.startswith("TE") and len(_isa_functions(letters)) >= 2:
+            return "isa_letters_multi"
+    return None
+
+
+def recheck_items(ex, kinds):
+    """그림 입력 다시 확인 항목: 종류가 kinds 안에 있고 RECHECK_RULES 규칙이 정한 노드. 종류만 묻는다."""
+    out = []
+    for n in ex["nodes"]:
+        rule = recheck_rule(n) if n.get("kind") in kinds and _box(n) is not None else None
+        if rule:
+            out.append(_item("recheck", n, ["kind"], rule=rule))
+    return out
+
+
 def plan(items, cap=DEFAULT_CAP, batch=DEFAULT_BATCH):
     """우선순위(종류 → 태그·위치 → 연결 → 다시 확인)로 줄 세워 호출 묶음으로 나눈다. 상한을 넘는 항목 수는 left."""
     ordered = sorted(items, key=lambda i: TASK_ORDER.index(i["task"]))
@@ -302,8 +344,10 @@ SYSTEM_IMAGE = """너는 원자력 발전소 P&ID(배관계장도)를 읽는 검
 - reason에는 한국어로 짧게, kind면 어느 범례 칸과 같은지(그 칸의 kind 이름), tag면 어느 글자를 읽었는지 쓴다."""
 WIDE_USER = ("그림은 넓힌 조각이다. 빨간 테두리 안 밸브의 구동부(조작기)와 옆 글자까지 보고 kind를 다시 답하라. "
              "몸통이 같아도 구동부가 다르면 다른 종류다.")
+RECHECK_USER = ("items는 스크립트가 종류를 이미 정한 기호다. current.kind가 지금 읽은 값이다. 빨간 테두리 안 기호를 범례판 "
+                "견본과 견줘 맞으면 그 값을 그대로, 다르면 맞는 종류를 kind로 답하라.")
 IMAGE_BATCH = 10   # 그림 입력에서 호출 하나에 넣는 항목 수(조각 그림 수)
-IMAGE_TASKS = ("kind", "tag")  # 그림 입력에서 묻는 과제. 다시 확인은 SNP 첫 실행에서 맞던 종류(tank)를 확신도 0.55로 바꿔 뺐다. 나누기는 images.split(ai_split)
+IMAGE_TASKS = ("kind", "tag")  # 그림 입력 첫 묻기 과제. 표본 다시 확인은 SNP 첫 실행에서 맞던 종류(tank)를 확신도 0.55로 바꿔 뺐다. 규칙 다시 확인은 images.recheck(_recheck_pass), 나누기는 images.split(ai_split)
 
 TAG_MAX = 24      # 태그 후보 길이 상한(글자)
 REASON_MAX = 300  # 근거 글 길이 상한(넘으면 자른다)
@@ -341,7 +385,8 @@ def build_request(ex, call_items, described=None, images=None, wide=False):
     items = [(described or {}).get(i["item_id"]) or describe(ex, i) for i in call_items]
     req = {"system": system_text(images), "context": json.dumps({"drawing": drawing, "items": items},
                                                                 ensure_ascii=False, sort_keys=True),
-           "user": WIDE_USER if wide else "위 items 각각에 대해 ask의 필드를 답하라. 모르면 그 항목은 빼라.",
+           "user": (WIDE_USER if wide else RECHECK_USER if images and all(i["task"] == "recheck" for i in call_items)
+                    else "위 items 각각에 대해 ask의 필드를 답하라. 모르면 그 항목은 빼라."),
            "schema": schema(bool(images))}
     if images:
         legend = images.legend if any("kind" in i["ask"] for i in call_items) else []
@@ -469,6 +514,8 @@ def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
             extra = {"near_symbol": item.get("near_symbol")}
             if images:
                 extra["match"] = "legend" if ans.get("match") == "legend" else "other"
+            if item.get("rule"):
+                extra.update(rule=item["rule"], script_value=item["current"]["kind"])
         reason = ans.get("reason") if isinstance(ans.get("reason"), str) else ""
         cands.append(make_candidate(item["item_id"], item["task"], item, f, vals, conf, reason, extra))
     return True, cands, no_kind
@@ -501,20 +548,43 @@ def _wide_pass(ex, client, cands, items, images, answer_kinds, stats, kinds, lim
     return list(out.values())
 
 
+def _recheck_pass(ex, client, images, answer_kinds, stats, kinds, limit, batch, should_stop, exclude):
+    """남은 호출로 recheck_items를 묻는다. 스크립트 값과 같은 답은 확인(stats confirmed)으로만 세고, 다른 종류 답만 후보로
+    둔다(task recheck라 묶어 수락에서 빠진다). → 후보 목록."""
+    items = [i for i in recheck_items(ex, images.kinds)
+             if i["target"] not in exclude and images.page.crop_box(i["bbox"]) is not None]
+    stats["recheck_items"] = len(items)
+    for i in items:
+        stats["recheck_rules"][i["rule"]] = stats["recheck_rules"].get(i["rule"], 0) + 1
+    out = []
+    for n in range(0, len(items), batch):
+        if stats["calls"] >= limit or (should_stop and should_stop()) or providers.halts(kinds):
+            break
+        stats["recheck_calls"] += 1
+        done, new, no_kind = _ask(ex, client, items[n:n + batch], images, answer_kinds, stats, kinds)
+        if done:
+            stats["recheck_asked"] += len(items[n:n + batch])
+            stats["recheck_no_kind"] += len(no_kind)
+            out += new
+    return out
+
+
 def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_progress=None,
         should_stop=None, budget=None, exclude=(), images=None):
     """AI 검토 한 번. ex는 바꾸지 않는다. → {candidates, stats}.
     cap: 도면당 호출 상한, budget: 이번 실행에 남은 호출 수(RUN_CAP에서 앞 도면이 쓴 만큼 뺀 값). 둘 중 작은 값까지만 부른다.
     exclude: 묻지 않을 대상 source_object_id(사람이 고친 자리).
     images(ai_images.ImageInput): 그림 입력. 과제는 IMAGE_TASKS만, 묶음 기본은 IMAGE_BATCH, 종류 답은 images.kinds 안에서만.
-    images.wide면 남은 호출로 밸브 종류 답(WIDE_KINDS)을 넓힌 조각으로 다시 묻는다(_wide_pass).
+    images.wide면 남은 호출로 밸브 종류 답(WIDE_KINDS)을 넓힌 조각으로 다시 묻는다(_wide_pass). 그 뒤 images.recheck면
+    남은 호출로 RECHECK_RULES가 정한 종류를 다시 확인한다(_recheck_pass).
     on_progress(끝낸 호출 수, 이번 호출 수, 남은 항목 수), should_stop() → True면 다음 호출 전에 멈춘다.
     멈춤은 응답 상태와 관계없이 error_kind로 providers.halts를 따른다. 호출은 끝났는데 한도·초과 사용이 온 응답은 받은
     답은 반영하고 남은 호출은 멈춘다."""
     stats = {"items": 0, "planned_calls": 0, "needed_calls": 0, "calls": 0, "errors": 0, "dropped": 0, "confirmed": 0,
              "halted": False, "stopped": False, "left": 0, "error_kinds": [], "refused": refuse_reason(client),
              "excluded": 0, "kind_items": 0, NOT_SYMBOL: 0, UNKNOWN: 0, "wide_calls": 0, "wide_changed": 0,
-             "wide_dropped": 0, "no_image": 0, "legacy_key_hits": 0}
+             "wide_dropped": 0, "no_image": 0, "legacy_key_hits": 0, "recheck_items": 0, "recheck_calls": 0,
+             "recheck_asked": 0, "recheck_no_kind": 0, "recheck_rules": {}}
     if stats["refused"]:
         return {"candidates": [], "stats": stats}
     ex = copy.deepcopy(ex)
@@ -553,6 +623,9 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
     stats["left"] = len(items) - done_items
     if images is not None and images.wide and not (stats["halted"] or stats["stopped"]):
         cands = _wide_pass(ex, client, cands, items, images, answer_kinds, stats, kinds, limit, batch, should_stop)
+        stats["halted"] = providers.halts(kinds)
+    if images is not None and images.recheck and not (stats["halted"] or stats["stopped"]):
+        cands += _recheck_pass(ex, client, images, answer_kinds, stats, kinds, limit, batch, should_stop, exclude)
         stats["halted"] = providers.halts(kinds)
     if images is not None and images.split and not (stats["halted"] or stats["stopped"]):
         from hazop.extract import ai_split
@@ -693,7 +766,8 @@ def to_check_candidates(doc):
                         "pdf_objects": c["pdf_objects"], "bbox": c["new_bbox"]})
         else:
             out.append({"node_local_id": c["local_id"], "field": c["field"], "values": c["values"],
-                        **({"match": c["match"]} if "match" in c else {})})
+                        **({"match": c["match"]} if "match" in c else {}),
+                        **({k: c[k] for k in ("task", "rule", "script_value")} if c.get("rule") else {})})
     return {"candidates": out}
 
 

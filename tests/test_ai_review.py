@@ -654,6 +654,84 @@ class ImageInputTest(unittest.TestCase):
         self.assertEqual((doc["stats"]["errors"], doc["stats"]["legacy_key_hits"]), (0, len(first.requests)))
 
 
+def based(sid, kind, box, basis, tag=None):
+    return dict(node(sid, kind, box, tag), evidence={"classification_basis": basis})
+
+
+class RuleRecheckTest(unittest.TestCase):
+    """그림 입력 다시 확인(images.recheck): 틀리기 쉬운 규칙이 정한 종류만 남은 호출로 묻고, 같은 답은 확인으로만 센다."""
+
+    KINDS = ("manual_valve", "motor_operated_valve", "damper", "transmitter", "indicator", "alarm", "level_element",
+             "pump")
+
+    def images(self, recheck=True):
+        from hazop.extract import ai_images
+        return ai_images.ImageInput(StubPage(), [b"legend-1"], kinds=list(self.KINDS), recheck=recheck)
+
+    def ex(self):
+        ex = ex_fixture()
+        ex["nodes"] += [based("v1", "manual_valve", (600, 100, 610, 108), "valve_body", tag="V1"),
+                        based("v2", "motor_operated_valve", (620, 100, 630, 108), "valve_body+circle_actuator", tag="V2"),
+                        based("v3", "manual_valve", (640, 100, 650, 108), "symbol:apr1400.globe_valve", tag="V3"),
+                        based("i1", "transmitter", (660, 100, 670, 110), "isa_letters:LEIT", tag="LEIT1"),
+                        based("i2", "indicator", (680, 100, 690, 110), "isa_letters:PI", tag="PI1"),
+                        based("i3", "indicator", (700, 100, 710, 110), "isa_function:PIAL", tag="PIAL1")]
+        return ex
+
+    def test_rule_reads_what_decided_the_kind(self):
+        cases = {"valve_body": "valve_body", "valve_body+actuator_mark:M": "valve_body",
+                 "symbol:apr1400.globe_valve+actuator:apr1400.motor_operator": None,
+                 "isa_letters:PI": None, "isa_letters:HS": None, "isa_letters:LEIT": "isa_letters_multi",
+                 "isa_letters:PDIS": "isa_letters_multi", "isa_letters:PDI": None, "isa_letters:TEWI": None,
+                 "isa_function:PSAL": "isa_function",
+                 "symbol:apr1400.hsi_shared_display+isa_letters:TIS": "isa_letters_multi", "": None}
+        got = {b: ar.recheck_rule({"evidence": {"classification_basis": b}}) for b in cases}
+        self.assertEqual(got, cases)
+
+    def test_same_answer_confirms_and_other_answer_is_recheck_candidate(self):
+        flips = {"v1": "damper", "i1": "level_element"}
+
+        def answers(req):
+            return {"answers": [{"item_id": it["item_id"], "field": "kind", "confidence": 0.99, "reason": "x",
+                                 "match": "legend", "values": [flips.get(it["target"], it["current"]["kind"])]}
+                                for it in ids_in(req) if it["task"] == "recheck"]}
+        stub = StubClient(answers)
+        doc = ar.run(self.ex(), stub, cap=5, recheck=0, images=self.images())
+        asked = {it["target"] for r in stub.requests for it in ids_in(r) if it["task"] == "recheck"}
+        self.assertEqual(asked, {"v1", "v2", "i1", "i3"})
+        self.assertTrue(all(r["user"] == ar.RECHECK_USER for r in stub.requests if ids_in(r)[0]["task"] == "recheck"))
+        got = {c["target"]: c for c in doc["candidates"] if c["task"] == "recheck"}
+        self.assertEqual({t: (c["values"][0], c["script_value"], c["rule"]) for t, c in got.items()},
+                         {"v1": ("damper", "manual_valve", "valve_body"),
+                          "i1": ("level_element", "transmitter", "isa_letters_multi")})
+        st = doc["stats"]
+        self.assertEqual((st["confirmed"], st["recheck_items"], st["recheck_asked"]), (2, 4, 4))
+        self.assertEqual(st["recheck_rules"], {"valve_body": 2, "isa_letters_multi": 1, "isa_function": 1})
+        for c in got.values():
+            self.assertIsNotNone(ar.bulk_block(c), "다시 확인 후보는 확신도와 관계없이 묶어 수락에서 빠진다")
+        check = [c for c in ar.to_check_candidates(doc)["candidates"] if c.get("task") == "recheck"]
+        self.assertEqual(sorted((c["values"][0], c["rule"]) for c in check),
+                         [("damper", "valve_body"), ("level_element", "isa_letters_multi")])
+
+    def test_recheck_uses_only_calls_left_after_first_pass(self):
+        first = ar.run(self.ex(), StubClient(good_answers), cap=5, recheck=0, images=self.images(False))
+        self.assertEqual(first["stats"]["recheck_calls"], 0, "켜지 않으면 묻지 않는다")
+        used = first["stats"]["calls"]
+        full = ar.run(self.ex(), StubClient(good_answers), cap=used, recheck=0, images=self.images())
+        self.assertEqual((full["stats"]["calls"], full["stats"]["recheck_calls"], full["stats"]["recheck_asked"]),
+                         (used, 0, 0))
+        more = ar.run(self.ex(), StubClient(good_answers), cap=used + 1, recheck=0, images=self.images())
+        self.assertEqual((more["stats"]["calls"], more["stats"]["recheck_calls"]), (used + 1, 1))
+
+    def test_kind_outside_answer_list_and_excluded_are_not_asked(self):
+        ex = self.ex()
+        ex["nodes"].append(based("s1", "switch", (720, 100, 730, 110), "isa_letters:PTIS", tag="PTIS1"))
+        stub = StubClient(good_answers)
+        ar.run(ex, stub, cap=5, recheck=0, images=self.images(), exclude={"v2"})
+        asked = {it["target"] for r in stub.requests for it in ids_in(r) if it["task"] == "recheck"}
+        self.assertEqual(asked, {"v1", "i1", "i3"})
+
+
 class AcceptTest(unittest.TestCase):
     """실제 SNP-M-102 PDF 추출(임시 작업 루트)에서 수락·되돌리기가 사람 수정 기록으로 들어가는지."""
 

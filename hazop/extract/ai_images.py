@@ -196,11 +196,13 @@ def legend_boards(sources, kinds=None, per_kind=1):
 class ImageInput:
     """AI 검토 한 쪽에 실을 그림: 그 쪽 조각(page)과 범례판(legend, PNG 바이트 목록), 답으로 받을 종류(kinds, 기본은
     모양이 일정한 종류 전부). wide면 구동부로 갈리는 밸브 종류(ai_review.WIDE_KINDS) 답을 넓힌 조각으로 한 번 더 묻는다.
-    split이면 남은 호출로 기호를 여럿 품은 큰 미분류 노드를 나눈다(ai_split)."""
+    split이면 남은 호출로 기호를 여럿 품은 큰 미분류 노드를 나눈다(ai_split). recheck면 남은 호출로 틀리기 쉬운 규칙
+    (ai_review.RECHECK_RULES)이 정한 종류를 다시 확인한다."""
 
-    def __init__(self, page, legend=(), kinds=None, wide=False, split=False):
+    def __init__(self, page, legend=(), kinds=None, wide=False, split=False, recheck=False):
         self.page = page
         self.legend = list(legend)
         self.kinds = sorted(kinds or answer_kinds())
         self.wide = wide
         self.split = split
+        self.recheck = recheck

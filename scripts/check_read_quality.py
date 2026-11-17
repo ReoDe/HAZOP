@@ -887,13 +887,15 @@ def snp_folders(samples_dir):
 
 
 def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=20, only=None, ai_save=None,
-        key_dir=None, ai_images=False, ai_wide=False, legend_samples=1, ai_split=False):
+        key_dir=None, ai_images=False, ai_wide=False, legend_samples=1, ai_split=False, ai_recheck=False):
     """only: 이 이름의 쪽만(APR1400 'apr1400-012', SNP 'SNP-M-102'). ai_client를 주면 쪽마다 AI 검토를 돌려
     '스크립트 + AI 후보' 값을 내고, ai_save 폴더에 후보(<이름>.json)와 실행 통계를 남긴다(--ai-candidates로 다시 잼).
     ai_save가 있으면 응답도 <ai_save>/responses에 남기고 쪽마다 호출 시간을 통계에 적는다.
     ai_images: 노드 조각과 범례판(그 쪽과 같은 도면 묶음에서 고른 견본)을 싣는다. 종류 답은 범례판에 견본이 있는 종류만.
     ai_wide: 밸브 종류 답을 넓힌 조각으로 한 번 더 묻는다(ai_images와 함께). legend_samples: 범례판의 종류별 견본 수 상한.
     ai_split: 남은 호출로 큰 미분류 노드를 나눈다(ai_images와 함께). split 후보는 쪽을 다시 추출해 연결까지 잰다(apply_with_splits).
+    ai_recheck: 남은 호출로 틀리기 쉬운 규칙(ai_review.RECHECK_RULES)이 정한 종류를 다시 확인한다(ai_images와 함께).
+    다른 종류 답(다시 확인 후보)도 ai_pages에 더한다.
     ai_pages는 후보 전부, ai_high_pages는 높음 후보만 더한 값이다."""
     import extract_drawio
     from hazop.extract.adapters import pdf_vector
@@ -935,7 +937,7 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
                         boards[family] = images_mod.legend_boards(legend_sources(family, input_dir, samples_dir, work),
                                                                   per_kind=legend_samples)[0]
                     images = images_mod.ImageInput(images_mod.PageImages(pdf), boards[family], wide=ai_wide,
-                                                   split=ai_split)
+                                                   split=ai_split, recheck=ai_recheck)
                 before = len(getattr(ai_client, "calls", []))
                 cands, stats = ai_candidates(ex, ai_client, ai_cap, images)
                 calls = getattr(ai_client, "calls", [])[before:]
@@ -1123,6 +1125,8 @@ def main(argv=None):
     ap.add_argument("--ai-images", action="store_true", help="노드 조각 그림과 범례판을 실어 묻는다(kind·tag만)")
     ap.add_argument("--ai-wide", action="store_true", help="--ai-images에 더해 밸브 종류 답을 넓힌 조각으로 다시 묻는다")
     ap.add_argument("--ai-split", action="store_true", help="--ai-images에 더해 남은 호출로 큰 미분류 노드를 나눈다")
+    ap.add_argument("--ai-recheck", action="store_true",
+                    help="--ai-images에 더해 남은 호출로 틀리기 쉬운 규칙이 정한 종류를 다시 확인한다")
     ap.add_argument("--ai-legend-samples", type=int, default=1, help="범례판에 종류마다 실을 견본 수 상한(모양이 다른 것, 기본 1)")
     ap.add_argument("--baseline", default=BASELINE)
     ap.add_argument("--update", action="store_true")
@@ -1150,7 +1154,7 @@ def main(argv=None):
     res = run(input_dir, os.path.abspath(args.samples_dir or default_samples_dir()), pages, args.ai_candidates,
               ai_client=client, ai_cap=args.ai_cap, only=only, ai_save=args.ai_save, key_dir=extra,
               ai_images=args.ai_images, ai_wide=args.ai_wide, legend_samples=args.ai_legend_samples,
-              ai_split=args.ai_split)
+              ai_split=args.ai_split, ai_recheck=args.ai_recheck)
     if extra:
         print("추가 표본(저장소 밖 정답지 %d쪽, 기준값과 견주지 않음)" % len(load_keys(key_dir=extra)))
     print(report(res, head_commit()))
@@ -1167,6 +1171,10 @@ def main(argv=None):
         if "split_targets" in st:
             print("    나누기: 대상 %d · 호출 %d · 받은 기호 %d · 버림 %d · 후보 %d"
                   % (st["split_targets"], st["split_calls"], st["split_symbols"], st["split_dropped"], st["split_new"]))
+        if st.get("recheck_items"):
+            print("    다시 확인: 대상 %d(%s) · 호출 %d · 물음 %d · 기호 아님·모름 %d"
+                  % (st["recheck_items"], ", ".join("%s %d" % kv for kv in sorted(st["recheck_rules"].items())),
+                     st["recheck_calls"], st["recheck_asked"], st["recheck_no_kind"]))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(res, fh, ensure_ascii=False, indent=1)
