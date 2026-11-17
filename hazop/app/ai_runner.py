@@ -128,15 +128,16 @@ class AiRunner(QObject):
         cancel()
         # 작업자가 호출을 꺼냈지만 클라이언트가 아직 프로세스를 띄우기 전이면(호출 수는 이미 1) 위 cancel()은 끊을 것을 못 찾는다. 클라이언트는 호출을
         # 시작할 때 취소 세대를 읽으므로 그 뒤에 뜬 프로세스는 취소를 모르고 끝까지 산다. 작업자가 모두 끝날 때까지 짧은 간격으로 다시 끊는다.
-        threading.Thread(target=self._keep_cancelling, args=(cancel,), name="ai-kill-retry", daemon=True).start()
+        threading.Thread(target=self._keep_cancelling, args=(cancel, list(self._threads)), name="ai-kill-retry", daemon=True).start()
         return True
 
     KILL_RETRY_SEC = 0.25
     KILL_RETRY_MAX = 600     # 클라이언트 호출 시간 제한(DEFAULT_TIMEOUT)보다 길게 끈질기지는 않는다
 
-    def _keep_cancelling(self, cancel):
+    def _keep_cancelling(self, cancel, workers):
+        """kill 때 살아 있던 작업자들(workers)이 끝날 때까지만 다시 끊는다. 그 뒤 새로 시작한 실행은 끊지 않는다."""
         end = time.monotonic() + self.KILL_RETRY_MAX
-        while self.is_running() and time.monotonic() < end:
+        while any(t.is_alive() for t in workers) and time.monotonic() < end:
             time.sleep(self.KILL_RETRY_SEC)
             try:
                 cancel()

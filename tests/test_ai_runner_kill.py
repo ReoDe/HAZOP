@@ -72,6 +72,28 @@ class KillBeforeSpawnTest(unittest.TestCase):
         time.sleep(0.6)
         self.assertFalse([t for t in threading.enumerate() if t.name == "ai-kill-retry" and t.is_alive()])
 
+    def test_a_run_started_right_after_the_kill_is_not_cut_by_the_retries(self):
+        """끊은 직후(다시 끊기 스레드가 깨기 전) 새 실행을 시작해도 새 실행의 호출은 끊기지 않는다(다시 끊기는 kill 때의 작업자에게만 묶인다)."""
+        old = self.runner(delay=0.6)
+        old.start()
+        self.assertTrue(self.pump_until(lambda: old.calls_in_flight() == 1, 5))
+        old.kill()
+        other = claude_cli.ClaudeCliClient(argv_prefix=[sys.executable, "-c", "import time; time.sleep(60)"],
+                                           limits_path=os.path.join(self.tmp, "limits2.json"), run_root=os.path.join(self.tmp, "run2"))
+        self.addCleanup(other.cancel)
+
+        def run(client, unit, ctx, at):
+            return {"error_kind": client.analyze(REQUEST).get("error_kind")}
+        new = AiRunner([({"unit_id": "u2"}, None)], None, other, run=run)
+        new.start()
+        self.assertTrue(self.pump_until(lambda: other._active, 10), "새 실행의 호출이 시작됨")
+        self.assertTrue(self.pump_until(lambda: not old.is_running(), 15), "옛 실행은 끊겨 끝남")
+        time.sleep(1.0)                                            # 다시 끊기 간격(0.25초)의 몇 배
+        self.assertTrue(new.is_running(), "새 실행은 계속 돈다")
+        self.assertTrue(other._active, "새 실행의 프로세스는 살아 있다")
+        new.kill()
+        self.assertTrue(self.pump_until(lambda: not new.is_running(), 10))
+
 
 if __name__ == "__main__":
     unittest.main()
