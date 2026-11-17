@@ -210,7 +210,7 @@ class ImageInput:
     def __init__(self, page, legend=(), kinds=None, wide=False, split=False, recheck=False, legend_source=None):
         self.page = page
         self.legend = list(legend)
-        self.legend_source = legend_source  # image_input_for가 고른 범례판 출처(project·symbols·none). 직접 만들면 None
+        self.legend_source = legend_source  # image_input_for가 고른 범례판 출처(project·symbols·none, 측정의 정답지 판은 keys). 직접 만들면 None
         self.kinds = sorted(kinds or answer_kinds())
         self.wide = wide
         self.split = split

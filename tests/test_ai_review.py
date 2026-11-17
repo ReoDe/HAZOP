@@ -541,6 +541,15 @@ class ImageInputTest(unittest.TestCase):
         self.assertTrue(all(c["match"] == "other" for c in doc["candidates"] if c["field"] == "kind"))
         self.assertTrue(all("match" not in c for c in doc["candidates"] if c["field"] != "kind"))
 
+    def test_stats_record_which_legend_was_used(self):
+        from hazop.extract import ai_images
+        for source, legend in (("project", [b"a", b"b"]), ("symbols", [b"s"]), ("none", [])):
+            images = ai_images.ImageInput(StubPage(), legend, kinds=["manual_valve", "pump"], legend_source=source)
+            st = ar.run(ex_fixture(), StubClient(good_answers), cap=5, recheck=0, images=images)["stats"]
+            self.assertEqual((st["legend_source"], st["legend_boards"]), (source, len(legend)))
+        st = ar.run(ex_fixture(), StubClient(good_answers), cap=5)["stats"]
+        self.assertEqual((st["legend_source"], st["legend_boards"]), (None, 0), "글 입력은 범례판이 없다")
+
     def test_only_kind_tag_and_crop_per_item(self):
         stub = StubClient(good_answers)
         ar.run(ex_fixture(), stub, cap=5, images=self.images())

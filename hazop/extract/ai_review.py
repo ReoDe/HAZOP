@@ -622,7 +622,9 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
              "halted": False, "stopped": False, "left": 0, "error_kinds": [], "refused": refuse_reason(client),
              "excluded": 0, "kind_items": 0, NOT_SYMBOL: 0, UNKNOWN: 0, "wide_calls": 0, "wide_changed": 0,
              "wide_dropped": 0, "no_image": 0, "legacy_key_hits": 0, "recheck_items": 0, "recheck_calls": 0,
-             "recheck_asked": 0, "recheck_no_kind": 0, "recheck_rules": {}}
+             "recheck_asked": 0, "recheck_no_kind": 0, "recheck_rules": {},
+             "legend_source": getattr(images, "legend_source", None),
+             "legend_boards": len(getattr(images, "legend", None) or ())}
     if stats["refused"]:
         return {"candidates": [], "stats": stats}
     ex = copy.deepcopy(ex)

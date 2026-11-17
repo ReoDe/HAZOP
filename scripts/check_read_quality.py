@@ -963,7 +963,7 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
                             boards[family] = images_mod.legend_boards(legend_sources(family, input_dir, samples_dir, work),
                                                                       per_kind=legend_samples)[0]
                         images = images_mod.ImageInput(images_mod.PageImages(pdf), boards[family], wide=ai_wide,
-                                                       split=ai_split, recheck=ai_recheck)
+                                                       split=ai_split, recheck=ai_recheck, legend_source="keys")
                     else:
                         drawings = ([(p, 0, extract(p)) for p in legend_pdfs(family, input_dir, samples_dir)]
                                     if ai_legend == "project" else ())
@@ -1201,6 +1201,8 @@ def main(argv=None):
                  st["dropped"], st.get("kind_items", 0), st["not_symbol"], st.get("unknown", 0),
                  st["confirmed"], st["left"], st.get("no_image", 0),
                  " · 멈춤(%s)" % ",".join(st["error_kinds"]) if st["halted"] else ""))
+        if st.get("legend_source"):
+            print("    범례판: %s %d장" % (st["legend_source"], st.get("legend_boards", 0)))
         if "split_targets" in st:
             print("    나누기: 대상 %d · 호출 %d · 받은 기호 %d · 버림 %d · 후보 %d"
                   % (st["split_targets"], st["split_calls"], st["split_symbols"], st["split_dropped"], st["split_new"]))
