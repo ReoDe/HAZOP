@@ -61,13 +61,19 @@ def _current(shown, c):
     return (node.get("attributes") or {}).get(c["field"]) or ""
 
 
+# 그림 입력 AI의 종류 후보에 붙는 match(legend=범례 견본과 모양이 같다고 본 것). 없는 후보(스크립트·글 입력·옛 저장본)는 칩 없이 둔다.
+MATCH_LABELS = {"legend": ("높음", "범례 견본과 맞는 후보"), "other": ("보통", "범례에 없는 꼴이라 확인이 필요한 후보")}
+
+
 def _row(c, shown):
     block = ai_review.bulk_block(c)
+    match = MATCH_LABELS.get(c.get("match")) if isinstance(c.get("match"), str) else None
     return {"cand_id": c["cand_id"], "task": c["task"], "field": c["field"], "field_label": FIELD_LABELS.get(c["field"], c["field"]),
             "current": _current(shown, c), "values": list(c["values"])[:3], "confidence": round(float(c["confidence"]), 2),
             "reason": (c.get("reason") or "")[:300], "status": c["status"], "status_label": STATUS_LABELS.get(c["status"], c["status"]),
             "local_id": c.get("local_id"), "bulk_ok": block is None, "bulk_block": block if c["status"] == "proposed" else None,
-            "decided_by": c.get("decided_by")}
+            "decided_by": c.get("decided_by"), "match": c.get("match") if match else None,
+            "match_label": match[0] if match else None, "match_hint": match[1] if match else None}
 
 
 def _load(name):

@@ -8,8 +8,9 @@ import { tests as cleanTests } from "./clean.test.js";
 import { tests as tableTests } from "./table.test.js";
 import { tests as editTests } from "./edit.test.js";
 import { tests as resultsDetailTests } from "./results_detail.test.js";
+import { tests as aiReviewTests } from "./aireview.test.js";
 
-const all = [...storeTests, ...bridgeTests, ...cardTests, ...nodesTests, ...tableTests, ...cleanTests, ...editTests, ...resultsDetailTests];
+const all = [...storeTests, ...bridgeTests, ...cardTests, ...nodesTests, ...tableTests, ...cleanTests, ...editTests, ...resultsDetailTests, ...aiReviewTests];
 const results = [];
 
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assert 실패"); }

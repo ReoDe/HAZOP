@@ -38,7 +38,7 @@ function Bulk({ v }) {
     <span class="muted small">확신도 ${v.threshold} 이상인 태그·속성·연결만 묶습니다. 기호 종류와 다시 확인은 하나씩 확정합니다.</span></div>`;
 }
 
-function Row({ r }) {
+export function Row({ r }) {
   const busy = A.useAi((s) => s.busy);
   const picked = A.useAi((s) => s.picked);
   const alt = r.values.slice(1);
@@ -48,6 +48,7 @@ function Row({ r }) {
       <span>${r.reason || "근거 없음"}</span>
       ${r.status === "proposed" && r.bulk_block ? html`<span class="muted small">하나씩 볼 것: ${r.bulk_block}</span>` : null}</button>
     <${Chip} title="AI 확신도">${r.confidence.toFixed(2)}<//>
+    ${r.match_label ? html`<${Chip} kind=${r.match === "legend" ? "ok" : ""} title=${r.match_hint}>${r.match_label}<//>` : null}
     <${Chip} kind=${STATUS_KIND[r.status]}>${r.status_label}<//>
     <span class="acts">${r.status === "proposed" ? html`
       <${Btn} sm=${true} kind="primary" label=${r.field_label + " " + r.values[0] + " 수락"} disabled=${busy} onClick=${() => A.accept(r.cand_id)}>수락<//>

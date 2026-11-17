@@ -365,6 +365,19 @@ class ReadTest(Base):
         self.assertNotIn(self.tmp.replace("\\", "\\\\"), body)
         self.assertNotIn(":\\\\", body)
 
+    def test_match_chip_data_only_on_candidates_that_carry_match(self):
+        """그림 입력 AI의 종류 후보(match legend/other)는 높음·보통과 뜻 한 줄을 싣고, 없는 후보(글 입력·스크립트·옛 저장본)는 비워 둔다."""
+        hi = ar.make_candidate("k-a", "kind", self.valves[1], "kind", ["manual_valve"], 0.9, "모양", {"match": "legend"})
+        lo = ar.make_candidate("k-b", "kind", self.valves[2], "kind", ["check_valve"], 0.9, "모양", {"match": "other"})
+        old = ar.make_candidate("k-c", "kind", self.valves[3], "kind", ["manual_valve"], 0.9, "모양")
+        self.seed([hi, lo, old, self.tag(1, self.valves[0], "V901")])
+        rows = {r["cand_id"]: r for g in self.view()["groups"] for r in g["items"]}
+        self.assertEqual([(rows[k]["match"], rows[k]["match_label"]) for k in ("k-a:kind", "k-b:kind")], [("legend", "높음"), ("other", "보통")])
+        self.assertIn("범례 견본과 맞는", rows["k-a:kind"]["match_hint"])
+        self.assertIn("확인이 필요한", rows["k-b:kind"]["match_hint"])
+        for k in ("k-c:kind", "t-1:tag"):
+            self.assertEqual([rows[k]["match"], rows[k]["match_label"], rows[k]["match_hint"]], [None, None, None])
+
     def test_chat_functions_do_not_raise(self):
         self.assertEqual(AR.accept(self.engine, "no-such", ["x"], "v")["code"], "not_found")
         self.seed([self.tag(1, self.valves[0], "V901")])
