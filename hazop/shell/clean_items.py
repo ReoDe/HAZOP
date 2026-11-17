@@ -172,6 +172,8 @@ def build(extraction, name=None):
         xs, ys = [p[0] for p in line], [p[1] for p in line]
         boxes[lid] = [min(xs), min(ys), max(xs), max(ys)]
         items[lid] = {"line_type": r.get("line_type"), "flow": flow, "ends": ends, "review": "human" if r.get("human_edit") else "script"}
+        if r.get("line_type") == "pdf_dashed":
+            items[lid]["rel_kind"] = r.get("kind")      # 점선은 배관 굵기 점선(물리 연결)일 수도 신호 점선일 수도 있어 관계 종류로 가른다
         if any(e["status"] == "open" for e in ends):
             unconfirmed.append({"id": lid, "reason": "open_end"})
     for c in extraction.get("unresolved_connectors") or []:      # 끝이 미확정인 연결 전체

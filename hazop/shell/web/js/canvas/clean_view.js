@@ -12,8 +12,14 @@ export const FRAME = "var(--line-strong, #b8bec6)";
 const MONO = "var(--mono, 'Cascadia Mono', Consolas, monospace)";
 const FONT = 9;                                   // 태그·번호 글자 크기(도면 단위)
 const SYMBOL_W = 1.8;                             // 기호 선 굵기(화면 픽셀, 확대해도 같게)
-const PIPE_W = { process: 2.0, process_secondary: 1.6, instrument_tap: 1.2, signal_electric: 1.2 };   // 화면 픽셀(확대해도 같게)
-const PIPE_DASH = { instrument_tap: "6 3", signal_electric: "2 2" };
+const PIPE_W = { process: 2.0, process_secondary: 1.6, instrument_tap: 1.2, signal_electric: 1.2, dashed_pipe: 2.0, dashed_signal: 1.2 };   // 화면 픽셀(확대해도 같게)
+const PIPE_DASH = { instrument_tap: "6 3", signal_electric: "2 2", dashed_pipe: "8 4", dashed_signal: "6 3" };
+
+/** 선 종류 열쇠. 점선(pdf_dashed)은 배관 굵기 점선(물리 연결)이면 배관 굵기의 점선, 아니면 가는 신호 점선이다(서버가 rel_kind를 실어 준다). */
+function pipeType(ex) {
+  const t = (ex && ex.line_type) || "process";
+  return t === "pdf_dashed" ? (ex.rel_kind === "physical_connection" ? "dashed_pipe" : "dashed_signal") : t;
+}
 const MIN_LABEL_PX = 11;                          // 글자 크기의 화면 픽셀 하한(맞춤 배율에서도 읽히게)
 const PORT_GAP = 8;                               // 연결점과 배관 끝을 잇는 거리 상한(넘으면 잇지 않고 port_gap 눈금)
 const STUB_GAP = 4;                               // 기호 연결점과 배관 끝이 이보다 멀면 짧은 선으로 잇는다
@@ -101,7 +107,7 @@ function arrowsAlong(line, forward, color, avoid, size = 6) {
 export function pipeShapes(rec, extra, style = {}) {
   const line = rec.lines && rec.lines[0] ? rec.lines[0] : null;
   if (!line || line.length < 2) return [];
-  const type = (extra && extra.line_type) || "process";
+  const type = pipeType(extra);
   const color = style.color || INK, width = style.width || PIPE_W[type] || 1.4;
   const out = [el("polyline", Object.assign({ points: line.map((p) => r(p[0]) + "," + r(p[1])).join(" "), fill: "none", "data-id": style.id || null }, strokeAttrs(color, width, { "stroke-dasharray": style.dash || PIPE_DASH[type] || null })))];
   if (extra && extra.flow) out.push(...arrowsAlong(line, extra.flow === "source_to_target", color, style.avoid, style.recolor ? 10 : 6));   // 경로 위에서는 경로 색. 기호·꺾임·분기점과 겹치지 않게
@@ -236,7 +242,7 @@ export function buildBase(ctx) {
   const stubs = [];
   for (const rec of ctx.items) {
     if (rec.layer !== "pipe") continue;
-    const ex = ctx.extras[rec.id] || {}, w = PIPE_W[ex.line_type] || 1.4;
+    const ex = ctx.extras[rec.id] || {}, w = PIPE_W[pipeType(ex)] || 1.4;
     for (const e of ex.ends || []) {
       const ports = e.status === "connected" && e.node && portsByNode.get(e.node);
       if (!ports || !e.point) continue;

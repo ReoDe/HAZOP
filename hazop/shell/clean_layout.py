@@ -34,7 +34,15 @@ SNAP_LIMIT = 24.0       # 배관 끝을 연결점으로 옮기는 거리 상한(
 PORT_TOL = 0.5          # 연결점에 닿았다고 보는 오차
 EPS = 0.5               # 같은 값으로 보는 오차
 GRID = 64.0             # 겹침·접촉을 찾는 격자 칸 크기
-SIGNAL_TYPES = ("instrument_tap", "signal_electric", "pdf_dashed")       # 기호 자리를 정하지 않는 선(계장 신호·전기 신호)
+SIGNAL_TYPES = ("instrument_tap", "signal_electric")       # 기호 자리를 정하지 않는 선(계장 신호·전기 신호)
+
+
+def is_signal(ex):
+    """이 배관이 기호 자리를 정하지 않는 신호선인가. pdf_dashed는 배관 굵기 점선(관계 종류 physical_connection)이면 배관이고,
+    그 밖의 점선만 신호선이다(어댑터가 점선을 두 가지로 낸다)."""
+    if ex.get("line_type") == "pdf_dashed":
+        return ex.get("rel_kind") != "physical_connection"
+    return ex.get("line_type") in SIGNAL_TYPES
 INSTRUMENTS = ("transmitter", "indicator", "temperature_element", "controller")     # 원 안에 두 줄을 쓰는 계기: 원이 작으면 표준 크기로 키운다
 INSTR_MIN = 48.0
 CONT_SIZE = (160.0, 44.0)      # 다른 도면 연결 오각형의 표준 크기(원본 글자가 두 줄 들어간다)
@@ -274,7 +282,7 @@ class _Sheet:
                 if e.get("status") == "connected" and e.get("node") in self.sym:
                     att[_end_index(e, line)] = e["node"]
             self.pipes[it["id"]] = {"line": line, "orig": [list(p) for p in line], "ends": ends, "att": att, "port": {},
-                                    "signal": ex.get("line_type") in SIGNAL_TYPES,
+                                    "signal": is_signal(ex),
                                     "nodes": {e.get("node") for e in ends if e.get("node")}}
 
     def pinned(self, pid, idx):
