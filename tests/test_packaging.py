@@ -393,7 +393,7 @@ class BuildSpecTest(unittest.TestCase):
         self.assertTrue(data)
         self.assertEqual({n for n, f in paths.FOLDERS.items()
                           if f.root == "resource" and any(s.startswith(paths.folder_rel(n) + "/") for s in data)},
-                         {"deviations", "risk-criteria", "patterns", "symbols", "icons", "drawing-symbols", "dexpi-schema"})
+                         {"deviations", "risk-criteria", "patterns", "symbols", "icons", "drawing-symbols", "dexpi-schema", "ai-legend"})
         self.assertFalse([s for s in self.srcs if "__pycache__" in s])
 
     def test_spec_text(self):

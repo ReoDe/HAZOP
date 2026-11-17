@@ -5,13 +5,17 @@
 만든다. 견본 자리(종류, 상자)는 부르는 쪽이 준다(APR1400은 저장소 정답지 12쪽의 기호, SNP는 SNP 도면들의 추출 결과).
 답으로 받는 종류는 모양이 일정한 종류(answer_kinds)이고, 범례판에 견본이 없는 종류도 답할 수 있다.
 이 모듈은 그림을 만들기만 하고 보내지 않는다.
+앱과 측정이 함께 부르는 진입은 image_input_for다. 범례판은 프로젝트 도면에서 고른 견본(project_legend)이 있으면 그것,
+없으면 직접 그린 표준 기호 그림으로 만든 저장소 판(symbol_legend, scripts/build_ai_legend.py)을 쓴다.
 """
 
 import base64
+import hashlib
 import io
 import json
+import os
 
-from hazop import paths
+from hazop import paths, store_io
 from hazop.extract import rules
 
 SCALE = 2.0
@@ -185,8 +189,12 @@ def board(cells):
 def legend_boards(sources, kinds=None, per_kind=1):
     """범례판 PNG 바이트 목록(범주 순, 한 장 BOARD_CELLS칸까지)과 견본이 실린 종류 목록. 종류마다 견본 per_kind개까지."""
     kinds = set(kinds or answer_kinds())
-    crops = {k: [c for c in (page.crop(b, pad=SAMPLE_PAD, outline=False) for page, b in spots) if c is not None]
-             for k, spots in pick_samples(sources, kinds, per_kind).items()}
+    return boards_of({k: [c for c in (page.crop(b, pad=SAMPLE_PAD, outline=False) for page, b in spots) if c is not None]
+                      for k, spots in pick_samples(sources, kinds, per_kind).items()})
+
+
+def boards_of(crops):
+    """{kind: [PIL 조각]} -> (범례판 PNG 바이트 목록, 실린 종류 목록). 칸은 범주·종류 순이고 한 장 BOARD_CELLS칸까지."""
     order = sorted((k for k, c in crops.items() if c), key=lambda k: (rules.KIND_CATEGORY.get(k) or "", k))
     cells = [(k, c) for k in order for c in crops[k]]
     boards = [board(cells[i:i + BOARD_CELLS]) for i in range(0, len(cells), BOARD_CELLS)]
@@ -199,10 +207,102 @@ class ImageInput:
     split이면 남은 호출로 기호를 여럿 품은 큰 미분류 노드를 나눈다(ai_split). recheck면 남은 호출로 틀리기 쉬운 규칙
     (ai_review.RECHECK_RULES)이 정한 종류를 다시 확인한다."""
 
-    def __init__(self, page, legend=(), kinds=None, wide=False, split=False, recheck=False):
+    def __init__(self, page, legend=(), kinds=None, wide=False, split=False, recheck=False, legend_source=None):
         self.page = page
         self.legend = list(legend)
+        self.legend_source = legend_source  # image_input_for가 고른 범례판 출처(project·symbols·none). 직접 만들면 None
         self.kinds = sorted(kinds or answer_kinds())
         self.wide = wide
         self.split = split
         self.recheck = recheck
+
+
+# ---------------------------------------------------------------- 범례판 출처와 진입 (docs/specs/extraction.md 'AI 검토')
+
+PROJECT_PER_KIND = 3       # 프로젝트 판에 종류마다 실을 견본 수 상한
+LEGEND_INDEX = "legend.json"
+PROJECT_CACHE_VERSION = 1  # 프로젝트 판 캐시 열쇠에 넣는다. 판 만드는 법이 바뀌면 올린다
+
+
+def symbol_legend():
+    """저장소의 표준 기호 판(scripts/build_ai_legend.py가 만든 PNG). 표지나 PNG가 없으면 []."""
+    try:
+        with open(paths.folder("ai-legend", LEGEND_INDEX), encoding="utf-8") as fh:
+            index = json.load(fh)
+        boards = [store_io.read_bytes(paths.folder("ai-legend", f))[0] for f in index["boards"]]
+        return boards if all(boards) else []
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def confirmed_samples(ex):
+    """추출 결과(사람 수정 기록을 적용한 것)에서 종류를 믿을 수 있는 노드의 견본 자리 [(kind, bbox)].
+    사람이 종류를 정한 노드(human_edit.ops에 set_kind, AI 후보 수락도 이 연산으로 들어간다)와 스크립트가 기호 사전 견본에 맞춘
+    노드(classification_basis가 'symbol:'로 시작)만. 순서는 source_object_id 순."""
+    out = []
+    for n in sorted(ex.get("nodes") or [], key=lambda n: str(n.get("source_object_id"))):
+        human = "set_kind" in ((n.get("human_edit") or {}).get("ops") or [])
+        basis = str((n.get("evidence") or {}).get("classification_basis") or "")
+        b = _box(n)
+        if n.get("kind") and b and (human or basis.startswith("symbol:")):
+            out.append((n["kind"], b))
+    return out
+
+
+def _stamp(pdf_path):
+    st = os.stat(pdf_path)
+    return [os.path.normcase(os.path.abspath(pdf_path)), st.st_size, st.st_mtime_ns]
+
+
+def project_legend(drawings, cache_dir=None, per_kind=PROJECT_PER_KIND):
+    """프로젝트 판: drawings [(pdf_path, page, 추출 결과)]의 confirmed_samples에서 종류마다 모양이 다른 견본을 per_kind개까지
+    골라 만든 PNG 바이트 목록. 견본이 하나도 없으면 [].
+    cache_dir를 주면 견본 자리·PDF 크기와 바뀐 시각·답 목록이 같을 때 그 폴더의 PNG를 다시 쓴다(쪽 그림을 다시 그리지 않는다).
+    읽을 수 없는 PDF는 건너뛴다."""
+    kinds = answer_kinds()
+    sources, sig = [], []
+    for pdf_path, page, ex in drawings:
+        spots = [(k, b) for k, b in confirmed_samples(ex) if k in kinds]
+        if not spots:
+            continue
+        try:
+            stamp = _stamp(pdf_path)
+        except OSError:
+            continue
+        sources.append((PageImages(pdf_path, page), spots))
+        sig.append([stamp, page, spots])
+    if not sources:
+        return []
+    key = hashlib.sha256(json.dumps([PROJECT_CACHE_VERSION, per_kind, kinds, sig], sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    index = os.path.join(cache_dir, key + ".json") if cache_dir else None
+    if index and os.path.isfile(index):
+        try:
+            with open(index, encoding="utf-8") as fh:
+                names = json.load(fh)["boards"]
+            boards = [store_io.read_bytes(os.path.join(cache_dir, f))[0] for f in names]
+            if all(boards):
+                return boards
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # 깨진 캐시는 다시 만든다
+    boards, order = legend_boards(sources, kinds, per_kind=per_kind)
+    if index and boards:
+        names = ["%s-%02d.png" % (key, i) for i in range(1, len(boards) + 1)]
+        for f, png in zip(names, boards):
+            store_io.write_bytes(os.path.join(cache_dir, f), png)
+        store_io.write_json(index, {"boards": names, "kinds": order, "per_kind": per_kind})
+    return boards
+
+
+def image_input_for(pdf_path, page=0, drawings=(), cache_dir=None, wide=True, recheck=True, split=False):
+    """AI 검토 한 쪽의 그림 입력. 앱(도면별 AI 검토)과 측정(scripts/check_read_quality.py)이 같은 길로 부른다.
+    pdf_path, page: 검토할 도면의 원본 PDF와 쪽 번호(0부터).
+    drawings: 프로젝트에 등록된 도면들 [(pdf_path, page, 사람 수정 기록을 적용한 추출 결과)]. 검토할 도면도 넣어도 된다.
+    cache_dir: 프로젝트 판 캐시 폴더(프로젝트 작업 폴더 안). None이면 캐시 없이 만든다.
+    범례판은 프로젝트 판(project_legend)이 있으면 그것, 없으면 표준 기호 판(symbol_legend), 그것도 없으면 범례판 없이.
+    고른 출처는 돌려준 ImageInput의 legend_source('project'·'symbols'·'none')에 있다. 답 목록은 늘 answer_kinds()."""
+    legend, source = project_legend(drawings, cache_dir), "project"
+    if not legend:
+        legend, source = symbol_legend(), "symbols"
+    if not legend:
+        source = "none"
+    return ImageInput(PageImages(pdf_path, page), legend, wide=wide, split=split, recheck=recheck, legend_source=source)

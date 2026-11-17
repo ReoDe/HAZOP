@@ -9,6 +9,7 @@
 - `dexpi-schema/`: DEXPI 2.0.1 클래스 이름·상속 목록(`classes-2-0-1.json`, DEXPI 가져오기·내보내기가 읽음)
 - `deviations/`: 이탈 후보 카탈로그와 적용 판단
 - `patterns/`: 원인·결과 패턴
+- `ai-legend/`: AI 검토 그림 입력의 표준 기호 범례판(`scripts/build_ai_legend.py`가 `drawing-symbols/`로 만든 PNG와 `legend.json`). 도면에서 오린 조각은 넣지 않는다
 
 ## 넣지 않는 것
 

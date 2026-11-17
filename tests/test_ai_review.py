@@ -723,6 +723,20 @@ class RuleRecheckTest(unittest.TestCase):
         more = ar.run(self.ex(), StubClient(good_answers), cap=used + 1, recheck=0, images=self.images())
         self.assertEqual((more["stats"]["calls"], more["stats"]["recheck_calls"]), (used + 1, 1))
 
+    def test_text_sample_recheck_and_rule_recheck_both_survive_one_document(self):
+        def flip(req):
+            return {"answers": [{"item_id": it["item_id"], "field": "kind", "confidence": 0.9, "reason": "x", "match": "legend",
+                                 "values": ["damper"]} for it in ids_in(req) if it["task"] == "recheck"]}
+        text_run = ar.run(self.ex(), StubClient(flip), cap=20, recheck=50)
+        image_run = ar.run(self.ex(), StubClient(flip), cap=20, recheck=0, images=self.images())
+        doc = ar.new_doc("t", self.ex())
+        ar.merge_run(doc, text_run)
+        ar.merge_run(doc, image_run)
+        on_i1 = sorted(c["cand_id"] for c in doc["candidates"] if c["target"] == "i1" and c["task"] == "recheck")
+        self.assertEqual(on_i1, ["r-i1:kind", "rr-i1:kind"], "글 입력 표본 다시 확인과 규칙 다시 확인 후보가 둘 다 남는다")
+        rule = next(c for c in doc["candidates"] if c["cand_id"] == "rr-i1:kind")
+        self.assertEqual((rule["item_id"], rule["rule"]), ("r-i1", "isa_letters_multi"), "묻는 항목 id는 그대로라 저장 응답 열쇠가 같다")
+
     def test_kind_outside_answer_list_and_excluded_are_not_asked(self):
         ex = self.ex()
         ex["nodes"].append(based("s1", "switch", (720, 100, 730, 110), "isa_letters:PTIS", tag="PTIS1"))
@@ -730,6 +744,51 @@ class RuleRecheckTest(unittest.TestCase):
         ar.run(ex, stub, cap=5, recheck=0, images=self.images(), exclude={"v2"})
         asked = {it["target"] for r in stub.requests for it in ids_in(r) if it["task"] == "recheck"}
         self.assertEqual(asked, {"v1", "i1", "i3"})
+
+
+class ImageEstimateTest(unittest.TestCase):
+    """그림 입력 실행의 예상 호출 수: 첫 묻기에 넓혀 묻기·규칙 다시 확인·나누기 몫을 더하고 도면당·실행 상한으로 자른다."""
+
+    def ex(self):
+        ex = RuleRecheckTest.ex(self)
+        for sid, x in (("b1", 800), ("b2", 820)):
+            ex["nodes"].append(dict(node(sid, None, (x, 100, x + 10, 108)), category="valve"))
+        return ex
+
+    def images(self, wide=True, recheck=True):
+        from hazop.extract import ai_images
+        return ai_images.ImageInput(StubPage(), [b"legend-1"], kinds=list(RuleRecheckTest.KINDS), wide=wide, recheck=recheck)
+
+    def valve_answers(self, req):
+        out = []
+        for it in ids_in(req):
+            f = it["ask"][0]
+            v = {"kind": "manual_valve" if it["target"] in ("b1", "b2") or it["task"] == "recheck" else "pump",
+                 "tag": "V200", "normal_position": "NO", "fail_position": "FC"}[f]
+            out.append({"item_id": it["item_id"], "field": f, "values": [v], "confidence": 0.9, "reason": "x", "match": "legend"})
+        return {"answers": out}
+
+    def test_estimate_matches_calls_of_image_run(self):
+        for wide, recheck in ((False, False), (True, False), (False, True), (True, True)):
+            images = self.images(wide, recheck)
+            doc = ar.run(self.ex(), StubClient(self.valve_answers), cap=20, recheck=0, images=images)
+            est = ar.estimate(self.ex(), cap=20, images=images)
+            self.assertEqual(est["calls"], doc["stats"]["calls"], (wide, recheck))
+        self.assertEqual(est["passes"], {"first": 1, "wide": 1, "recheck": 1, "split": 0})
+
+    def test_estimate_pages_counts_image_passes_within_caps(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        with mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": tmp}):
+            pages = [("a", self.ex()), ("b", self.ex())]
+            images = self.images()
+            est = ar.estimate_pages(pages, cap=20, run_cap=300, images=images)
+            self.assertEqual([p["calls"] for p in est["pages"]], [3, 3])
+            done = ar.run_many(pages, StubClient(self.valve_answers), cap=20, save=False, images=lambda n, e: images)
+            self.assertEqual([st["calls"] for _, _, st in done], [3, 3])
+            self.assertEqual([p["calls"] for p in ar.estimate_pages(pages, cap=2, images=images)["pages"]], [2, 2])
+            capped = ar.estimate_pages(pages, cap=20, run_cap=4, images=images)
+            self.assertEqual(([p["calls"] for p in capped["pages"]], capped["capped"]), ([3, 1], True))
 
 
 class AcceptTest(unittest.TestCase):

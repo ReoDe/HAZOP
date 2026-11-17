@@ -305,6 +305,7 @@ FOLDERS = {
     "references": Folder("repo", ("resources", "references")),
     "APR1400": Folder("repo", ("resources", "references", "APR1400_DCD")),
     "samples": Folder("repo", ("resources", "samples")),
+    "ai-legend": Folder("resource", ("resources", "library", "ai-legend")),  # AI 검토 그림 입력의 표준 기호 범례판(scripts/build_ai_legend.py)
     "data": Folder("work", ("data",)),
     "regions": Folder("work", ("data", "regions")),
     "fixed-responses": Folder("work", ("data", "fixed-responses")),

@@ -9,6 +9,8 @@
       AI 검토를 실제로 돌려 두 값을 냄(구독 호출. 기준값 비교 없음). 시험은 --ai-run fixed --ai-fixed-dir <폴더>
       --ai-images: 항목마다 노드 조각 그림과 범례판을 싣는다(kind·tag만). --ai-wide는 밸브 종류 답을 넓힌 조각으로
       한 번 더 묻는다. --ai-legend-samples N은 범례판에 종류마다 모양이 다른 견본을 N개까지 싣는다(기본 1).
+      --ai-legend는 범례판 출처: keys(기본, 정답지 판), symbols(표준 기호 판), project(프로젝트 판 흉내). 뒤 둘은 앱과 같은
+      진입(ai_images.image_input_for)을 탄다. project는 잴 쪽들과 같은 도면 묶음의 쪽을 추출해 스크립트가 사전 견본에 맞춘 기호만 쓴다.
       종류 후보 가운데 AI가 범례판 견본과 모양이 같다고 본 것(match legend)만 더한 '높음만' 줄도 낸다. --ai-save를 주면 응답을
       <폴더>/responses에 고정 응답 꼴로 남겨 --ai-run fixed --ai-fixed-dir <폴더>/responses로 같은 답을 다시 잴 수 있다
   python scripts/check_read_quality.py tiles <쪽.pdf> <출력 폴더>   # 정답지 쓰기용 격자 타일(추출 결과를 쓰지 않음)
@@ -647,6 +649,13 @@ def ai_candidates(ex, client, cap, images=None):
     return ai_review.to_check_candidates(doc), doc["stats"]
 
 
+LEGEND_MODES = ("keys", "symbols", "project")
+
+
+def page_family(name):
+    return "SNP" if name.startswith("SNP-") else "APR1400"
+
+
 def legend_sources(family, input_dir, samples_dir, work):
     """범례판 견본 자리 [(PageImages, [(kind, bbox)])]. 도면 묶음을 섞지 않는다.
     APR1400: 저장소 정답지 12쪽의 기호(사람이 종류를 확인한 상자). 범례 쪽(1.7-1)의 스크립트 추출은 종류가 틀린 조각이 섞여
@@ -655,15 +664,22 @@ def legend_sources(family, input_dir, samples_dir, work):
     from hazop.extract import ai_images
     from hazop.extract.adapters import pdf_vector
     if family == "SNP":
-        pdfs = [glob.glob(os.path.join(f, "*.pdf"))[0] for f in snp_folders(samples_dir) if glob.glob(os.path.join(f, "*.pdf"))]
         return [(ai_images.PageImages(p), ai_images.node_samples(pdf_vector.extract(p, page=0, repo_root=work)))
-                for p in pdfs]
+                for p in legend_pdfs(family, input_dir, samples_dir)]
     out = []
     for _, k in load_keys():
         pdf = apr_pdf(input_dir, k["seq"])
         if pdf:
             out.append((ai_images.PageImages(pdf), [(s["kind"], s["bbox"]) for s in k["symbols"]]))
     return out
+
+
+def legend_pdfs(family, input_dir, samples_dir):
+    """범례판 견본을 고를 도면 PDF: SNP는 SNP 도면들, APR1400은 저장소 정답지 12쪽(개발용·보류 쪽은 쓰지 않는다).
+    --ai-legend project는 이 도면들의 추출 결과를 프로젝트 도면으로 넘긴다(정답지 상자 대신 스크립트가 사전 견본에 맞춘 기호)."""
+    if family == "SNP":
+        return [glob.glob(os.path.join(f, "*.pdf"))[0] for f in snp_folders(samples_dir) if glob.glob(os.path.join(f, "*.pdf"))]
+    return [p for p in (apr_pdf(input_dir, k["seq"]) for _, k in load_keys()) if p]
 
 
 # ---------------------------------------------------------------- 기준값
@@ -887,7 +903,8 @@ def snp_folders(samples_dir):
 
 
 def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=20, only=None, ai_save=None,
-        key_dir=None, ai_images=False, ai_wide=False, legend_samples=1, ai_split=False, ai_recheck=False):
+        key_dir=None, ai_images=False, ai_wide=False, legend_samples=1, ai_split=False, ai_recheck=False,
+        ai_legend="keys"):
     """only: 이 이름의 쪽만(APR1400 'apr1400-012', SNP 'SNP-M-102'). ai_client를 주면 쪽마다 AI 검토를 돌려
     '스크립트 + AI 후보' 값을 내고, ai_save 폴더에 후보(<이름>.json)와 실행 통계를 남긴다(--ai-candidates로 다시 잼).
     ai_save가 있으면 응답도 <ai_save>/responses에 남기고 쪽마다 호출 시간을 통계에 적는다.
@@ -895,6 +912,8 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
     ai_wide: 밸브 종류 답을 넓힌 조각으로 한 번 더 묻는다(ai_images와 함께). legend_samples: 범례판의 종류별 견본 수 상한.
     ai_split: 남은 호출로 큰 미분류 노드를 나눈다(ai_images와 함께). split 후보는 쪽을 다시 추출해 연결까지 잰다(apply_with_splits).
     ai_recheck: 남은 호출로 틀리기 쉬운 규칙(ai_review.RECHECK_RULES)이 정한 종류를 다시 확인한다(ai_images와 함께).
+    ai_legend: 범례판 출처(LEGEND_MODES). keys는 legend_sources의 정답지 판(legend_samples), symbols·project는 앱과 같은
+    ai_images.image_input_for(project는 잴 쪽 가운데 같은 도면 묶음의 쪽 추출 결과를 프로젝트 도면으로 넘긴다).
     다른 종류 답(다시 확인 후보)도 ai_pages에 더한다.
     ai_pages는 후보 전부, ai_high_pages는 높음 후보만 더한 값이다."""
     import extract_drawio
@@ -924,20 +943,32 @@ def run(input_dir, samples_dir, pages=None, ai_dir=None, ai_client=None, ai_cap=
         if ai_client is not None and ai_save:
             from hazop.study import providers
             ai_client = providers.RecordingClient(ai_client, os.path.join(ai_save, "responses"))
-        boards = {}
+        boards, extracted = {}, {}
+
+        def extract(pdf):
+            if pdf not in extracted:
+                extracted[pdf] = pdf_vector.extract(pdf, page=0, repo_root=work)
+            return extracted[pdf]
+
         for name, k, pdf in jobs:
-            ex = pdf_vector.extract(pdf, page=0, repo_root=work)
+            ex = extract(pdf)
             res["pages"][name] = score_page(k, ex)
             if ai_client is not None:
                 images = None
                 if ai_images:
                     from hazop.extract import ai_images as images_mod
-                    family = "SNP" if name.startswith("SNP-") else "APR1400"
-                    if family not in boards:
-                        boards[family] = images_mod.legend_boards(legend_sources(family, input_dir, samples_dir, work),
-                                                                  per_kind=legend_samples)[0]
-                    images = images_mod.ImageInput(images_mod.PageImages(pdf), boards[family], wide=ai_wide,
-                                                   split=ai_split, recheck=ai_recheck)
+                    family = page_family(name)
+                    if ai_legend == "keys":
+                        if family not in boards:
+                            boards[family] = images_mod.legend_boards(legend_sources(family, input_dir, samples_dir, work),
+                                                                      per_kind=legend_samples)[0]
+                        images = images_mod.ImageInput(images_mod.PageImages(pdf), boards[family], wide=ai_wide,
+                                                       split=ai_split, recheck=ai_recheck)
+                    else:
+                        drawings = ([(p, 0, extract(p)) for p in legend_pdfs(family, input_dir, samples_dir)]
+                                    if ai_legend == "project" else ())
+                        images = images_mod.image_input_for(pdf, 0, drawings, os.path.join(work, "legend-cache"),
+                                                            wide=ai_wide, recheck=ai_recheck, split=ai_split)
                 before = len(getattr(ai_client, "calls", []))
                 cands, stats = ai_candidates(ex, ai_client, ai_cap, images)
                 calls = getattr(ai_client, "calls", [])[before:]
@@ -1128,6 +1159,8 @@ def main(argv=None):
     ap.add_argument("--ai-recheck", action="store_true",
                     help="--ai-images에 더해 남은 호출로 틀리기 쉬운 규칙이 정한 종류를 다시 확인한다")
     ap.add_argument("--ai-legend-samples", type=int, default=1, help="범례판에 종류마다 실을 견본 수 상한(모양이 다른 것, 기본 1)")
+    ap.add_argument("--ai-legend", choices=LEGEND_MODES, default="keys",
+                    help="범례판 출처: keys 정답지 판(기본), symbols 표준 기호 판, project 프로젝트 판 흉내(사전 견본에 맞춘 기호)")
     ap.add_argument("--baseline", default=BASELINE)
     ap.add_argument("--update", action="store_true")
     ap.add_argument("--force", action="store_true", help="HEAD와 다른(커밋 안 한) 기준값도 --update로 덮음")
@@ -1154,7 +1187,7 @@ def main(argv=None):
     res = run(input_dir, os.path.abspath(args.samples_dir or default_samples_dir()), pages, args.ai_candidates,
               ai_client=client, ai_cap=args.ai_cap, only=only, ai_save=args.ai_save, key_dir=extra,
               ai_images=args.ai_images, ai_wide=args.ai_wide, legend_samples=args.ai_legend_samples,
-              ai_split=args.ai_split, ai_recheck=args.ai_recheck)
+              ai_split=args.ai_split, ai_recheck=args.ai_recheck, ai_legend=args.ai_legend)
     if extra:
         print("추가 표본(저장소 밖 정답지 %d쪽, 기준값과 견주지 않음)" % len(load_keys(key_dir=extra)))
     print(report(res, head_commit()))

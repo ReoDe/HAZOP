@@ -245,12 +245,40 @@ def plan(items, cap=DEFAULT_CAP, batch=DEFAULT_BATCH):
     return {"calls": kept, "left": len(ordered) - sum(len(c) for c in kept), "needed": len(calls)}
 
 
-def estimate(ex, cap=DEFAULT_CAP, batch=DEFAULT_BATCH, recheck=DEFAULT_RECHECK):
-    """추출 결과에서 예상 호출 수·시간. → {items, calls, needed, left, seconds}."""
-    items = collect_items(ex, recheck)
-    p = plan(items, cap, batch)
-    return {"items": len(items), "calls": len(p["calls"]), "needed": p["needed"], "left": p["left"],
-            "seconds": len(p["calls"]) * SECONDS_PER_CALL}
+def estimate(ex, cap=DEFAULT_CAP, batch=DEFAULT_BATCH, recheck=DEFAULT_RECHECK, images=None):
+    """추출 결과에서 예상 호출 수·시간. → {items, calls, needed, left, seconds}.
+    images: 그림 입력 실행의 예상(_image_estimate). ImageInput이나 wide·recheck·split·kinds를 가진 것이면 되고 쪽 그림은 그리지 않는다."""
+    if images is not None:
+        e = _image_estimate(ex, cap, images)
+    else:
+        items = collect_items(ex, recheck)
+        p = plan(items, cap, batch)
+        e = {"items": len(items), "calls": len(p["calls"]), "needed": p["needed"], "left": p["left"]}
+    return dict(e, seconds=e["calls"] * SECONDS_PER_CALL)
+
+
+def _image_estimate(ex, limit, images, exclude=()):
+    """그림 입력 실행(run의 images)이 부를 호출 수 예상. run과 같은 순서로 첫 묻기(IMAGE_TASKS, IMAGE_BATCH 묶음),
+    넓혀 다시 묻기(wide), 규칙 다시 확인(recheck), 덩어리 나누기(split)를 세고 limit에서 자른다.
+    넓혀 다시 묻기는 첫 답이 밸브인 항목만 묻는데 답은 미리 모르므로, 첫 묻기에 든 종류 항목 가운데 스크립트가 밸브 몸통으로 본
+    것(category valve) 수로 센다. 조각을 자를 수 없는 항목(쪽 밖 상자)도 센다(쪽 그림을 그리지 않으려고).
+    → {items, calls, needed, left, passes}."""
+    from hazop.extract import ai_split
+    exclude = set(exclude)
+    items = [i for i in collect_items(ex, 0) if i["task"] in IMAGE_TASKS and i.get("bbox") and i["target"] not in exclude]
+    p = plan(items, max(0, limit), IMAGE_BATCH)
+    nodes = {n.get("source_object_id"): n for n in ex.get("nodes") or []}
+    passes = {"first": p["needed"], "wide": 0, "recheck": 0, "split": 0}
+    if images.wide:
+        valves = sum(1 for c in p["calls"] for i in c
+                     if i["task"] == "kind" and (nodes.get(i["target"]) or {}).get("category") == "valve")
+        passes["wide"] = -(-valves // IMAGE_BATCH)
+    if images.recheck:
+        passes["recheck"] = -(-sum(1 for i in recheck_items(ex, images.kinds) if i["target"] not in exclude) // IMAGE_BATCH)
+    if images.split:
+        passes["split"] = sum(1 for n in ai_split.targets(ex) if n.get("source_object_id") not in exclude)
+    needed = sum(passes.values())
+    return {"items": len(items), "calls": min(max(0, limit), needed), "needed": needed, "left": p["left"], "passes": passes}
 
 
 # ---------------------------------------------------------------- 그 자리를 글로 풀기
@@ -548,6 +576,11 @@ def _wide_pass(ex, client, cands, items, images, answer_kinds, stats, kinds, lim
     return list(out.values())
 
 
+# 규칙 다시 확인 후보 cand_id 접두(rr-<sid>:kind). 묻는 항목 id(r-<sid>)는 글 입력 표본 다시 확인과 같아 요청과 저장 응답 열쇠는
+# 그대로 두고 후보 id만 가른다. 두 과제 후보를 한 문서에 합쳐도(merge_run) 뒤 후보가 버려지지 않는다. 옛 문서의 후보 id는 그대로 읽는다.
+RULE_RECHECK_PREFIX = "r"
+
+
 def _recheck_pass(ex, client, images, answer_kinds, stats, kinds, limit, batch, should_stop, exclude):
     """남은 호출로 recheck_items를 묻는다. 스크립트 값과 같은 답은 확인(stats confirmed)으로만 세고, 다른 종류 답만 후보로
     둔다(task recheck라 묶어 수락에서 빠진다). → 후보 목록."""
@@ -565,7 +598,7 @@ def _recheck_pass(ex, client, images, answer_kinds, stats, kinds, limit, batch, 
         if done:
             stats["recheck_asked"] += len(items[n:n + batch])
             stats["recheck_no_kind"] += len(no_kind)
-            out += new
+            out += [dict(c, cand_id=RULE_RECHECK_PREFIX + c["cand_id"]) for c in new]
     return out
 
 
@@ -665,16 +698,23 @@ def decided_targets(name):
     return out
 
 
-def estimate_pages(pages, cap=DEFAULT_CAP, run_cap=RUN_CAP, batch=DEFAULT_BATCH, recheck=DEFAULT_RECHECK):
+def estimate_pages(pages, cap=DEFAULT_CAP, run_cap=RUN_CAP, batch=DEFAULT_BATCH, recheck=DEFAULT_RECHECK, images=None):
     """pages [(이름, extraction)] → {pages: [{name, items, calls, needed}], calls, needed, seconds, capped}.
-    도면마다 cap, 실행 전체는 run_cap까지 센다(run_many와 같은 규칙)."""
+    도면마다 cap, 실행 전체는 run_cap까지 센다(run_many와 같은 규칙).
+    images: 그림 입력으로 돌릴 때(run_many의 images) 넓혀 묻기·다시 확인·나누기 몫까지 센다(_image_estimate).
+    ImageInput이나 wide·recheck·split·kinds를 가진 것 하나를 모든 도면에 쓴다."""
     out, left = [], run_cap
     for name, ex in pages:
         exclude = decided_targets(name) if name else set()
-        items = [i for i in collect_items(ex, recheck) if i["target"] not in exclude]
-        p = plan(items, max(0, min(cap, left)), batch)
-        left -= len(p["calls"])
-        out.append({"name": name, "items": len(items), "calls": len(p["calls"]), "needed": p["needed"]})
+        if images is not None:
+            e = _image_estimate(ex, min(cap, left), images, exclude)
+            items, calls, needed = e["items"], e["calls"], e["needed"]
+        else:
+            its = [i for i in collect_items(ex, recheck) if i["target"] not in exclude]
+            p = plan(its, max(0, min(cap, left)), batch)
+            items, calls, needed = len(its), len(p["calls"]), p["needed"]
+        left -= calls
+        out.append({"name": name, "items": items, "calls": calls, "needed": needed})
     calls = sum(x["calls"] for x in out)
     needed = sum(min(x["needed"], cap) for x in out)
     return {"pages": out, "calls": calls, "needed": needed, "seconds": calls * SECONDS_PER_CALL,
@@ -691,9 +731,10 @@ def estimate_pdf(pdf_path, page_indices, cap=DEFAULT_CAP, run_cap=RUN_CAP, name_
     return estimate_pages(pages, cap, run_cap)
 
 
-def run_many(pages, client, cap=DEFAULT_CAP, run_cap=RUN_CAP, on_progress=None, should_stop=None, save=True):
+def run_many(pages, client, cap=DEFAULT_CAP, run_cap=RUN_CAP, on_progress=None, should_stop=None, save=True, images=None):
     """여러 도면을 차례로 검토한다. 실행 전체 호출은 run_cap까지(넘는 도면은 묻지 않고 남은 수에 센다).
     사람이 고친 자리는 묻지 않는다. save면 도면마다 후보 문서에 합쳐 저장한다(읽은 판이 바뀌었으면 다시 읽어 합침).
+    images: (이름, extraction) -> ai_images.ImageInput 또는 None. 주면 도면마다 그림 입력으로 묻는다(ai_images.image_input_for).
     → [(이름, 새 후보 수, stats)]."""
     done, used = [], 0
     for name, ex in pages:
@@ -701,7 +742,7 @@ def run_many(pages, client, cap=DEFAULT_CAP, run_cap=RUN_CAP, on_progress=None, 
             break
         result = run(ex, client, cap=cap, budget=run_cap - used, exclude=decided_targets(name),
                      on_progress=(lambda d, t, left, n=name: on_progress(n, d, t, left)) if on_progress else None,
-                     should_stop=should_stop)
+                     should_stop=should_stop, images=images(name, ex) if images else None)
         used += result["stats"]["calls"]
         if save and not result["stats"]["refused"]:
             desc = client.describe() if hasattr(client, "describe") else {}
