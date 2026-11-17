@@ -8,7 +8,7 @@
      "pump"
     ],
     "confidence": 0.95,
-    "reason": "원심 케이싱, 가운데 원, 받침대가 있어 범례 pump 칸 견본과 모양이 같다.",
+    "reason": "원심 케이싱·임펠러 원·받침대 모양이 범례 pump 칸과 같음",
     "match": "legend"
    },
    {
@@ -18,7 +18,7 @@
      "pump"
     ],
     "confidence": 0.95,
-    "reason": "원심 케이싱, 가운데 원, 받침대가 있어 범례 pump 칸 견본과 모양이 같다.",
+    "reason": "원심 케이싱·임펠러 원·받침대 모양이 범례 pump 칸과 같음",
     "match": "legend"
    }
   ]
