@@ -25,14 +25,14 @@
 4. 명령(정답지 폴더 하나씩. 저장 폴더는 실행마다 새로):
 
    ```
-   python scripts/check_read_quality.py --input-dir <APR1400 by-drawing 폴더> --extra-keys <정답지 폴더> --ai-run subscription --ai-images --ai-legend-samples 3 --ai-wide --ai-cap 20 --ai-save <저장 폴더> --json <저장 폴더>\result.json
+   python scripts/check_read_quality.py --input-dir <APR1400 by-drawing 폴더> --extra-keys <정답지 폴더> --ai-run subscription --ai-images --ai-legend-samples 3 --ai-wide --ai-cap 20 --ai-recheck --ai-save <저장 폴더> --json <저장 폴더>\result.json
    ```
 
-   - 실측 6의 기본 설정(견본 여러 개 + 넓힌 조각)이다. 출력에 '스크립트 + AI 후보(전부)'와 '(높음만)' 두 줄이 나온다.
+   - 실측 6의 기본 설정(견본 여러 개 + 넓힌 조각)에 실측 14의 규칙 다시 확인(`--ai-recheck`)을 더했다. 실측 13까지와 맞대려면 `--ai-recheck`를 빼고 돌린다. 출력에 '스크립트 + AI 후보(전부)'와 '(높음만)' 두 줄이 나온다.
    - 모델은 연결 기본값 `claude-opus-5-5`, 추론 강도 `medium`(`--ai-effort` 기본값). 바꾸지 않는다.
    - 사용 한도에 걸려 멈추면(`멈춤(limit_reached)`) 재설정 뒤 **같은 명령, 같은 저장 폴더**로 다시 돌린다. 받은 응답은 `responses/`에서 다시 쓰고 부르지 않는다(출력의 '실제 호출' 수로 확인).
 5. 저장 위치 규칙: 조각 그림과 응답 저장본은 저장소 밖 시험 폴더에만 둔다(`<시험 폴더 루트>\<날짜>-<주제>\...`, 폴더 README에 주인·목적·keep_until). 저장소에는 코드와 SNP 고정 응답(`tests/fixtures/ai-review/snp-images`)만 넣는다.
-6. 다시 재기: `python scripts/check_read_quality.py --input-dir <APR1400 by-drawing 폴더> --extra-keys <정답지 폴더> --ai-run fixed --ai-fixed-dir <저장 폴더>\responses --ai-images --ai-legend-samples 3 --ai-wide`. 고정 응답 열쇠(`providers.fixed_key`)는 프롬프트(system)·답 스키마·맥락·지시·그림 내용을 모두 넣는다(2026-11-17 고침). 프롬프트나 스키마가 바뀌면 옛 저장본 응답은 열쇠가 맞지 않아 쓰이지 않고 새로 부른다. 그림 요청은 고치기 전 열쇠로 저장한 응답을 받지 않는다(이 문서의 측정은 모두 그림 요청이라 옛 저장 폴더는 '응답 없음'이 된다). 글만 보내는 요청은 사용자 자료 호환을 위해 이전 판 열쇠도 읽고 `legacy_key`로 표시한다.
+6. 다시 재기: `python scripts/check_read_quality.py --input-dir <APR1400 by-drawing 폴더> --extra-keys <정답지 폴더> --ai-run fixed --ai-fixed-dir <저장 폴더>\responses --ai-images --ai-legend-samples 3 --ai-wide --ai-recheck`. 고정 응답 열쇠(`providers.fixed_key`)는 프롬프트(system)·답 스키마·맥락·지시·그림 내용을 모두 넣는다(2026-11-17 고침). 프롬프트나 스키마가 바뀌면 옛 저장본 응답은 열쇠가 맞지 않아 쓰이지 않고 새로 부른다. 그림 요청은 고치기 전 열쇠로 저장한 응답을 받지 않는다(이 문서의 측정은 모두 그림 요청이라 옛 저장 폴더는 '응답 없음'이 된다). 글만 보내는 요청은 사용자 자료 호환을 위해 이전 판 열쇠도 읽고 `legacy_key`로 표시한다.
 7. 후보별 판정(맞게 바꿈·틀리게 바꿈·없던 자리에 틀리게 붙임): 시험 폴더 `2026-11-14-r3-read-quality\aisnp\apr-run6-recall\diffcheck3.py <저장소> <PDF 폴더> <정답지 폴더> <저장 폴더>`(종류 후보를 높음·보통으로 나눠 셈).
 8. 보류 쪽은 그림을 열어 원인을 찾지 않는다. 합계만 적는다.
 
@@ -881,3 +881,82 @@ R3는 보류 6쪽을 돌리지도 보지도 않았다. d-read가 잰 합계를 �
 ### 판정
 
 넣는다. air_flow_arrow 자리에서 가 18 > 나 0이고, 맞던 값을 틀리게 바꾼 후보가 0이다. 오검출 +4(019쪽)는 두 줄 값 오검출 65 → 63에 묻혀 합계는 늘지 않았다. SNP 고정 응답은 시험과 같은 `--ai-images`로 6호출 다시 받았고(실측 12와 같은 SNP 종류 +2), 재생 시험은 건너뛰지 않고 통과한다.
+
+## 실측 14: 틀리기 쉬운 규칙이 정한 종류를 다시 확인 (개발용 12쪽, 2026-11-17)
+
+스크립트가 종류를 정한 노드 가운데 그 규칙이 보는 것만으로는 답 목록의 여러 종류를 가를 수 없는 것을 남은 호출로 AI에 다시 묻는다(인텐트의 '읽은 결과 다시 확인'). 핵심 위험은 스크립트가 맞던 값을 AI가 뒤집는 것이다. 넣는 조건은 맞음→틀림 후보가 틀림→맞음의 1/5 이하였다. 보류 6쪽은 돌리지도 열지도 않았다.
+
+### 대상 규칙과 근거
+
+대상은 `evidence.classification_basis`를 '+'로 나눈 조각으로 고른다(`ai_review.RECHECK_RULES`, `recheck_rule`). 쪽 번호·좌표로 가르지 않는다. 범례 사전 견본에 대 본 규칙(`symbol:…`)은 넣지 않았다.
+
+| 규칙 | 근거 조각 | 고른 까닭 |
+| --- | --- | --- |
+| valve_body | 첫 조각이 `valve_body` | 사전 견본에 대지 않은 일반 밸브 몸통 규칙이다. 맞댄 두 삼각형 몸통은 구동부로 갈리는 밸브와 댐퍼가 함께 쓰고, 붙은 구동부(원·박막)도 사전 견본과 대 보지 않는다 |
+| isa_function | `isa_function:<글자>` | 계기 원 글자의 뒤 기능 문자 가운데 하나를 정한 차례(출력 > 판독)로 고른다. 글자에 기능이 여럿이다 |
+| isa_letters_multi | `isa_letters:<글자>`이고 뒤 글자(수식 문자 D·F·J·K·Q 하나 뺌)에 기능 문자가 둘 이상 | 마지막 기능 문자 하나로 정한다(LEIT, PTIS). TE·TEW로 시작하는 표기는 범례가 정한 온도 측정점 규칙이라 뺐다 |
+
+- 지금 종류가 그림 입력 답 목록(`answer_kinds`)에 없는 노드는 묻지 않는다. AI가 지금 값을 답할 수 없어 뒤집기만 나올 수 있다(예: switch로 정한 PTIS·TIS, PSAL).
+- 고르지 않은 것: `text_word`(옆 낱말로 정함, 틀린 3건은 정답지 의문인 077쪽 COOLER), `symbol:apr1400.globe_valve` 계열(사전 견본과 구동부 견본에 대 봄), `parallel_plates` 같은 형상 규칙의 오검출(종류 후보로 지울 수 없음).
+
+### 바꾼 것
+
+| 부분 | 내용 | 코드 |
+| --- | --- | --- |
+| 대상 고르기 | `recheck_rule(node)` → 규칙 이름 또는 None. `recheck_items(ex, kinds)`는 종류만 묻는 recheck 항목(rule 포함) | `ai_review` |
+| 호출 | `ImageInput(recheck=True)`면 kind·tag 첫 묻기와 넓혀 다시 묻기 뒤 도면당 상한 안에 남은 호출로 묻는다(`_recheck_pass`, 묶음 10). 사람이 정한 자리(exclude)와 자를 수 없는 상자는 뺀다 | `ai_review`, `ai_images` |
+| 지시 | recheck만 든 호출의 지시 한 줄 `RECHECK_USER`(current.kind가 지금 읽은 값, 맞으면 그대로, 다르면 맞는 종류). 프롬프트(system)는 그대로라 첫 묻기 요청은 실측 13과 같다 | `ai_review` |
+| 후보 | 같은 답은 확인(`stats.confirmed`)으로만 센다. 다른 종류 답은 task `recheck` 후보로 두고 `rule`·`script_value`를 단다. `bulk_block`이 task recheck를 이미 묶어 수락에서 뺀다. '기호 아님'·'모름' 답은 후보를 만들지 않는다 | `ai_review` |
+| 채점 | `check_read_quality.py --ai-recheck`. 다시 확인 후보도 '스크립트 + AI 후보(전부)' 줄에 더하고, match legend면 '높음만' 줄에도 든다 | `scripts/check_read_quality.py` |
+
+재현 시험 `tests/test_ai_review.py` `RuleRecheckTest`(규칙 고르기, 같은 답 확인·다른 답 다시 확인 후보와 묶어 수락 제외, 남은 호출 몫, 답 목록 밖·제외 자리).
+
+### 저장본으로 센 대상 (호출 없음)
+
+이 커밋의 추출로 개발용 12쪽 노드를 정답지와 짝지어 셌다(시험 폴더 `aisnp\apr-run14-recheck\count`).
+
+| 규칙 | 대상 | 스크립트 맞음 | 틀림 | 짝 없음 |
+| --- | --- | --- | --- | --- |
+| valve_body | 21 | 0 | 20 (019쪽 damper 19, air_flow_arrow 1) | 1 |
+| isa_function | 2 | 1 | 1 | 0 |
+| isa_letters_multi | 17 | 13 | 4 | 0 |
+| 합계 | 40 | 14 | 25 | 1 |
+
+쪽별 대상은 007 10, 019 20, 080 1, 099 1, 117 5, 141 3. 실측 13 호출 수로 남은 몫(20 − 호출)이 모두 필요 호출 이상이었다(가장 빠듯한 141쪽은 남은 1, 필요 1).
+
+### 조건
+
+- 명령은 실행 방법 4번에 `--ai-recheck`를 더한 것, 정답지 `keys-dev`, `keys-dev2`마다 한 번, 저장 폴더 `aisnp\apr-run14-recheck\run`. 구독, `claude-opus-5-5`, medium. 코드 @2d023f0와 이 변경.
+- 첫 묻기·넓혀 다시 묻기 요청은 실측 13과 같아 그 응답 122개를 저장 폴더에 복사해 다시 썼다(고정 응답 열쇠가 프롬프트·맥락·그림을 모두 넣으므로 같은 열쇠만 쓰인다). 실제 호출은 다시 확인 7(약 70초), 오류 0, 멈춤 0.
+- 스크립트만 값은 그대로다: keys-dev 476/667·122/191·800/1258·241/273, keys-dev2 363/584·129/237·554/1185·165/223. 저장소 12쪽 1075/1271·626/753·1907/2169·584/644.
+
+### 다시 확인 후보 맞대기
+
+| 규칙 | 물음 | 같은 답(확인) | 맞음→틀림 | 틀림→맞음 | 틀림→틀림 | 짝 없는 노드에 붙음 |
+| --- | --- | --- | --- | --- | --- | --- |
+| valve_body | 21 | 0 | 0 | 19 (높음 11) | 0 | 1 |
+| isa_function | 2 | 2 | 0 | 0 | 0 | 0 |
+| isa_letters_multi | 17 | 15 | 0 | 2 (높음 2) | 0 | 0 |
+| 합계 | 40 | 17 | **0** | **21** (높음 13) | 0 | 1 |
+
+- valve_body 틀림→맞음 19는 019쪽 manual_valve → damper 11(모두 높음), motor_operated_valve → damper 8(모두 보통)이다. 019쪽 local-node-120(control_valve, 정답 air_flow_arrow)은 '기호 아님'·'모름'으로 답해 후보가 없다.
+- isa_letters_multi 틀림→맞음 2는 117쪽 local-node-029, 141쪽 local-node-103(indicator → transmitter, 글자 LTI·FTI)이다. 정답지가 level_element로 적은 LEIT 2건과 isa_function 틀림 1건(PIAL, 정답 alarm)은 AI도 지금 값을 확인했다.
+- 짝 없는 노드 1은 117쪽 local-node-060(valve_body manual_valve → flow_element)이다. 정답 기호와 짝이 없어 종류 줄 값에는 들지 않는다.
+- 스크립트가 맞던 14건은 모두 같은 답으로 확인됐다. 맞음→틀림 0 ≤ 틀림→맞음 21의 1/5이라 조건을 채운다. 규칙별로도 맞음→틀림은 모두 0이다.
+- 다시 확인 밖 후보는 실측 13과 같은 노드로 맞대 229건이 모두 같았다(`compare\compare.txt`). 흔들림 0이다.
+
+### 두 줄 값 (맞은 수/분모(오검출))
+
+| 줄 | 종류 keys-dev / keys-dev2 | **종류 12쪽** | 태그 12쪽 |
+| --- | --- | --- | --- |
+| 스크립트만 | 476/667(21) / 363/584(20) | 839/1251(41) | 251/428(0) |
+| 실측 13, 전부 | 548/673(27) / 450/600(36) | 998/1273(63) | 276/432(4) |
+| 실측 13, 높음만 | 522/668(22) / 408/595(31) | 930/1263(53) | 같음 |
+| **이 실행, 전부** | 548/673(27) / 471/600(36) | **1019/1273(63)** | 276/432(4) |
+| 이 실행, 높음만 | 522/668(22) / 421/595(31) | 943/1263(53) | 같음 |
+
+종류 전부 998 → 1019(+21), 높음만 930 → 943(+13). 오검출과 분모는 그대로다. keys-dev는 대상 11건(007쪽 10, 080쪽 1)이 모두 확인으로 끝나 값이 같다.
+
+### 판정
+
+넣는다. 맞음→틀림 0, 틀림→맞음 21이다. SNP 그림 입력 재생 시험은 `--ai-recheck` 없이 돌아 요청이 바뀌지 않았고, 건너뛰지 않고 통과한다(고정 응답은 다시 받지 않음). 화면은 아직 그림 입력을 쓰지 않아 '다시 확인' 후보가 화면에 나오지 않는다. 보류 6쪽 합계는 실행 방법 4번(이번에 `--ai-recheck`를 더함)으로 d-read가 잰다.
