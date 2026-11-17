@@ -23,6 +23,7 @@
 --allow-missing을 주면 SNP만으로 판정한다. CI가 이렇게 부른다).
 
 정확도 = 맞은 수 / (정답 단위 수 + 오검출 수). 맞은 수와 분모를 함께 낸다. 기준값보다 맞은 수가 줄거나 오검출이 늘면 실패.
+기호 연결(보고용, 기준값에 넣지 않음) = 정답 물리 연결 쌍의 끝에 나오는 기호 가운데 그 쌍이 하나라도(전부) 맞은 기호 수 / 그런 기호 수. 정의는 docs/units/2026-11-13-drawing-knowledge/evidence/read-quality-log.md.
 """
 
 import argparse
@@ -342,6 +343,19 @@ def process_connections(key):
     return [c for c in key["connections"] if kind[c["a"]] not in INSTRUMENT_KINDS and kind[c["b"]] not in INSTRUMENT_KINDS]
 
 
+def symbol_connection(want, pairs):
+    """기호 단위 연결(보고용 보조 지표). 분모 = 물리 연결 정답 쌍의 끝으로 한 번이라도 나오는 정답 기호 수.
+    any = 그 기호가 끝인 정답 쌍 가운데 맞은 것이 하나라도 있는 기호 수, all = 그 기호가 끝인 정답 쌍이 모두 맞은 기호 수.
+    오검출·흐름 방향·도면 밖 연결은 넣지 않는다."""
+    right = want & pairs
+    ends = {}
+    for pair in want:
+        for sid in pair:
+            ends.setdefault(sid, []).append(pair in right)
+    return {"units": len(ends), "any": sum(1 for v in ends.values() if any(v)),
+            "all": sum(1 for v in ends.values() if all(v))}
+
+
 def score_connection(key, ex, m):
     kind = {s["id"]: s["kind"] for s in key["symbols"]}
     pm = {sid: n for sid, n in m.items() if kind[sid] not in INSTRUMENT_KINDS}
@@ -358,6 +372,7 @@ def score_connection(key, ex, m):
                 len(key["continuations"]), 0)
     total = _count(*(sum(x[k] for x in (p, fl, co)) for k in ("correct", "units", "false_pos")))
     total["detail"] = {"pairs": p, "flows": fl, "continuations": co}
+    total["symbols"] = symbol_connection(want, pairs)
     return total
 
 
@@ -960,6 +975,20 @@ def fmt(c):
                                   "—" if a is None else "%.1f%%" % (100 * a), c["false_pos"])
 
 
+def sym_totals(pages, prefix=None):
+    rows = [p["connection"].get("symbols") or {} for n, p in pages.items() if prefix is None or n.startswith(prefix)]
+    return {k: sum(r.get(k, 0) for r in rows) for k in ("units", "any", "all")}
+
+
+def fmt_sym(c):
+    return "기호 연결 %d/%d(하나라도) · %d/%d(전부)" % (c["any"], c["units"], c["all"], c["units"])
+
+
+def item_line(p, sym_c):
+    return " · ".join("%s %s" % (ITEM_LABEL[it], fmt(p[it])) + (" · " + fmt_sym(sym_c) if it == "connection" else "")
+                      for it in ITEMS)
+
+
 def report(res, at):
     lines = []
     for label, pages in (("스크립트만", res["pages"]), ("스크립트 + AI 후보(전부)", res["ai_pages"]),
@@ -971,10 +1000,10 @@ def report(res, at):
             continue
         lines.append("%s @%s" % (label, at))
         for name in sorted(pages):
-            lines.append("  %-14s " % name + " · ".join("%s %s" % (ITEM_LABEL[it], fmt(pages[name][it])) for it in ITEMS))
+            lines.append("  %-14s " % name + item_line(pages[name], pages[name]["connection"].get("symbols") or sym_totals({})))
         for lab, prefix in (("APR1400 합계", "apr1400-"), ("SNP 합계", "SNP-"), ("전체 합계", None)):
             t = totals(pages, prefix)
-            lines.append("  %-14s " % lab + " · ".join("%s %s" % (ITEM_LABEL[it], fmt(t[it])) for it in ITEMS))
+            lines.append("  %-14s " % lab + item_line(t, sym_totals(pages, prefix)))
     if res["missing"]:
         lines.append("PDF가 없어 건너뜀: %s" % ", ".join(res["missing"]))
     return "\n".join(lines)

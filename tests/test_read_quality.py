@@ -160,6 +160,36 @@ class ConnectionTest(unittest.TestCase):
         self.assertEqual(s, {"correct": 1, "units": 1, "false_pos": 0})
         self.assertEqual(len([u for u in rq.key_units(k) if u["item"] == "connection"]), 1)
 
+    def test_symbol_connection_counts_symbols_not_pairs(self):
+        k = key([sym(1, "manual_valve", (100, 100, 110, 108)), sym(2, "check_valve", (200, 100, 210, 108)),
+                 sym(3, "pump", (300, 90, 330, 120)), sym(4, "gate_valve", (400, 100, 410, 108))],
+                connections=[{"a": "s001", "b": "s002", "flow": None}, {"a": "s001", "b": "s003", "flow": None},
+                             {"a": "s002", "b": "s003", "flow": None}])
+        full = [node(1, "manual_valve", (100, 100, 110, 108)), node(2, "check_valve", (200, 100, 210, 108)),
+                node(3, "pump", (300, 90, 330, 120)), node(4, "gate_valve", (400, 100, 410, 108)),
+                node(5, "tee", (150, 104, 151, 105))]
+        s = rq.score_page(k, ex(full, [rel(1, "n1", "n5"), rel(2, "n5", "n2"), rel(3, "n5", "n3")]))["connection"]
+        self.assertEqual(s["symbols"], {"units": 3, "any": 3, "all": 3})
+        # 기호 s003을 놓치면 쌍은 3개 중 1개만 남지만 기호는 s001·s002가 이웃 하나라도 맞아 하나라도 2, 전부 0
+        lost = [n for n in full if n["local_id"] != "n3"]
+        s = rq.score_page(k, ex(lost, [rel(1, "n1", "n5"), rel(2, "n5", "n2")]))["connection"]
+        self.assertEqual(s["detail"]["pairs"], {"correct": 1, "units": 3, "false_pos": 0})
+        self.assertEqual(s["symbols"], {"units": 3, "any": 2, "all": 0})
+        # 연결이 하나도 없으면 0, 쌍에 나오지 않는 기호 s004는 분모에 없다
+        s = rq.score_page(k, ex(full))["connection"]
+        self.assertEqual(s["symbols"], {"units": 3, "any": 0, "all": 0})
+
+    def test_symbol_connection_all_needs_every_pair_and_skips_false_positives(self):
+        k = key([sym(1, "manual_valve", (100, 100, 110, 108)), sym(2, "check_valve", (200, 100, 210, 108)),
+                 sym(3, "pump", (300, 90, 330, 120))],
+                connections=[{"a": "s001", "b": "s002", "flow": None}, {"a": "s001", "b": "s003", "flow": None}])
+        e = ex([node(1, "manual_valve", (100, 100, 110, 108)), node(2, "check_valve", (200, 100, 210, 108)),
+                node(3, "pump", (300, 90, 330, 120))], [rel(1, "n1", "n2"), rel(2, "n2", "n3")])
+        s = rq.score_page(k, e)["connection"]
+        # s1: 쌍 둘 중 하나만 맞음, s2: 정답 쌍 s1-s2가 맞음(오검출 s2-s3은 세지 않음), s3: 맞은 쌍 없음
+        self.assertEqual(s["detail"]["pairs"]["false_pos"], 1)
+        self.assertEqual(s["symbols"], {"units": 3, "any": 2, "all": 1})
+
     def test_flow_direction(self):
         e = ex([node(1, "manual_valve", (100, 100, 110, 108)), node(2, "check_valve", (200, 100, 210, 108)),
                 node(4, "tee", (150, 104, 151, 105))],
