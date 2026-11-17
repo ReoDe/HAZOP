@@ -13,7 +13,7 @@ import json
 import math
 import re
 
-from hazop.extract import dexpi_map, properties, rules
+from hazop.extract import dexpi_map, ids, properties, rules
 from hazop.extract.adapters import dexpi_read
 
 SCHEMA_VERSION = "0.1"
@@ -299,7 +299,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
             out["dexpi:system"] = seg["system"]
         return out
 
-    def add_relation(kind, line_type, c_id, src, dst, extra_attrs, flow=None, waypoints=None):
+    def add_relation(kind, line_type, c_id, src, dst, extra_attrs, flow=None, waypoints=None, made=False):
         nonlocal rel_no
         rel_no += 1
         lid = _local_id(c_id, used)
@@ -318,6 +318,9 @@ def build(model, source, registration=None, page=0, repo_root=None):
                "line_no": attrs.get("line_no"), "endpoints": ends, "flow_direction": None if not ok else flow,
                "waypoints": waypoints or [], "label": "", "label_text": "", "label_cells": [], "attributes": attrs,
                "style": "", "parent": None, "geometry": None}
+        if made:  # 파일에 있던 id가 아니라 가져오기가 지은 id(문서 순서에서 나옴). 파일이 바뀌면 다른 연결로 밀린다.
+            # Proteus 연결은 전부 지은 id라 적지 않는다(ids.made_ids가 flavor로 읽는다. 추출 결과가 그대로여야 graph_version이 안 바뀐다)
+            rec[ids.MADE_KEY] = True
         (relations if ok else unresolved).append(rec)
         if ok:
             resolved_ids.add(id(rec))
@@ -358,7 +361,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
         if flow_class:
             attrs["flow_class"] = flow_class
         rec = add_relation("physical_connection", "process", c_id, (c["source"], c["source_node"]),
-                           (c["target"], c["target_node"]), attrs, flow_dict)
+                           (c["target"], c["target_node"]), attrs, flow_dict, made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
         for end, key in (("source", "source_node_no"), ("target", "target_node_no")):
             if c.get(key):
                 for ep in rec["endpoints"]:
@@ -381,7 +384,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 _issue(unknowns, "unconnected_endpoint", "측정 위치가 배관 구간이라 구성요소에 붙이지 못함", flow["id"], None, "source")
                 loc_item = None
             add_relation("measurement_connection", "instrument_tap", flow["id"] or "measuring-line",
-                         (loc_item, None), (pif, None), {"line_type": "instrument_tap"})
+                         (loc_item, None), (pif, None), {"line_type": "instrument_tap"}, made=not flow["id"])
         else:
             targets = []
             if tgt in model.items:
@@ -394,7 +397,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
             for n, t in enumerate(targets):
                 cid = flow["id"] if n == 0 else "%s#%d" % (flow["id"], n + 1)
                 add_relation("signal_connection", "signal", cid or "signal-line", (src, None), (t, None),
-                             {"line_type": "signal"})
+                             {"line_type": "signal"}, made=n > 0 or not flow["id"])
 
     # ---- 도면 정보와 식별
     drawing_number, drawing_name = model.drawing["number"], model.drawing["name"]

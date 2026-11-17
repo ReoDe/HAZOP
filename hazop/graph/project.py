@@ -10,6 +10,10 @@
 - 잇지 않은 연결점은 사유와 함께 sheet_links에 남긴다: 상대 도면 미등록, 짝 없음, 짝 여럿, 방향 모순, 사람이 끊음.
 - 사람 지정(data/drawing-links/<project_id>.json)이 자동 매칭보다 먼저다. 연결점은 source_object_id로 가리킨다.
 - 같은 태그 도면 객체가 여러 도면에 있으면 합치지 않고 duplicate_tags로 남긴다(태그 유일성 규칙 유지, 사람 확인).
+- 노드의 id_basis(source_object_id가 다시 추출하면 바뀔 수 있는 순번인가, hazop.extract.ids)는 도면 그래프에서 그대로 가져온다.
+  id_basis가 없는 옛 도면 그래프는 그 도면의 추출 파일(도면 그래프 머리 source.extraction_file)에서 읽어 복사본에 적는다
+  (프로젝트 그래프 머리에는 추출 파일이 없다). 도면 연결 구간(xlink)은 id가 두 끝의 `<도면>#<source_object_id>`를 해시한 값이라
+  두 끝이 모두 source이고 source_object_id가 있을 때만 source, 한쪽이라도 sequence이면 sequence다.
 - 같은 입력이면 같은 graph_version·같은 결과(도면 graph_id순, 정렬 고정).
 """
 
@@ -24,6 +28,7 @@ import re
 import threading
 
 from hazop import paths
+from hazop.extract import ids
 from hazop.graph import sources
 from hazop.graph.build import to_networkx
 
@@ -428,9 +433,13 @@ def _clone(obj):
 def _copy_sheet(g):
     gid = g["graph_id"]
     nodes, edges = [], []
+    old = [n for n in g["nodes"] if n.get("id_basis") not in ids.BASES]
+    fmt = ids.graph_format(g) if old else None  # 추출 파일은 도면마다 한 번만 읽는다
     for n in sorted(g["nodes"], key=lambda x: x["entity_id"]):
         c = _clone(n)
         c.update(entity_id=nid(gid, n["entity_id"]), sheet=gid, sheet_entity_id=n["entity_id"])
+        if c.get("id_basis") not in ids.BASES:
+            c["id_basis"] = ids.node_basis(n, fmt=fmt)
         fd = c.get("flow_direction")
         if isinstance(fd, dict):
             fd.update({k: nid(gid, fd[k]) for k in ("from", "to") if fd.get(k)})
@@ -443,6 +452,12 @@ def _copy_sheet(g):
                 c[k] = nid(gid, c[k])
         edges.append(c)
     return nodes, edges
+
+
+def _link_basis(end_nodes):
+    """도면 연결 구간(xlink)의 id_basis. link_id가 두 끝의 source_object_id로 정해지므로 두 끝이 모두 source일 때만 source."""
+    fixed = all(n.get("id_basis") == ids.SOURCE and n.get("source_object_id") for n in end_nodes)
+    return ids.SOURCE if fixed else ids.SEQUENCE
 
 
 def _duplicate_tags(graphs):
@@ -493,7 +508,8 @@ def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None):
                       "label_text": "%s → %s" % (l["from"]["drawing_number"], l["to"]["drawing_number"]),
                       "line_type": "process", "flow_direction": flow, "sheet": None, "sheet_entity_id": None,
                       "sheet_link": {"link_id": l["link_id"], "status": LINKED, "origin": l["origin"]},
-                      "attributes": {"line_no": line, "sheet_link": l["link_id"]}, "position": None, "origin": origin})
+                      "attributes": {"line_no": line, "sheet_link": l["link_id"]}, "position": None, "origin": origin,
+                      "id_basis": _link_basis([by_id[a], by_id[b]])})
         for suffix, node, end in (("a", a, "source"), ("b", b, "target")):
             edges.append({"entity_id": "%s-%s" % (l["link_id"], suffix), "kind": PHYSICAL, "nodes": [l["link_id"], node],
                           "segment": l["link_id"], "node": node, "end": end, "sheet": None,

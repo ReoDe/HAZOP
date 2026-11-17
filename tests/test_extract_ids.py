@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -17,11 +18,12 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 
+from hazop import paths  # noqa: E402
 from hazop.extract import corrections, drawio, ids  # noqa: E402
-from hazop.extract.adapters import dexpi_import, pdf_vector, raster  # noqa: E402
+from hazop.extract.adapters import dexpi_import, dexpi_read, pdf_vector, raster  # noqa: E402
 from hazop.graph import build, project  # noqa: E402
 
-SAMPLES = os.path.join(REPO_ROOT, "resources", "references", "pid-samples", "SNP-M-102_RCS-pressurizer")
+SAMPLES = os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102_RCS-pressurizer")
 DRAWIO = os.path.join(SAMPLES, "SNP-M-102_RCS-pressurizer.drawio")
 PDF = os.path.join(SAMPLES, "SNP-M-102_RCS-pressurizer.pdf")
 DEXPI = os.path.join(REPO_ROOT, "tests", "fixtures", "dexpi")
@@ -69,16 +71,37 @@ class BasisTableTest(unittest.TestCase):
             for soid in ("manual-c-0001", "pdf-p0-split-c-0003", "img-split-c-0003"):
                 self.assertEqual(ids.basis(fmt, soid), "source", (fmt, soid))
 
-    def test_unknown_format_falls_back_to_id_shape_last(self):
-        self.assertEqual(ids.basis(None, "pdf-p0-sym-0012"), "sequence")
-        self.assertEqual(ids.basis("", "img-conn-0003"), "sequence")
-        self.assertEqual(ids.basis("mystery", "n12"), "source")
-        self.assertEqual(ids.basis(None, "n12"), "source")
-        self.assertEqual(ids.basis(None, None), "source")
+    def test_unknown_format_is_sequence_whatever_the_id_looks_like(self):
+        """형식을 모르면 id를 믿지 않는다(위치로 다시 확인하는 안전한 쪽). drawio처럼 형식이 분명한 것만 source."""
+        for fmt in (None, "", "mystery"):
+            for soid in ("pdf-p0-sym-0012", "img-conn-0003", "n12", "cell-7", None):
+                self.assertEqual(ids.basis(fmt, soid), "sequence", (fmt, soid))
+
+    def test_operation_id_stays_source_when_format_is_unknown(self):
+        self.assertEqual(ids.basis(None, "manual-c-0001"), "source")
+        self.assertEqual(ids.basis("mystery", "pdf-p0-split-c-0003"), "source")
 
     def test_known_format_beats_id_shape(self):
         self.assertEqual(ids.basis("drawio", "pdf-p0-sym-0001"), "source")
         self.assertEqual(ids.basis("pdf_vector", "weird-id"), "sequence")
+
+    def test_adapter_made_id_is_sequence_in_a_fixed_format(self):
+        self.assertEqual(ids.basis("dexpi", "Seg_1__Connection_2"), "source")
+        self.assertEqual(ids.basis("dexpi", "Seg_1__Connection_2", made=True), "sequence")
+        self.assertEqual(ids.basis("dexpi", "manual-c-0001", made=True), "source")
+
+    def test_is_made_reads_only_facts_the_importer_wrote(self):
+        self.assertTrue(ids.is_made({"id_made": True}))
+        self.assertTrue(ids.is_made({"evidence": {"dexpi": {"id": None}}}))
+        self.assertFalse(ids.is_made({"evidence": {"dexpi": {"id": "P-1"}}}))
+        self.assertFalse(ids.is_made({"evidence": {"dexpi": {}}}))
+        self.assertFalse(ids.is_made({"source_object_id": "n1"}))
+        self.assertTrue(ids.is_made({"source_object_id": "Seg__item_2"}, {"Seg__item_2"}))
+        self.assertFalse(ids.is_made(None))
+
+    def test_importer_constants_match_the_ids_module(self):
+        self.assertEqual(ids.PROTEUS_FLAVOR, dexpi_read.FMT_PROTEUS)
+        self.assertEqual(ids.DEXPI_ITEM_WITHOUT_ID, "dexpi_item_without_id")
 
     def test_manual_prefix_is_one_constant(self):
         self.assertIs(corrections.MANUAL_PREFIX, ids.MANUAL_PREFIX)
@@ -104,8 +127,8 @@ class VectorPdfTest(unittest.TestCase):
         self.assertEqual({n.get("id_basis") for n in self.graph["nodes"]}, {"sequence"})
 
     def test_ids_really_are_enumeration_counters(self):
-        shapes = {ids.shape_basis(s) for s in graph_ids(self.graph)}
-        self.assertEqual(shapes, {"sequence"})
+        pat = re.compile(r"^pdf-p\d+-[a-z]+-\d+$")
+        self.assertTrue(all(pat.match(s) for s in graph_ids(self.graph)))
 
     def test_scan_retag_of_the_same_extraction_is_sequence(self):
         """OpenCV 없이: 스캔 어댑터가 같은 함수로 낸 결과의 id를 raster._retag로 바꾼 꼴(img-…)도 순번이다."""
@@ -171,17 +194,91 @@ class DrawioTest(unittest.TestCase):
         self.assertEqual({n["id_basis"] for n in g["nodes"]}, {"source"})
 
 
+def _dexpi_graph(raw):
+    ext = dexpi_import.extract_bytes(raw.encode("utf-8") if isinstance(raw, str) else raw, "x.xml")[0]
+    return ext, build.build_graph(ext)
+
+
+def _segments(graph):
+    """{source_object_id: (id_basis, 양 끝 태그 또는 id)} 구간만."""
+    name = {n["entity_id"]: n.get("tag") or n["source_object_id"] for n in graph["nodes"]}
+    out = {}
+    for n in graph["nodes"]:
+        if n["node_type"] == "pipe_segment":
+            ends = sorted(name[e["node"]] for e in graph["edges"] if e["kind"] == "has_endpoint" and e["segment"] == n["entity_id"])
+            out[n["source_object_id"]] = (n["id_basis"], ends)
+    return out
+
+
 class DexpiTest(unittest.TestCase):
-    def test_every_id_the_adapter_made_is_source(self):
-        for name in ("small-pid-dexpi2.xml", "small-pid-proteus.xml"):
-            with open(os.path.join(DEXPI, name), "rb") as fh:
-                ext = dexpi_import.extract_bytes(fh.read(), "x.xml")[0]
-            found = all_source_object_ids(ext)
-            self.assertTrue(found, name)
-            self.assertEqual(ext["source"]["format"], "dexpi")
-            self.assertEqual({ids.basis("dexpi", s) for s in found}, {"source"}, name)
-            g = build.build_graph(ext)
-            self.assertEqual({n["id_basis"] for n in g["nodes"]}, {"source"}, name)
+    """DEXPI는 파일에 있던 id만 source다. 어댑터가 지은 id(Proteus Connection, 쪼갠 조각, ID 없는 부품·객체)는 sequence."""
+
+    def read(self, name):
+        with open(os.path.join(DEXPI, name), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_dexpi2_ids_all_come_from_the_file(self):
+        ext, g = _dexpi_graph(self.read("small-pid-dexpi2.xml"))
+        found = all_source_object_ids(ext)
+        self.assertTrue(found)
+        self.assertEqual(ext["source"]["format"], "dexpi")
+        self.assertEqual({n["id_basis"] for n in g["nodes"]}, {"source"})
+
+    def test_proteus_connection_segments_are_sequence_and_parts_are_source(self):
+        ext, g = _dexpi_graph(self.read("small-pid-proteus.xml"))
+        seg = [n for n in g["nodes"] if n["node_type"] == "pipe_segment"]
+        self.assertTrue(seg)
+        self.assertEqual({n["id_basis"] for n in seg}, {"sequence"}, [n["source_object_id"] for n in seg])
+        self.assertTrue(all("__Connection_" in n["source_object_id"] for n in seg))
+        parts = [n for n in g["nodes"] if n["node_type"] == "drawing_object"]
+        self.assertTrue(parts)
+        self.assertEqual({n["id_basis"] for n in parts}, {"source"})
+
+    def test_revised_proteus_file_shifts_a_made_segment_id_and_it_is_marked_sequence(self):
+        """Connection 한 줄을 지운 개정판을 다시 가져오면 Seg_1__Connection_2가 다른 배관을 가리킨다.
+        그 id를 'source'(다시 추출해도 같은 기호)로 적으면 판 이전이 조용히 다른 배관으로 잇는다."""
+        raw = self.read("small-pid-proteus.xml")
+        gone = [l for l in raw.splitlines(True) if 'FromID="Valve-1"' in l and 'ToID="Tee-1"' in l]
+        self.assertEqual(len(gone), 1)
+        old, new = _segments(_dexpi_graph(raw)[1]), _segments(_dexpi_graph(raw.replace(gone[0], ""))[1])
+        key = "Seg_1__Connection_2"
+        self.assertNotEqual(old[key][1], new[key][1], "개정판에서 같은 id가 다른 배관을 가리켜야 이 시험이 뜻이 있다")
+        self.assertEqual(old[key][0], "sequence")
+        self.assertEqual(new[key][0], "sequence")
+
+    def test_split_connection_piece_id_is_sequence(self):
+        raw = self.read("small-pid-proteus.xml")
+        gone = [l for l in raw.splitlines(True) if 'FromID="Valve-1"' in l and 'ToID="Tee-1"' in l][0]
+        _, g = _dexpi_graph(raw.replace(gone, ""))
+        pieces = [n for n in g["nodes"] if n["node_type"] == "pipe_segment" and re.search(r"__Connection_\d+_\d+$", n["source_object_id"])]
+        self.assertTrue(pieces, [n["source_object_id"] for n in g["nodes"] if n["node_type"] == "pipe_segment"])
+        self.assertEqual({n["id_basis"] for n in pieces}, {"sequence"})
+
+    def test_part_without_id_gets_a_made_item_id_that_is_sequence(self):
+        raw = self.read("small-pid-proteus.xml")
+        victim = ' ID="Valve-1"'
+        self.assertIn(victim, raw)
+        ext, g = _dexpi_graph(raw.replace(victim, "", 1))
+        warn = [u for u in ext["validation"]["unknowns"] if u["check"] == "dexpi_item_without_id"]
+        self.assertEqual(len(warn), 1)
+        made = [n for n in g["nodes"] if n["source_object_id"] == warn[0]["source_object_id"]]
+        self.assertEqual([n["id_basis"] for n in made], ["sequence"])
+        others = [n for n in g["nodes"] if n["node_type"] == "drawing_object" and n["source_object_id"] != warn[0]["source_object_id"]]
+        self.assertEqual({n["id_basis"] for n in others}, {"source"})
+
+    def test_dexpi2_connection_without_id_is_sequence(self):
+        raw = self.read("small-pid-dexpi2.xml")
+        self.assertIn('<Object id="Pipe2" type="Plant/Piping.Pipe">', raw)
+        ext, g = _dexpi_graph(raw.replace('<Object id="Pipe2" type="Plant/Piping.Pipe">', '<Object type="Plant/Piping.Pipe">'))
+        made = [r for r in ext["relations"] if r.get("id_made")]
+        self.assertEqual(len(made), 1)
+        by_soid = {n["source_object_id"]: n["id_basis"] for n in g["nodes"] if n["node_type"] == "pipe_segment"}
+        self.assertEqual(by_soid[made[0]["source_object_id"]], "sequence")
+        self.assertEqual(sorted(v for k, v in by_soid.items() if k != made[0]["source_object_id"]), ["source"] * (len(by_soid) - 1))
+
+    def test_made_id_flag_is_sparse_in_the_extraction(self):
+        ext, _ = _dexpi_graph(self.read("small-pid-dexpi2.xml"))
+        self.assertFalse([r for r in ext["relations"] if "id_made" in r])
 
 
 @unittest.skipUnless(HAS_CV, "OpenCV 없음(결정 D7: 래스터 전용 venv에서 실행)")
@@ -231,14 +328,33 @@ class OldGraphTest(unittest.TestCase):
                 g = {"source": {"extraction_file": path}}
                 self.assertEqual(ids.node_basis(self.node("cell-9"), g), want, name)
 
-    def test_extraction_file_unreadable_falls_back_to_shape(self):
+    def test_extraction_file_unreadable_is_sequence(self):
         g = {"source": {"extraction_file": os.path.join(tempfile.gettempdir(), "no-such-hazop-extraction.json")}}
         self.assertEqual(ids.node_basis(self.node("pdf-p0-sym-0001"), g), "sequence")
-        self.assertEqual(ids.node_basis(self.node("n7"), g), "source")
+        self.assertEqual(ids.node_basis(self.node("n7"), g), "sequence")
+        self.assertEqual(ids.node_basis(self.node("manual-c-0001"), g), "source")
 
     def test_no_source_at_all(self):
         self.assertEqual(ids.node_basis(self.node("img-sym-0003"), {}), "sequence")
-        self.assertEqual(ids.node_basis(self.node("n7"), None), "source")
+        self.assertEqual(ids.node_basis(self.node("n7"), None), "sequence")
+
+    def test_graph_source_that_is_not_a_dict_does_not_raise(self):
+        for src in ("x", ["a"], 7, True):
+            self.assertEqual(ids.node_basis(self.node("n7"), {"source": src}), "sequence", src)
+            self.assertEqual(ids.node_basis(self.node("manual-c-0001"), {"source": src}), "source", src)
+        for g in ("graph", ["g"], 3):
+            self.assertEqual(ids.node_basis(self.node("n7"), g), "sequence", g)
+        self.assertEqual(ids.node_basis(self.node("n7"), {"source": {"extraction_file": 5}}), "sequence")
+        self.assertEqual(ids.node_basis(None, None), "sequence")
+
+    def test_extraction_file_whose_source_is_not_a_dict_does_not_raise(self):
+        with tempfile.TemporaryDirectory() as d:
+            for body in ('{"source": "x"}', '[1]', '{"source": {"format": ["drawio"]}}', "not json"):
+                path = os.path.join(d, "e.json")
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(body)
+                ids._FORMAT_CACHE.clear()
+                self.assertEqual(ids.node_basis(self.node("cell-9"), {"source": {"extraction_file": path}}), "sequence", body)
 
     def test_old_graph_decided_by_extraction_not_by_shape(self):
         """drawio 셀 id가 순번 꼴이어도 추출 형식이 drawio면 고정이다. 정규식만 썼다면 틀렸을 경우."""
@@ -248,7 +364,6 @@ class OldGraphTest(unittest.TestCase):
                 json.dump({"source": {"format": "drawio"}}, fh)
             g = {"source": {"extraction_file": path}}
             self.assertEqual(ids.node_basis(self.node("pdf-p0-sym-0001"), g), "source")
-        self.assertEqual(ids.shape_basis("pdf-p0-sym-0001"), "sequence")
 
 
 class ProjectGraphTest(unittest.TestCase):
@@ -260,9 +375,66 @@ class ProjectGraphTest(unittest.TestCase):
         self.assertEqual({n.get("id_basis") for n in sheet_nodes}, {"source"})
 
 
+class ProjectSheetLinkBasisTest(unittest.TestCase):
+    """프로젝트 그래프의 id_basis: 시트 노드는 그 시트의 추출 파일에서, 도면 연결(xlink) 구간은 두 끝에서 정한다."""
+
+    @staticmethod
+    def pair(basis_a=None, basis_b=None, ext_dir=None, fmts=(None, None)):
+        from tests.test_project_graph import cont, sheet
+        gs = []
+        for dn, other, kind, basis, fmt in (("A", "B", "TO", basis_a, fmts[0]), ("B", "A", "FROM", basis_b, fmts[1])):
+            g = sheet(dn, cont("C1", "%s %s\nL-1" % (kind, other)))
+            for n in g["nodes"]:
+                if basis:
+                    n["id_basis"] = basis
+            if fmt:
+                path = os.path.join(ext_dir, dn + ".json")
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump({"source": {"format": fmt}}, fh)
+                g["source"]["extraction_file"] = path
+            gs.append(g)
+        return project.build("P", gs)
+
+    @staticmethod
+    def xlink(pg):
+        found = [n for n in pg["nodes"] if str(n["entity_id"]).startswith("xlink-")]
+        assert len(found) == 1, found
+        return found[0]
+
+    def test_xlink_is_source_only_when_both_ends_are_source(self):
+        self.assertEqual(self.xlink(self.pair("source", "source"))["id_basis"], "source")
+        self.assertEqual(self.xlink(self.pair("source", "sequence"))["id_basis"], "sequence")
+        self.assertEqual(self.xlink(self.pair("sequence", "source"))["id_basis"], "sequence")
+        self.assertEqual(self.xlink(self.pair("sequence", "sequence"))["id_basis"], "sequence")
+
+    def test_old_sheet_graphs_are_read_from_each_sheets_own_extraction_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            pg = self.pair(ext_dir=d, fmts=("drawio", "pdf_vector"))
+            by_sheet = {}
+            for n in pg["nodes"]:
+                if n.get("sheet"):
+                    by_sheet.setdefault(n["sheet"], set()).add(n["id_basis"])
+            self.assertEqual(by_sheet, {"graph-A": {"source"}, "graph-B": {"sequence"}})
+            self.assertEqual(self.xlink(pg)["id_basis"], "sequence")
+            pg = self.pair(ext_dir=d, fmts=("drawio", "drawio"))
+            self.assertEqual(self.xlink(pg)["id_basis"], "source")
+
+    def test_old_sheet_graph_without_extraction_file_is_sequence(self):
+        pg = self.pair()
+        self.assertEqual({n["id_basis"] for n in pg["nodes"] if n.get("sheet")}, {"sequence"})
+        self.assertEqual(self.xlink(pg)["id_basis"], "sequence")
+
+    def test_every_project_node_has_a_basis(self):
+        self.assertEqual({n.get("id_basis") for n in self.pair("source", "source")["nodes"]}, {"source"})
+        self.assertEqual({n.get("id_basis") for n in self.pair()["nodes"]}, {"sequence"})
+
+    def test_project_graph_version_does_not_depend_on_id_basis(self):
+        self.assertEqual(self.pair("source", "source")["graph_version"], self.pair("sequence", "sequence")["graph_version"])
+
+
 class ShapeOverlapTest(unittest.TestCase):
     def test_no_sample_id_starts_with_the_manual_prefix(self):
-        for path in sorted(glob.glob(os.path.join(REPO_ROOT, "resources", "references", "pid-samples", "*", "*.drawio"))):
+        for path in sorted(glob.glob(os.path.join(paths.folder("references", "pid-samples"), "*", "*.drawio"))):
             for s in all_source_object_ids(drawio.extract(path)):
                 self.assertFalse(s.startswith(ids.MANUAL_PREFIX), (path, s))
 

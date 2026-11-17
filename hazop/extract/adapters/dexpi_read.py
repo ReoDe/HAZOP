@@ -17,7 +17,7 @@ import re
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
 
-from hazop.extract import dexpi_map
+from hazop.extract import dexpi_map, ids
 
 MAX_BYTES = 100 * 1024 * 1024
 MAX_ELEMENTS = 3_000_000
@@ -712,7 +712,7 @@ def read_proteus(root, version):
                     if inline:
                         if not it.get("ID"):  # ID 없는 부품도 길에서 빠지지 않게 경로 ID를 준다
                             it.set("ID", "%s__item_%d" % (re.sub(r"[^A-Za-z0-9_]", "_", gid or "seg"), doc_index))
-                            m.issue("dexpi_item_without_id", it.get("ID"), "ID가 없는 부품이라 구간 안 위치로 ID를 만듦")
+                            m.issue(ids.DEXPI_ITEM_WITHOUT_ID, it.get("ID"), "ID가 없는 부품이라 구간 안 위치로 ID를 만듦")
                         seg_items.append((doc_index, it.get("ID")))
                         iid = it.get("ID")
                         dup(iid)
