@@ -171,7 +171,9 @@ def lines(entry, idx, drawing_numbers=None, short=None, expectations=None):
         out.append(("safeguard", "보호수단: %s · %s%s" % (targets, ROLES[s["role"]], " · AI 초안" if draft else "")))
     for xid in entry.get("expectation_refs") or []:
         it = (expectations or {}).get(xid)
-        if it is None:
+        if idmap.is_tomb(xid):  # 판 이전에서 대상을 잃은 잠재 후보(lost:…|exp:규칙)는 묘비 id를 보이지 않는다
+            out.append(("expectation", "잠재 후보: %s" % idmap.label(xid)))
+        elif it is None:
             out.append(("expectation", "잠재 후보: %s %s" % (xid, MISSING if expectations is not None else "")))
         else:
             out.append(("expectation", "잠재 후보: %s %s %s · %s%s" % (

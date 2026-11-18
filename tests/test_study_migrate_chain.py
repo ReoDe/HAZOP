@@ -3,6 +3,7 @@
 - 차단 2: 앞 판으로 돌아온 뒤(A→B→A) 그 판에서 새로 단 ⑤ 참조는 읽을 때 옮기지 않는다.
 - 차단 3: 프로젝트 그래프에서 한 도면만 다시 추출해도 도면 연결 구간과 상자 없는 배관 구간은 끝으로 이어진다.
 - 차단 4: 결과가 늦게 따라와도(집합 저장 뒤 결과 저장 실패) 즉시 옮긴 것과 같다.
+- 차단 5: 다시 추출 전에 받은 구간 AI 검토 제안은 오래됨이다.
 """
 
 import copy
@@ -20,7 +21,7 @@ sys.path.insert(0, REPO_ROOT)
 from hazop import paths  # noqa: E402
 from hazop.graph import project  # noqa: E402
 from hazop.kg import expect  # noqa: E402
-from hazop.study import idmap, migrate  # noqa: E402
+from hazop.study import idmap, migrate, node_review as nr, refs  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 from tests.test_study_idmap import drawing  # noqa: E402
 
@@ -193,6 +194,34 @@ class LateResultsTest(WorkRoot):
         self.assertTrue(idmap.is_tomb(e["ai_basis"]["kg_paths"][0][1]))
 
 
+class ReviewStaleTest(WorkRoot):
+    def setUp(self):
+        super().setUp()
+        self.g1 = {"project_id": None, "graph_id": G, "graph_version": "v1", "edges": [],
+                   "nodes": [sym(1, "pump", "pump", [0, 0, 5, 5]), sym(2, "valve", "manual_valve", [40, 0, 5, 5])]}
+        self.g2 = {"project_id": None, "graph_id": G, "graph_version": "v2", "edges": [],
+                   "nodes": [sym(1, "valve", "manual_valve", [40, 0, 5, 5]), sym(2, "pump", "pump", [0, 0, 5, 5])]}
+        self.ns = add_node(sn.new_set(self.g1), "S1", ["entity-node-001", "entity-node-002"])
+        self.adj = {"S1": {}}
+        fp = nr.input_fingerprint(self.ns["nodes"][0], self.ns, self.adj)
+        self.prop = {"id": "R1", "node_id": "S1", "verdict": "split", "split_off": [{"members": ["entity-node-001"],
+                     "name": "펌프만"}], "merge_with": [], "screen_to": None, "decision": "open", "input_fp": fp,
+                     "graph_version": "v1", "at": "2026-11-18T00:00:00Z"}
+
+    def test_proposal_made_before_reextraction_is_stale(self):
+        ns2, _ = migrate.migrate_set(self.ns, self.g2, at="2026-11-18T01:00:00Z")
+        self.assertEqual(sorted(ns2["nodes"][0]["members"]), ["entity-node-001", "entity-node-002"], "순번이 맞바뀜")
+        self.assertFalse(nr.is_stale(self.prop, self.ns, self.adj))
+        self.assertTrue(nr.is_stale(self.prop, ns2, self.adj))
+        with self.assertRaises(ValueError):
+            nr.accept(ns2, {"proposals": [self.prop]}, "R1", "x", self.adj, at="t")
+
+    def test_old_proposal_without_version_is_stale_after_a_later_migration(self):
+        old = {k: v for k, v in self.prop.items() if k != "graph_version"}
+        ns2, _ = migrate.migrate_set(self.ns, self.g2, at="2026-11-18T01:00:00Z")
+        self.assertFalse(nr.is_stale(old, self.ns, self.adj))
+        self.assertTrue(nr.is_stale(old, ns2, self.adj))
+
 
 class DigestTest(WorkRoot):
     def test_renumbering_alone_keeps_confirmation(self):
@@ -216,6 +245,13 @@ class DigestTest(WorkRoot):
         self.assertIn("pump P-1", why)
         self.assertNotIn("entity-", why)
 
+
+class LabelTest(unittest.TestCase):
+    def test_lost_expectation_is_shown_without_its_tomb_id(self):
+        tomb = idmap.tomb_id(G, "v-b", 1) + idmap.EXP_SEP + "R-1"
+        text = " ".join(t for _k, t in refs.lines({"expectation_refs": [tomb]}, {}, None, None, {}))
+        self.assertIn(idmap.LOST_LABEL, text)
+        self.assertNotIn("lost:", text)
 
 
 class LegacyConvertTest(WorkRoot):
