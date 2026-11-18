@@ -4,6 +4,11 @@
 - 차단 3: 프로젝트 그래프에서 한 도면만 다시 추출해도 도면 연결 구간과 상자 없는 배관 구간은 끝으로 이어진다.
 - 차단 4: 결과가 늦게 따라와도(집합 저장 뒤 결과 저장 실패) 즉시 옮긴 것과 같다.
 - 차단 5: 다시 추출 전에 받은 구간 AI 검토 제안은 오래됨이다.
+- 재검토(59aca9a) A: 구간을 새로 제안하거나 집합만 백업에서 되돌려도 결과가 든 묘비 id를 다른 기호에 다시 쓰지 않는다.
+- 재검토 B: 결과가 지금 판까지 이어졌다는 것을 증명하지 못하면(잘린 이력, 번호 없는 결과의 판이 이력에 둘 이상) 순번
+  참조를 모두 묘비로 하고, 이은 새 구성요소에 안정 참조가 없으면 즉시 옮겨도 이력으로 옮겨도 묘비다.
+- 재검토 C·D: 끝으로 잇기는 끝을 보고(한쪽 끝만 있거나 나뉘며 우회선이 생기면 잇지 않음), 옛 둘이 새 하나로 모이면
+  둘 다 묘비, 표시가 같은 여럿은 참조로 고른다.
 """
 
 import copy
@@ -33,9 +38,18 @@ def sym(i, uid, kind, box, tag=None, sheet_ids=False):
             "kind": kind, "tag": tag, "bbox": box, "id_basis": "sequence", "_uid": uid}
 
 
-def graph(version, syms):
-    return {"project_id": None, "graph_id": G, "graph_version": version, "edges": [],
-            "nodes": [sym(i + 1, *s) for i, s in enumerate(syms)]}
+def graph(version, syms, pipes=()):
+    """syms [(uid, kind, bbox, tag)], pipes [(uid, [끝 uid])]: 상자 없는 배관 구간과 그 끝 관계."""
+    nodes = [sym(i + 1, *s) for i, s in enumerate(syms)]
+    by_uid = {n["_uid"]: n["entity_id"] for n in nodes}
+    edges = []
+    for j, (uid, ends) in enumerate(pipes, 1):
+        nodes.append({"entity_id": "entity-seg-%03d" % j, "source_object_id": "pdf-p0-conn-%04d" % j,
+                      "node_type": "pipe_segment", "kind": "pipe_segment", "tag": None, "bbox": None,
+                      "id_basis": "sequence", "_uid": uid})
+        edges += [{"entity_id": "relation-%03d" % (len(edges) + 1), "kind": "has_endpoint",
+                   "nodes": ["entity-seg-%03d" % j, by_uid[x]]} for x in ends]
+    return {"project_id": None, "graph_id": G, "graph_version": version, "edges": edges, "nodes": nodes}
 
 
 def add_node(ns, nid, members):
@@ -45,6 +59,25 @@ def add_node(ns, nid, members):
 
 def uid_of(g, eid):
     return next(n["_uid"] for n in g["nodes"] if n["entity_id"] == eid)
+
+
+def eid_of(g, uid):
+    return next(n["entity_id"] for n in g["nodes"] if n["_uid"] == uid)
+
+
+def moved_uids(g1, g2, uids):
+    """구성요소마다 구간 하나를 두고 g1 → g2로 옮긴 뒤 {옛 정체: 이어진 새 정체 또는 None(묘비)}."""
+    ns = sn.new_set(g1)
+    for i, u in enumerate(uids, 1):
+        add_node(ns, "S%d" % i, [eid_of(g1, u)])
+    out, _ = migrate.migrate_set(ns, g2, at="t")
+    return {u: [uid_of(g2, m) for m in n["members"]][0] if n["members"] else None for u, n in zip(uids, out["nodes"])}
+
+
+def ref_uids(res, g):
+    by_ref = {idmap.ref_of(n, G): n["_uid"] for n in g["nodes"]}
+    return [by_ref.get(c["ref"], "묘비" if idmap.is_tomb(c["ref"]) else c["ref"])
+            for c in res["cells"][0]["entries"][0]["cause_refs"]]
 
 
 def entry(cause=(), consequence=(), kg=()):
@@ -96,6 +129,57 @@ class TombIdTest(WorkRoot):
         self.assertTrue(idmap.is_tomb(e["cause_refs"][0]["ref"]), "늦게 따라온 펌프 원인 참조는 묘비(체크밸브가 아님)")
         self.assertTrue(idmap.is_tomb(e["ai_basis"]["kg_paths"][0][0]))
 
+    def test_reproposed_set_never_reuses_a_tomb_id_held_by_results(self):
+        """X(p,q) → Y(q)에서 펌프 원인 참조가 묘비가 된 뒤, Z(q,w)에서 구간을 새로 제안하고 Y → Z로 오가면
+        새 집합이 Y에서 체크밸브에 지은 묘비가 결과의 펌프 묘비와 겹치지 않아, 체크밸브를 되찾아도 펌프 참조는 묘비다."""
+        gx, gy, gz = graph("vX", [P, Q]), graph("vY", [Q]), graph("vZ", [Q, W])
+        old = sn.confirm_nodes(add_node(add_node(sn.new_set(gx), "S1", ["entity-node-001"]), "S2", ["entity-node-002"]),
+                               gx, ["S1", "S2"], "x", at="t")
+        old, p = migrate.migrate_set(old, gy, at="t1")
+        res, _ = migrate.migrate_results(results("vX", [entry(cause=[G + "#pdf-p0-sym-0001"])]), old, table=p["table"])
+        pump_tomb = res["cells"][0]["entries"][0]["cause_refs"][0]["ref"]
+        self.assertTrue(idmap.is_tomb(pump_tomb))
+        ns = sn.propose(gz, at="t2")
+        ns, _ = migrate.migrate_set(ns, gy, at="t3")
+        self.assertNotIn(pump_tomb, ns["tombstones"], "새 집합의 묘비 id가 결과에 남은 묘비 id와 겹치지 않음")
+        ns, p = migrate.migrate_set(ns, gz, at="t4")
+        res, _ = migrate.migrate_results(res, ns, table=p["table"])
+        self.assertTrue(idmap.is_tomb(res["cells"][0]["entries"][0]["cause_refs"][0]["ref"]),
+                        "펌프 원인 참조가 체크밸브로 이어지지 않음")
+
+
+    def test_set_restored_from_backup_never_reuses_a_tomb_id_held_by_results(self):
+        """X(q,p,w) → Y(q,p) → Z(w)로 결과의 q·p 원인이 묘비가 된 뒤, 집합만 X 때 백업으로 되돌려 Z로 읽고 X2(w,p)로
+        다시 추출하면, 되돌린 집합이 지은 묘비가 결과의 묘비와 겹치지 않아 q 원인이 p로 풀리지 않는다(r7_restore)."""
+        pm = ("p", "pump", [0, 0, 5, 5])
+        gx, gy, gz, gx2 = graph("vX", [Q, pm, W]), graph("vY", [Q, pm]), graph("vZ", [W]), graph("vX2", [W, pm])
+        backup = add_node(sn.new_set(gx), "S1", sorted(eid_of(gx, u) for u in "qpw"))
+        res = results("vX", [entry(cause=[G + "#pdf-p0-sym-0001", G + "#pdf-p0-sym-0002"])])
+        ns, p = migrate.migrate_set(copy.deepcopy(backup), gy, at="t1")
+        res, _ = migrate.migrate_results(res, ns, table=p["table"])
+        ns, p = migrate.migrate_set(ns, gz, at="t2")
+        res, _ = migrate.migrate_results(res, ns, table=p["table"])
+        self.assertEqual(ref_uids(res, gz), ["묘비", "묘비"])
+        ns, _ = migrate.migrate_set(backup, gz, at="t3")
+        ns, _ = migrate.migrate_set(ns, gx2, at="t4")
+        res, _ = migrate.migrate_results(res, ns)
+        self.assertEqual(ref_uids(res, gx2), ["묘비", "묘비"], "밸브 원인이 펌프로 풀리지 않음")
+
+
+    def test_numbered_tomb_from_an_older_build_is_never_resolved(self):
+        """일련번호 묘비 id(2e4893e~7d1ad6b 판)는 다른 집합의 같은 번호와 겹쳤을 수 있어, 기록의 지문이 id와 맞지 않으면
+        표시가 맞는 기호가 돌아와도 되찾지 않는다."""
+        pm = ("p", "pump", [0, 0, 5, 5])
+        gy, gx2 = graph("vY", [Q]), graph("vX2", [Q, pm])
+        numbered = idmap.tomb_id(G, "vY", 1)
+        ns = add_node(sn.new_set(gy), "S1", ["entity-node-001"])
+        ns["nodes"][0]["lost"] = [numbered]
+        ns["tombstones"] = {numbered: {"entity_id": "entity-node-002", "ref": G + "#pdf-p0-sym-0002",
+                                       "mark": ["drawing_object", None, "pump", None, 0.0, 0.0, 5.0, 5.0], "basis": "sequence",
+                                       "lost_from": "vX", "lost_at": "vY", "at": "t", "legacy_key": None, "found": None}}
+        ns, _ = migrate.migrate_set(ns, gx2, at="t1")
+        self.assertEqual((ns["nodes"][0]["lost"], ns["tombstones"][numbered]["found"]), ([numbered], None))
+
 
 class ResultsStepTest(WorkRoot):
     def test_refs_made_after_returning_to_a_version_stay_put(self):
@@ -121,6 +205,84 @@ class ResultsStepTest(WorkRoot):
         self.assertEqual(res["cells"][0]["entries"][0]["cause_refs"][0]["ref"], G + "#pdf-p0-sym-0001", "탱크로 돌아옴")
         self.assertEqual(migrate.migrate_results(res, ns)[0], res, "다시 읽어도 그대로")
         self.assertEqual([m.get("step") for m in res["version_migrations"]], [1, 2])
+
+
+class UnprovenChainTest(WorkRoot):
+    def chain(self, *versions):
+        pm = ("p", "pump", [0, 0, 5, 5])
+        gs = [graph(v, [Q, pm] if i % 2 else [pm, Q]) for i, v in enumerate(versions)]
+        ns = add_node(sn.new_set(gs[0]), "S1", [n["entity_id"] for n in gs[0]["nodes"]])
+        sets = [ns]
+        for g in gs[1:]:
+            sets.append(migrate.migrate_set(sets[-1], g, at="t-" + g["graph_version"])[0])
+        return gs, sets
+
+    def test_truncated_history_does_not_move_results(self):
+        """결과 B(줄 번호 1), 이력 [A→B, B→C], 집합 판 D: B→C만 적용하고 D로 표시하지 않고 순번 참조를 묘비로."""
+        gs, sets = self.chain("vA", "vB", "vC", "vD")
+        res, _ = migrate.migrate_results(results("vA", [entry(cause=[G + "#pdf-p0-sym-0001"])]), sets[1])
+        self.assertEqual(res["version_migrations"][-1]["step"], 1)
+        cut = copy.deepcopy(sets[3])
+        cut["history"] = [h for h in cut["history"] if (h.get("detail") or {}).get("to") != "vD"]
+        out, _ = migrate.migrate_results(res, cut)
+        self.assertEqual((ref_uids(out, gs[3]), out["graph_version"]), (["묘비"], "vD"))
+        self.assertEqual(out["version_migrations"][-1]["unproven"], migrate.BROKEN_CHAIN)
+        self.assertTrue(idmap.needs_check(cut, out)["needs_check"])
+
+    def test_results_without_step_on_a_revisited_version_are_not_guessed(self):
+        gs, sets = self.chain("vA", "vB", "vA", "vB")
+        out, _ = migrate.migrate_results(results("vA", [entry(cause=[G + "#pdf-p0-sym-0001"])]), sets[3])
+        self.assertEqual(ref_uids(out, gs[3]), ["묘비"])
+        self.assertEqual(out["version_migrations"][-1]["unproven"], migrate.AMBIGUOUS_START)
+
+    def test_linked_component_without_a_stable_ref_is_lost_now_and_by_history(self):
+        g1 = graph("v1", [Q])
+        g2 = copy.deepcopy(graph("v2", [Q]))
+        g2["nodes"][0]["source_object_id"] = None
+        ns = add_node(sn.new_set(g1), "S1", ["entity-node-001"])
+        ns2, p = migrate.migrate_set(ns, g2, at="t1")
+        self.assertEqual(ns2["nodes"][0]["members"], ["entity-node-001"], "구성요소는 표시로 이어짐")
+        res = results("v1", [entry(cause=[G + "#pdf-p0-sym-0001"])])
+        now, _ = migrate.migrate_results(res, ns2, at="t1", table=p["table"])
+        later, _ = migrate.migrate_results(res, ns2, at="t1")
+        self.assertEqual(json.dumps(now, sort_keys=True), json.dumps(later, sort_keys=True))
+        self.assertTrue(idmap.is_tomb(now["cells"][0]["entries"][0]["cause_refs"][0]["ref"]))
+        self.assertEqual(now["version_migrations"][-1]["refs_unnamed"], 1)
+        self.assertTrue(idmap.needs_check(ns2, now)["needs_check"])
+
+
+class LinkRuleTest(WorkRoot):
+    PP, VV, WW, TT = ("p", "pump", [0, 0, 5, 5]), Q, W, ("t", "tank", [120, 0, 5, 5])
+
+    def test_pipe_is_linked_by_its_ends_not_by_look_alone(self):
+        g1 = graph("v1", [self.PP, self.VV, self.WW], [("L1", ["p", "q"])])
+        g2 = graph("v2", [self.PP, self.VV, self.WW], [("L9", ["q", "w"])])
+        self.assertEqual(moved_uids(g1, g2, ["L1"]), {"L1": None})
+
+    def test_renumbered_pipes_follow_their_ends(self):
+        g1 = graph("v1", [self.PP, self.VV, self.WW], [("L1", ["p", "q"]), ("L2", ["q", "w"])])
+        g2 = graph("v2", [self.WW, self.VV, self.PP], [("L2", ["q", "w"]), ("L1", ["p", "q"])])
+        self.assertEqual(moved_uids(g1, g2, ["L1", "L2"]), {"L1": "L1", "L2": "L2"})
+
+    def test_one_ended_pipe_is_not_linked(self):
+        g1 = graph("v1", [self.PP, self.VV, self.WW], [("L1", ["p"]), ("L2", ["p", "q"])])
+        g2 = graph("v2", [self.PP, self.WW, self.TT], [("L1", ["p", "t"]), ("L2", ["p"])])
+        self.assertEqual(moved_uids(g1, g2, ["L1", "L2"]), {"L1": None, "L2": None})
+
+    def test_split_pipe_is_not_linked_to_a_new_bypass_between_the_same_ends(self):
+        g1 = graph("v1", [self.PP, self.WW], [("L1", ["p", "w"])])
+        g2 = graph("v2", [self.PP, self.VV, self.WW], [("La", ["p", "q"]), ("Lb", ["q", "w"]), ("BY", ["p", "w"])])
+        self.assertEqual(moved_uids(g1, g2, ["L1"]), {"L1": None})
+
+    def test_two_old_symbols_meeting_one_new_symbol_are_both_lost(self):
+        g1 = graph("v1", [("a", "pump", [0, 0, 5, 5]), ("b", "pump", [0.8, 0, 5, 5])])
+        g2 = graph("v2", [("a", "pump", [0.4, 0, 5, 5])])
+        self.assertEqual(moved_uids(g1, g2, ["a", "b"]), {"a": None, "b": None})
+
+    def test_same_marks_are_told_apart_by_their_refs(self):
+        twin = [("a", "manual_valve", [0, 0, 5, 5]), ("b", "manual_valve", [0, 0, 5, 5])]
+        g1, g2 = graph("v1", twin), graph("v2", twin + [self.PP])
+        self.assertEqual(moved_uids(g1, g2, ["a", "b"]), {"a": "a", "b": "b"})
 
 
 def sheet(name, version, order, other, direction):
@@ -213,7 +375,7 @@ class ReviewStaleTest(WorkRoot):
         self.assertEqual(sorted(ns2["nodes"][0]["members"]), ["entity-node-001", "entity-node-002"], "순번이 맞바뀜")
         self.assertFalse(nr.is_stale(self.prop, self.ns, self.adj))
         self.assertTrue(nr.is_stale(self.prop, ns2, self.adj))
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "도면을 다시 추출해 그래프 판이 바뀌어"):
             nr.accept(ns2, {"proposals": [self.prop]}, "R1", "x", self.adj, at="t")
 
     def test_old_proposal_without_version_is_stale_after_a_later_migration(self):

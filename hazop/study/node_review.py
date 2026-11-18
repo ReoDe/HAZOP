@@ -545,12 +545,15 @@ EDITABLE = ("verdict", "merge_with", "split_off", "screen_to", "design_intent")
 
 def accept(node_set, doc, proposal_id, by, adj, edited=None, at=None, kn=None):
     """(새 집합, 새 묶음). edited를 주면 그 값(EDITABLE 키만)으로 고쳐서 받는다. adj는 지금 집합의 adjacency.
-    오래된 제안(구간·이웃·병합 대상·지식 항목이 바뀜)은 받지 않는다(ValueError). 집합 history에 ai_review_accept
+    오래된 제안(그래프 판·구간·이웃·병합 대상·지식 항목이 바뀜)은 받지 않는다(ValueError). 집합 history에 ai_review_accept
     (제안 ID, 고쳐서 받았으면 고친 내용 changes)를 남긴다. 구간 연산은 손으로 하는 편집과 같은 nodes.merge·split이다."""
     out_doc = copy.deepcopy(doc)
     prop = next((p for p in out_doc["proposals"] if p["id"] == proposal_id), None)
     if prop is None or prop["decision"] != "open":
         raise ValueError("처리할 수 없는 제안: %s" % proposal_id)
+    if _version_moved(prop, node_set):
+        raise ValueError("제안을 받은 뒤 도면을 다시 추출해 그래프 판이 바뀌어 오래된 제안입니다. 제안이 가리키는 구성요소가 "
+                         "새 판에서 다른 기호일 수 있으니 다시 검토하세요: %s" % proposal_id)
     if is_stale(prop, node_set, adj, kn):
         raise ValueError("구간이나 이 구간의 지식 항목이 바뀌어 오래된 제안입니다. 다시 검토하세요: %s" % proposal_id)
     bad = set(edited or {}) - set(EDITABLE)

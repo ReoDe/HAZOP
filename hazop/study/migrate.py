@@ -11,7 +11,7 @@
 - ⑤ 결과는 판 이전 줄 번호(step)로 따라간다. 결과에 마지막으로 적용한 줄 번호를 적고 그 뒤 줄만 적용한다(앞 판으로 돌아온
   뒤 그 판에서 단 참조를 되돌아감에 다시 넣지 않음). 줄에는 그대로 이어진 것도 적어, 늦게 따라와도 즉시 옮긴 것과 같은 표다.
 - 0.1 파일의 함수(member_refs·member_digest·legacy_steps·legacy_migrate_results)는 0.1 결과를 처음 이을 때만 쓴다.
-- 같은 입력에 두 번 적용해도 결과가 같다(판이 같으면 아무것도 하지 않음, 묘비 id는 입력의 묘비 일련번호에서 결정됨).
+- 같은 입력에 두 번 적용해도 결과가 같다(판이 같으면 아무것도 하지 않음, 묘비 id는 잃은 기호의 지문으로 결정됨).
 """
 
 import copy
@@ -267,9 +267,12 @@ def migrate_set(node_set, graph, at=None):
             n["state"], n["confirmed"] = "applied", None
             demoted.append(n["node_id"])
     tombs = dict(out.get("tombstones") or {})
-    for t, rec in table["new_tombs"].items():  # 새 묘비 id는 있는 것을 건너뛰고 지었으므로 앞 기록을 덮지 않는다
+    for t, rec in table["new_tombs"].items():  # 있는 묘비 id는 new_tombs에 들지 않아 앞 기록을 덮지 않는다
         tombs[t] = dict(rec, at=at)
-    out["tomb_seq"] = table["tomb_seq"]
+    for t in set(table["eid"].values()) & set(tombs):  # 되찾았던 기호를 다시 잃으면 다시 되찾을 수 있게
+        if isinstance(tombs[t], dict) and tombs[t].get("found") is not None:
+            tombs[t] = dict(tombs[t], found=None)
+    out.pop("tomb_seq", None)  # 일련번호 묘비 id(지문 id 전)가 남긴 값
     for t, (e, r) in table["found"].items():
         tombs[t] = dict(tombs.get(t) or {}, found={"entity_id": e, "ref": r, "version": graph["graph_version"], "at": at})
     out["tombstones"] = dict(sorted(tombs.items()))
@@ -291,52 +294,88 @@ def lines(node_set):
     return [h.get("detail") or {} for h in node_set.get("history") or [] if isinstance(h, dict) and h.get("op") == OP]
 
 
-def _chained(rows, start):
+def _end(rows, start):
+    """줄들이 start에서 빠짐없이 이어지면 마지막 판, 아니면 None."""
     cur = start
     for d in rows:
         if d.get("from") != cur:
-            return False
+            return None
         cur = d.get("to")
-    return True
+    return cur
+
+
+BROKEN_CHAIN = "이력 줄이 결과의 판에서 지금 판까지 빠짐없이 이어지지 않음"
+AMBIGUOUS_START = "결과에 판 이전 줄 번호가 없고 결과의 판에서 시작하는 줄이 이력에 둘 이상(되돌아온 사슬)"
+PARTIAL_ROWS = "옛 꼴 이력 줄(바뀐 것만 적음)로는 그대로 이어진 참조를 증명하지 못함"
 
 
 def _steps(results, node_set):
-    """(결과에 아직 적용하지 않은 판 이전 줄들, 마지막 줄 번호). 결과가 지금 판이면 ([], None), 이어지지 않으면 None.
+    """(결과에 아직 적용하지 않은 판 이전 줄들, 마지막 줄 번호, 옮기지 못한 까닭). 결과가 지금 판이면 ([], None, None).
     결과가 마지막으로 옮겨진 줄 번호(version_migrations[-1].step, 그 줄의 to가 결과의 판일 때)가 있으면 그 뒤 줄들이다.
-    번호가 없는 결과(새로 만든 것, 옛 판이 옮긴 것)는 결과의 판에서 시작하는 마지막 줄부터다. 판 문자열은 내용 해시라
-    같은 판이면 같은 그래프이고, 그 사이의 되돌아감(A→B→A)을 거치지 않아도 참조가 같은 기호를 가리킨다."""
+    번호가 없는 결과(새로 만든 것, 옛 판이 옮긴 것)는 결과의 판에서 시작하는 줄이 하나뿐일 때 그 줄부터다. 어느 쪽이든
+    줄들이 지금 판까지 빠짐없이 이어져야 한다. 아니면 이어졌다는 것을 증명하지 못한 것이라 까닭을 돌려준다."""
     rows = lines(node_set)
     have, want = results.get("graph_version"), node_set.get("graph_version")
     marks = [m for m in results.get("version_migrations") or [] if isinstance(m, dict)]
     step = marks[-1].get("step") if marks else None
-    done = type(step) is int and 1 <= step <= len(rows) and rows[step - 1].get("to") == have
-    if done and _chained(rows[step:], have) and (rows[step:] or have == want):
-        return rows[step:], len(rows)
+    if type(step) is int and 1 <= step <= len(rows) and rows[step - 1].get("to") == have:
+        if _end(rows[step:], have) == want:
+            return rows[step:], len(rows), None
+        return None, None, BROKEN_CHAIN
     if have == want:
-        return [], None
-    starts = [i for i, d in enumerate(rows) if d.get("from") == have and _chained(rows[i:], have)]
-    if not starts or rows[-1].get("to") != want:
-        return None
-    return rows[starts[-1]:], len(rows)
+        return [], None, None
+    starts = [i for i, d in enumerate(rows) if d.get("from") == have]
+    if len(starts) > 1:
+        return None, None, AMBIGUOUS_START
+    if not starts or _end(rows[starts[0]:], have) != want:
+        return None, None, BROKEN_CHAIN
+    return rows[starts[0]:], len(rows), None
+
+
+def _unproven_table(doc, node_set):
+    """이어졌다는 것을 증명하지 못한 결과에 쓸 표: 대상 참조·근거 경로의 그래프 id·잠재 후보를 모두 묘비로 한다. 파일 id(source)
+    참조도 그 판에 대상이 있었는지 모르므로 묘비다. 근거 경로의 지식 id(cond-…)는 그대로."""
+    gid, to = node_set.get("graph_id"), node_set.get("graph_version")
+    t = idmap._empty_table(gid, doc.get("graph_version"), to, False)
+
+    def values(space):
+        return {h[k] for p, s in idmap.FIELDS[idmap.RESULTS] if s == space for h, k in idmap.walk(doc, p)
+                if isinstance(h[k], str) and not idmap.is_tomb(h[k])}
+    refs = values(idmap.REF)
+    known = set(node_set.get("graph_member_refs") or {})
+    t["ref"] = {r: idmap.tomb_id(gid, to, "r-" + idmap._sha8(r)) for r in sorted(refs)}
+    t["eid"] = {x: idmap.tomb_id(gid, to, "e-" + idmap._sha8(x)) for x in sorted(values(idmap.EID))
+                if x in known or _PID_ID.search(x) or x.startswith("xlink-")}
+    t["drawings"] = sorted({idmap.drawing_of(r) for r in refs} - {None} | ({gid} if gid else set()))
+    t["unproven"] = True
+    return t
 
 
 def migrate_results(results, node_set, at=None, table=None):
     """(결과, 바꾼 근거 경로 ID 수 또는 None). 0.2·0.3 결과의 판과 등록된 id 필드(원인·영향·보호수단 참조, 잠재 후보 ID,
     근거 경로)를 판 이전 대응대로 지금 판으로 바꾼 사본. 적용할 줄은 _steps가 고르고(결과가 마지막으로 옮겨진 줄 번호 뒤),
     그 줄이 table(방금 계산한 대응표) 하나면 그 표를, 아니면 이력 줄에서 만든 표를 차례로 적용한다. 옮긴 마지막 줄 번호를
-    version_migrations[].step에 적는다. 판이 같거나 이어지는 기록이 없으면 None이고,
-    49033f1 판의 `~lost`만 묘비로 바꾼 사본(바꿀 것이 없으면 입력 그대로)을 돌려준다. 0.1 결과는 legacy_migrate_results로."""
+    version_migrations[].step에 적는다. 판이 다른데 줄들이 지금 판까지 이어진다는 것을 증명하지 못하면(잘린 이력, 번호 없는
+    결과의 판에서 시작하는 줄이 여럿, 거칠 줄에 바뀐 것만 적은 옛 꼴 줄이 있음) 순번 참조를 모두 묘비로 하고 그 까닭을
+    version_migrations[].unproven에 적는다.
+    새 판 구성요소에 안정 참조가 없어 묘비가 된 참조 수는 refs_unnamed다. 판이 같으면 None이고, 49033f1 판의 `~lost`만
+    묘비로 바꾼 사본(바꿀 것이 없으면 입력 그대로)을 돌려준다. 0.1 결과는 legacy_migrate_results로."""
     if results.get("schema_version") not in ("0.2", "0.3"):  # results.CELL_SCHEMA_VERSIONS(순환 import를 피해 값으로)
         return legacy_migrate_results(results, node_set, at)
     doc, _n = idmap.upgrade_results(results, node_set)
-    found = _steps(doc, node_set)
-    if not found or not found[0]:
+    steps, step, why = _steps(doc, node_set)
+    if why is not None:  # 판이 다른데 이어진 것을 증명하지 못함: 옮기지 않고 순번 참조를 모두 묘비로(재확인)
+        tables = [_unproven_table(doc, node_set)]
+        step = len(lines(node_set)) or None
+    elif not steps:
         return doc, None
-    steps, step = found
-    if table is not None and len(steps) == 1 and (table["from"], table["to"]) == (steps[0].get("from"), steps[0].get("to")):
+    elif table is not None and len(steps) == 1 and (table["from"], table["to"]) == (steps[0].get("from"), steps[0].get("to")):
         tables = [table]  # 방금 계산한 표(이력 줄과 같은 표)
     else:
         tables = [idmap.from_record(d, node_set.get("graph_id")) for d in steps]
+        if any(t["partial"] for t in tables):
+            why, tables = PARTIAL_ROWS, [_unproven_table(doc, node_set)]
+    held = {h[k] for p, s in idmap.FIELDS[idmap.RESULTS] if s == idmap.REF for h, k in idmap.walk(doc, p)}
     from hazop.study.nodes import now_utc
     total = {"changed": 0, "lost": 0, "found": 0}
     kg = {"changed": 0, "lost": 0}
@@ -357,7 +396,9 @@ def migrate_results(results, node_set, at=None, table=None):
         "refs_found": total["found"],
         # 표시 없이 참조만 믿고 이은 옛 판 이전이 끼어 있으면 화면이 확인을 띄울 근거(idmap.needs_check)
         "check": "ref" if any(t["check"] == "ref" for t in tables) else "mark",
-        "unregistered": sorted(unregistered), "step": step})
+        "unregistered": sorted(unregistered), "step": step,
+        **({"unproven": why} if why else {}),
+        **({"refs_unnamed": n} if (n := len(held & {r for t in tables for r in t.get("unnamed") or ()})) else {})})
     return doc, kg["changed"] - kg["lost"]
 
 

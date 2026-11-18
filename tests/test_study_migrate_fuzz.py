@@ -1,12 +1,17 @@
 """판 이전 불변식 퍼즈(hazop.study.migrate·idmap). 합성 도면을 여러 번 다시 추출한 것처럼 바꾸며(기호 지움·옮김·종류·
 태그 바꿈·되살림·순서만 섞임·판 문자열만 바뀜·앞 판으로 되돌아감) 무작위 검토구간 집합(편집 묶음 포함)과 ⑤ 결과를 판
-이전하고, 생성기가 따로 들고 다니는 기호의 진짜 정체(_uid)와 견준다. 판정은 판 이전 코드가 남긴 기록(묘비 기록·되찾기
-기록)을 정답으로 쓰지 않는다. 판 문자열은 실제 graph_version처럼 내용 해시라 앞 판으로 되돌아가면 같은 판 문자열이다.
+이전하고, 생성기가 따로 들고 다니는 기호의 진짜 정체(_uid)와 견준다. 배관은 더하고 지우고 나누고 합치며 한쪽 끝만 남기도
+한다. 사슬 가운데 구간을 새로 제안해 집합을 바꾸기도
+한다(결과는 옛 집합이 지은 묘비를 그대로 든다). 판정은 판 이전 코드가 남긴 기록(묘비 기록·되찾기 기록)을 정답으로 쓰지
+않는다. 판 문자열은 실제 graph_version처럼 내용 해시라 앞 판으로 되돌아가면 같은 판 문자열이다.
 
 도면 꼴은 벡터 PDF·스캔(img-)·drawio·DEXPI(파일 id와 가져오기가 지은 id가 섞임)이고, 프로젝트 그래프(도면 둘을 도면
 연결점으로 이음, 한 도면만 다시 추출)도 돈다. 집합 꼴은 새 꼴·A꼴(표시 없음)·B꼴(순번 정규식 표시, lost_members)이다.
 ⑤ 결과는 판 이전마다 따라가는 것, 몇 판 이전을 건너뛰고 늦게 따라오는 것(집합 저장 뒤 결과 저장 실패), 되돌아온 판에서
-새로 단 참조를 함께 본다.
+새로 단 참조를 함께 본다. 사슬 가운데 집합을 앞 판 백업으로 되돌리거나(결과는 그대로), 이력 줄을 옛 꼴(kept_*·step 없음)로
+바꾸거나, 결과의 줄 번호를 지우기도 한다.
+알려진 한계는 종류·태그·상자가 같은 기호(표시가 같아 가릴 수 없음)뿐이다. 상자 없는 구성요소가 겉모습이 같은 다른
+것으로 이어지거나 둘이 하나로 모이면 위반이다.
 
 불변식(위반 이름의 첫 글자)
 ① 옛 구성요소·참조는 이어지거나 묘비가 된다. 조용히 사라지지 않고, 자리·참조 수가 줄지 않는다. 묘비 id 하나는 기호 하나다.
@@ -88,7 +93,7 @@ def make_world(r, sheet="T", conts=()):
               "nobox": False, "fixed": False} for u in range(r.randint(0, 2))]
     allu = [s["uid"] for s in syms + juncs]
     pipes = [{"uid": "%s:c%d" % (sheet, u), "ends": r.sample(allu, 2), "bbox": place(r)[:2] + [15.0, 1.0],
-              "nobox": r.random() < 0.05, "tag": r.choice([None, "L-1"])} for u in range(r.randint(1, 6))]
+              "nobox": r.random() < 0.4, "tag": r.choice([None, "L-1"])} for u in range(r.randint(1, 6))]
     return {"sheet": sheet, "syms": syms, "juncs": juncs, "pipes": pipes, "next": 100, "fmt": r.choice(FORMATS),
             "basis": r.random() > 0.1, "order_seed": 0, "stamp": 0}
 
@@ -129,10 +134,38 @@ def mutate(r, w):
                     "bbox": place(r), "nobox": False, "fixed": r.random() < 0.15})
     w["syms"] = out
     alive = {s["uid"] for s in out + w["juncs"]}
+    pipes = []
     for p in w["pipes"]:
         p["ends"] = [e for e in p["ends"] if e in alive]
+        x = r.random()
+        if x < 0.08:  # 배관을 지움
+            continue
+        if x < 0.14 and len(p["ends"]) == 2:  # 가운데 새 이음점으로 둘로 나눔
+            w["next"] += 2
+            j = {"uid": "%s:j%d" % (w["sheet"], w["next"]), "kind": "tee", "tag": None, "bbox": place(r)[:2] + [2.0, 2.0],
+                 "nobox": False, "fixed": False}
+            w["juncs"].append(j)
+            pipes.append(dict(p, ends=[p["ends"][0], j["uid"]]))
+            pipes.append(dict(copy.deepcopy(p), uid="%s:c%d" % (w["sheet"], w["next"] - 1), ends=[j["uid"], p["ends"][1]],
+                              bbox=place(r)[:2] + [15.0, 1.0]))
+            continue
+        if x < 0.18 and p["ends"]:  # 한쪽 끝이 끊김
+            p["ends"] = p["ends"][:1]
         if r.random() < 0.1:
             p["bbox"] = place(r)[:2] + [15.0, 1.0]
+        pipes.append(p)
+    pairs = [(a, b) for a in pipes for b in pipes if a is not b and len(a["ends"]) == 2 and len(b["ends"]) == 2
+             and len(set(a["ends"]) & set(b["ends"])) == 1]
+    if pairs and r.random() < 0.15:  # 끝 하나를 나눠 가진 두 배관을 하나로 합침
+        a, b = r.choice(pairs)
+        a["ends"] = sorted(set(a["ends"]) ^ set(b["ends"]))
+        pipes.remove(b)
+    ends_pool = sorted(alive | {j["uid"] for j in w["juncs"]})
+    if len(ends_pool) > 1 and r.random() < 0.3:  # 새 배관
+        w["next"] += 1
+        pipes.append({"uid": "%s:c%d" % (w["sheet"], w["next"]), "ends": r.sample(ends_pool, 2),
+                      "bbox": place(r)[:2] + [15.0, 1.0], "nobox": r.random() < 0.4, "tag": r.choice([None, "L-1"])})
+    w["pipes"] = pipes
     w["order_seed"] = r.random()
     return w
 
@@ -231,11 +264,22 @@ def look_of(n):
 
 
 def same_look(a, b):
+    """겉모습(도면·종류·태그·상자)이 같은가(⑦: 이은 순번 구성요소의 앞뒤)."""
     if a is None or b is None or a[0] == "xlink" or b[0] == "xlink":
         return a is not None and a == b
     if a[:3] != b[:3] or (a[3] is None) != (b[3] is None):
         return False
     return a[3] is None or all(abs(x - y) <= idmap.MARK_TOL for x, y in zip(a[3], b[3]))
+
+
+def twin_look(a, b):
+    """알려진 한계: 종류·태그·상자가 같은 기호(표시가 같아 가릴 수 없음). 상자 없는 것은 한계가 아니다. 도면 연결 구간은
+    두 끝의 겉모습이 모두 같을 때(끝 기호가 한계로 이어지면 그 구간도 따라감)."""
+    if a is None or b is None:
+        return False
+    if a[0] == "xlink" or b[0] == "xlink":
+        return a == b
+    return a[3] is not None and b[3] is not None and same_look(a, b)
 
 
 class Truth:
@@ -281,7 +325,7 @@ def stale_targets(world, g):
 
 # ---------------------------------------------------------------- 집합과 결과
 
-def make_set(r, g):
+def make_set(r, g, form=None):
     ns = sn.new_set(g)
     ids_ = [n["entity_id"] for n in g["nodes"]]
     for i in range(r.randint(1, 4)):
@@ -309,7 +353,7 @@ def make_set(r, g):
     for n in ns["nodes"]:
         if n["state"] == "confirmed" and r.random() < 0.2:
             n["state"], n["locked"] = "locked", {"at": "t", "by": "x"}
-    form = r.choice(["new", "new", "a", "b", "b"])
+    form = form or r.choice(["new", "new", "a", "b", "b"])
     if form == "a":
         ns = to_a_form(ns, g)
     elif form == "b":
@@ -391,7 +435,7 @@ class Track:
                 self.looks[u].append(lk)
 
     def looked_like(self, uids, look):
-        return any(same_look(x, look) for u in uids for x in self.looks.get(u, ()))
+        return any(twin_look(x, look) for u in uids for x in self.looks.get(u, ()))
 
     # -- 집합
 
@@ -400,7 +444,9 @@ class Track:
             rows = self.sets.setdefault(p, [])
             for h in hs[len(rows):]:
                 mem = (h or {}).get("members") if isinstance(h, dict) else None
-                rows.append({"allowed": {truth.eid[m] for m in mem or () if m in truth.eid}, "taint": False})
+                lost = (h or {}).get("lost") if isinstance(h, dict) else None  # 백업에서 되돌린 집합의 묘비가 가리키던 기호
+                rows.append({"allowed": {truth.eid[m] for m in mem or () if m in truth.eid}
+                             | {self.tomb_truth[t] for t in lost or () if self.tomb_truth.get(t)}, "taint": False})
 
     def judge_limit(self, u_new, allowed, truth_new):
         return self.looked_like(allowed, truth_new.look.get(u_new))
@@ -488,8 +534,8 @@ class Track:
                 marks[json.dumps(m[:4])] += 1  # 종류·도면·기호 종류·태그가 같은 것 둘 이상은 상자 비교가 허용오차에 걸릴 수 있음
         sure = {n["entity_id"] for n in g_a["nodes"] if basis[n["entity_id"]] == ids.SOURCE or (
             idmap.mark_of(n, ids.SEQUENCE) is not None and marks[json.dumps(idmap.mark_of(n, ids.SEQUENCE)[:4])] == 1)}
-        by_end = [n for n in g_a["nodes"] if n["entity_id"] not in sure and ends.get(n["entity_id"])
-                  and idmap.mark_of(n, ids.SEQUENCE) is None]
+        by_end = [n for n in g_a["nodes"] if n["entity_id"] not in sure and len(ends.get(n["entity_id"]) or ()) >= 2
+                  and idmap.mark_of(n, ids.SEQUENCE) is None]  # 한쪽 끝만 있는 구간은 잇지 않는다(끊긴 끝으로 잇지 않게)
         keys = collections.Counter(json.dumps([look_of(n)[:3], sorted(ends[n["entity_id"]])]) for n in by_end)
         grew = True
         while grew:  # 끝이 모두 확인되고 겉모습·끝이 겹치지 않는 상자 없는 구성요소(배관 구간·도면 연결 구간)
@@ -628,11 +674,25 @@ def run(seeds, judge):
             track.adopt_results(live_slots, res, truth)
             late = None
             seen = {g["graph_version"]}
+            backups, restored = [(copy.deepcopy(ns), g, truth)], False
             for i, (kind, world) in enumerate(steps, 1):
                 g2 = build_any(world)
                 if g2["graph_version"] == ns["graph_version"]:
                     continue
                 truth2 = Truth(g2)
+                stage = "옛 꼴 %d" % i
+                if r.random() < 0.1:  # 앞 판 이전 줄이 옛 꼴(kept_*·step·unnamed_refs 없음, cff108c~M2)
+                    judge.stats["옛 꼴 이력 줄"] += 1
+                    ns = copy.deepcopy(ns)
+                    for h in ns["history"]:
+                        if h.get("op") == migrate.OP:
+                            for k in ("kept_eids", "kept_refs", "step", "unnamed_refs"):
+                                h["detail"].pop(k, None)
+                if late is None and r.random() < 0.1 and res.get("version_migrations"):
+                    judge.stats["결과 줄 번호 없음"] += 1
+                    res = copy.deepcopy(res)
+                    for m in res["version_migrations"]:
+                        m.pop("step", None)
                 stage = "판 이전 %d(%s)" % (i, kind)
                 ns2, p = migrate.migrate_set(ns, g2, at="t%d" % i)
                 if p["state"] != "kept":
@@ -644,7 +704,7 @@ def run(seeds, judge):
                     judge.stats["앞 판으로 되돌아감"] += 1
                 track.check_set(ns, ns2, truth, truth2)
                 track.check_seq_look(ns2, g, g2)
-                if kind in ("reorder", "restamp", "recategorize"):
+                if kind in ("reorder", "restamp", "recategorize") and not restored:  # 되돌린 집합에는 앞 세계가 다르다
                     track.check_same_content(ns, ns2, p, g)
                 stage = "두 번 적용 %d" % i
                 if not same(migrate.migrate_set(copy.deepcopy(ns), g2, at="t%d" % i)[0], ns2):
@@ -679,7 +739,19 @@ def run(seeds, judge):
                                               "members": sorted(r.sample(ids_, min(2, len(ids_))))},
                                              **sn._v2_fields("script")))
                     track.adopt_set(ns2, truth2)
+                if late is None and res["graph_version"] == g2["graph_version"] and r.random() < 0.25:
+                    judge.stats["구간을 새로 제안"] += 1  # 옛 집합의 묘비를 모르는 새 집합
+                    ns2, _ = make_set(r, g2, "new")
+                    track.sets = {}
+                    track.adopt_set(ns2, truth2)
                 seen.add(g2["graph_version"])
+                backups.append((copy.deepcopy(ns2), g2, truth2))
+                restored = len(backups) > 2 and r.random() < 0.15
+                if restored:  # 집합 파일만 앞 판 백업으로 되돌림(결과는 그대로)
+                    judge.stats["집합을 백업으로 되돌림"] += 1
+                    ns2, g2, truth2 = copy.deepcopy(r.choice(backups[:-1]))
+                    track.sets = {}
+                    track.adopt_set(ns2, truth2)
                 ns, g, truth = ns2, g2, truth2
             stage = "늦게 따라옴"
             if res["graph_version"] != ns["graph_version"]:
@@ -727,7 +799,8 @@ class MigrateFuzzTest(unittest.TestCase):
         self.assertGreater(s["앞 판으로 되돌아감"], SEEDS // 4, "앞 판으로 되돌아가는 사슬을 실제로 돌림")
         self.assertGreater(s["사슬 프로젝트 그래프"], SEEDS // 5, "프로젝트 그래프를 실제로 돌림")
         for k in ("다시 추출 reorder", "다시 추출 restamp", "다시 추출 recategorize", "되돌림", "되찾은 묘비", "늦게 따라온 결과",
-                  "되돌아온 판에서 새로 단 참조", "결과가 이번 판 이전을 건너뜀"):
+                  "되돌아온 판에서 새로 단 참조", "결과가 이번 판 이전을 건너뜀", "구간을 새로 제안", "옛 꼴 이력 줄",
+                  "결과 줄 번호 없음", "집합을 백업으로 되돌림"):
             self.assertGreater(s[k], SEEDS // 20, k)
         for form in ("new", "a", "b"):
             self.assertGreater(s["집합 꼴 " + form], SEEDS // 10)

@@ -8,15 +8,17 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
   종류·태그)과 끝 구성요소들이 정체다. 끝이 모두 이어지고 그 끝들을 가진 같은 겉모습의 새 구성요소가 하나뿐이면 잇는다.
 - 판 이전은 대응표(compute) 하나를 먼저 다 계산하고, 등록부(FIELDS)의 모든 id 필드에 같은 함수(apply)로 적용한다.
   옛 판의 모든 구성요소는 새 구성요소 하나나 묘비 하나로 간다(전함수). 새 구성요소 하나로 모이는 옛 구성요소는 모두 묘비다.
-- 묘비 id는 `lost:<graph_id>:<잃은 판>:<번호>`. 번호는 집합의 묘비 일련번호(tomb_seq)로, 늘기만 하고 이미 있는 묘비 id는
-  건너뛴다. 그래서 같은 판으로 두 번 와도(X→Y, Y→Z, Z→Y) 묘비 하나는 기호 하나다. 살아 있는 id(entity-·relation-·xlink-·
-  <graph_id>/·graph-·project-)와 꼴이 겹치지 않고, 같은 입력(일련번호 포함)이면 같은 id다. 묘비는 지우지 않고, 표시가 맞는
-  구성요소가 하나뿐으로 다시 나오면 되찾는다(found).
+- 묘비 id는 `lost:<graph_id>:<잃은 판>:t-<지문>`. 지문(tomb_key)은 graph_id·잃기 전 판·잃은 판·옛 entity_id·옛 참조·표시의
+  해시다. 판 문자열은 내용 해시라 (잃기 전 판, 옛 entity_id)가 기호 하나를 정하므로, 같은 id면 같은 잃은 기호이고 다른
+  기호면 다른 id다. 집합을 새로 제안하거나 백업에서 되돌려도, 결과가 든 묘비 id를 다른 기호에 다시 쓰지 않는다. 살아 있는
+  id(entity-·relation-·xlink-·<graph_id>/·graph-·project-)와 꼴이 겹치지 않는다. 묘비는 지우지 않고, 표시가 맞는 구성요소가
+  하나뿐으로 다시 나오면 되찾는다(found). 되찾기는 기록의 지문이 묘비 id와 맞는 것만 한다(기록에 없는 묘비 id는 풀지 않음).
 - 구간(members를 가진 사전)은 members에 지금 판의 살아 있는 id만 두고 잃은 것은 lost(묘비 id)에 둔다. 실행 취소 기록의
   before·after와 조각 기록도 같은 규칙이라 되돌려도 묘비는 묘비다.
 - 등록되지 않은 자리에서 옛 판 id를 만나면 report["unregistered"]에 경로를 적는다(시험에서는 비어 있어야 한다).
 """
 
+import collections
 import copy
 import hashlib
 import json
@@ -203,27 +205,25 @@ def tomb_id(graph_id, version, key):
     return "%s%s:%s:%s" % (TOMB_PREFIX, graph_id, version or "legacy", key)
 
 
+def tomb_key(graph_id, frm, to, entity_id, ref, mark):
+    canon = json.dumps([graph_id, frm, to, entity_id, ref, mark], ensure_ascii=False, separators=(",", ":"))
+    return "t-" + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:12]
+
+
+def _recorded_as(t, rec, graph_id):
+    """묘비 기록이 그 묘비 id를 지은 기록인가(되찾기 전 확인). B꼴에서 옮긴 묘비는 upgrade의 열쇠로 본다."""
+    if rec.get("lost_at") is None:
+        key = json.dumps([rec.get("entity_id"), rec.get("ref"), rec.get("lost_from")], sort_keys=True)
+        return t == tomb_id(graph_id, "legacy", "b-" + _sha8(key))
+    return t == tomb_id(graph_id, rec["lost_at"], tomb_key(graph_id, rec.get("lost_from"), rec["lost_at"],
+                                                            rec.get("entity_id"), rec.get("ref"), rec.get("mark")))
+
+
 # ---------------------------------------------------------------- 대응표
 
 def _empty_table(graph_id, frm, to, partial):
     return {"graph_id": graph_id, "from": frm, "to": to, "eid": {}, "ref": {}, "found": {}, "new_tombs": {},
-            "check": "mark", "partial": partial, "drawings": [], "tomb_seq": 0}
-
-
-def _tomb_numbers(node_set, graph_id, version):
-    """새 묘비 id를 차례로 내는 함수와 마지막 번호를 돌려주는 함수. 집합의 일련번호에서 시작해 늘기만 하고, 이미 있는
-    묘비 id는 건너뛴다(앞 기록을 덮어쓰지 않음)."""
-    taken = set(node_set.get("tombstones") or {})
-    seq = [node_set.get("tomb_seq") if type(node_set.get("tomb_seq")) is int else 0]
-
-    def take():
-        while True:
-            seq[0] += 1
-            t = tomb_id(graph_id, version, seq[0])
-            if t not in taken:
-                taken.add(t)
-                return t
-    return take, lambda: seq[0]
+            "check": "mark", "partial": partial, "drawings": [], "unnamed": []}
 
 
 def _registered_ids(doc, kind, spaces):
@@ -294,18 +294,19 @@ def compute(node_set, graph, at=None):
             link[m] = hits[0]
     contested = _drop_contested(link)
     _link_by_ends(node_set, graph, new_basis, by_id, link, contested, old_basis_of, domain)
-    take, last = _tomb_numbers(node_set, gid, to)
     for m in sorted(domain - set(link)):
-        t = take()
-        table["eid"][m] = t
         mk = old_marks.get(m)
-        table["new_tombs"][t] = {"entity_id": m, "ref": old_refs.get(m), "mark": mk, "basis": (old_basis or {}).get(m),
-                                 "lost_from": frm, "lost_at": to, "at": at, "legacy_key": None, "found": None}
+        t = tomb_id(gid, to, tomb_key(gid, frm, to, m, old_refs.get(m), mk))
+        table["eid"][m] = t
+        if t not in tombs:  # 같은 id면 같은 기호라 앞 기록을 그대로 둔다
+            table["new_tombs"][t] = {"entity_id": m, "ref": old_refs.get(m), "mark": mk, "basis": (old_basis or {}).get(m),
+                                     "lost_from": frm, "lost_at": to, "at": at, "legacy_key": None, "found": None}
     table["eid"].update(link)
     taken = set(link.values())
     claims = {}
     for t, rec in sorted(tombs.items()):
-        if not isinstance(rec, dict) or rec.get("found") is not None or not valid_mark(rec.get("mark")):
+        if (not isinstance(rec, dict) or rec.get("found") is not None or not valid_mark(rec.get("mark"))
+                or not _recorded_as(t, rec, gid)):
             continue
         mk = rec["mark"]
         hits = [e for e in mark_hits(mk) if e not in taken and e not in contested]
@@ -318,10 +319,13 @@ def compute(node_set, graph, at=None):
         if r is None:
             continue
         v = table["eid"][m]
+        if not is_tomb(v) and new_ref[v] is None:  # 이은 새 구성요소에 안정 참조가 없음: 이력 줄(ref_moved None)과 같은 묘비
+            table["unnamed"].append(r)
+            v = tomb_id(gid, to, "r-" + _sha8(r))
         table["ref"].setdefault(r, v if is_tomb(v) else new_ref[v])
     table["drawings"] = sorted({drawing_of(r) for r in list(old_refs.values()) + list(new_ref.values())} - {None}
                                | ({gid} if gid else set()))
-    table["tomb_seq"] = last()
+    table["unnamed"] = sorted(set(table["unnamed"]))
     return table
 
 
@@ -338,29 +342,38 @@ def _drop_contested(link):
 
 
 def _link_by_ends(node_set, graph, new_basis, by_id, link, contested, old_basis_of, domain):
-    """상자가 없고 끝이 있는 순번 구성요소(배관 구간·도면 연결 구간)를 겉모습과 끝으로 잇는다(link를 고침). 끝이 모두
-    이어졌고, 그 끝들의 새 id를 끝으로 가진 같은 겉모습의 새 구성요소가 하나뿐이고 아직 아무도 갖지 않았을 때만 잇는다.
+    """상자가 없고 끝이 둘 이상인 순번 구성요소(배관 구간·도면 연결 구간)를 겉모습과 끝으로 잇는다(link를 고침). 끝이 모두
+    이어졌고, 같은 겉모습으로 그 끝들을 가진 것이 옛 판에 하나·새 판에 하나뿐이며, 끝마다 닿는 같은 겉모습 구성요소 수가
+    옛 판과 새 판에서 같을 때만 잇는다(나뉘며 생긴 같은 두 끝 우회선, 끊긴 끝으로 잇지 않음). 한쪽 끝만 있으면 잇지 않는다.
     끝이 끝으로 이은 구성요소일 수도 있어 더 이을 것이 없을 때까지 되풀이한다."""
-    old = {m: v for m, v in (node_set.get("graph_member_ends") or {}).items()
-           if valid_ends(v) and m in domain and old_basis_of(m) == ids.SEQUENCE}
+    every = {m: v for m, v in (node_set.get("graph_member_ends") or {}).items() if valid_ends(v)}
+    old = {m: v for m, v in every.items() if m in domain and old_basis_of(m) == ids.SEQUENCE and len(set(v[4])) >= 2}
     if not old:
         return
     new_ends = ends_of(graph)
-    by_key = {}
+    count = collections.Counter
+    by_key, new_touch, old_key, old_touch = {}, count(), count(), count()
     for e, n in by_id.items():
         if new_basis[e] == ids.SEQUENCE and mark_of(n, ids.SEQUENCE) is None and new_ends.get(e):
             by_key.setdefault(json.dumps(look_of(n) + [new_ends[e]]), []).append(e)
+            new_touch.update(json.dumps(look_of(n) + [x]) for x in new_ends[e])
+    for v in every.values():
+        old_key[json.dumps(v[:4] + [sorted(set(v[4]))])] += 1
+        old_touch.update(json.dumps(v[:4] + [x]) for x in set(v[4]))
     while True:
         taken = set(link.values()) | contested
         found = {}
         for m, v in old.items():
             if m in link:
                 continue
-            images = [link.get(x) for x in v[4]]
-            if None in images:
+            ends = sorted(set(v[4]))
+            images = [link.get(x) for x in ends]
+            if None in images or old_key[json.dumps(v[:4] + [ends])] != 1:
                 continue
-            hits = [e for e in by_key.get(json.dumps(v[:4] + [sorted(images)])) or () if e not in taken]
-            if len(hits) == 1:
+            if any(old_touch[json.dumps(v[:4] + [x])] != new_touch[json.dumps(v[:4] + [y])] for x, y in zip(ends, images)):
+                continue
+            hits = by_key.get(json.dumps(v[:4] + [sorted(images)])) or []
+            if len(hits) == 1 and hits[0] not in taken:
                 found[m] = hits[0]
         if not found:
             return
@@ -381,6 +394,7 @@ def record(table):
             "found_refs": {t: v[1] for t, v in sorted(table["found"].items())},
             "kept_eids": sorted(a for a, b in eid.items() if a == b),
             "kept_refs": sorted(a for a, b in table["ref"].items() if a == b),
+            "unnamed_refs": list(table.get("unnamed") or []),
             "drawings": list(table["drawings"]),
             "check": table["check"]}
 
@@ -405,9 +419,12 @@ def from_record(detail, graph_id):
         if str(a).endswith(LEGACY_LOST):
             continue
         t["ref"][a] = b if b is not None else tomb_id(graph_id, to, "r-" + _sha8(a))
+        if b is None:
+            t["unnamed"].append(a)
     found, refs = detail.get("found"), detail.get("found_refs") or {}
     if isinstance(found, dict):
         t["found"] = {k: [v, refs.get(k)] for k, v in found.items() if is_tomb(k)}
+    t["unnamed"] = sorted(set(t["unnamed"]) | set(detail.get("unnamed_refs") or []))
     t["check"] = detail.get("check") or ("mark" if detail.get("marked") else "ref")
     return t
 
@@ -489,8 +506,9 @@ class _Ctx:
         if idx is None:
             idx = self.exp_index[rule] = {expect.expectation_id(rule, r): r for r in self.t["ref"]}
         r = idx.get(x)
-        if r is None:
-            return x
+        if r is None:  # 대상을 모르는 잠재 후보: 이어진 것을 증명하지 못한 결과면 묘비
+            return "%s%s%s" % (tomb_id(self.t["graph_id"], self.t["to"], "x-" + _sha8(x)), EXP_SEP, rule) if self.t.get(
+                "unproven") else x
         to = self.ref(r)
         if to == r:
             return x
@@ -691,7 +709,8 @@ def legacy_marks(graph):
 def needs_check(node_set, results=None):
     """'참조 확인 필요' 요약(화면이 띄울 근거). {"needs_check": bool, "lost_members": {node_id: 묘비 수},
     "lost_refs": {node_id: 묘비가 된 ⑤ 대상 참조(원인·영향·보호수단·잠재 후보) 수}, "tombstones": 되찾지 못한 묘비 수,
-    "unverified": 표시 없이 참조만 믿고 이은 옛 판 이전(cff108c 전 이력 줄)이 결과에 끼었는가, "unregistered": 등록되지 않은 자리 경로}."""
+    "unverified": 표시 없이 참조만 믿고 이은 옛 판 이전(cff108c 전 이력 줄)이 결과에 끼었는가, "unregistered": 등록되지 않은 자리 경로,
+    "unproven": 이어진 것을 증명하지 못해 순번 참조를 묘비로 한 까닭들, "refs_unnamed": 새 판 구성요소에 안정 참조가 없어 묘비가 된 참조 수}."""
     ns = node_set or {}
     lost_members = {n["node_id"]: len(n["lost"]) for n in ns.get("nodes") or [] if isinstance(n, dict) and n.get("lost")}
     lost_refs = {}
@@ -707,7 +726,9 @@ def needs_check(node_set, results=None):
     rows += [m for m in (results or {}).get("version_migrations") or [] if isinstance(m, dict)]
     unverified = any(r.get("check") == "ref" or r.get("refs_unverified") is True for r in rows)  # refs_unverified: 49033f1 판 줄
     unregistered = sorted({p for r in rows for p in r.get("unregistered") or []})
+    unproven = sorted({r["unproven"] for r in rows if isinstance(r.get("unproven"), str)})
+    unnamed = sum(r["refs_unnamed"] for r in rows if type(r.get("refs_unnamed")) is int)
     open_tombs = sum(1 for r in (ns.get("tombstones") or {}).values() if isinstance(r, dict) and r.get("found") is None)
-    return {"needs_check": bool(lost_members or lost_refs or unverified or unregistered),
+    return {"needs_check": bool(lost_members or lost_refs or unverified or unregistered or unproven or unnamed),
             "lost_members": lost_members, "lost_refs": lost_refs, "tombstones": open_tombs,
-            "unverified": unverified, "unregistered": unregistered}
+            "unverified": unverified, "unregistered": unregistered, "unproven": unproven, "refs_unnamed": unnamed}

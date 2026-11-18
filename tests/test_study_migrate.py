@@ -214,10 +214,14 @@ class MigrateTest(unittest.TestCase):
         with open(rpath, encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["graph_version"], "v-1", "파일은 사람이 저장할 때 씀")
 
-    def test_results_without_a_migration_chain_stay_as_they_are(self):
+    def test_results_without_a_migration_chain_lose_their_sequence_refs(self):
         doc = dict(results_for(self.ns, self.g1), graph_version="v-0")
         ns2, _ = migrate.migrate_set(self.ns, graph("v-2", shift=10), at=AT)
-        self.assertEqual(migrate.migrate_results(doc, ns2), (doc, None))
+        out, _n = migrate.migrate_results(doc, ns2)
+        path = out["cells"][0]["entries"][0]["ai_basis"]["kg_paths"][0]
+        self.assertEqual([idmap.is_tomb(x) for x in path], [True, True, False], "증명하지 못한 구성요소 id는 묘비, 지식 id는 그대로")
+        self.assertEqual((out["graph_version"], out["version_migrations"][-1]["unproven"]), ("v-2", migrate.BROKEN_CHAIN))
+        self.assertTrue(idmap.needs_check(ns2, out)["needs_check"])
 
     def test_converted_01_file_without_digests_follows_the_legacy_whole_graph_digest(self):
         """0.1에서 바꾼 집합(구간 지문 없음, legacy.member_digest만 있음)도 내용이 같은 새 판에서 확정을 잇는다."""
