@@ -22,9 +22,23 @@ DEFAULT_EXTRACT = paths.output_root("extract")  # <작업 루트>/출력 (hazop/
 DEFAULT_OUT = paths.output_root("graph")
 
 
+def _prepare_study_marks(extraction, out_root):
+    """그래프 파일을 덮어쓰기 전에, 표지가 없는 옛 검토구간 집합을 지금(옛) 그래프로 한 번 읽어 표지를 채운다. 사람 수정(노드 더하기·지우기)이나 다시
+    추출로 entity 순번이 밀리기 전이어야 한다. 그래프를 앱 작업 루트가 아닌 곳에 만드는 호출(시험·샘플 만들기)은 건드리지 않고, 앱이 없어도 건너뛴다."""
+    try:
+        from hazop.app import data
+        if getattr(data._PREPARED, "on", False) or os.path.normcase(os.path.abspath(out_root)) != os.path.normcase(os.path.abspath(paths.output_root("graph"))):
+            return
+        from hazop.graph import project
+        data.prepare_reextract(project.project_id_of(extraction))      # project_id가 없는 추출은 샘플 프로젝트(project_id_of가 정한다)
+    except Exception:  # noqa: BLE001 - 표지 채우기는 덤이다: 그래프 만들기를 막지 않는다
+        pass
+
+
 def build_one(extraction_path, out_root):
     with open(extraction_path, encoding="utf-8") as fh:
         extraction = json.load(fh)
+    _prepare_study_marks(extraction, out_root)
     folder = os.path.basename(os.path.dirname(extraction_path))
     # ② 사람 수정 기록을 매번 다시 적용한다(다시 추출해도 수정 유지, extraction.json은 원본 그대로)
     extraction = corrections.apply_saved(extraction, folder)

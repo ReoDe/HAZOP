@@ -112,6 +112,34 @@ def _pdf_page_state(record):
 
 
 LOG = logging.getLogger("hazop.app.data")
+_MARKED = {}                       # 표지를 이미 가진 검토구간 파일 → (바뀐 시각 ns, 크기). 다시 읽지 않으려고 기억한다
+
+
+def _needs_marks(folder):
+    """folder의 검토구간 파일 가운데 위치 표지(graph_member_marks)가 없는 것(0.1·0.2 또는 표지 없는 0.3)이 있는가."""
+    if not os.path.isdir(folder):
+        return False
+    need = False
+    for name in os.listdir(folder):
+        path = os.path.join(folder, name)
+        if not name.endswith(".json") or not os.path.isfile(path):
+            continue
+        try:
+            st = os.stat(path)
+            if _MARKED.get(path) == (st.st_mtime_ns, st.st_size):
+                continue
+            with open(path, encoding="utf-8-sig") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(doc, dict) or doc.get("kind") != study_nodes.KIND:
+            continue
+        if doc.get("schema_version") != study_nodes.SCHEMA_VERSION or "graph_member_marks" not in doc:
+            need = True
+        else:
+            _MARKED[path] = (st.st_mtime_ns, st.st_size)
+    return need
+
 _PREPARED = threading.local()      # prepared_for_reextract 안에서는 extract_and_graph가 다시 준비하지 않는다(앞 그래프를 이미 비켜 둔 뒤라서)
 
 
@@ -124,11 +152,11 @@ def prepare_reextract(project_id, graph_fn=None):
         return False
     folder = os.path.join(study_nodes.store_dir(), paths.safe_name(project_id))
     try:
-        if not (os.path.isdir(folder) and any(n.endswith(".json") for n in os.listdir(folder))):
-            return False                                   # 검토구간이 없는 프로젝트는 그래프를 지으려고 기다리지 않는다
+        if not _needs_marks(folder):
+            return False       # 검토구간이 없거나 모두 표지가 있으면 그래프를 지으려고 기다리지 않는다
         if graph_fn is None:
-            from hazop.app import project_ctx
-            graph_fn = project_ctx.project_graph
+            from hazop.graph import project as graph_project
+            graph_fn = graph_project.load    # 디스크의 그래프 그대로(낡은 그래프 다시 만들기를 먼저 돌리는 project_ctx를 거치지 않는다: 그것이 덮어쓴 뒤의 그래프로 읽게 된다)
         study_nodes.load(graph_fn(project_id))
         return True
     except Exception:  # noqa: BLE001 - 표지 채우기는 덤이다: 실패해도 다시 추출은 그대로 한다

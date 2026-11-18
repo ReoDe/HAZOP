@@ -86,7 +86,8 @@ class SkipTest(Base):
 
     def test_a_failing_read_does_not_raise(self):
         g1 = project_graph("v-1", PLACES)
-        sn.save(sn.confirm(sn.propose(g1, at=AT), g1, "김검토", at=AT))
+        ns = sn.confirm(sn.propose(g1, at=AT), g1, "김검토", at=AT)
+        sn.save(dict({k: v for k, v in ns.items() if k not in ("graph_member_marks", "graph_member_basis", "tombstones")}, schema_version="0.2"))
 
         def boom(pid):
             raise OSError("그래프 파일 없음")
@@ -171,3 +172,59 @@ class PathsTest(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RebuildPathTest(Base):
+    """사람 수정 뒤 그래프만 다시 짓는 길(data.save_corrections, sheet_refresh.rebuild, 명령줄 build_graph가 모두 build_one을 탄다).
+    노드를 지우면 entity 순번이 밀리므로(전제 시험), 표지 없는 옛 집합은 그래프 파일을 덮어쓰기 전에 표지가 채워져야 한다."""
+
+    def setUp(self):
+        super().setUp()
+        from scripts.check_edit_screen import install_sample
+        from hazop.graph import project
+        from hazop.extract import corrections
+        self.project, self.corrections = project, corrections
+        self.root = paths.work_root()
+        self.name = install_sample(self.root, "SNP-M-101")
+        self.pid = project.project_id_of(data.read_json(data.extraction_path(self.name)))
+        self.pg = project.load(self.pid)
+        ns = sn.confirm(sn.propose(self.pg, at=AT), self.pg, "김검토", at=AT)
+        self.bare = {k: v for k, v in ns.items() if k not in ("graph_member_marks", "graph_member_basis", "tombstones")}
+        self.ns_path = sn.save(dict(self.bare, schema_version="0.2"))
+        self.node = data.read_json(data.extraction_path(self.name))["nodes"][0]["source_object_id"]
+
+    def delete_first_node(self):
+        original = data.read_json(data.extraction_path(self.name))
+        ops = [self.corrections.make_op(original, "delete_node", self.node, {}, "검토자", at=AT, existing_ops=[])]
+        return data.save_corrections(self.name, ops, "검토자")
+
+    def raw_set(self):
+        import json
+        with open(self.ns_path, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_premise_deleting_a_node_shifts_the_entity_numbers(self):
+        before = {n["source_object_id"]: n["entity_id"] for n in self.pg["nodes"] if n.get("source_object_id")}
+        self.delete_first_node()
+        after = {n["source_object_id"]: n["entity_id"] for n in self.project.load(self.pid)["nodes"] if n.get("source_object_id")}
+        moved = [s for s in after if s in before and after[s] != before[s]]
+        self.assertTrue(moved, "지운 노드 뒤의 entity 순번이 밀린다(이 길도 표지를 채워야 하는 까닭)")
+
+    def test_rebuild_after_an_edit_fills_the_marks_of_a_set_that_has_none(self):
+        self.assertNotIn("graph_member_marks", self.raw_set())
+        self.delete_first_node()
+        doc = self.raw_set()
+        self.assertEqual(doc["schema_version"], sn.SCHEMA_VERSION)
+        self.assertIn("graph_member_basis", doc, "그래프를 덮어쓰기 전에 옛 그래프로 읽혀 id 근거·표지가 채워진다(표지 자체는 순번 id에만 있다)")
+        self.assertNotIn("lost", " ".join(n.get("lost") and "x" or "" for n in doc["nodes"]))
+
+    def test_a_set_that_already_has_marks_is_not_read_again_for_every_rebuild(self):
+        self.delete_first_node()
+        self.assertEqual(data._needs_marks(os.path.dirname(self.ns_path)), False)
+        with mock.patch.object(data.study_nodes, "load", side_effect=AssertionError("다시 읽으면 안 됨")):
+            self.assertFalse(data.prepare_reextract(self.pid))
+
+    def test_command_line_graph_build_into_another_folder_leaves_the_study_set_alone(self):
+        out = os.path.join(self.tmp, "elsewhere")
+        data.script_module("build_graph").build_one(data.extraction_path(self.name), out)
+        self.assertNotIn("graph_member_marks", self.raw_set())
