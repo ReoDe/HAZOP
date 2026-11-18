@@ -13,7 +13,7 @@ import collections
 import logging
 
 from hazop.chat import view as chatview
-from hazop.study import node_commands, node_tools, nodes
+from hazop.study import idmap, node_commands, node_tools, nodes
 
 LOG = logging.getLogger("hazop.shell.api_nodes")
 MEMBERS_SHOWN = 200        # 상세에 보이는 구성요소 수(나머지는 개수만)
@@ -133,7 +133,8 @@ def _row(n, fwd, owners, info=None, known=None):
             "overlaps": [{"node_id": o, "shared": c} for o, c in sorted(shared.items(), key=lambda kv: (-kv[1], kv[0]))],
             "confirmed": n.get("confirmed"), "locked": n.get("locked"),
             "screen": (n.get("screen") or {}).get("status"), "span": (info or {}).get(n["node_id"]),
-            "broken": sum(1 for m in n["members"] if known is not None and m not in known)}      # 도면에서 지워진 구성원(도면 고치기·다시 추출 뒤 끊긴 참조)
+            "broken": sum(1 for m in n["members"] if known is not None and m not in known),
+            "lost": len(n.get("lost") or [])}      # 다시 추출 뒤 새 판에서 찾지 못한 구성요소(묘비) 수. 묘비 id는 화면에 보이지 않는다(idmap.label)      # 도면에서 지워진 구성원(도면 고치기·다시 추출 뒤 끊긴 참조)
 
 
 def _batch_rows(ns):
@@ -163,7 +164,8 @@ def summary(engine):
     return {"available": True, "set_rev": ns.get("set_rev") or 0, "graph_version": ns.get("graph_version"),
             "stale": bool(ns["nodes"]) and nodes.is_stale(ns, pg), "read_only": ns.get("read_only"), "legacy": legacy, "project_id": engine.project_id(), "nodes": rows,
             "batches": _batch_rows(ns), "pending_ai": node_tools.pending_ai(ns),
-            "outside": {"count": total - covered, "total": total}, "ver": str(ns.get("set_rev") or 0)}
+            "outside": {"count": total - covered, "total": total}, "ver": str(ns.get("set_rev") or 0),
+            "check": idmap.needs_check(ns)}
 
 
 def sheet_view(engine, graph_id):

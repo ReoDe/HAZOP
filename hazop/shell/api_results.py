@@ -170,15 +170,17 @@ def summary(engine):
                     reason="분석 결과 파일을 읽을 수 없습니다(%s)." % str(exc)[:120])
     from hazop.shell import api_nodes
     info = api_nodes._span_info(ns, pg)
+    check = idmap.needs_check(ns, doc)
     rows = [{"node_id": n["node_id"], "name": n.get("name"), "state": nodes.node_state(n), "rev": n.get("rev") or 1,
-             "range": (info.get(n["node_id"]) or {}).get("range"), "spans": bool((info.get(n["node_id"]) or {}).get("spans"))} for n in active]
+             "range": (info.get(n["node_id"]) or {}).get("range"), "spans": bool((info.get(n["node_id"]) or {}).get("spans")),
+             "lost": check["lost_members"].get(n["node_id"], 0), "lost_refs": check["lost_refs"].get(n["node_id"], 0)} for n in active]
     en = deviation_names_en()
     return dict(base, empty=False, nodes=rows, deviations=[{"deviation_id": d["deviation_id"], "parameter": d["parameter"],
                                                              "guideword": d["guideword"], "label": d.get("label"),
                                                              "guideword_en": _dev_with_en(d, en)["guideword_en"],
                                                              "label_en": _dev_with_en(d, en)["label_en"]} for d in doc["deviations"]],
                 matrix=_mark_kinds(res.matrix_summary(doc), doc["cells"]), ver=_ver(fp), read_only=doc.get("read_only"), kpi=_kpi(doc),
-                run=_run_state(engine))
+                run=_run_state(engine), check=check)
 
 
 def _kpi(doc):

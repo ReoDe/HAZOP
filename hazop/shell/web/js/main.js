@@ -13,6 +13,7 @@ import { resetAreas } from "./areas.js";
 import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
+import { checkText } from "./panels/nodes_logic.js";
 
 const toast = (text, kind) => store.set({ toast: { text, kind } });
 
@@ -93,7 +94,7 @@ function wireEvents() {
   });
   on("chat.actions", (d) => { addActions(setChat, d); if (store.get().chatCollapsed) setChat({ unread: true }); });
   on("chat.action.result", (d) => updateAction(setChat, d));
-  on("project.changed", (d) => { setProject(d.project_id); store.set({ sheet: null, marks: { rid: null, bySheet: {} } }); resetAreas(); });
+  on("project.changed", (d) => { setProject(d.project_id); store.set({ sheet: null, marks: { rid: null, bySheet: {} } }); resetAreas(); checkLost(); });
   on("conn.changed", (d) => store.set({ conn: d }));
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));
@@ -212,6 +213,15 @@ function App() {
   </div>`;
 }
 
+/** 프로젝트를 연 뒤 검토구간에 찾지 못한 구성요소(묘비)·확인할 참조가 있으면 토스트 한 줄. 읽기 실패는 조용히 넘어간다. */
+async function checkLost() {
+  try {
+    const l = await read("nodes");
+    const text = l && l.check && l.check.needs_check ? checkText(l.check) : "";
+    if (text) toast(text);
+  } catch (e) { /* 알림은 덤이다 */ }
+}
+
 async function boot() {
   holdReads();      // 도면 목록이 뜰 때까지 큰 프로젝트에서 오래 걸리는 읽기(구간·결과·지식그래프 등)는 미룬다(bridge.js)
   connect();
@@ -228,6 +238,7 @@ async function boot() {
   else store.set({ panel: "drawings" });   // 열 도면이 없거나 여럿이면 도면 패널을 먼저 보인다
   if (!s.reviewer) { store.set({ panel: "settings" }); toast("검토자 이름을 입력하세요. 승인·확정 기록에 남습니다."); }   // 처음 실행할 때 묻는 것은 그대로
   if (s.debug) window.__hz = { store, cmd, read, ui, clean };
+  checkLost();        // 다시 추출 뒤 찾지 못한 구성요소가 있으면 한 줄로 알린다(읽기는 뒤에서, 화면을 붙잡지 않는다)
   await loadChat();   // 채팅 예시 질문은 프로젝트 그래프를 읽어 큰 프로젝트에서 수 초 걸린다. 도면 목록이 먼저 보이게 맨 끝에서 읽는다
 }
 

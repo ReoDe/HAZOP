@@ -6,10 +6,13 @@
 - 근거 집계: 기획서/인터페이스.md §3.3 '근거 집계'(N 정의·분류 순서), 강조 요청 만들기
 """
 
+import contextlib
 import glob
 import importlib.util
 import json
+import logging
 import os
+import threading
 
 from hazop import paths, store_io
 from hazop.analysis import ai as ai_mod
@@ -108,6 +111,44 @@ def _pdf_page_state(record):
     return out
 
 
+LOG = logging.getLogger("hazop.app.data")
+_PREPARED = threading.local()      # prepared_for_reextract 안에서는 extract_and_graph가 다시 준비하지 않는다(앞 그래프를 이미 비켜 둔 뒤라서)
+
+
+def prepare_reextract(project_id, graph_fn=None):
+    """다시 추출 직전, 추출 결과를 덮어쓰기 전에 그 프로젝트의 검토구간 집합을 지금(옛) 그래프로 한 번 읽어 위치 표지(판 사진)를 채워 저장해 둔다.
+    표지가 없는 옛 집합(이전 판 앱이 저장한 것)은 같은 판으로 한 번 읽혀야 표지가 채워진다. 그 전에 다시 추출이 먼저 일어나면 순번 구성요소가 모두
+    묘비가 되어 확정 구간이 전부 재확인으로 떨어진다(docs/specs/study-node-segmentation.md §2.5·§2.6). 검토구간 집합이 없거나 그래프를 읽을 수 없거나
+    읽기가 실패해도 추출을 막지 않는다 -> 읽었으면 True, 건너뛰었으면 False. graph_fn(project_id) -> 프로젝트 그래프는 시험이 바꿀 수 있다."""
+    if not project_id:
+        return False
+    folder = os.path.join(study_nodes.store_dir(), paths.safe_name(project_id))
+    try:
+        if not (os.path.isdir(folder) and any(n.endswith(".json") for n in os.listdir(folder))):
+            return False                                   # 검토구간이 없는 프로젝트는 그래프를 지으려고 기다리지 않는다
+        if graph_fn is None:
+            from hazop.app import project_ctx
+            graph_fn = project_ctx.project_graph
+        study_nodes.load(graph_fn(project_id))
+        return True
+    except Exception:  # noqa: BLE001 - 표지 채우기는 덤이다: 실패해도 다시 추출은 그대로 한다
+        LOG.warning("다시 추출 전에 검토구간 표지를 채우지 못함(%s)", project_id, exc_info=True)
+        return False
+
+
+@contextlib.contextmanager
+def prepared_for_reextract(project_id):
+    """표지를 먼저 채우고, 이 안에서 부르는 extract_and_graph는 다시 채우지 않는다. 앞 그래프를 비켜 두고 추출하는 길(표제란 확정)이 쓴다:
+    비켜 둔 뒤의 그래프로 읽으면 빠진 쪽의 구성요소가 묘비가 되므로 비키기 전에 한 번만 채운다."""
+    prepare_reextract(project_id)
+    before = getattr(_PREPARED, "on", False)
+    _PREPARED.on = True
+    try:
+        yield
+    finally:
+        _PREPARED.on = before
+
+
 def extract_and_graph(registration_path, progress=None):
     """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one 또는 PDF면
     scripts/extract_pdf.run_pages로 등록된 모든 쪽, 그리고 scripts/build_graph.build_one) → 프로젝트 지식그래프 다시 빌드.
@@ -118,6 +159,8 @@ def extract_and_graph(registration_path, progress=None):
     ex = script_module("extract_drawio")
     bg = script_module("build_graph")
     record, original = registry.load_for_extraction(registration_path)
+    if not getattr(_PREPARED, "on", False):
+        prepare_reextract(record.get("project_id"))     # 추출 결과를 덮어쓰기 전에 검토구간 표지를 채운다
     if raster_scan.is_scan_record(record, original):  # 스캔 PDF·PNG·JPG(HZ-PLN-23 §8): 쪽마다 20초 안팎이라 progress로 알린다
         return _extract_scan_pages(record, original, ex, bg, progress)
     if record.get("format") == "pdf":

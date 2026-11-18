@@ -9,6 +9,8 @@
 - 엔진은 `hazop.register.titleblock`이다. 채팅도 같은 함수(`titleblock.execute`)를 부른다.
 """
 
+import contextlib
+
 from hazop.register import titleblock as tb
 
 TOPICS = ("titleblock",)
@@ -58,7 +60,9 @@ def _run(engine, a, fn):
         return {"changed": False, "row": tb.row(pid, a["material_id"])}
 
     def job(progress):
-        out = fn(pid, False, progress)
+        from hazop.app import data
+        with (data.prepared_for_reextract(pid) if check.get("re_extract") else contextlib.nullcontext()):   # 앞 그래프를 비켜 두기 전에 검토구간 표지를 채운다
+            out = fn(pid, False, progress)
         if not out["ok"]:
             raise RuntimeError((out["refused"][0] or {}).get("reason") or "처리하지 못했습니다.")
         engine.changed("titleblock")

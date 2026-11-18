@@ -8,6 +8,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { VirtualGrid } from "../ui/table.js";
 import * as R from "./results_state.js";
+import { checkText, lostText } from "./nodes_logic.js";
 import { BasisBlock, CauseCell, ConsequenceCell, EditMore, SafeguardCell, changedFields, editState } from "./results_detail.js";
 
 // 상태 이름은 Excel(study_xlsx STATUS_LABELS)·이전 화면과 같게 '승인'으로 맞춘다(2026-11-14 A9 검토)
@@ -148,7 +149,7 @@ function Matrix({ s }) {
     label=${"구간×편차 행렬 " + rows.length + "행 " + cols.length + "열"}
     active=${ai >= 0 && ci >= 0 ? { r: ai, c: ci } : null} onActive=${open} onOpen=${open}
     corner=${html`<span class="muted small">구간 \\ 편차</span>`}
-    renderRowHead=${(r) => html`<span class="vg-rh-in"><b>${rows[r].node_id}</b> ${rows[r].name || ""}${rows[r].range ? html` <span class="muted small">${rows[r].range}${rows[r].spans ? " ⇄" : ""}</span>` : null}</span>`}
+    renderRowHead=${(r) => html`<span class="vg-rh-in"><b>${rows[r].node_id}</b> ${rows[r].name || ""}${rows[r].range ? html` <span class="muted small">${rows[r].range}${rows[r].spans ? " ⇄" : ""}</span>` : null}${rows[r].lost || rows[r].lost_refs ? html` <span class="warnline small">${lostText(rows[r].lost, rows[r].lost_refs)}</span>` : null}</span>`}
     renderColHead=${(c) => html`<span class="vg-ch-in" title=${devTitle(cols[c])} aria-label=${devTitle(cols[c])}><span>${cols[c].label}</span>${cols[c].guideword_en ? html`<small class="ch-en">${cols[c].guideword_en}</small>` : null}</span>`}
     renderCell=${(r, c) => {
       const cell = (s.matrix[rows[r].node_id] || {})[cols[c].deviation_id];
@@ -278,6 +279,7 @@ export function ResultsPanel({ onClose }) {
         <${Btn} kind="primary" label="구간 만들기" onClick=${() => store.set({ panel: "nodes" })}>구간 패널 열기<//></div>` : html`
         <${Header} s=${s} />
         ${s.read_only ? html`<${Notice} kind="warn" icon="alert-triangle">${s.read_only}<//>` : null}
+        ${s.check && s.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(s.check)}<//>` : null}
         <${RunState} run=${s.run} /><${PlanCard} />
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${R.dismissError}>닫기<//><//>` : null}
         ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}

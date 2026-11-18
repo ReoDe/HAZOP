@@ -13,6 +13,21 @@ export function stateChip(n) {
 
 export const canEdit = (n) => !!n && n.state === "applied";
 
+/** 구간 하나의 확인 필요 글: '찾지 못한 구성요소 n개 · 참조 확인 필요 m건'(없는 것은 뺀다). 묘비 id는 쓰지 않는다. */
+export function lostText(lost, lostRefs) {
+  return [lost ? "찾지 못한 구성요소 " + lost + "개" : null, lostRefs ? "참조 확인 필요 " + lostRefs + "건" : null].filter(Boolean).join(" · ");
+}
+
+/** 프로젝트 확인 필요 요약(엔진 idmap.needs_check) → 한 줄 안내. 확인할 것이 없으면 빈 글. */
+export function checkText(c) {
+  if (!c || !c.needs_check) return "";
+  const nodes = Object.keys(Object.assign({}, c.lost_members, c.lost_refs)).length;
+  const lost = Object.values(c.lost_members || {}).reduce((a, b) => a + b, 0), refs = Object.values(c.lost_refs || {}).reduce((a, b) => a + b, 0);
+  const parts = [lost ? "찾지 못한 구성요소 " + lost + "개" : null, refs ? "참조 확인 필요 " + refs + "건" : null].filter(Boolean);
+  if (!parts.length) return "다시 추출한 도면과 저장된 구간·분석 결과를 이은 기록 가운데 확인이 필요한 것이 있습니다.";
+  return "다시 추출한 도면에서 같은 자리의 구성요소를 찾지 못했습니다: " + parts.join(" · ") + (nodes ? "(구간 " + nodes + "개)" : "") + ". 해당 구간을 열어 구성요소를 확인하세요.";
+}
+
 /** 구간 번호별 색(목록에서의 자리 기준). 목록과 도면이 같은 색을 쓴다. */
 export function colorOf(list, nodeId) {
   const i = list.findIndex((n) => n.node_id === nodeId);
