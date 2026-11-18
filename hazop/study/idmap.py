@@ -4,10 +4,14 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
 - 구성요소의 정체성: id_basis가 "source"(drawio·DEXPI 파일 id·사람이 더한 manual-·나누기 split-)면 안정 참조(ref)가 정체성이다.
   "sequence"(벡터 PDF·스캔 순번, DEXPI 가져오기가 지은 id)면 표시(mark: 종류·도면·기호 종류·태그·상자)가 정체성이고 ref는
   표시가 같은 것이 둘 이상일 때 고르는 데만 쓴다. 표시가 같은 다른 기호(태그 없는 같은 종류가 같은 상자)는 구별하지 못한다.
+  상자가 없는 순번 구성요소 가운데 끝(has_endpoint)이 있는 것(배관 구간, 도면 연결 구간 xlink)은 겉모습(종류·도면·기호
+  종류·태그)과 끝 구성요소들이 정체다. 끝이 모두 이어지고 그 끝들을 가진 같은 겉모습의 새 구성요소가 하나뿐이면 잇는다.
 - 판 이전은 대응표(compute) 하나를 먼저 다 계산하고, 등록부(FIELDS)의 모든 id 필드에 같은 함수(apply)로 적용한다.
   옛 판의 모든 구성요소는 새 구성요소 하나나 묘비 하나로 간다(전함수). 새 구성요소 하나로 모이는 옛 구성요소는 모두 묘비다.
-- 묘비 id는 `lost:<graph_id>:<잃은 판>:<번호>`. 살아 있는 id(entity-·relation-·xlink-·<graph_id>/·graph-·project-)와 꼴이
-  겹치지 않고, 같은 입력이면 같은 id다. 묘비는 지우지 않고, 표시가 맞는 구성요소가 하나뿐으로 다시 나오면 되찾는다(found).
+- 묘비 id는 `lost:<graph_id>:<잃은 판>:<번호>`. 번호는 집합의 묘비 일련번호(tomb_seq)로, 늘기만 하고 이미 있는 묘비 id는
+  건너뛴다. 그래서 같은 판으로 두 번 와도(X→Y, Y→Z, Z→Y) 묘비 하나는 기호 하나다. 살아 있는 id(entity-·relation-·xlink-·
+  <graph_id>/·graph-·project-)와 꼴이 겹치지 않고, 같은 입력(일련번호 포함)이면 같은 id다. 묘비는 지우지 않고, 표시가 맞는
+  구성요소가 하나뿐으로 다시 나오면 되찾는다(found).
 - 구간(members를 가진 사전)은 members에 지금 판의 살아 있는 id만 두고 잃은 것은 lost(묘비 id)에 둔다. 실행 취소 기록의
   before·after와 조각 기록도 같은 규칙이라 되돌려도 묘비는 묘비다.
 - 등록되지 않은 자리에서 옛 판 id를 만나면 report["unregistered"]에 경로를 적는다(시험에서는 비어 있어야 한다).
@@ -32,7 +36,7 @@ MEMBERS, EID, REF, EXP = "members", "eid", "ref", "exp"
 SET, RESULTS = "study_set", "results"
 
 _PID_ID = re.compile(r"(^|/)(entity|relation)-")
-_RELATION_ID = re.compile(r"(^|/)relation-")
+_RELATION_ID = re.compile(r"(^|/)relation-|^xlink-[0-9a-f]+-[ab]$")  # 도면 연결 구간의 두 끝 관계도 순번처럼 바뀐다
 _LEGACY_SEQUENCE_ID = re.compile(r"^pdf-p\d+-[a-z]+-\d+$")  # 49033f1 판이 표시를 남긴 id(B꼴 표시의 범위)
 
 
@@ -58,8 +62,8 @@ FIELDS = {
 }
 # 일부러 옮기지 않는 자리: 지난 일의 기록(history·version_migrations), 판 이전 끝에 새로 만드는 판 사진, 묘비 기록
 IGNORED = {
-    SET: ("history", "graph_member_refs", "graph_member_marks", "graph_member_basis", "member_digest", "tombstones",
-          "legacy.member_digest", "legacy.member_refs"),
+    SET: ("history", "graph_member_refs", "graph_member_marks", "graph_member_basis", "graph_member_ends",
+          "member_digest", "tombstones", "tomb_seq", "legacy.member_digest", "legacy.member_refs"),
     RESULTS: ("version_migrations", "cells[].entries[].history", "archived_cells[].cell.entries[].history",
               "legacy", "carried_from", "study_nodes_ref"),
 }
@@ -76,6 +80,19 @@ def label(x, names=None):
     if is_tomb(x):
         return LOST_LABEL
     return (names or {}).get(x, x)
+
+
+def describe(node_set, entity_id):
+    """옛 판 구성요소를 사람이 읽는 이름으로(표시·겉모습의 종류와 태그, source 구성요소는 안정 참조). 옛 id는 새 판에서
+    다른 기호를 가리킬 수 있어 보이지 않는다."""
+    look = ((node_set.get("graph_member_marks") or {}).get(entity_id)
+            or (node_set.get("graph_member_ends") or {}).get(entity_id))
+    if isinstance(look, list) and len(look) >= 4 and look[2]:
+        return " ".join(x for x in (look[2], look[3]) if x)
+    ref = (node_set.get("graph_member_refs") or {}).get(entity_id)
+    if ref and (node_set.get("graph_member_basis") or {}).get(entity_id) == ids.SOURCE:
+        return ref
+    return "이름 없는 구성요소"
 
 
 def ref_of(node, graph_id):
@@ -133,19 +150,43 @@ def bases(graph):
     return out
 
 
+def ends_of(graph):
+    """{구간 entity_id: [끝 entity_id](정렬)}. has_endpoint 관계의 첫 노드가 구간(배관 구간·도면 연결 구간)이다."""
+    out = {}
+    for e in graph.get("edges", []):
+        nodes = e.get("nodes") or []
+        if e.get("kind") == "has_endpoint" and len(nodes) >= 2:
+            out.setdefault(nodes[0], set()).update(nodes[1:])
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def look_of(node):
+    """끝으로 잇는 구성요소의 겉모습 [node_type, 도면, kind, tag](표시의 앞 넷과 같음)."""
+    return [node.get("node_type"), node.get("sheet"), node.get("kind"), node.get("tag")]
+
+
+def valid_ends(v):
+    return (isinstance(v, list) and len(v) == 5 and all(x is None or isinstance(x, str) for x in v[:4])
+            and isinstance(v[4], list) and all(isinstance(x, str) for x in v[4]))
+
+
 def snapshot(graph):
-    """집합이 가리키는 판의 사진: 그래프 전체 구성요소의 참조·id 근거와, 상자가 있는 순번 구성요소의 표시."""
+    """집합이 가리키는 판의 사진: 그래프 전체 구성요소의 참조·id 근거와, 상자가 있는 순번 구성요소의 표시, 상자가 없고 끝이
+    있는 순번 구성요소의 겉모습과 끝(graph_member_ends {id: [node_type, 도면, kind, tag, [끝 id]]})."""
     gid = graph.get("graph_id")
     basis = bases(graph)
-    refs, marks = {}, {}
+    ends = ends_of(graph)
+    refs, marks, linked = {}, {}, {}
     for n in graph.get("nodes", []):
         e = n["entity_id"]
         refs[e] = ref_of(n, gid)
         m = mark_of(n, basis[e])
         if m is not None:
             marks[e] = m
+        elif basis[e] == ids.SEQUENCE and ends.get(e):
+            linked[e] = look_of(n) + [ends[e]]
     return {"graph_member_refs": dict(sorted(refs.items())), "graph_member_marks": dict(sorted(marks.items())),
-            "graph_member_basis": dict(sorted(basis.items()))}
+            "graph_member_basis": dict(sorted(basis.items())), "graph_member_ends": dict(sorted(linked.items()))}
 
 
 def has_snapshot(node_set, graph):
@@ -166,7 +207,23 @@ def tomb_id(graph_id, version, key):
 
 def _empty_table(graph_id, frm, to, partial):
     return {"graph_id": graph_id, "from": frm, "to": to, "eid": {}, "ref": {}, "found": {}, "new_tombs": {},
-            "check": "mark", "partial": partial, "drawings": []}
+            "check": "mark", "partial": partial, "drawings": [], "tomb_seq": 0}
+
+
+def _tomb_numbers(node_set, graph_id, version):
+    """새 묘비 id를 차례로 내는 함수와 마지막 번호를 돌려주는 함수. 집합의 일련번호에서 시작해 늘기만 하고, 이미 있는
+    묘비 id는 건너뛴다(앞 기록을 덮어쓰지 않음)."""
+    taken = set(node_set.get("tombstones") or {})
+    seq = [node_set.get("tomb_seq") if type(node_set.get("tomb_seq")) is int else 0]
+
+    def take():
+        while True:
+            seq[0] += 1
+            t = tomb_id(graph_id, version, seq[0])
+            if t not in taken:
+                taken.add(t)
+                return t
+    return take, lambda: seq[0]
 
 
 def _registered_ids(doc, kind, spaces):
@@ -228,23 +285,18 @@ def compute(node_set, graph, at=None):
         elif old_basis_of(m) == ids.SOURCE:
             hits = by_ref.get(r) or []
         elif m in old_marks:
-            # 순번 구성요소는 표시로만 잇는다. 표시가 없으면(상자 없음, A꼴, B꼴의 스캔·지은 id) 확인할 길이 없어 묘비다.
+            # 순번 구성요소는 표시로 잇는다. 표시가 없으면(상자 없음, A꼴, B꼴의 스캔·지은 id) 끝으로 잇거나(_link_by_ends) 묘비다.
             # 구간 지문(md3)이 같아도 위치는 지문에 없어서, 같은 종류·태그의 다른 자리 기호로 이을 수 있다(퍼즈로 확인)
             hits = mark_hits(old_marks[m])
             if len(hits) > 1:  # 표시가 같은 것이 여럿이면 같은 참조인 것만
                 hits = [e for e in hits if new_ref[e] == r]
         if len(hits) == 1:
             link[m] = hits[0]
-    into = {}
-    for m, e in link.items():
-        into.setdefault(e, []).append(m)
-    contested = {e for e, ms in into.items() if len(ms) > 1}
-    for e in contested:  # 옛 구성요소 둘이 새 구성요소 하나로 모이면 어느 쪽인지 모른다
-        for m in into[e]:
-            del link[m]
-    lost = sorted(domain - set(link))
-    for i, m in enumerate(lost, 1):
-        t = tomb_id(gid, to, i)
+    contested = _drop_contested(link)
+    _link_by_ends(node_set, graph, new_basis, by_id, link, contested, old_basis_of, domain)
+    take, last = _tomb_numbers(node_set, gid, to)
+    for m in sorted(domain - set(link)):
+        t = take()
         table["eid"][m] = t
         mk = old_marks.get(m)
         table["new_tombs"][t] = {"entity_id": m, "ref": old_refs.get(m), "mark": mk, "basis": (old_basis or {}).get(m),
@@ -269,24 +321,80 @@ def compute(node_set, graph, at=None):
         table["ref"].setdefault(r, v if is_tomb(v) else new_ref[v])
     table["drawings"] = sorted({drawing_of(r) for r in list(old_refs.values()) + list(new_ref.values())} - {None}
                                | ({gid} if gid else set()))
+    table["tomb_seq"] = last()
     return table
 
 
+def _drop_contested(link):
+    """옛 구성요소 둘이 새 구성요소 하나로 모이면 어느 쪽인지 모르므로 둘 다 뺀다. 모인 새 구성요소 집합을 돌려준다."""
+    into = {}
+    for m, e in link.items():
+        into.setdefault(e, []).append(m)
+    contested = {e for e, ms in into.items() if len(ms) > 1}
+    for e in contested:
+        for m in into[e]:
+            del link[m]
+    return contested
+
+
+def _link_by_ends(node_set, graph, new_basis, by_id, link, contested, old_basis_of, domain):
+    """상자가 없고 끝이 있는 순번 구성요소(배관 구간·도면 연결 구간)를 겉모습과 끝으로 잇는다(link를 고침). 끝이 모두
+    이어졌고, 그 끝들의 새 id를 끝으로 가진 같은 겉모습의 새 구성요소가 하나뿐이고 아직 아무도 갖지 않았을 때만 잇는다.
+    끝이 끝으로 이은 구성요소일 수도 있어 더 이을 것이 없을 때까지 되풀이한다."""
+    old = {m: v for m, v in (node_set.get("graph_member_ends") or {}).items()
+           if valid_ends(v) and m in domain and old_basis_of(m) == ids.SEQUENCE}
+    if not old:
+        return
+    new_ends = ends_of(graph)
+    by_key = {}
+    for e, n in by_id.items():
+        if new_basis[e] == ids.SEQUENCE and mark_of(n, ids.SEQUENCE) is None and new_ends.get(e):
+            by_key.setdefault(json.dumps(look_of(n) + [new_ends[e]]), []).append(e)
+    while True:
+        taken = set(link.values()) | contested
+        found = {}
+        for m, v in old.items():
+            if m in link:
+                continue
+            images = [link.get(x) for x in v[4]]
+            if None in images:
+                continue
+            hits = [e for e in by_key.get(json.dumps(v[:4] + [sorted(images)])) or () if e not in taken]
+            if len(hits) == 1:
+                found[m] = hits[0]
+        if not found:
+            return
+        contested |= _drop_contested(found)
+        if not found:
+            return
+        link.update(found)
+
+
 def record(table):
-    """이력 detail에 남길 바뀐 것만(이름 renamed는 U1 R2 시험이 읽는다)."""
+    """이력 detail에 남길 표(이름 renamed는 U1 R2 시험이 읽는다). 바뀐 것과 함께 그대로 이어진 것(kept_eids·kept_refs)과
+    도면(drawings)을 적어, 늦게 따라오는 문서도 from_record로 같은 표를 만든다(옛 판 사진에 없는 이 도면의 참조는 묘비)."""
     eid = table["eid"]
     return {"renamed": {a: b for a, b in sorted(eid.items()) if not is_tomb(b) and a != b},
             "lost": {a: b for a, b in sorted(eid.items()) if is_tomb(b)},
             "ref_moved": {a: b for a, b in sorted(table["ref"].items()) if a != b},
             "found": {t: v[0] for t, v in sorted(table["found"].items())},
             "found_refs": {t: v[1] for t, v in sorted(table["found"].items())},
+            "kept_eids": sorted(a for a, b in eid.items() if a == b),
+            "kept_refs": sorted(a for a, b in table["ref"].items() if a == b),
+            "drawings": list(table["drawings"]),
             "check": table["check"]}
 
 
 def from_record(detail, graph_id):
-    """이력 한 줄 → 바뀐 것만 담은 partial 표. 49033f1 판의 줄(unmapped·ref_moved의 None·`~lost` 열쇠)도 읽는다."""
+    """이력 한 줄 → 표. kept_eids·kept_refs가 있는 줄은 compute가 만든 표와 같은 온전한 표이고, 없는 옛 줄(cff108c~M2)은
+    바뀐 것만 담은 partial 표다. 49033f1 판의 줄(unmapped·ref_moved의 None·`~lost` 열쇠)도 읽는다."""
     to = detail.get("to")
-    t = _empty_table(graph_id, detail.get("from"), to, True)
+    whole = isinstance(detail.get("kept_eids"), list) and isinstance(detail.get("kept_refs"), list)
+    t = _empty_table(graph_id, detail.get("from"), to, not whole)
+    if whole:
+        t["eid"].update((a, a) for a in detail["kept_eids"])
+        t["ref"].update((a, a) for a in detail["kept_refs"])
+        t["drawings"] = list(detail.get("drawings") or [])
     for a, b in (detail.get("renamed") or {}).items():
         if not str(a).endswith(LEGACY_LOST):  # 옛 판의 되찾기 열쇠는 따르지 않는다(못 찾은 것으로 둠)
             t["eid"][a] = b

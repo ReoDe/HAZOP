@@ -1,20 +1,30 @@
-"""판 이전 불변식 퍼즈(hazop.study.migrate·idmap). 합성 도면을 v1 → v2 → v3로 다시 추출한 것처럼 바꾸고(기호 지움·옮김·
-종류·태그 바꿈·되살림·순서 섞임), 무작위 검토구간 집합(편집 묶음 포함)과 ⑤ 결과를 판 이전한 뒤 진실(노드의 _uid, 판 이전
-코드는 보지 않음)과 견준다. 도면 꼴은 벡터 PDF·스캔(img-)·drawio·DEXPI(파일 id와 가져오기가 지은 id가 섞임)이고,
-집합 꼴은 새 꼴·A꼴(표시 없음)·B꼴(순번 정규식 표시, lost_members)이다.
+"""판 이전 불변식 퍼즈(hazop.study.migrate·idmap). 합성 도면을 여러 번 다시 추출한 것처럼 바꾸며(기호 지움·옮김·종류·
+태그 바꿈·되살림·순서만 섞임·판 문자열만 바뀜·앞 판으로 되돌아감) 무작위 검토구간 집합(편집 묶음 포함)과 ⑤ 결과를 판
+이전하고, 생성기가 따로 들고 다니는 기호의 진짜 정체(_uid)와 견준다. 판정은 판 이전 코드가 남긴 기록(묘비 기록·되찾기
+기록)을 정답으로 쓰지 않는다. 판 문자열은 실제 graph_version처럼 내용 해시라 앞 판으로 되돌아가면 같은 판 문자열이다.
 
-불변식
-① 옛 구성요소는 이어지거나 묘비가 된다. 조용히 사라지지 않는다(실행 취소 기록 포함).
-② 표지(종류·태그·상자)가 다른 기호끼리 잇지 않는다. 표지가 같은 다른 기호는 알려진 한계로 따로 센다.
-③ 묘비는 되찾기 말고는 어떤 기호도 가리키지 않는다(실행 취소 뒤, ⑤ 참조·잠재 후보 ID·근거 경로 포함).
-④ 같은 판 이전을 두 번 해도 같다.
+도면 꼴은 벡터 PDF·스캔(img-)·drawio·DEXPI(파일 id와 가져오기가 지은 id가 섞임)이고, 프로젝트 그래프(도면 둘을 도면
+연결점으로 이음, 한 도면만 다시 추출)도 돈다. 집합 꼴은 새 꼴·A꼴(표시 없음)·B꼴(순번 정규식 표시, lost_members)이다.
+⑤ 결과는 판 이전마다 따라가는 것, 몇 판 이전을 건너뛰고 늦게 따라오는 것(집합 저장 뒤 결과 저장 실패), 되돌아온 판에서
+새로 단 참조를 함께 본다.
+
+불변식(위반 이름의 첫 글자)
+① 옛 구성요소·참조는 이어지거나 묘비가 된다. 조용히 사라지지 않고, 자리·참조 수가 줄지 않는다. 묘비 id 하나는 기호 하나다.
+② 이어진 것·되찾은 것·⑤ 참조·실행 취소 기록이 가리키는 기호의 진짜 정체는 처음과 같다(표지가 같은 다른 기호는 알려진
+  한계로 따로 센다).
+③ 묘비는 되찾기 말고는 어떤 기호도 가리키지 않고, 처음부터 대상이 없던 참조가 판 이전 뒤 기호를 가리키지 않는다.
+④ 같은 판 이전을 두 번 해도 같고, 판이 같으면 결과를 다시 옮기지 않으며, 즉시 옮긴 결과와 이력으로 늦게 옮긴 결과가 같다.
 ⑤ 예외가 없다.
 ⑥ 등록되지 않은 자리에서 옛 id를 만나지 않는다.
 ⑦ 순번 구성요소를 이었으면 앞뒤 기호의 종류·태그·위치가 같다.
+⑧ 내용이 같은 다시 추출(순서만 섞임·판 문자열만 바뀜·범주만 바뀜)은 확인할 수 있는 구성요소를 잃지 않고 재확인 구간을 만들지 않는다.
+
+시드 수는 HAZOP_FUZZ_SEEDS(기본 SEEDS)로 늘린다.
 """
 
 import collections
 import copy
+import hashlib
 import json
 import os
 import random
@@ -30,47 +40,26 @@ sys.path.insert(0, REPO_ROOT)
 
 from hazop import paths  # noqa: E402
 from hazop.extract import ids  # noqa: E402
+from hazop.graph import project  # noqa: E402
 from hazop.kg import expect  # noqa: E402
 from hazop.study import idmap, migrate, node_tools  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 
-SEEDS = 300
+SEEDS = int(os.environ.get("HAZOP_FUZZ_SEEDS") or 200)
 GID = "graph-T"
 KINDS = ["manual_valve", "manual_valve", "manual_valve", "pump", "tank", "check_valve"]
 TAGS = [None, None, None, "V-1", "V-2", "P-1", "V-1"]
 FORMATS = ["pdf_vector", "pdf_vector", "raster_png", "drawio", "dexpi"]
 LIMIT = "표지가 같은 다른 기호(알려진 한계)"
-
-
-# ---------------------------------------------------------------- 판 이전 결과를 읽는 자리(옛 판 코드와 견줄 때 이 함수들만 바꾼다)
-
-def lost_of(node):
-    return list(node.get("lost") or [])
-
-
-def tomb_entity(ns, t):
-    return ((ns.get("tombstones") or {}).get(t) or {}).get("entity_id")
-
-
-def is_tomb(x):
-    return idmap.is_tomb(x)
-
-
-def step_lost(detail):
-    return set(detail.get("lost") or {})
-
-
-def unregistered(ns2, res2):
-    rows = [h["detail"] for h in ns2["history"] if h["op"] == migrate.OP]
-    rows += res2.get("version_migrations") or []
-    return [p for r in rows for p in r.get("unregistered") or []]
+RULE = "R-1"
+SET_HOLDERS = tuple(p for p, s in idmap.FIELDS[idmap.SET] if s == idmap.MEMBERS)
 
 
 def to_b_form(ns, g):
     """49033f1 판이 썼을 꼴: 표시는 순번 정규식에 걸린 것만, id 근거 없음, 묘비 대신 lost_members."""
     out = copy.deepcopy(ns)
-    out.pop("graph_member_basis", None)
-    out.pop("tombstones", None)
+    for k in ("graph_member_basis", "graph_member_ends", "tombstones", "tomb_seq"):
+        out.pop(k, None)
     out["schema_version"] = "0.2"
     out["graph_member_marks"] = idmap.legacy_marks(g)
     return out
@@ -88,18 +77,27 @@ def place(r):
     return [r.randrange(0, 12) * 20.0, r.randrange(0, 3) * 20.0, 5.0, 5.0]
 
 
-def make_world(r):
-    syms = [{"uid": "s%d" % u, "kind": r.choice(KINDS), "tag": r.choice(TAGS), "bbox": place(r),
+def make_world(r, sheet="T", conts=()):
+    syms = [{"uid": "%s:s%d" % (sheet, u), "kind": r.choice(KINDS), "tag": r.choice(TAGS), "bbox": place(r),
              "nobox": r.random() < 0.05, "fixed": r.random() < 0.15} for u in range(r.randint(2, 9))]
     if r.random() < 0.3 and len(syms) > 1:  # 태그 없는 같은 종류가 같은 자리(알려진 한계)
         syms[1].update(kind=syms[0]["kind"], tag=None, bbox=list(syms[0]["bbox"]))
-    juncs = [{"uid": "j%d" % u, "kind": "tee", "tag": None, "bbox": place(r)[:2] + [2.0, 2.0], "nobox": False,
-              "fixed": False} for u in range(r.randint(0, 2))]
+    syms += [{"uid": "%s:k%d" % (sheet, i), "kind": "continuation", "tag": None, "bbox": place(r), "label": lbl,
+              "nobox": r.random() < 0.05, "fixed": False} for i, lbl in enumerate(conts)]
+    juncs = [{"uid": "%s:j%d" % (sheet, u), "kind": "tee", "tag": None, "bbox": place(r)[:2] + [2.0, 2.0],
+              "nobox": False, "fixed": False} for u in range(r.randint(0, 2))]
     allu = [s["uid"] for s in syms + juncs]
-    pipes = [{"uid": "c%d" % u, "ends": r.sample(allu, 2), "bbox": place(r)[:2] + [15.0, 1.0],
+    pipes = [{"uid": "%s:c%d" % (sheet, u), "ends": r.sample(allu, 2), "bbox": place(r)[:2] + [15.0, 1.0],
               "nobox": r.random() < 0.05, "tag": r.choice([None, "L-1"])} for u in range(r.randint(1, 6))]
-    return {"syms": syms, "juncs": juncs, "pipes": pipes, "next": 100, "fmt": r.choice(FORMATS),
-            "basis": r.random() > 0.1}
+    return {"sheet": sheet, "syms": syms, "juncs": juncs, "pipes": pipes, "next": 100, "fmt": r.choice(FORMATS),
+            "basis": r.random() > 0.1, "order_seed": 0, "stamp": 0}
+
+
+def make_project(r):
+    k = r.randint(1, 3)
+    a = make_world(r, "A", ["TO B\nL-%d" % i for i in range(1, k + 1)])
+    b = make_world(r, "B", ["FROM A\nL-%d" % i for i in range(1, k + 1)])
+    return {"sheets": {"A": a, "B": b}}
 
 
 def mutate(r, w):
@@ -120,15 +118,15 @@ def mutate(r, w):
     for d in list(w.get("deleted") or []):
         if r.random() < 0.15:  # 지운 자리에 다른 기호(새 uid)
             w["next"] += 1
-            out.append(dict(d, uid="s%d" % w["next"], tag=None))
+            out.append(dict(d, uid="%s:s%d" % (w["sheet"], w["next"]), tag=None))
     for d in list(w.get("deleted") or []):
         if r.random() < 0.4 and d["uid"] not in {s["uid"] for s in out}:  # 같은 기호가 돌아옴
             out.append(copy.deepcopy(d))
             w["deleted"].remove(d)
     for _ in range(r.randint(0, 2)):
         w["next"] += 1
-        out.append({"uid": "s%d" % w["next"], "kind": r.choice(KINDS), "tag": r.choice(TAGS), "bbox": place(r),
-                    "nobox": False, "fixed": r.random() < 0.15})
+        out.append({"uid": "%s:s%d" % (w["sheet"], w["next"]), "kind": r.choice(KINDS), "tag": r.choice(TAGS),
+                    "bbox": place(r), "nobox": False, "fixed": r.random() < 0.15})
     w["syms"] = out
     alive = {s["uid"] for s in out + w["juncs"]}
     for p in w["pipes"]:
@@ -139,36 +137,60 @@ def mutate(r, w):
     return w
 
 
+def reorder(r, w):
+    """내용은 같고 열거 순서만 다른 다시 추출(순번이 밀림)."""
+    return dict(copy.deepcopy(w), order_seed=r.random())
+
+
+def restamp(w):
+    """내용도 순서도 같고 판 문자열만 다른 다시 추출."""
+    return dict(copy.deepcopy(w), stamp=w["stamp"] + 1)
+
+
+def recategorize(w):
+    """분류 규칙이 바뀌어 범주(종류에서 나오는 값)만 다른 다시 추출."""
+    return dict(copy.deepcopy(w), cat=w.get("cat", 0) + 1)
+
+
+def ver(w):
+    key = {k: w.get(k) for k in ("syms", "juncs", "pipes", "fmt", "basis", "order_seed", "stamp", "cat")}
+    return "v-" + hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()[:10]
+
+
 def soid_of(fmt, s, k, what):
     """(source_object_id, 어댑터가 지은 id인가). k는 그 판의 열거 순번."""
     if fmt == "drawio":
-        return ("edge-" if what == "conn" else "cell-") + s["uid"], False
+        return ("edge-" if what == "conn" else "cell-") + s["uid"].split(":")[1], False
     if fmt == "dexpi":
         if what == "conn":
             return "Seg_1__Connection_%d" % k, True
         if what == "junction" or s["fixed"]:
-            return "Item-" + s["uid"], False
+            return "Item-" + s["uid"].split(":")[1], False
         return "Seg_1__item_%d" % k, True
     if s.get("fixed"):
-        return "manual-c-" + s["uid"], False
+        return "manual-c-" + s["uid"].split(":")[1], False
     head = "img" if fmt == "raster_png" else "pdf-p0"
     return "%s-%s-%04d" % (head, what, k), False
 
 
-def build(w, version):
-    fmt, key = w["fmt"], random.Random(w.get("order_seed", 0))
+def build(w, gid=GID):
+    fmt, key = w["fmt"], random.Random(w["order_seed"])
     nodes, by_uid, edges = [], {}, []
 
     def add(eid, s, k, what, extra):
         soid, made = soid_of(fmt, s, k, what)
         n = dict({"entity_id": eid, "source_object_id": soid, "bbox": None if s["nobox"] else list(s["bbox"]),
-                  "_uid": s["uid"]}, **extra)
+                  "_uid": s["uid"], "attributes": {}}, **extra)
+        n["category"] = "c%d-%s" % (w.get("cat", 0), n["kind"])
         if w["basis"]:
             n["id_basis"] = ids.basis(fmt, soid, made)
         nodes.append(n)
         by_uid[s["uid"]] = n
     for i, s in enumerate(sorted(w["syms"], key=lambda s: key.random()), 1):
-        add("entity-node-%03d" % i, s, i, "sym", {"node_type": "drawing_object", "kind": s["kind"], "tag": s["tag"]})
+        extra = {"node_type": "drawing_object", "kind": s["kind"], "tag": s["tag"]}
+        if s["kind"] == "continuation":
+            extra.update(label_text=s["label"], attributes={"kind": "continuation"})
+        add("entity-node-%03d" % i, s, i, "sym", extra)
     base = len(nodes)
     for j, s in enumerate(w["juncs"], 1):
         add("entity-node-%03d" % (base + j), s, j, "junction", {"node_type": "drawing_object", "kind": "tee", "tag": None})
@@ -179,7 +201,82 @@ def build(w, version):
         for e in p["ends"]:
             rel += 1
             edges.append({"entity_id": "relation-%03d" % rel, "kind": "has_endpoint", "nodes": [sid, by_uid[e]["entity_id"]]})
-    return {"project_id": None, "graph_id": GID, "graph_version": version, "nodes": nodes, "edges": edges}
+    return {"project_id": None, "graph_id": gid, "graph_version": ver(w), "source": {"drawing_number": w["sheet"]},
+            "validation": {"status": "passed"}, "nodes": nodes, "edges": edges}
+
+
+def build_any(world):
+    if "sheets" in world:
+        sheets = [dict(build(w, "graph-" + name), project_id="P") for name, w in sorted(world["sheets"].items())]
+        return project.build("P", sheets)
+    return build(world)
+
+
+def next_world(r, world, kind):
+    if "sheets" not in world:
+        return {"mutate": mutate, "reorder": reorder, "recategorize": lambda r, w: recategorize(w)}.get(
+            kind, lambda r, w: restamp(w))(r, world)
+    out = copy.deepcopy(world)
+    names = sorted(out["sheets"])
+    pick = names if kind == "mutate" and r.random() < 0.3 else [r.choice(names)]  # 보통은 한 도면만 다시 추출
+    for name in pick:
+        out["sheets"][name] = next_world(r, out["sheets"][name], kind)
+    return out
+
+
+# ---------------------------------------------------------------- 진짜 정체
+
+def look_of(n):
+    return (n.get("sheet"), n.get("kind"), n.get("tag"), n.get("bbox"))
+
+
+def same_look(a, b):
+    if a is None or b is None or a[0] == "xlink" or b[0] == "xlink":
+        return a is not None and a == b
+    if a[:3] != b[:3] or (a[3] is None) != (b[3] is None):
+        return False
+    return a[3] is None or all(abs(x - y) <= idmap.MARK_TOL for x, y in zip(a[3], b[3]))
+
+
+class Truth:
+    """그래프 하나의 진짜 정체 색인. 도면 연결 구간은 두 끝의 정체, 관계는 종류와 양 끝의 정체."""
+
+    def __init__(self, g):
+        gid = g["graph_id"]
+        self.eid = {n["entity_id"]: n["_uid"] for n in g["nodes"] if "_uid" in n}
+        self.look = {n["_uid"]: look_of(n) for n in g["nodes"] if "_uid" in n}
+        ends = collections.defaultdict(list)
+        for e in g["edges"]:
+            if e.get("sheet_link"):
+                ends[e["segment"]].append(e["node"])
+        for x, es in ends.items():
+            u = "x:" + "+".join(sorted(self.eid[e] for e in es))
+            self.eid[x] = u
+            self.look[u] = ("xlink",) + tuple(sorted(json.dumps(self.look[self.eid[e]]) for e in es))
+        self.ref = {}
+        for n in g["nodes"]:
+            r = idmap.ref_of(n, gid)
+            if r is not None:
+                self.ref[r] = self.eid[n["entity_id"]]
+        self.exp = {expect.expectation_id(RULE, r): u for r, u in self.ref.items()}
+        self.rel = {e["entity_id"]: "r:%s:%s" % (e["kind"], "+".join(sorted(self.eid.get(x, "?") for x in e["nodes"])))
+                    for e in g["edges"]}
+
+    def resolve(self, space, v):
+        if space == idmap.REF:
+            return self.ref.get(v)
+        if space == idmap.EXP:
+            return self.exp.get(v)
+        return self.eid.get(v) or self.rel.get(v)
+
+
+def stale_targets(world, g):
+    """처음 판에는 없고 다음 판에 생길 수 있는 참조·id(다음 순번)."""
+    w = world["sheets"]["A"] if "sheets" in world else world
+    sheet = "graph-A" if "sheets" in world else GID
+    soid, _ = soid_of(w["fmt"], {"uid": "%s:s%d" % (w["sheet"], w["next"] + 1), "fixed": False}, len(w["syms"]) + 1, "sym")
+    lift = (sheet + "/") if "sheets" in world else ""
+    return "%s#%s" % (sheet, soid), lift + "entity-node-%03d" % (len(w["syms"]) + 1)
 
 
 # ---------------------------------------------------------------- 집합과 결과
@@ -220,41 +317,52 @@ def make_set(r, g):
         for n in ns["nodes"]:
             if r.random() < 0.15:  # 앞 판 이전이 남긴 잃은 기록(되찾을 수 없는 자리, 손상 기록)
                 n["lost_members"] = r.choice([
-                    [{"entity_id": "entity-node-900", "ref": GID + "#pdf-p0-sym-0900",
+                    [{"entity_id": "entity-node-900", "ref": g["graph_id"] + "#pdf-p0-sym-0900",
                       "mark": ["drawing_object", None, "pump", None, 999.0, 999.0, 1004.0, 1004.0], "from": "v-0"}],
                     [None], ["x"], [{}]])
     return ns, form
 
 
-def make_results(ns, g, r):
+def make_entry(r, g, members, stale):
     by_id = {n["entity_id"]: n for n in g["nodes"]}
-    cells = []
-    for n in ns["nodes"]:
-        refs = [idmap.ref_of(by_id[m], GID) for m in n["members"]]
-        path = list(n["members"]) + ["cond-001"]
-        touching = [e["entity_id"] for e in g["edges"] if set(e["nodes"]) & set(n["members"])]
-        if touching and r.random() < 0.5:
-            path.append(r.choice(touching))
-        cells.append({"node_id": n["node_id"], "entries": [{
-            "cause_refs": [{"ref": x} for x in refs], "consequence_refs": [],
-            "safeguards": [{"refs": [{"ref": x} for x in refs]}],
-            "expectation_refs": [expect.expectation_id("R-1", x) for x in refs],
-            "ai_basis": {"kg_paths": [path]}}]})
-    return {"schema_version": "0.3", "graph_id": GID, "graph_version": g["graph_version"], "cells": cells}
+    refs = [idmap.ref_of(by_id[m], g["graph_id"]) for m in members]
+    refs = [x for x in refs if x]
+    pick = lambda: [{"ref": x} for x in r.sample(refs, r.randint(0, len(refs)))]  # noqa: E731
+    path = list(members) + ["cond-001"]
+    touching = [e["entity_id"] for e in g["edges"] if set(e["nodes"]) & set(members)]
+    if touching and r.random() < 0.5:
+        path.append(r.choice(touching))
+    causes = [{"ref": x} for x in refs]
+    if stale and r.random() < 0.5:
+        causes.append({"ref": stale[0]})
+        path.append(stale[1])
+    entry = {"cause_refs": causes, "consequence_refs": pick(), "safeguards": [{"refs": pick()}],
+             "expectation_refs": [expect.expectation_id(RULE, x) for x in refs], "ai_basis": {"kg_paths": [path]}}
+    if r.random() < 0.3:
+        entry["history"] = [{"before": {"cause_refs": pick(), "expectation_refs": [expect.expectation_id(RULE, x)
+                                                                                    for x in refs[:1]]}}]
+    return entry
+
+
+def make_results(r, ns, g, stale):
+    cells = [{"node_id": n["node_id"], "entries": [make_entry(r, g, n["members"], stale)]} for n in ns["nodes"]]
+    archived = [{"cell": {"node_id": c["node_id"], "entries": [make_entry(r, g, ns["nodes"][0]["members"], None)]},
+                 "reason": "x"} for c in cells[:1] if r.random() < 0.4]
+    return {"schema_version": "0.3", "graph_id": g["graph_id"], "graph_version": g["graph_version"], "cells": cells,
+            **({"archived_cells": archived} if archived else {})}
+
+
+def holders(ns):
+    """{등록 경로: [members를 가진 사전 또는 None]} 집합의 MEMBERS 자리 전부(차례 고정)."""
+    return {p: [h[k] for h, k in idmap.walk(ns, p)] for p in SET_HOLDERS}
+
+
+def ref_slots(doc):
+    """{(등록 경로, 공간): [값]} 결과의 등록된 id 자리 전부(차례 고정)."""
+    return {(p, s): [h[k] for h, k in idmap.walk(doc, p)] for p, s in idmap.FIELDS[idmap.RESULTS]}
 
 
 # ---------------------------------------------------------------- 판정
-
-def look(n):
-    return (n.get("kind"), n.get("tag"), n.get("bbox"))
-
-
-def same_look(a, b):
-    la, lb = look(a), look(b)
-    if la[:2] != lb[:2] or (la[2] is None) != (lb[2] is None):
-        return False
-    return la[2] is None or all(abs(x - y) <= idmap.MARK_TOL for x, y in zip(la[2], lb[2]))
-
 
 class Judge:
     def __init__(self):
@@ -266,195 +374,324 @@ class Judge:
         if len(self.examples[kind]) < 3:
             self.examples[kind].append(info)
 
-    def holders(self, ns):
-        """(자리 이름, members를 가진 사전) 집합의 구간과 실행 취소 기록의 before·after."""
-        out = [("node:" + n["node_id"], n) for n in ns["nodes"]]
-        for b in ns.get("batches") or []:
-            for i, o in enumerate(b["ops"]):
-                for side in ("before", "after"):
-                    if isinstance(o.get(side), dict):
-                        out.append(("%s/%d/%s" % (b["batch_id"], i, side), o[side]))
-        return out
 
-    def step(self, seed, ns_a, ns_b, g_a, g_b, graphs):
+class Track:
+    """한 사슬의 판정 상태. 생성기가 아는 정체만 쓰고, 판 이전 코드의 묘비·되찾기 기록은 견줄 대상일 뿐이다."""
+
+    def __init__(self, judge, seed):
+        self.j, self.seed = judge, seed
+        self.looks = collections.defaultdict(list)  # 정체 → 지나온 판에서 보인 겉모습들
+        self.tomb_truth = {}   # 묘비 id → 처음 잃은 기호의 정체
+        self.tomb_first = {}   # 묘비 id → 처음 본 기록
+        self.sets = {}         # 등록 경로 → [{"allowed": 정체 집합, "taint": bool}]
+
+    def see(self, truth):
+        for u, lk in truth.look.items():
+            if lk not in self.looks[u]:
+                self.looks[u].append(lk)
+
+    def looked_like(self, uids, look):
+        return any(same_look(x, look) for u in uids for x in self.looks.get(u, ()))
+
+    # -- 집합
+
+    def adopt_set(self, ns, truth, start=0):
+        for p, hs in holders(ns).items():
+            rows = self.sets.setdefault(p, [])
+            for h in hs[len(rows):]:
+                mem = (h or {}).get("members") if isinstance(h, dict) else None
+                rows.append({"allowed": {truth.eid[m] for m in mem or () if m in truth.eid}, "taint": False})
+
+    def judge_limit(self, u_new, allowed, truth_new):
+        return self.looked_like(allowed, truth_new.look.get(u_new))
+
+    def check_holder(self, where, h, row, truth_new):
+        if not isinstance(h, dict) or not isinstance(h.get("members"), list):
+            if row["allowed"]:
+                self.j.note("① 자리가 사라짐", (self.seed, where))
+            return
+        live = set()
+        for e in h["members"]:
+            u = truth_new.eid.get(e)
+            if u is None:
+                self.j.note("③ 새 판에 없는 id가 members에 있음", (self.seed, where, e))
+                continue
+            live.add(u)
+            if u not in row["allowed"]:
+                if self.judge_limit(u, row["allowed"], truth_new):
+                    self.j.note(LIMIT, (self.seed, where, e))
+                    row["allowed"].add(u)
+                    row["taint"] = True
+                else:
+                    self.j.note("② 구간에 없던 기호가 members에 들어옴", (self.seed, where, e, u, sorted(row["allowed"])))
+        tombs = set()
+        for t in h.get("lost") or []:
+            if not idmap.is_tomb(t) or t in truth_new.eid:
+                self.j.note("③ lost에 살아 있는 id", (self.seed, where, t))
+            tombs.add(self.tomb_truth.get(t))
+        missing = row["allowed"] - live - tombs
+        if missing:  # 표지가 같은 다른 기호가 그 자리를 가져갔으면 알려진 한계
+            twin = row["taint"] or all(any(self.looked_like([u], truth_new.look.get(x)) for x in live) for u in missing)
+            row["taint"] = row["taint"] or twin
+            self.j.note(LIMIT if twin else "① 사라짐(이어지지도 묘비도 아님)", (self.seed, where, sorted(missing)))
+
+    def check_set(self, ns_a, ns_b, truth_a, truth_b):
         d = ns_b["history"][-1]["detail"]
-        lost, renamed = step_lost(d), d.get("renamed") or {}
-        self.stats["되찾은 묘비"] += len(d.get("found") or {})
+        for t, rec in (ns_b.get("tombstones") or {}).items():
+            key = json.dumps([rec.get(k) for k in ("entity_id", "ref", "mark", "lost_from", "lost_at")])
+            if self.tomb_first.setdefault(t, key) != key:
+                self.j.note("① 묘비 기록이 덮어써짐", (self.seed, t))
+        for m, t in (d.get("lost") or {}).items():
+            u = truth_a.eid.get(m)
+            if self.tomb_truth.setdefault(t, u) != u:
+                self.j.note("① 같은 묘비 id가 다른 기호에 다시 쓰임", (self.seed, t, self.tomb_truth[t], u))
+        for t, e in (d.get("found") or {}).items():
+            want, got = self.tomb_truth.get(t), truth_b.eid.get(e)
+            if want is not None and got != want:
+                ok = self.looked_like([want], truth_b.look.get(got))
+                self.j.note(LIMIT if ok else "② 되찾은 묘비가 다른 기호", (self.seed, t, want, got))
+            self.j.stats["되찾은 묘비"] += 1
+        before, after = holders(ns_a), holders(ns_b)
+        for p in SET_HOLDERS:
+            if len(before[p]) != len(after[p]):
+                self.j.note("① 자리 수가 바뀜", (self.seed, p, len(before[p]), len(after[p])))
+                continue
+            for i, h in enumerate(after[p]):
+                self.j.stats["구간 자리 점검"] += 1
+                self.check_holder("%s[%d]" % (p, i), h, self.sets[p][i], truth_b)
+
+    def check_seq_look(self, ns_b, g_a, g_b):
+        """⑦ 순번 구성요소는 표시로만 잇는다: 이은 앞뒤 기호의 종류·태그·위치가 같다."""
+        d = ns_b["history"][-1]["detail"]
         ua = {n["entity_id"]: n for n in g_a["nodes"]}
         ub = {n["entity_id"]: n for n in g_b["nodes"]}
-        basis_a = idmap.bases(g_a)
-        after = dict(self.holders(ns_b))
-        for where, b in self.holders(ns_a):
-            a = after.get(where)
-            if a is None:
-                self.note("① 자리가 사라짐", (seed, where))
-                continue
-            tomb_eids = {tomb_entity(ns_b, t) for t in lost_of(a)}
-            for t in lost_of(a):
-                if not is_tomb(t) or t in ub:
-                    self.note("③ lost에 살아 있는 id", (seed, where, t))
-            for m in b["members"]:
-                self.stats["구성요소 점검"] += 1
-                if m in lost:
-                    if m not in tomb_eids:
-                        self.note("① 사라짐(잃었는데 묘비 없음)", (seed, where, m))
-                    continue
-                t = renamed.get(m, m)
-                if t not in a["members"]:
-                    self.note("① 사라짐(이은 구성요소가 members에도 lost에도 없음)", (seed, where, m, t))
-                    continue
-                o, nn = ua.get(m), ub.get(t)
-                if o is None or nn is None:
-                    self.note("① 그래프에 없는 id가 members에 남음", (seed, where, m, t))
-                    continue
-                if o["_uid"] != nn["_uid"]:
-                    self.note(LIMIT if same_look(o, nn) else "② 표지가 다른 기호로 이음", (seed, where, m, t, look(o), look(nn)))
-                elif basis_a[m] == ids.SEQUENCE and not same_look(o, nn):
-                    self.note("⑦ 순번 구성요소인데 표지가 다른 기호로 이음", (seed, where, m, t, look(o), look(nn)))
-            back = self.found_nodes(ns_b, b, graphs)
-            allowed = {ua[m]["_uid"] for m in b["members"] if m in ua} | {n["_uid"] for n in back}
-            for e in a["members"]:
-                if e not in ub:
-                    self.note("③ 새 판에 없는 id가 members에 있음", (seed, where, e))
-                elif ub[e]["_uid"] not in allowed:
-                    old = [ua[m] for m in b["members"] if renamed.get(m, m) == e and m in ua] + back
-                    same = any(same_look(o, ub[e]) for o in old)
-                    self.note(LIMIT if same else "② 구간에 없던 기호가 members에 들어옴", (seed, where, e, ub[e]["_uid"]))
+        basis = idmap.bases(g_a)
+        for m, e in (d.get("renamed") or {}).items():
+            o, n = ua.get(m), ub.get(e)
+            if o and n and "_uid" in o and basis[m] == ids.SEQUENCE and o["_uid"] == n["_uid"] \
+                    and not same_look(look_of(o), look_of(n)):
+                self.j.note("⑦ 순번 구성요소인데 표지가 다른 기호로 이음", (self.seed, m, e))
 
-    def found_nodes(self, ns_b, b, graphs):
-        """b(판 이전 전)의 묘비 가운데 이번에 되찾은 것이 잃기 전 가리키던 기호(진실 그래프의 노드)."""
-        out = []
-        for t in b.get("lost") or []:
-            rec = (ns_b.get("tombstones") or {}).get(t) or {}
-            g = graphs.get(rec.get("lost_from"))
-            if rec.get("found") and g is not None:
-                out += [n for n in g["nodes"] if n["entity_id"] == rec.get("entity_id")]
-        return out
-
-    def undo(self, seed, ns_a, ns_b, graphs):
-        """판 이전 뒤 마지막 묶음을 되돌리고 되살린 구간이 옛 기록의 기호만 갖는지 본다."""
-        live = [b for b in ns_b.get("batches") or [] if not b.get("undone")]
-        if not live:
+    def check_same_content(self, ns_a, ns_b, plan, g_a):
+        """⑧ 확인할 수 있는 구성요소(상자가 있고 표시가 겹치지 않는 순번, source)는 내용이 같은 다시 추출에서 잃지 않는다."""
+        if ns_a.get("graph_member_basis") is None:
             return
-        bid = live[-1]["batch_id"]
-        try:
-            out, _ = node_tools.undo_batch(ns_b, {"cells": []}, bid, ns_b["set_rev"], "x", "user", at="t")
-        except node_tools.Refused:
-            return
-        self.stats["되돌림"] += 1
-        g_a, g_b = graphs[ns_a["graph_version"]], graphs[ns_b["graph_version"]]
-        ua = {n["entity_id"]: n for n in g_a["nodes"]}
-        ub = {n["entity_id"]: n for n in g_b["nodes"]}
-        before = next(b for b in ns_a["batches"] if b["batch_id"] == bid)
-        for o in before["ops"]:
-            if o["before"] is None:
-                continue
-            node = next((n for n in out["nodes"] if n["node_id"] == o["node_id"]), None)
-            if node is None:
-                continue
-            back = self.found_nodes(ns_b, o["before"], graphs)
-            allowed = {ua[m]["_uid"] for m in o["before"]["members"] if m in ua} | {n["_uid"] for n in back}
-            for e in node["members"]:
-                if e not in ub or ub[e]["_uid"] not in allowed:
-                    old = [ua[m] for m in o["before"]["members"] if m in ua] + back
-                    same = e in ub and any(same_look(n, ub[e]) for n in old)
-                    self.note(LIMIT if same else "③ 되돌린 구간이 다른 기호를 가리킴", (seed, o["node_id"], e))
-            for t in lost_of(node):
-                if not is_tomb(t) or t in ub:
-                    self.note("③ 되돌린 구간의 lost에 살아 있는 id", (seed, t))
+        basis = idmap.bases(g_a)
+        ends = collections.defaultdict(set)
+        for e in g_a["edges"]:
+            if e["kind"] == "has_endpoint":
+                ends[e["nodes"][0]].update(e["nodes"][1:])
+        marks = collections.Counter()
+        for n in g_a["nodes"]:
+            m = idmap.mark_of(n, basis[n["entity_id"]])
+            if m is not None:
+                marks[json.dumps(m[:4])] += 1  # 종류·도면·기호 종류·태그가 같은 것 둘 이상은 상자 비교가 허용오차에 걸릴 수 있음
+        sure = {n["entity_id"] for n in g_a["nodes"] if basis[n["entity_id"]] == ids.SOURCE or (
+            idmap.mark_of(n, ids.SEQUENCE) is not None and marks[json.dumps(idmap.mark_of(n, ids.SEQUENCE)[:4])] == 1)}
+        by_end = [n for n in g_a["nodes"] if n["entity_id"] not in sure and ends.get(n["entity_id"])
+                  and idmap.mark_of(n, ids.SEQUENCE) is None]
+        keys = collections.Counter(json.dumps([look_of(n)[:3], sorted(ends[n["entity_id"]])]) for n in by_end)
+        grew = True
+        while grew:  # 끝이 모두 확인되고 겉모습·끝이 겹치지 않는 상자 없는 구성요소(배관 구간·도면 연결 구간)
+            grew = False
+            for n in by_end:
+                e = n["entity_id"]
+                if e not in sure and ends[e] <= sure and keys[json.dumps([look_of(n)[:3], sorted(ends[e])])] == 1:
+                    sure.add(e)
+                    grew = True
+        d = ns_b["history"][-1]["detail"]
+        for m in d.get("lost") or {}:
+            if m in sure:
+                self.j.note("⑧ 내용이 같은데 확인할 수 있는 구성요소를 잃음", (self.seed, m))
+        twins = any(v > 1 for v in marks.values())  # 표지가 같은 둘이 맞바뀌면 연결이 바뀐 것으로 보이는 것도 안전한 쪽이다
+        if not d.get("lost") and not d.get("found") and not twins:  # 잃은 이웃이 있어 지문이 바뀌는 것도 안전한 쪽
+            for nid, why in plan["recheck"].items():
+                if "기록이 없음" not in why:  # 모두 잃어 지문이 없는 구간은 확인할 길이 없다
+                    self.j.note("⑧ 내용이 같은데 재확인", (self.seed, nid, why))
 
-    def results(self, seed, r_start, r_end, g_start, g_end, label, passed=None):
-        idx = {idmap.ref_of(n, GID): n for n in g_end["nodes"]}
-        sidx = {idmap.ref_of(n, GID): n for n in g_start["nodes"]}
-        s_id = {n["entity_id"]: n for n in g_start["nodes"]}
-        e_id = {n["entity_id"]: n for n in g_end["nodes"]}
-        s_rel = {e["entity_id"]: e for e in g_start["edges"]}
-        e_rel = {e["entity_id"]: e for e in g_end["edges"]}
-        mid = passed or r_start
+    # -- 결과
 
-        def uids(edge, by):
-            return sorted(by[x]["_uid"] for x in edge["nodes"])
-        for c0, c1, cm in zip(r_start["cells"], r_end["cells"], mid["cells"]):
-            e0, e1, em = c0["entries"][0], c1["entries"][0], cm["entries"][0]
-            for r0, r1, rm in zip(e0["cause_refs"], e1["cause_refs"], em["cause_refs"]):
-                o = sidx[r0["ref"]]
-                if is_tomb(r1["ref"]):
-                    self.stats["묘비가 된 ⑤ 참조(%s)" % label] += 1
+    def adopt_results(self, slots, doc, truth):
+        for key, vals in ref_slots(doc).items():
+            rows = slots.setdefault(key, [])
+            for v in vals[len(rows):]:
+                rows.append({"uid": truth.resolve(key[1], v), "orig": v, "dead": False})
+
+    def check_results(self, slots, doc, truth_new, label):
+        for key, vals in ref_slots(doc).items():
+            rows = slots.get(key, [])
+            if len(rows) != len(vals):
+                self.j.note("① 참조 수가 바뀜(%s)" % label, (self.seed, key[0], len(rows), len(vals)))
+                continue
+            for row, v in zip(rows, vals):
+                self.j.stats["참조 점검"] += 1
+                if idmap.is_tomb(v):
+                    row["dead"] = True
+                    self.j.stats["묘비가 된 ⑤ 참조"] += 1
                     continue
-                n = idx.get(r1["ref"])
-                if n is None:
-                    self.note("③ ⑤ 참조가 묘비도 살아 있는 참조도 아님(%s)" % label, (seed, r0["ref"], r1["ref"]))
-                elif n["_uid"] != o["_uid"]:
-                    head = "③ 묘비였던 ⑤ 참조가 다른 기호로 풀림" if is_tomb(rm["ref"]) else "② ⑤ 참조가 다른 기호"
-                    self.note(LIMIT if same_look(o, n) else "%s(%s)" % (head, label), (seed, r0["ref"], r1["ref"]))
-            for x0, x1 in zip(e0["expectation_refs"], e1["expectation_refs"]):
-                if is_tomb(x1):
+                u = truth_new.resolve(key[1], v)
+                if row["uid"] is None:
+                    if u is not None:
+                        self.j.note("③ 처음부터 대상이 없던 참조가 기호를 가리킴(%s)" % label, (self.seed, key[0], v, u))
                     continue
-                hit = [n for r, n in idx.items() if expect.expectation_id("R-1", r) == x1]
-                want = [n for r, n in sidx.items() if expect.expectation_id("R-1", r) == x0][0]
-                if not hit:
-                    self.note("③ 잠재 후보 ID가 묘비도 살아 있는 ID도 아님(%s)" % label, (seed, x0, x1))
-                elif hit[0]["_uid"] != want["_uid"] and not same_look(hit[0], want):
-                    self.note("② 잠재 후보 ID가 다른 기호(%s)" % label, (seed, x0, x1))
-            for x0, x1 in zip(e0["ai_basis"]["kg_paths"][0], e1["ai_basis"]["kg_paths"][0]):
-                if is_tomb(x1) or x0 == "cond-001":
+                if u == row["uid"]:
                     continue
-                if x0 in s_id:
-                    n = e_id.get(x1)
-                    if n is None:
-                        self.note("③ 근거 경로 id가 묘비도 살아 있는 id도 아님(%s)" % label, (seed, x0, x1))
-                    elif n["_uid"] != s_id[x0]["_uid"] and not same_look(n, s_id[x0]):
-                        self.note("② 근거 경로가 다른 기호(%s)" % label, (seed, x0, x1))
-                elif x0 in s_rel:
-                    rel = e_rel.get(x1)
-                    if rel is not None and uids(rel, e_id) != uids(s_rel[x0], s_id):
-                        self.note("② 근거 경로 관계 id가 다른 관계(%s)" % label, (seed, x0, x1))
+                if u is None:
+                    self.j.note("③ 참조가 묘비도 살아 있는 대상도 아님(%s)" % label, (self.seed, key[0], row["orig"], v))
+                elif self.looked_like([row["uid"]], truth_new.look.get(u)):
+                    self.j.note(LIMIT, (self.seed, key[0], v))
+                    row["uid"] = u
+                else:
+                    head = "③ 묘비였던 참조가 다른 기호로 풀림" if row["dead"] else "② 참조가 다른 기호"
+                    self.j.note("%s(%s)" % (head, label), (self.seed, key[0], row["orig"], v, row["uid"], u))
+                    row["uid"] = u
+
+
+def undo_check(track, ns_b, truth_b):
+    """판 이전 뒤 마지막 묶음을 되돌리고 되살린 구간이 그 실행 취소 기록이 처음 가진 기호만 갖는지 본다."""
+    live = [b for b in ns_b.get("batches") or [] if not b.get("undone")]
+    if not live:
+        return
+    bid = live[-1]["batch_id"]
+    try:
+        out, _ = node_tools.undo_batch(ns_b, {"cells": []}, bid, ns_b["set_rev"], "x", "user", at="t")
+    except node_tools.Refused:
+        return
+    track.j.stats["되돌림"] += 1
+    flat = [(b["batch_id"], o) for b in ns_b["batches"] for o in b["ops"]]
+    rows = track.sets["batches[].ops[].before"]
+    for (b, o), row in zip(flat, rows):
+        if b != bid or o["before"] is None:
+            continue
+        node = next((n for n in out["nodes"] if n["node_id"] == o["node_id"]), None)
+        if node is None:
+            continue
+        for e in node["members"]:
+            u = truth_b.eid.get(e)
+            if u not in row["allowed"]:
+                ok = u is not None and track.judge_limit(u, row["allowed"], truth_b)
+                track.j.note(LIMIT if ok else "③ 되돌린 구간이 다른 기호를 가리킴", (track.seed, o["node_id"], e))
+        for t in node.get("lost") or []:
+            if not idmap.is_tomb(t) or t in truth_b.eid:
+                track.j.note("③ 되돌린 구간의 lost에 살아 있는 id", (track.seed, t))
+
+
+def plan_chain(r, project_mode):
+    """[(다시 추출 종류, 세계)]. 되돌아감은 앞서 지나간 판 가운데 하나로 간다."""
+    first = make_project(r) if project_mode else make_world(r)
+    worlds, steps = [first], []
+    for _ in range(r.randint(3, 6)):
+        x = r.random()
+        if len(worlds) > 1 and x < 0.3:
+            kind, w = "revisit", copy.deepcopy(r.choice(worlds[:-1]))
+        elif x < 0.42:
+            kind, w = "reorder", next_world(r, worlds[-1], "reorder")
+        elif x < 0.50:
+            kind, w = "restamp", next_world(r, worlds[-1], "restamp")
+        elif x < 0.58:
+            kind, w = "recategorize", next_world(r, worlds[-1], "recategorize")
+        else:
+            kind, w = "mutate", next_world(r, worlds[-1], "mutate")
+        worlds.append(w)
+        steps.append((kind, w))
+    return first, steps
+
+
+def unregistered(ns, res):
+    rows = [h["detail"] for h in ns["history"] if h["op"] == migrate.OP]
+    rows += res.get("version_migrations") or []
+    return [p for r in rows for p in r.get("unregistered") or []]
+
+
+def same(a, b):
+    return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
 def run(seeds, judge):
     for seed in seeds:
         r = random.Random(seed)
-        w1 = make_world(r)
-        w2 = mutate(r, w1)
-        w3 = mutate(r, w2)
-        graphs = {v: build(w, v) for v, w in (("v-1", w1), ("v-2", w2), ("v-3", w3))}
-        g1, g2, g3 = graphs["v-1"], graphs["v-2"], graphs["v-3"]
+        project_mode = r.random() < 0.3
+        first, steps = plan_chain(r, project_mode)
         stage = "만들기"
+        track = Track(judge, seed)
         try:
-            ns1, form = make_set(r, g1)
-            res1 = make_results(ns1, g1, r)
+            g = build_any(first)
+            truth = Truth(g)
+            track.see(truth)
+            ns, form = make_set(r, g)
+            stale = stale_targets(first, g)
+            res = make_results(r, ns, g, stale)
             judge.stats["집합 꼴 " + form] += 1
-            judge.stats["도면 꼴 %s%s" % (w1["fmt"], "" if w1["basis"] else "(id_basis 없음)")] += 1
-            stage = "판 이전 v1→v2"
-            ns2, p2 = migrate.migrate_set(ns1, g2, at="t")
-            judge.stats["판 이전"] += 1
-            judge.step(seed, ns1, ns2, g1, g2, graphs)
-            res2, _ = migrate.migrate_results(res1, ns2, at="t", **({"table": p2["table"]} if "table" in p2 else {}))
-            judge.results(seed, res1, res2, g1, g2, "1단계")
-            stage = "되돌리기 v2"
-            judge.undo(seed, ns1, ns2, graphs)
-            stage = "두 번 적용"
-            again, _ = migrate.migrate_set(copy.deepcopy(ns1), g2, at="t")
-            if json.dumps(again, sort_keys=True) != json.dumps(ns2, sort_keys=True):
-                judge.note("④ 같은 판 이전을 두 번 하면 다름", seed)
-            if migrate.migrate_set(ns2, g2, at="t")[0] is not ns2:
-                judge.note("④ 같은 판에서 다시 바꿈", seed)
-            twice, _ = migrate.migrate_results(res2, ns2, at="t")
-            if json.dumps(twice, sort_keys=True) != json.dumps(res2, sort_keys=True):
-                judge.note("④ ⑤ 결과를 두 번 옮기면 다름", seed)
-            stage = "판 이전 v2→v3"
-            ns3, p3 = migrate.migrate_set(ns2, g3, at="t")
-            judge.stats["판 이전"] += 1
-            judge.step(seed, ns2, ns3, g2, g3, graphs)
-            res3, _ = migrate.migrate_results(res2, ns3, at="t", **({"table": p3["table"]} if "table" in p3 else {}))
-            judge.results(seed, res1, res3, g1, g3, "2단계 이어서", passed=res2)
-            res13, _ = migrate.migrate_results(res1, ns3, at="t")
-            judge.results(seed, res1, res13, g1, g3, "2단계 늦게 따라옴", passed=res2)
-            stage = "되돌리기 v3"
-            judge.undo(seed, ns2, ns3, graphs)
+            judge.stats["사슬 " + ("프로젝트 그래프" if project_mode else "도면 " + first["fmt"])] += 1
+            track.adopt_set(ns, truth)
+            live_slots = {}
+            track.adopt_results(live_slots, res, truth)
+            late = None
+            seen = {g["graph_version"]}
+            for i, (kind, world) in enumerate(steps, 1):
+                g2 = build_any(world)
+                if g2["graph_version"] == ns["graph_version"]:
+                    continue
+                truth2 = Truth(g2)
+                stage = "판 이전 %d(%s)" % (i, kind)
+                ns2, p = migrate.migrate_set(ns, g2, at="t%d" % i)
+                if p["state"] != "kept":
+                    judge.note("⑤ 판이 다른데 판 이전을 하지 않음", (seed, i, p["state"]))
+                    break
+                judge.stats["판 이전"] += 1
+                judge.stats["다시 추출 " + kind] += 1
+                if g2["graph_version"] in seen:
+                    judge.stats["앞 판으로 되돌아감"] += 1
+                track.check_set(ns, ns2, truth, truth2)
+                track.check_seq_look(ns2, g, g2)
+                if kind in ("reorder", "restamp", "recategorize"):
+                    track.check_same_content(ns, ns2, p, g)
+                stage = "두 번 적용 %d" % i
+                if not same(migrate.migrate_set(copy.deepcopy(ns), g2, at="t%d" % i)[0], ns2):
+                    judge.note("④ 같은 판 이전을 두 번 하면 다름", (seed, i))
+                if migrate.migrate_set(ns2, g2, at="t%d" % i)[0] is not ns2:
+                    judge.note("④ 같은 판에서 다시 바꿈", (seed, i))
+                stage = "결과 %d" % i
+                if late is None and r.random() < 0.3:  # 이 판 이전부터 결과 저장이 실패해 늦게 따라옴
+                    late = (copy.deepcopy(res), copy.deepcopy(live_slots))
+                if r.random() < 0.2:
+                    judge.stats["결과가 이번 판 이전을 건너뜀"] += 1
+                else:
+                    moved, _ = migrate.migrate_results(res, ns2, at="t%d" % i, table=p["table"])
+                    by_history, _ = migrate.migrate_results(res, ns2, at="t%d" % i)
+                    if not same(moved, by_history):
+                        judge.note("④ 즉시 옮긴 결과와 이력으로 옮긴 결과가 다름", (seed, i))
+                    res = moved
+                    track.see(truth)
+                    track.check_results(live_slots, res, truth2, "따라감")
+                    if not same(migrate.migrate_results(res, ns2, at="again")[0], res):
+                        judge.note("④ 판이 같은 결과를 다시 옮김", (seed, i))
+                stage = "되돌리기 %d" % i
+                undo_check(track, ns2, truth2)
+                track.see(truth2)
+                if g2["graph_version"] in seen and res["graph_version"] == g2["graph_version"]:
+                    judge.stats["되돌아온 판에서 새로 단 참조"] += 1
+                    ids_ = [n["entity_id"] for n in g2["nodes"]]
+                    res["cells"].append({"node_id": "S1", "entries": [make_entry(r, g2, r.sample(ids_, min(3, len(ids_))), None)]})
+                    track.adopt_results(live_slots, res, truth2)
+                    ns2 = copy.deepcopy(ns2)
+                    ns2["nodes"].append(dict({"node_id": "S9%d" % i, "name": "new", "basis": "b",
+                                              "members": sorted(r.sample(ids_, min(2, len(ids_))))},
+                                             **sn._v2_fields("script")))
+                    track.adopt_set(ns2, truth2)
+                seen.add(g2["graph_version"])
+                ns, g, truth = ns2, g2, truth2
+            stage = "늦게 따라옴"
+            if res["graph_version"] != ns["graph_version"]:
+                res, _ = migrate.migrate_results(res, ns, at="end")
+                track.check_results(live_slots, res, truth, "마지막에 따라감")
+            if late is not None:
+                judge.stats["늦게 따라온 결과"] += 1
+                moved, _ = migrate.migrate_results(late[0], ns, at="late")
+                track.check_results(late[1], moved, truth, "늦게 따라옴")
             stage = "형식 검사"
-            sn._check_shape(json.loads(json.dumps(ns3)), "x")
-            for p in unregistered(ns3, res3):
+            sn._check_shape(json.loads(json.dumps(ns)), "x")
+            for p in unregistered(ns, res):
                 judge.note("⑥ 등록되지 않은 자리의 옛 id", (seed, p))
         except Exception as exc:  # noqa: BLE001  예외 자체가 불변식 ⑤ 위반이다
             tb = traceback.extract_tb(exc.__traceback__)[-1]
@@ -464,7 +701,7 @@ def run(seeds, judge):
 
 
 def failures(judge):
-    return {k: v for k, v in judge.stats.items() if k[0] in "①②③④⑤⑥⑦"}
+    return {k: v for k, v in judge.stats.items() if k[0] in "①②③④⑤⑥⑦⑧"}
 
 
 def report(judge):
@@ -483,12 +720,17 @@ class MigrateFuzzTest(unittest.TestCase):
         self.addCleanup(env.stop)
         self.addCleanup(shutil.rmtree, self.tmp)
 
-    def test_invariants_hold_over_many_reextractions(self):
+    def test_invariants_hold_over_chains_of_reextractions(self):
         judge = run(range(SEEDS), Judge())
-        self.assertGreater(judge.stats["판 이전"], SEEDS, "판 이전을 실제로 돌림")
-        self.assertGreater(judge.stats["되돌림"], 20, "판 이전 뒤 되돌리기를 실제로 돌림")
+        s = judge.stats
+        self.assertGreater(s["판 이전"], 3 * SEEDS, "판 이전을 사슬로 실제로 돌림")
+        self.assertGreater(s["앞 판으로 되돌아감"], SEEDS // 4, "앞 판으로 되돌아가는 사슬을 실제로 돌림")
+        self.assertGreater(s["사슬 프로젝트 그래프"], SEEDS // 5, "프로젝트 그래프를 실제로 돌림")
+        for k in ("다시 추출 reorder", "다시 추출 restamp", "다시 추출 recategorize", "되돌림", "되찾은 묘비", "늦게 따라온 결과",
+                  "되돌아온 판에서 새로 단 참조", "결과가 이번 판 이전을 건너뜀"):
+            self.assertGreater(s[k], SEEDS // 20, k)
         for form in ("new", "a", "b"):
-            self.assertGreater(judge.stats["집합 꼴 " + form], 20)
+            self.assertGreater(s["집합 꼴 " + form], SEEDS // 10)
         self.assertEqual(failures(judge), {}, report(judge))
 
 

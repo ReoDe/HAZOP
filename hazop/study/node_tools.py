@@ -522,6 +522,9 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
                 continue
             keep = picked[0]
             keep["members"] = sorted({m for n in picked for m in n["members"]})
+            lost = sorted({t for n in picked for t in n.get("lost") or []})  # 판 이전에서 잃은 구성요소의 묘비도 함께 둔다
+            if lost:
+                keep["lost"] = lost
             keep["name_by"] = keep.get("name_by") or origin
             for n in picked[1:]:
                 if out_res is not None:
@@ -575,6 +578,8 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
     seen = {}
     for n in out["nodes"]:
         key = frozenset(n["members"])
+        if not key:  # 판 이전에서 구성요소를 모두 잃은 구간(묘비만 남음)끼리는 같은 구간이 아니다
+            continue
         if key in seen:
             why.append((n["node_id"], "구성요소가 같은 구간 %s가 이미 있음" % seen[key]))
         seen.setdefault(key, n["node_id"])

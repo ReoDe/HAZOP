@@ -208,7 +208,7 @@ class StoredNodeSetTest(NodeToolsBase):
         return [n["node_id"] for n in self.ok("list_nodes", filter=flt)["data"]["items"]]
 
     def test_file_round_trip_keeps_v2_fields(self):
-        self.assertEqual(self.loaded["schema_version"], "0.2")
+        self.assertEqual(self.loaded["schema_version"], "0.3")   # 묘비 꼴(hazop.study.migrate.SCHEMA)
         self.assertEqual(self.loaded["set_rev"], self.stored["set_rev"])
         self.assertEqual([n["node_id"] for n in self.loaded["nodes"]], ["S1", "S2", "S3", "S4"])
 
@@ -230,6 +230,31 @@ class StoredNodeSetTest(NodeToolsBase):
         u = self.ok("get_node", node_id="S3")["data"]
         self.assertEqual((u["origin"], u["state"], u["design_intent_by"], u["batch_id"]), ("user", "confirmed", "user", self.batch_user))
         self.assertEqual((u["confirmed"]["by"], u["confirmed"]["rev"]), ("홍길동", u["rev"]))
+
+    def test_tool_edits_and_round_trip_keep_tombstones(self):
+        """판 이전에서 잃은 구성요소의 묘비(nodes[].lost)가 채팅 도구의 구간 고치기(apply_nodes)와 저장·읽기를 거쳐도 남는다."""
+        from hazop.study import idmap
+        ns = copy.deepcopy(self.loaded)
+        t1, t2, t3 = (idmap.tomb_id(ns["graph_id"], "v-old", i) for i in (1, 2, 3))
+        ns["tombstones"] = {t: {"entity_id": "entity-node-900", "ref": None, "mark": None, "basis": None, "lost_from": "v-0",
+                                "lost_at": "v-old", "at": "t", "legacy_key": None, "found": None} for t in (t1, t2, t3)}
+        by = {n["node_id"]: n for n in ns["nodes"]}
+        by["S1"]["lost"], by["S2"]["lost"] = [t1], [t2]
+        for nid, t in (("S5", t3), ("S6", t3)):   # 구성요소를 모두 잃은 구간 둘(members 비어 있음)
+            ns["nodes"].append(dict({"node_id": nid, "name": nid, "basis": "b", "members": [], "lost": [t]},
+                                    **nodes._v2_fields("script")))
+        out, _res, batch = node_tools.apply_nodes(ns, {"cells": []}, self.ctx.pg, [{"op": "merge", "node_ids": ["S1", "S2"]}],
+                                                  {"request_id": "u-tomb"}, "user", ns["set_rev"], by="홍길동")
+        self.assertIsNotNone(batch, "빈 구간 둘이 있어도 고치기를 거절하지 않음")
+        merged = next(n for n in out["nodes"] if n["node_id"] == "S1")
+        self.assertEqual(merged["lost"], sorted([t1, t2]))
+        self.assertEqual([n["lost"] for n in out["nodes"] if n["node_id"] in ("S5", "S6")], [[t3], [t3]])
+        nodes.save(out)
+        back = nodes.load(self.ctx.pg)
+        self.assertEqual({n["node_id"]: n.get("lost") for n in back["nodes"] if n.get("lost")},
+                         {"S1": sorted([t1, t2]), "S5": [t3], "S6": [t3]})
+        self.assertEqual(set(back["tombstones"]), {t1, t2, t3})
+        nodes.save(self.loaded)
 
     def test_get_node_locked(self):
         d = self.ok("get_node", node_id="S4")["data"]

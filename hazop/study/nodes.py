@@ -936,7 +936,8 @@ def _ids_map_ok(v, value_ok):
 
 
 def _snapshot_ok(doc):
-    """판 사진·묘비의 모양. 표시는 idmap.valid_mark, 묘비 id는 'lost:'로 시작하는 문자열, lost_members(0.2 B꼴)는 목록."""
+    """판 사진·묘비의 모양. 표시는 idmap.valid_mark, 끝으로 잇는 구성요소는 idmap.valid_ends, 묘비 id는 'lost:'로 시작하는
+    문자열, 묘비 일련번호는 0 이상 정수, lost_members(0.2 B꼴)는 목록."""
     from hazop.extract import ids
     from hazop.study import idmap
     tomb_ok = lambda r: isinstance(r, dict) and (r.get("mark") is None or idmap.valid_mark(r["mark"]))  # noqa: E731
@@ -944,6 +945,8 @@ def _snapshot_ok(doc):
     return (_ids_map_ok(doc.get("graph_member_refs"), lambda x: x is None or isinstance(x, str))
             and _ids_map_ok(doc.get("graph_member_marks"), idmap.valid_mark)
             and _ids_map_ok(doc.get("graph_member_basis"), lambda x: x in ids.BASES)
+            and _ids_map_ok(doc.get("graph_member_ends"), idmap.valid_ends)
+            and (doc.get("tomb_seq") is None or (type(doc["tomb_seq"]) is int and doc["tomb_seq"] >= 0))
             and (tombs is None or (isinstance(tombs, dict)
                                    and all(idmap.is_tomb(k) and tomb_ok(r) for k, r in tombs.items())))
             and all(_ids_ok(n.get("lost", [])) and all(idmap.is_tomb(t) for t in n.get("lost", []))
