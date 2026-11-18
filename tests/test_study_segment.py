@@ -303,7 +303,7 @@ class ScreenRecordTest(unittest.TestCase):
         self.assertTrue(all(s.score is not None for s in sn.screens(out, self.graph).values() if s.status != "excluded"))
         self.assertEqual(self.ns, sn.propose(self.graph, at=AT))  # 입력은 바뀌지 않는다
 
-    def test_hand_edits_make_the_judgement_human_and_confirm_guards_rule_buckets(self):
+    def test_hand_edits_make_the_judgement_human_and_confirm_ignores_buckets(self):
         bucket = next(n for n in self.ns["nodes"] if n["screen"]["status"] == "excluded")
         valve_node = by_member(self.ns, "d-valve")
         moved = sn.add_member(sn.remove_member(self.ns, valve_node["node_id"], "d-valve", at=AT),
@@ -312,8 +312,7 @@ class ScreenRecordTest(unittest.TestCase):
         sn.confirm(moved, self.graph, "검사", at=AT)  # 사람이 옮긴 것은 막지 않는다
         forged = copy.deepcopy(moved)
         by_member(forged, "d-valve")["screen"].update(by="rule", rule="R3")
-        with self.assertRaises(ValueError):
-            sn.confirm(forged, self.graph, "검사", at=AT)
+        sn.confirm(forged, self.graph, "검사", at=AT)  # v2: 제외 묶음 검사는 없앰(규격 §1 #2, V-0)
 
     def test_malformed_screen_fields_are_rejected_on_load(self):
         import tempfile
@@ -386,13 +385,15 @@ class ScreenRecordTest(unittest.TestCase):
         self.assertEqual(dropped, [])
         self.assertEqual(by_member(again, keep["members"][0])["screen"]["status"], "excluded")
 
-    def test_map_members_renames_piece_records_too(self):
+    def test_migration_renames_piece_records_too(self):
+        from hazop.study import idmap
         keep = next(n for n in self.ns["nodes"] if n.get("absorbed"))
         old = keep["absorbed"][0]["members"][0]
-        out = sn.map_members(self.ns, {old: "새-ID"})
+        table = idmap.from_record({"from": "v1", "to": "v2", "renamed": {old: "새-ID"}}, self.ns["graph_id"])
+        out = idmap.apply(self.ns, idmap.SET, table)[0]
         node = by_member(out, "새-ID")
         self.assertIn("새-ID", node["absorbed"][0]["members"])
-        self.assertNotIn(old, json.dumps(out))
+        self.assertNotIn(old, json.dumps([out["nodes"], out["batches"]]))
 
 
 class ExcludedDrawingsTest(unittest.TestCase):

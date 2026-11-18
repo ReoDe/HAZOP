@@ -1,0 +1,44 @@
+{
+ "id": "common.name_vessel",
+ "revision": 1,
+ "added": "2026-11-16",
+ "updated": "2026-11-16",
+ "name": {
+  "en": "RECEIVER / SEPARATOR / VESSEL",
+  "ko": "용기(이름 낱말)"
+ },
+ "category": "설비",
+ "role": "symbol",
+ "kind": "vessel",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "label_words",
+   "words": [
+    "RECEIVER"
+   ],
+   "order": 125
+  },
+  {
+   "shape": "label_words",
+   "words": [
+    "SEPARATOR"
+   ],
+   "order": 126
+  },
+  {
+   "shape": "label_words",
+   "words": [
+    "VESSEL"
+   ],
+   "order": 127
+  }
+ ],
+ "sources": [
+  {
+   "set": "일반 P&ID 표기",
+   "note": "설비 외곽 안 이름 낱말(APR1400 046쪽 AIR RECEIVER, 033쪽 AIR SEPARATOR). TANK(120)·PUMP(110)·CONDENSER(40)보다 뒤에 본다. 'CONDENSATE RECEIVER TANK'는 탱크다. 뷰어 그림은 fadea7a에 들어왔다"
+  }
+ ]
+}

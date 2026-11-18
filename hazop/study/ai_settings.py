@@ -16,6 +16,9 @@ DEFAULTS = {"ai_method": None, "ai_method_auto": None, "subscription_terms_ack_a
             "ai_models": {}, "allow_overage": False, "ai_concurrency": 1, "fixed_response_dir": None}
 CONCURRENCY_MAX = 2
 
+# 새 화면(auto_api=False): 구독을 쓸 수 없고 키가 있어도 API로 넘어가지 않을 때 한 번 알리는 글
+NOTICE_NO_SUBSCRIPTION = ("Claude 구독을 쓸 수 없어 AI 분석을 시작하지 않습니다. API 키(호출마다 요금)로 쓰려면 설정의 'API 키' 카드에서 "
+                          "'이 방식으로 사용'을 누르세요.")
 NOTICE_TO_API = "Claude Code를 쓸 수 없어 API 키로 연결했습니다. 구독을 쓰려면 AI 연결 설정을 여세요."
 NOTICE_TO_SUBSCRIPTION = ("AI 연결을 Claude 구독으로 바꿨습니다. 건별 요금이 나가지 않습니다. API 키로 되돌리려면 "
                           "AI 연결 설정을 여세요.")
@@ -110,16 +113,28 @@ class AiPrefs:
         return max(1, min(CONCURRENCY_MAX, n))
 
     # ---- 모델(구독·고정 응답. API 모델은 KeyStore.model)
+    def _models(self):
+        v = self._get("ai_models")
+        return v if isinstance(v, dict) else {}         # 손으로 고친 설정 파일의 다른 모양은 기본값으로 읽는다(고르면 고쳐 쓴다)
+
+    @property
+    def bad_models(self):
+        """설정 파일의 ai_models가 사전이 아니거나 모르는 모델을 적었는지(화면이 '기본값으로 읽었음'을 알린다)."""
+        v = self.settings.get("ai_models")
+        if v is None:
+            return False
+        return not isinstance(v, dict) or any(m not in claude_http.MODELS for m in v.values())
+
     def model(self, method):
         if method == "fixed":
             return None
-        m = (self._get("ai_models") or {}).get(method)
+        m = self._models().get(method)
         return m if m in claude_http.MODELS else claude_http.DEFAULT_MODEL
 
     def set_model(self, method, model):
         if model not in claude_http.MODELS:
             raise ValueError("지원하지 않는 모델")
-        models = dict(self._get("ai_models") or {})
+        models = {k: v for k, v in self._models().items() if v in claude_http.MODELS}
         models[method] = model
         self._set(ai_models=models)
 

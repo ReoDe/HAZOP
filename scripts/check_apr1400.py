@@ -241,16 +241,25 @@ def box_lines(chars, box):
 
 
 def tag_in_text(node, tl):
-    """태그가 도면에 찍힌 글자와 같은가. 계기 글자로 만든 태그는 노드 상자 안 위아래 두 줄을 이은 글자와 같아야 한다
+    """태그가 도면에 찍힌 글자와 같은가. 계기 글자로 만든 태그는 노드 상자 안 위아래 두 줄(사이에 덧붙인 기능 글자 한 줄은
+    건너뜀)을 이은 글자와 같아야 한다
     (접두를 추정해 붙였거나 기호 밖 번호를 가져온 태그는 틀림). 나머지는 그 쪽 낱말 하나와 같아야 한다."""
     if (node.get("evidence") or {}).get("tag_basis", "").startswith("isa_label"):
         x0, y0, x1, y1 = _box(node, 1.0)
         pairs = set()
         for chars, box in ((tl["chars"], (x0, y0, x1, y1)), (tl.get("turned") or [], (-y1, x0, -y0, x1)),
                            (tl.get("down") or [], (y0, -x1, y1, -x0))):
-            lines = box_words(chars, box)
+            # 글자·숫자가 하나도 없는 줄(원 상자에 걸친 옆 '(002)'의 '(' 등)은 줄로 세지 않는다. 추출의 라벨 줄은 글자 문단에서
+            # 오므로 이런 조각이 끼지 않는다(078쪽 XS 001, 079쪽 XS 003)
+            lines = [ln for ln in box_words(chars, box) if any(re.search(r"[A-Za-z0-9]", t) for t, _ in ln)]
             pairs |= {norm(a + b) for up, down in zip(lines, lines[1:]) for a, ax in up for b, bx in down
                       if abs(ax - bx) < 6}
+            # 기능 문자와 번호 사이에 덧붙인 기능 글자 한 줄('LIS / AHL / 3025A')은 건너뛴다. 가운데 줄은 숫자 없는 낱말 하나다
+            # 추출 pdf_vector_labels._assign_tags가 같은 조건으로 태그를 만든다(문장부호만 있는 줄을 뺀 뒤의 줄 기준).
+            # 한쪽을 바꾸면 다른 쪽도 같이 바꾼다
+            pairs |= {norm(a + b) for up, mid, down in zip(lines, lines[1:], lines[2:])
+                      if len(mid) == 1 and re.fullmatch(r"[A-Z]{1,4}", mid[0][0])
+                      for a, ax in up for b, bx in down if abs(ax - bx) < 6}
         return norm(node["tag"]) in pairs
     tag = norm(node["tag"])
     return tag in tl.get("runs", ()) or (tag in tl["tokens"] and tag not in tl.get("glued", ()))
@@ -356,11 +365,32 @@ def is_valve_number_tag(node):
     return (node.get("evidence") or {}).get("tag_basis") == "valve_number"
 
 
+def is_ident_tag(node):
+    """지시선으로 밸브에 붙은 번호 원의 번호를 태그로 단 것(R3 개선 6, pdf_vector_labels (d))."""
+    return (node.get("evidence") or {}).get("tag_basis") == "valve_ident_number"
+
+
+def ident_truth(key):
+    """정답지의 밸브 몸통 자리와 번호(closed_valves의 number, valve_positions의 label). 없으면 None(세지 않음)."""
+    rows = [(i.get("number"), i.get("bbox")) for i in key.get("closed_valves") or []]
+    rows += [(i.get("label"), i.get("bbox")) for i in key.get("valve_positions") or []]
+    seen, out = set(), []
+    for number, box in rows:
+        if number and box and number not in seen:
+            seen.add(number)
+            out.append((norm(number),) + _center(box))
+    return out or None
+
+
 def score_against_key(ex, key):
     """독립 정답 대비(한 노드는 한 정답에만): 계기(정답 기호 위치에 같은 글자 태그) · 연결 표시(정답 화살표 근처 연결점).
-    밸브 번호 태그는 정답지에 valve_numbers가 있을 때만 센다: 정답 번호 자리(몸통 상자)에 같은 번호면 맞음, 아니면 틀림."""
+    밸브 번호 태그는 정답지에 valve_numbers가 있을 때만 센다: 정답 번호 자리(몸통 상자)에 같은 번호면 맞음, 아니면 틀림.
+    번호 원 태그(valve_ident_number)는 정답지에 밸브 몸통 자리와 번호(closed_valves·valve_positions)가 있을 때만 같은 방식으로
+    세고, 없으면 ident_tags_unscored로 따로 낸다."""
     numbers = key.get("valve_numbers")
-    tagged = [n for n in ex["nodes"] if n.get("tag") and (numbers is not None or not is_valve_number_tag(n))]
+    idents = ident_truth(key)
+    tagged = [n for n in ex["nodes"] if n.get("tag") and (numbers is not None or not is_valve_number_tag(n))
+              and (idents is not None or not is_ident_tag(n))]
     placed = [i for i in numbers or () if i.get("bbox")]
     conts = [n for n in ex["nodes"] if n.get("kind") == "continuation"]
     inst = match_one_to_one([(norm(i["tag"]),) + _center(i["bbox"]) for i in key["instruments"]], tagged,
@@ -368,14 +398,17 @@ def score_against_key(ex, key):
     valve = match_one_to_one([(norm(i["tag"]),) + _center(i["bbox"]) for i in placed],
                              [n for n in tagged if is_valve_number_tag(n) and n.get("category") == "valve"],
                              lambda want, n: norm(n["tag"]) == want, NEAR)
+    ident = match_one_to_one(idents or [], [n for n in tagged if is_ident_tag(n)],
+                             lambda want, n: norm(n["tag"]) == want, NEAR)
     conn = match_one_to_one([(i["label"],) + _center(i["bbox"]) for i in key["connectors"]], conts,
                             lambda k, n: True, CONN_NEAR)
     return {"instruments": len(key["instruments"]), "instrument_hits": len(inst), "tagged": len(tagged),
-            "tagged_correct": len(inst) + len(valve), "connectors": len(key["connectors"]), "connector_hits": len(conn),
+            "tagged_correct": len(inst) + len(valve) + len(ident), "connectors": len(key["connectors"]), "connector_hits": len(conn),
             "continuations": len(conts), "continuations_correct": len(conn),
             "valve_numbers_keyed": int(numbers is not None), "valve_numbers": len(placed), "valve_number_hits": len(valve),
             "valve_number_tags_unscored": 0 if numbers is not None else sum(1 for n in ex["nodes"]
-                                                                            if n.get("tag") and is_valve_number_tag(n))}
+                                                                            if n.get("tag") and is_valve_number_tag(n)),
+            "ident_tags_unscored": 0 if idents is not None else sum(1 for n in ex["nodes"] if n.get("tag") and is_ident_tag(n))}
 
 
 def proxy_against_key(tl, key):

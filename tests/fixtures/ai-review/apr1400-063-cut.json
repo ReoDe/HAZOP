@@ -1,0 +1,667 @@
+{
+ "_note": "APR1400 DCD(공개 자료) 063쪽 추출 결과(@9a32226 r3 캐시)에서 잘라 낸 조각. ai_review 묶음·종류 질문 규칙 시험용(tests.test_ai_review).",
+ "drawing": {
+  "page_width": 1224,
+  "page_height": 792,
+  "title_block": {},
+  "drawing_number": null,
+  "title": null,
+  "revision": null,
+  "note": null,
+  "ignored_objects": [
+   {
+    "source_object_id": "pdf-p0-sym-0030",
+    "label_text": "M",
+    "bbox": [
+     205.167,
+     192.576,
+     4.194,
+     4.19
+    ],
+    "reason": "actuator_merged"
+   },
+   {
+    "source_object_id": "pdf-p0-sym-0070",
+    "label_text": "201P",
+    "bbox": [
+     695.042,
+     412.139,
+     5.872,
+     2.933
+    ],
+    "reason": "actuator_merged"
+   },
+   {
+    "source_object_id": "pdf-p0-sym-0095",
+    "label_text": "M",
+    "bbox": [
+     259.691,
+     460.742,
+     4.194,
+     4.19
+    ],
+    "reason": "actuator_merged"
+   },
+   {
+    "source_object_id": "pdf-p0-sym-0126",
+    "label_text": "M",
+    "bbox": [
+     259.691,
+     523.593,
+     4.194,
+     4.19
+    ],
+    "reason": "actuator_merged"
+   },
+   {
+    "source_object_id": "pdf-p0-sym-0145",
+    "label_text": "M",
+    "bbox": [
+     259.691,
+     586.445,
+     4.194,
+     4.19
+    ],
+    "reason": "actuator_merged"
+   },
+   {
+    "source_object_id": "pdf-p0-sym-0164",
+    "label_text": "M",
+    "bbox": [
+     624.58,
+     611.585,
+     4.194,
+     4.19
+    ],
+    "reason": "actuator_merged"
+   },
+   {
+    "source_object_id": "pdf-p0-sym-0165",
+    "label_text": "M",
+    "bbox": [
+     700.076,
+     611.587,
+     4.194,
+     4.19
+    ],
+    "reason": "actuator_merged"
+   },
+   {
+    "source_object_id": "pdf-p0-sym-0192",
+    "label_text": "212Q",
+    "bbox": [
+     514.694,
+     659.353,
+     5.872,
+     2.933
+    ],
+    "reason": "actuator_merged"
+   },
+   {
+    "source_object_id": "pdf-p0-sym-0196",
+    "label_text": "200",
+    "bbox": [
+     304.988,
+     663.543,
+     5.872,
+     2.933
+    ],
+    "reason": "actuator_merged"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0078",
+    "label_text": "",
+    "bbox": [
+     207.264,
+     196.766,
+     0,
+     5.866
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0091",
+    "label_text": "",
+    "bbox": [
+     261.788,
+     464.932,
+     0,
+     5.866
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0096",
+    "label_text": "",
+    "bbox": [
+     261.788,
+     527.783,
+     0,
+     5.866
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0111",
+    "label_text": "",
+    "bbox": [
+     307.924,
+     666.476,
+     0,
+     5.447
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0117",
+    "label_text": "",
+    "bbox": [
+     261.788,
+     590.635,
+     0,
+     5.866
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0124",
+    "label_text": "",
+    "bbox": [
+     626.677,
+     615.776,
+     0,
+     5.866
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0135",
+    "label_text": "",
+    "bbox": [
+     517.63,
+     662.286,
+     0,
+     5.447
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0228",
+    "label_text": "",
+    "bbox": [
+     697.978,
+     415.072,
+     0,
+     5.447
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0248",
+    "label_text": "",
+    "bbox": [
+     702.173,
+     615.777,
+     0,
+     5.866
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0323",
+    "label_text": "",
+    "bbox": [
+     263.587,
+     466.822,
+     0,
+     0
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-p0-conn-0324",
+    "label_text": "",
+    "bbox": [
+     263.587,
+     529.674,
+     0,
+     0
+    ],
+    "reason": "actuator_stem"
+   },
+   {
+    "source_object_id": "pdf-path-0095",
+    "label_text": "",
+    "bbox": [
+     711.608,
+     257.521,
+     0,
+     3.352
+    ],
+    "reason": "flange_plate"
+   },
+   {
+    "source_object_id": "pdf-path-0096",
+    "label_text": "",
+    "bbox": [
+     709.511,
+     257.521,
+     0,
+     3.352
+    ],
+    "reason": "flange_plate"
+   },
+   {
+    "source_object_id": "pdf-path-0098",
+    "label_text": "",
+    "bbox": [
+     678.055,
+     257.521,
+     0,
+     3.352
+    ],
+    "reason": "flange_plate"
+   },
+   {
+    "source_object_id": "pdf-path-0099",
+    "label_text": "",
+    "bbox": [
+     675.958,
+     257.521,
+     0,
+     3.352
+    ],
+    "reason": "flange_plate"
+   },
+   {
+    "source_object_id": "pdf-path-0407",
+    "label_text": "",
+    "bbox": [
+     373.143,
+     284.761,
+     0,
+     3.352
+    ],
+    "reason": "flange_plate"
+   },
+   {
+    "source_object_id": "pdf-path-0408",
+    "label_text": "",
+    "bbox": [
+     371.046,
+     284.761,
+     0,
+     3.352
+    ],
+    "reason": "flange_plate"
+   }
+  ]
+ },
+ "nodes": [
+  {
+   "local_id": "local-node-001",
+   "source_object_id": "pdf-p0-sym-0001",
+   "classification": "unclassified",
+   "category": null,
+   "kind": null,
+   "tag": null,
+   "label": "N",
+   "label_text": "N",
+   "label_location": {
+    "bbox": [
+     286.62,
+     102.562,
+     1.496,
+     2.069
+    ],
+    "approximate": false,
+    "method": "pdf_text_block"
+   },
+   "attributes": {},
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 286.113,
+    "y": 102.064,
+    "width": 11.744,
+    "height": 11.732
+   },
+   "evidence": {
+    "classification_basis": null,
+    "pdf_objects": [
+     "pdf-path-0512",
+     "pdf-path-0513"
+    ],
+    "stroke_only": false,
+    "symbol_marks": [],
+    "tag_basis": null
+   }
+  },
+  {
+   "local_id": "local-node-010",
+   "source_object_id": "pdf-p0-sym-0010",
+   "classification": "unclassified",
+   "category": null,
+   "kind": null,
+   "tag": null,
+   "label": "",
+   "label_text": "",
+   "label_location": null,
+   "attributes": {},
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 394.741,
+    "y": 127.923,
+    "width": 17.615,
+    "height": 7.662
+   },
+   "evidence": {
+    "classification_basis": "safety_class_boundary",
+    "pdf_objects": [
+     "pdf-path-0533",
+     "pdf-path-0534"
+    ],
+    "stroke_only": false,
+    "symbol_marks": [
+     "AIBI"
+    ],
+    "tag_basis": null
+   }
+  },
+  {
+   "local_id": "local-node-144",
+   "source_object_id": "pdf-p0-sym-0144",
+   "classification": "unclassified",
+   "category": null,
+   "kind": null,
+   "tag": null,
+   "label": "N",
+   "label_text": "N",
+   "label_location": {
+    "bbox": [
+     245.52,
+     580.227,
+     1.496,
+     2.069
+    ],
+    "approximate": false,
+    "method": "pdf_text_block"
+   },
+   "attributes": {},
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 245.012,
+    "y": 579.741,
+    "width": 11.744,
+    "height": 11.732
+   },
+   "evidence": {
+    "classification_basis": null,
+    "pdf_objects": [
+     "pdf-path-0795",
+     "pdf-path-0796"
+    ],
+    "stroke_only": false,
+    "symbol_marks": [],
+    "tag_basis": null
+   }
+  },
+  {
+   "local_id": "local-node-154",
+   "source_object_id": "pdf-p0-sym-0154",
+   "classification": "classified",
+   "category": "inline_component",
+   "kind": "orifice",
+   "tag": null,
+   "label": "OR03A",
+   "label_text": "OR03A",
+   "label_location": {
+    "bbox": [
+     237.258,
+     598.947,
+     11.644,
+     3.548
+    ],
+    "approximate": false,
+    "method": "pdf_text_block"
+   },
+   "attributes": {},
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 241.237,
+    "y": 594.825,
+    "width": 3.355,
+    "height": 3.352
+   },
+   "evidence": {
+    "classification_basis": "parallel_plates",
+    "pdf_objects": [
+     "pdf-path-0170",
+     "pdf-path-0171",
+     "pdf-path-0172"
+    ],
+    "stroke_only": true,
+    "symbol_marks": [],
+    "tag_basis": null
+   }
+  },
+  {
+   "local_id": "local-node-155",
+   "source_object_id": "pdf-p0-sym-0155",
+   "classification": "classified",
+   "category": "valve",
+   "kind": "motor_operated_valve",
+   "tag": null,
+   "label": "FL",
+   "label_text": "FL",
+   "label_location": {
+    "bbox": [
+     259.714,
+     599.366,
+     4.144,
+     3.548
+    ],
+    "approximate": false,
+    "method": "pdf_text_block"
+   },
+   "attributes": {
+    "normal_position": "NC",
+    "valve_type": "globe",
+    "actuator_type": "motor",
+    "motive_power": "electric",
+    "fail_position": "FL"
+   },
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 258.433,
+    "y": 594.825,
+    "width": 6.711,
+    "height": 3.352
+   },
+   "evidence": {
+    "classification_basis": "symbol:apr1400.globe_valve+actuator:apr1400.motor_operator",
+    "pdf_objects": [
+     "pdf-path-0788",
+     "pdf-path-0790"
+    ],
+    "stroke_only": false,
+    "symbol_marks": [],
+    "symbol_id": "apr1400.globe_valve",
+    "merged_objects": [
+     "pdf-path-0201",
+     "pdf-path-0793"
+    ],
+    "position_text": [
+     "FL"
+    ],
+    "tag_basis": null
+   }
+  },
+  {
+   "local_id": "local-node-215",
+   "source_object_id": "pdf-p0-junction-0008",
+   "classification": "classified",
+   "category": "piping_element",
+   "kind": "tee",
+   "tag": null,
+   "label": "",
+   "label_text": "",
+   "label_location": null,
+   "attributes": {},
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 281.757,
+    "y": 102.094,
+    "width": 2,
+    "height": 2
+   },
+   "evidence": {
+    "classification_basis": "line_junction_3plus",
+    "pdf_objects": [],
+    "stroke_only": false,
+    "symbol_marks": []
+   }
+  },
+  {
+   "local_id": "local-node-218",
+   "source_object_id": "pdf-p0-junction-0011",
+   "classification": "classified",
+   "category": "piping_element",
+   "kind": "tee",
+   "tag": null,
+   "label": "",
+   "label_text": "",
+   "label_location": null,
+   "attributes": {},
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 399.193,
+    "y": 102.094,
+    "width": 2,
+    "height": 2
+   },
+   "evidence": {
+    "classification_basis": "line_junction_3plus",
+    "pdf_objects": [],
+    "stroke_only": false,
+    "symbol_marks": []
+   }
+  }
+ ],
+ "relations": [],
+ "unresolved_connectors": [],
+ "texts": [
+  {
+   "local_id": "local-text-002",
+   "source_object_id": "pdf-p0-text-0006",
+   "label": "S",
+   "text": "S",
+   "attributes": {},
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 273.502,
+    "y": 107.226,
+    "width": 3.424,
+    "height": 2.281
+   },
+   "knowledge_status": "unknown",
+   "note": "소속 대상 미확정(거리 상한 밖)"
+  },
+  {
+   "local_id": "local-text-003",
+   "source_object_id": "pdf-p0-text-0007",
+   "label": "S",
+   "text": "S",
+   "attributes": {},
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 390.936,
+    "y": 107.226,
+    "width": 3.424,
+    "height": 2.281
+   },
+   "knowledge_status": "unknown",
+   "note": "소속 대상 미확정(거리 상한 밖)"
+  },
+  {
+   "local_id": "local-text-055",
+   "source_object_id": "pdf-p0-text-0184",
+   "label": "110Z",
+   "text": "110Z",
+   "attributes": {},
+   "style": null,
+   "parent": null,
+   "geometry": {
+    "x": 247.673,
+    "y": 585.179,
+    "width": 8.093,
+    "height": 3.548
+   },
+   "knowledge_status": "unknown",
+   "note": "소속 대상 미확정(거리 상한 밖)"
+  }
+ ],
+ "validation": {
+  "status": "passed",
+  "blockers": [],
+  "unknowns": [
+   {
+    "check": "missing_kind",
+    "target": "local-node-001",
+    "source_object_id": "pdf-p0-sym-0001",
+    "field": "kind",
+    "reason": "형상·글자 규칙으로 종류를 정할 근거 없음"
+   },
+   {
+    "check": "missing_kind",
+    "target": "local-node-144",
+    "source_object_id": "pdf-p0-sym-0144",
+    "field": "kind",
+    "reason": "형상·글자 규칙으로 종류를 정할 근거 없음"
+   },
+   {
+    "check": "missing_tag",
+    "target": "local-node-001",
+    "source_object_id": "pdf-p0-sym-0001",
+    "field": "tag",
+    "reason": "보이는 글자에서 태그를 정하지 못함(글자는 label_text에 보존)"
+   },
+   {
+    "check": "missing_tag",
+    "target": "local-node-010",
+    "source_object_id": "pdf-p0-sym-0010",
+    "field": "tag",
+    "reason": "보이는 글자에서 태그를 정하지 못함(글자는 label_text에 보존)"
+   },
+   {
+    "check": "missing_tag",
+    "target": "local-node-144",
+    "source_object_id": "pdf-p0-sym-0144",
+    "field": "tag",
+    "reason": "보이는 글자에서 태그를 정하지 못함(글자는 label_text에 보존)"
+   },
+   {
+    "check": "missing_tag",
+    "target": "local-node-154",
+    "source_object_id": "pdf-p0-sym-0154",
+    "field": "tag",
+    "reason": "보이는 글자에서 태그를 정하지 못함(글자는 label_text에 보존)"
+   },
+   {
+    "check": "missing_tag",
+    "target": "local-node-155",
+    "source_object_id": "pdf-p0-sym-0155",
+    "field": "tag",
+    "reason": "보이는 글자에서 태그를 정하지 못함(글자는 label_text에 보존)"
+   }
+  ]
+ }
+}

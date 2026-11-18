@@ -1,0 +1,33 @@
+/* 초기사건 패널(3단계). shell.css에서 옮김. A10: 편집 칸·되묻기·고르기 */
+.ie-cols { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.4fr); gap: var(--sp-4); align-items: start; }
+.ie-cols h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-md); }
+.ie .cand .main { flex: 1; min-width: 0; }
+.ie .cand.on { background: var(--accent-weak); }
+.ie .cand input[type=checkbox] { margin-right: var(--sp-2); }
+.ie h4 { margin: var(--sp-2) 0 2px; font-size: var(--fs-sm); color: var(--muted); display: flex; align-items: center; gap: var(--sp-2); }
+.ie-ask { border-color: var(--warn-line); background: var(--warn-bg); }
+.ie-pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); margin-bottom: var(--sp-2); padding: var(--sp-2); border-radius: var(--r-md); background: var(--accent-weak); }
+.ie-pick .textbox { flex: 1; min-width: 120px; height: 28px; }
+.ie-more { margin: var(--sp-1) 0; }
+.ie-rec { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.ie-rec.on { background: var(--surface); }
+.ie-form { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ie-form .editgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-2); }
+.ie-form label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); color: var(--muted); }
+.ie-rec .acts { display: inline-flex; gap: 2px; margin-left: var(--sp-2); }
+.ie-cov .main { flex: 1; min-width: 0; }
+.ie-judge { flex-wrap: wrap; margin-top: var(--sp-1); }
+.ie-judge .textbox { height: 28px; }
+.ie-judge input.textbox { flex: 1; min-width: 160px; }
+@media (max-width: 1100px) { .ie-cols { grid-template-columns: 1fr; } }
+.ie-frow { display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-1) 0 var(--sp-2); }
+.ie-ec { margin: var(--sp-1) 0 var(--sp-2); }
+.ie-ec select.textbox { height: 26px; }
+.ie-mld { margin-top: var(--sp-3); }
+.ie-conflict { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--warn-bg); }
+.ie-unread { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+/* B5 후보 카드: 한 줄 추적 */
+.ie-cand { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-2); }
+.ie-trace { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--sp-1); line-height: 1.5; }
+.ie-trace .tr-arrow { color: var(--muted); margin-right: 2px; }
+.ie .cand .nrow-b.main { text-align: left; display: flex; flex-direction: column; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }

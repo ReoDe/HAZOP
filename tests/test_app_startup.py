@@ -239,13 +239,85 @@ class RunAppStartupTest(unittest.TestCase):
         with mock.patch.object(startup, "ask_dialog", return_value=startup.BACKUP), \
                 mock.patch("hazop.app.make_application", return_value=app), \
                 mock.patch("hazop.app.main_window.MainWindow", side_effect=make_win):
-            self.assertEqual(self.ra.main(["--settings", self.path]), 0)
+            self.assertEqual(self.ra.main(["--classic", "--settings", self.path]), 0)   # 새 화면이 기본이라 이전 화면은 --classic으로 연다
         self.assertEqual(seen["path"], self.path)
         self.assertTrue(seen["ask"])  # 처음 실행처럼 검토자 이름을 묻는다
         self.assertEqual(seen["settings"], paths.DEFAULT_SETTINGS)
         backups = [n for n in os.listdir(self.tmp) if n.startswith("settings.json.bad-")]
         self.assertEqual(len(backups), 1)
 
+
+    def test_default_start_opens_the_new_window_and_the_off_setting_or_classic_flag_opens_the_old_one(self):
+        import json as _json
+
+        def run(argv, settings=None):
+            if settings is not None:
+                with open(self.path, "w", encoding="utf-8") as fh:
+                    _json.dump(settings, fh)
+            app = mock.Mock()
+            app.exec.return_value = 0
+            shell = mock.Mock()
+            shell.classic_requested = False
+            with mock.patch.object(startup, "ask_dialog", return_value=startup.BACKUP),                     mock.patch("hazop.app.make_application", return_value=app),                     mock.patch("hazop.shell.window.ShellWindow", return_value=shell) as new,                     mock.patch("hazop.app.main_window.MainWindow", return_value=mock.Mock()) as classic:
+                self.assertEqual(self.ra.main(argv + ["--settings", self.path]), 0)
+            return new.call_count, classic.call_count
+        self.assertEqual(run([]), (1, 0), "정하지 않았으면 새 화면")
+        self.assertEqual(run([], {"ui_shell": True}), (1, 0))
+        self.assertEqual(run([], {"ui_shell": False}), (0, 1), "사용자가 끈 설정은 이전 화면")
+        self.assertEqual(run(["--shell"], {"ui_shell": False}), (1, 0))
+        self.assertEqual(run(["--classic"], {"ui_shell": True}), (0, 1))
+
+    def test_shell_flag_or_setting_opens_the_new_web_window(self):
+        seen = {}
+
+        def make_shell(settings_path=None, debug=False, **kw):
+            seen.update(path=settings_path, debug=debug)
+            win = mock.Mock()
+            win.classic_requested = False
+            return win
+        app = mock.Mock()
+        app.exec.return_value = 0
+        with mock.patch.object(startup, "ask_dialog", return_value=startup.BACKUP),                 mock.patch("hazop.app.make_application", return_value=app),                 mock.patch("hazop.shell.window.ShellWindow", side_effect=make_shell),                 mock.patch("hazop.app.main_window.MainWindow") as classic:
+            self.assertEqual(self.ra.main(["--shell", "--settings", self.path]), 0)
+        self.assertEqual(seen["path"], self.path)
+        classic.assert_not_called()
+
+    def test_classic_switch_from_settings_opens_the_old_window_after_the_new_one_closes(self):
+        calls = []
+        shell = mock.Mock()
+        shell.classic_requested = True
+        app = mock.Mock()
+        app.exec.return_value = 0
+        with mock.patch.object(startup, "ask_dialog", return_value=startup.BACKUP),                 mock.patch("hazop.app.make_application", return_value=app),                 mock.patch("hazop.shell.window.ShellWindow", return_value=shell),                 mock.patch("hazop.app.main_window.MainWindow", side_effect=lambda **kw: calls.append(kw) or mock.Mock()):
+            self.assertEqual(self.ra.main(["--shell", "--settings", self.path]), 0)
+        self.assertEqual(len(calls), 1, "두 창을 함께 열지 않고 새 창이 닫힌 뒤 이전 창을 연다")
+        self.assertEqual(app.exec.call_count, 2)
+
+    def test_window_kind_choice(self):
+        self.assertEqual(startup.window_kind(), "shell", "새 화면이 기본")
+        self.assertEqual(startup.window_kind(shell=True), "shell")
+        self.assertEqual(startup.window_kind(setting=True), "shell")
+        self.assertEqual(startup.window_kind(setting=False), "classic", "사용자가 끈 설정")
+        self.assertEqual(startup.window_kind(shell=True, setting=False), "shell", "--shell은 설정이 꺼져 있어도 새 화면")
+        self.assertEqual(startup.window_kind(classic=True), "classic")
+        self.assertEqual(startup.window_kind(shell=True, classic=True), "classic")
+        self.assertEqual(startup.window_kind(setting=True, classic=True), "classic")
+        self.assertEqual(startup.window_kind(shell=True, screenshots="x"), "classic")
+        self.assertEqual(startup.window_kind(shell=True, run="r"), "classic")
+
+    def test_ui_shell_setting_opens_the_new_window(self):
+        import json as _json
+        with open(self.path, "w", encoding="utf-8") as fh:
+            _json.dump({"ui_shell": True}, fh)
+        self.assertIs(startup.shell_setting(self.path), True)
+        with open(self.path, "w", encoding="utf-8") as fh:
+            _json.dump({"ui_shell": False}, fh)
+        self.assertIs(startup.shell_setting(self.path), False)
+        for odd in ("yes", 1, None):
+            with open(self.path, "w", encoding="utf-8") as fh:
+                _json.dump({"ui_shell": odd}, fh)
+            self.assertIsNone(startup.shell_setting(self.path), "불리언이 아니면 정하지 않은 것: %r" % (odd,))
+        self.assertIsNone(startup.shell_setting(os.path.join(self.tmp, "none.json")))
 
     def test_second_instance_quits_before_window(self):
         """다른 실행이 잠금을 쥐고 있으면 대화형 실행은 안내 후 창을 만들지 않고 끝낸다. --screenshots는 잠금을 보지 않는다."""

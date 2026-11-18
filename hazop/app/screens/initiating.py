@@ -545,7 +545,7 @@ class InitiatingScreen(QWidget):
                                "(그룹·표제를 다시 묶어야 하고, 원인마다 IEC 번호를 새로 받습니다).")
         except OSError as exc:
             return self._empty("초기사건 저장 파일을 읽지 못함: %s" % exc)
-        synced = model.sync(doc, self.results)
+        synced = model.sync(doc, self.results, node_set=self.node_set)
         if synced is not doc and not self._save(synced):
             return
         self.doc = synced
@@ -920,7 +920,7 @@ class InitiatingScreen(QWidget):
         reviewer = reviewer or self._reviewer("확정하려면")
         if not reviewer:
             return False
-        done = self._apply(lambda d: model.confirm(d, g["group_id"], self.results, reviewer))
+        done = self._apply(lambda d: model.confirm(d, g["group_id"], self.results, reviewer, node_set=self.node_set))
         if done:
             self.app.toast("%s 그룹을 확정했습니다 · 검토자 %s" % (g["group_id"], reviewer.strip()))
             getattr(self.app, "refresh_stages", lambda: None)()

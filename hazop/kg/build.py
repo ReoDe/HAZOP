@@ -15,6 +15,7 @@
 import hashlib
 import json
 import os
+import threading
 import re
 import shutil
 
@@ -542,9 +543,13 @@ def dump_bytes(obj):
     return store_io.dump_bytes(obj)
 
 
+_MADE = threading.local()   # write_outputs가 방금 직렬화한 {id: (객체, 바이트)}. 같은 객체를 쓸 때만 다시 직렬화하지 않는다
+
+
 def write_json_atomic(path, obj):
     """store_io.write_bytes로 원자적으로 쓴다. 쓴 바이트를 돌려준다."""
-    data = dump_bytes(obj)
+    hit = getattr(_MADE, "data", {}).get(id(obj))
+    data = hit[1] if hit is not None and hit[0] is obj else dump_bytes(obj)
     store_io.write_bytes(path, data)
     return data
 
@@ -579,8 +584,12 @@ def write_outputs(kg_root, knowledge, kg):
         tmp_dir = ver_dir + ".partial"
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)  # 이전 실패로 남은 임시 폴더(포인터가 가리킨 적 없음)
-        write_json_atomic(os.path.join(tmp_dir, KNOWLEDGE_FILE), knowledge)
-        write_json_atomic(os.path.join(tmp_dir, KG_FILE), kg)
+        _MADE.data = {id(knowledge): (knowledge, kbytes), id(kg): (kg, gbytes)}   # 위에서 만든 바이트를 그대로 쓴다(다시 직렬화하면 0.6초)
+        try:
+            write_json_atomic(os.path.join(tmp_dir, KNOWLEDGE_FILE), knowledge)
+            write_json_atomic(os.path.join(tmp_dir, KG_FILE), kg)
+        finally:
+            _MADE.data = {}
         os.rename(tmp_dir, ver_dir)
     write_json_atomic(os.path.join(kg_root, POINTER_FILE),
                       {"kg_id": kg["kg_id"], "kg_version": kg["kg_version"],

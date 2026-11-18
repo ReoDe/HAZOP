@@ -1,0 +1,1252 @@
+{
+ "source": "hazop.extract.drawio.extract(SNP-M-101_RCS-main-loop.drawio)",
+ "nodes": [
+  {
+   "id": "local-node-001",
+   "kind": "reactor_vessel",
+   "tag": "RC-RV01",
+   "text": "RC-RV01\nREACTOR VESSEL",
+   "bbox": [
+    241,
+    411,
+    110,
+    280
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    153,
+    539,
+    84,
+    24
+   ]
+  },
+  {
+   "id": "local-node-002",
+   "kind": "steam_generator",
+   "tag": "RC-SG01",
+   "text": "RC-SG01\nSTEAM GENERATOR",
+   "bbox": [
+    741,
+    101,
+    150,
+    340
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    647,
+    259,
+    90,
+    24
+   ]
+  },
+  {
+   "id": "local-node-003",
+   "kind": "pump",
+   "tag": "RC-PP01",
+   "text": "RC-PP01\nREACTOR COOLANT PUMP",
+   "bbox": [
+    801,
+    621,
+    110,
+    135
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    915,
+    676.5,
+    120,
+    24
+   ]
+  },
+  {
+   "id": "local-node-004",
+   "kind": "tee",
+   "tag": "RC-L001-T4",
+   "text": "",
+   "bbox": [
+    460,
+    480,
+    2,
+    2
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-005",
+   "kind": "tee",
+   "tag": "RC-L001-T5",
+   "text": "",
+   "bbox": [
+    560,
+    480,
+    2,
+    2
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-006",
+   "kind": "tee",
+   "tag": "RC-L001-T6",
+   "text": "",
+   "bbox": [
+    670,
+    480,
+    2,
+    2
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-007",
+   "kind": "tee",
+   "tag": "RC-L002-T11",
+   "text": "",
+   "bbox": [
+    760,
+    630,
+    2,
+    2
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-008",
+   "kind": "manual_valve",
+   "tag": "RC-V002",
+   "text": "RC-V002",
+   "bbox": [
+    681,
+    616,
+    50,
+    30
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    685,
+    602,
+    42,
+    12
+   ]
+  },
+  {
+   "id": "local-node-009",
+   "kind": "pipe_cap",
+   "tag": "RC-CAP02",
+   "text": "",
+   "bbox": [
+    661,
+    621,
+    10,
+    20
+   ],
+   "rot": 0.0,
+   "flip_h": true,
+   "label": null
+  },
+  {
+   "id": "local-node-010",
+   "kind": "tee",
+   "tag": "RC-L003-T18",
+   "text": "",
+   "bbox": [
+    960,
+    780,
+    2,
+    2
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-011",
+   "kind": "tee",
+   "tag": "RC-L003-T19",
+   "text": "",
+   "bbox": [
+    850,
+    820,
+    2,
+    2
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-012",
+   "kind": "tee",
+   "tag": "RC-L003-T20",
+   "text": "",
+   "bbox": [
+    740,
+    820,
+    2,
+    2
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-013",
+   "kind": "tee",
+   "tag": "RC-L003-T21",
+   "text": "",
+   "bbox": [
+    630,
+    820,
+    2,
+    2
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-014",
+   "kind": "tee",
+   "tag": "RC-L003-T22",
+   "text": "",
+   "bbox": [
+    480,
+    820,
+    2,
+    2
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-015",
+   "kind": "continuation",
+   "tag": null,
+   "text": "TO SNP-M-102\nRC-L010 SURGE LINE",
+   "bbox": [
+    501,
+    311,
+    120,
+    34
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    512.4,
+    317.2,
+    97.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-016",
+   "kind": "continuation",
+   "tag": null,
+   "text": "TO SNP-M-102\nRC-L011 SPRAY LINE",
+   "bbox": [
+    571,
+    961,
+    120,
+    34
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    582.4,
+    967.2,
+    97.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-017",
+   "kind": "motor_operated_valve",
+   "tag": "RC-V010",
+   "text": "RC-V010",
+   "bbox": [
+    456,
+    861,
+    50,
+    50
+   ],
+   "rot": 90.0,
+   "flip_h": false,
+   "label": [
+    410,
+    880,
+    42,
+    12
+   ]
+  },
+  {
+   "id": "local-node-018",
+   "kind": "continuation",
+   "tag": null,
+   "text": "TO SNP-M-201\nCV-L001 LETDOWN",
+   "bbox": [
+    421,
+    971,
+    120,
+    34
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    440.5,
+    977.2,
+    81.0,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-019",
+   "kind": "continuation",
+   "tag": null,
+   "text": "FROM SNP-M-201\nCV-L020 CHARGING",
+   "bbox": [
+    981,
+    981,
+    120,
+    34
+   ],
+   "rot": 0.0,
+   "flip_h": true,
+   "label": [
+    997.8,
+    987.2,
+    86.4,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-020",
+   "kind": "check_valve",
+   "tag": "RC-V020",
+   "text": "RC-V020",
+   "bbox": [
+    726,
+    891,
+    30,
+    50
+   ],
+   "rot": 270.0,
+   "flip_h": false,
+   "label": [
+    680,
+    910,
+    42,
+    12
+   ]
+  },
+  {
+   "id": "local-node-021",
+   "kind": "continuation",
+   "tag": null,
+   "text": "FROM SNP-M-301\nSI-L005 SAFETY INJ.",
+   "bbox": [
+    21,
+    450,
+    120,
+    34
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    29.700000000000003,
+    456.2,
+    102.6,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-022",
+   "kind": "check_valve",
+   "tag": "RC-V030",
+   "text": "RC-V030",
+   "bbox": [
+    161,
+    452,
+    50,
+    30
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    165,
+    438,
+    42,
+    12
+   ]
+  },
+  {
+   "id": "local-node-023",
+   "kind": "manual_valve",
+   "tag": "RC-V001",
+   "text": "RC-V001",
+   "bbox": [
+    281,
+    341,
+    30,
+    50
+   ],
+   "rot": 90.0,
+   "flip_h": false,
+   "label": [
+    315,
+    360,
+    42,
+    12
+   ]
+  },
+  {
+   "id": "local-node-024",
+   "kind": "pipe_cap",
+   "tag": "RC-CAP01",
+   "text": "",
+   "bbox": [
+    286,
+    316,
+    20,
+    10
+   ],
+   "rot": 270.0,
+   "flip_h": false,
+   "label": null
+  },
+  {
+   "id": "local-node-025",
+   "kind": "continuation",
+   "tag": null,
+   "text": "TO SNP-M-501\nMS-L001 MAIN STEAM",
+   "bbox": [
+    1061,
+    41,
+    120,
+    34
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    1072.4,
+    47.2,
+    97.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-026",
+   "kind": "continuation",
+   "tag": null,
+   "text": "FROM SNP-M-501\nFW-L010 FEEDWATER",
+   "bbox": [
+    1061,
+    186,
+    120,
+    34
+   ],
+   "rot": 0.0,
+   "flip_h": true,
+   "label": [
+    1075.1,
+    192.2,
+    91.8,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-027",
+   "kind": "temperature_element",
+   "tag": "RC-TE101",
+   "text": "TE\n101",
+   "bbox": [
+    441,
+    381,
+    40,
+    40
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    452.9,
+    390.2,
+    16.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-028",
+   "kind": "transmitter",
+   "tag": "RC-TT101",
+   "text": "TT\n101",
+   "bbox": [
+    441,
+    301,
+    40,
+    40
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    452.9,
+    310.2,
+    16.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-029",
+   "kind": "indicator",
+   "tag": "RC-TI101",
+   "text": "TI\n101",
+   "bbox": [
+    441,
+    211,
+    40,
+    40
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    452.9,
+    220.2,
+    16.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-030",
+   "kind": "transmitter",
+   "tag": "RC-PT101",
+   "text": "PT\n101",
+   "bbox": [
+    651,
+    381,
+    40,
+    40
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    662.9,
+    390.2,
+    16.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-031",
+   "kind": "indicator",
+   "tag": "RC-PI101",
+   "text": "PI\n101",
+   "bbox": [
+    651,
+    301,
+    40,
+    40
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    662.9,
+    310.2,
+    16.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-032",
+   "kind": "temperature_element",
+   "tag": "RC-TE102",
+   "text": "TE\n102",
+   "bbox": [
+    831,
+    861,
+    40,
+    40
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    842.9,
+    870.2,
+    16.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-033",
+   "kind": "transmitter",
+   "tag": "RC-TT102",
+   "text": "TT\n102",
+   "bbox": [
+    901,
+    861,
+    40,
+    40
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    912.9,
+    870.2,
+    16.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-034",
+   "kind": "transmitter",
+   "tag": "RC-FT101",
+   "text": "FT\n101",
+   "bbox": [
+    1001,
+    761,
+    40,
+    40
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    1012.9000000000001,
+    770.2,
+    16.2,
+    21.6
+   ]
+  },
+  {
+   "id": "local-node-035",
+   "kind": "transmitter",
+   "tag": "RC-LT101",
+   "text": "LT\n101",
+   "bbox": [
+    121,
+    573,
+    40,
+    40
+   ],
+   "rot": 0.0,
+   "flip_h": false,
+   "label": [
+    132.9,
+    582.2,
+    16.2,
+    21.6
+   ]
+  }
+ ],
+ "pipes": [
+  {
+   "id": "local-edge-001",
+   "line_type": "process",
+   "line_no": "RC-L001",
+   "flow": true,
+   "points": [
+    [
+     351,
+     481
+    ],
+    [
+     461,
+     481
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-002",
+   "line_type": "process",
+   "line_no": "RC-L001",
+   "flow": true,
+   "points": [
+    [
+     461,
+     481
+    ],
+    [
+     561,
+     481
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-003",
+   "line_type": "process",
+   "line_no": "RC-L001",
+   "flow": true,
+   "points": [
+    [
+     561,
+     481
+    ],
+    [
+     671,
+     481
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-004",
+   "line_type": "process",
+   "line_no": "RC-L001",
+   "flow": true,
+   "points": [
+    [
+     671,
+     481
+    ],
+    [
+     793,
+     481
+    ],
+    [
+     793.5,
+     441
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-005",
+   "line_type": "process",
+   "line_no": "RC-L002",
+   "flow": true,
+   "points": [
+    [
+     838.5,
+     441
+    ],
+    [
+     838,
+     541
+    ],
+    [
+     761,
+     541
+    ],
+    [
+     761,
+     631
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-006",
+   "line_type": "process",
+   "line_no": "RC-L002",
+   "flow": true,
+   "points": [
+    [
+     761,
+     631
+    ],
+    [
+     761,
+     729
+    ],
+    [
+     801,
+     729
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-007",
+   "line_type": "process_secondary",
+   "line_no": "RC-L021",
+   "flow": false,
+   "points": [
+    [
+     761,
+     631
+    ],
+    [
+     731,
+     631
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-008",
+   "line_type": "process_secondary",
+   "line_no": "RC-L021",
+   "flow": false,
+   "points": [
+    [
+     681,
+     631
+    ],
+    [
+     671,
+     631
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-009",
+   "line_type": "process",
+   "line_no": "RC-L003",
+   "flow": true,
+   "points": [
+    [
+     911,
+     729
+    ],
+    [
+     961,
+     729
+    ],
+    [
+     961,
+     781
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-010",
+   "line_type": "process",
+   "line_no": "RC-L003",
+   "flow": true,
+   "points": [
+    [
+     961,
+     781
+    ],
+    [
+     961,
+     821
+    ],
+    [
+     851,
+     821
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-011",
+   "line_type": "process",
+   "line_no": "RC-L003",
+   "flow": true,
+   "points": [
+    [
+     851,
+     821
+    ],
+    [
+     741,
+     821
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-012",
+   "line_type": "process",
+   "line_no": "RC-L003",
+   "flow": true,
+   "points": [
+    [
+     741,
+     821
+    ],
+    [
+     631,
+     821
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-013",
+   "line_type": "process",
+   "line_no": "RC-L003",
+   "flow": true,
+   "points": [
+    [
+     631,
+     821
+    ],
+    [
+     481,
+     821
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-014",
+   "line_type": "process",
+   "line_no": "RC-L003",
+   "flow": true,
+   "points": [
+    [
+     481,
+     821
+    ],
+    [
+     421,
+     821
+    ],
+    [
+     421,
+     565
+    ],
+    [
+     351,
+     565
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-015",
+   "line_type": "process",
+   "line_no": "RC-L010",
+   "flow": true,
+   "points": [
+    [
+     561,
+     481
+    ],
+    [
+     561,
+     345
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-016",
+   "line_type": "process_secondary",
+   "line_no": "RC-L011",
+   "flow": true,
+   "points": [
+    [
+     631,
+     821
+    ],
+    [
+     631,
+     961
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-017",
+   "line_type": "process_secondary",
+   "line_no": "CV-L001",
+   "flow": true,
+   "points": [
+    [
+     481,
+     821
+    ],
+    [
+     481,
+     886
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-018",
+   "line_type": "process_secondary",
+   "line_no": "CV-L001",
+   "flow": true,
+   "points": [
+    [
+     481,
+     886
+    ],
+    [
+     481,
+     971
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-019",
+   "line_type": "process_secondary",
+   "line_no": "CV-L020",
+   "flow": true,
+   "points": [
+    [
+     981,
+     998
+    ],
+    [
+     741,
+     998
+    ],
+    [
+     741,
+     916
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-020",
+   "line_type": "process_secondary",
+   "line_no": "CV-L020",
+   "flow": true,
+   "points": [
+    [
+     741,
+     916
+    ],
+    [
+     741,
+     821
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-021",
+   "line_type": "process",
+   "line_no": "SI-L005",
+   "flow": true,
+   "points": [
+    [
+     141,
+     467
+    ],
+    [
+     161,
+     467
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-022",
+   "line_type": "process",
+   "line_no": "SI-L005",
+   "flow": true,
+   "points": [
+    [
+     211,
+     467
+    ],
+    [
+     241,
+     467
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-023",
+   "line_type": "process_secondary",
+   "line_no": "RC-L020",
+   "flow": false,
+   "points": [
+    [
+     296,
+     411
+    ],
+    [
+     296,
+     366
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-024",
+   "line_type": "process_secondary",
+   "line_no": "RC-L020",
+   "flow": false,
+   "points": [
+    [
+     296,
+     366
+    ],
+    [
+     296,
+     321
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-025",
+   "line_type": "process",
+   "line_no": "MS-L001",
+   "flow": true,
+   "points": [
+    [
+     816,
+     101
+    ],
+    [
+     816,
+     58
+    ],
+    [
+     1061,
+     58
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-026",
+   "line_type": "process",
+   "line_no": "FW-L010",
+   "flow": true,
+   "points": [
+    [
+     1061,
+     203
+    ],
+    [
+     891,
+     203
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-027",
+   "line_type": "instrument_tap",
+   "line_no": null,
+   "flow": false,
+   "points": [
+    [
+     461,
+     481
+    ],
+    [
+     461,
+     421
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-028",
+   "line_type": "signal_electric",
+   "line_no": null,
+   "flow": false,
+   "points": [
+    [
+     461,
+     381
+    ],
+    [
+     461,
+     341
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-029",
+   "line_type": "signal_electric",
+   "line_no": null,
+   "flow": false,
+   "points": [
+    [
+     461,
+     301
+    ],
+    [
+     461,
+     251
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-030",
+   "line_type": "instrument_tap",
+   "line_no": null,
+   "flow": false,
+   "points": [
+    [
+     671,
+     481
+    ],
+    [
+     671,
+     421
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-031",
+   "line_type": "signal_electric",
+   "line_no": null,
+   "flow": false,
+   "points": [
+    [
+     671,
+     381
+    ],
+    [
+     671,
+     341
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-032",
+   "line_type": "instrument_tap",
+   "line_no": null,
+   "flow": false,
+   "points": [
+    [
+     851,
+     821
+    ],
+    [
+     851,
+     861
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-033",
+   "line_type": "signal_electric",
+   "line_no": null,
+   "flow": false,
+   "points": [
+    [
+     871,
+     881
+    ],
+    [
+     901,
+     881
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-034",
+   "line_type": "instrument_tap",
+   "line_no": null,
+   "flow": false,
+   "points": [
+    [
+     961,
+     781
+    ],
+    [
+     1001,
+     781
+    ]
+   ]
+  },
+  {
+   "id": "local-edge-035",
+   "line_type": "instrument_tap",
+   "line_no": null,
+   "flow": false,
+   "points": [
+    [
+     241,
+     593
+    ],
+    [
+     161,
+     593
+    ]
+   ]
+  }
+ ]
+}

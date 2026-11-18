@@ -1,0 +1,34 @@
+{
+ "id": "apr1400.ducted_air_flow",
+ "revision": 1,
+ "added": "2026-11-15",
+ "updated": "2026-11-15",
+ "name": {
+  "en": "DUCTED AIR FLOW / NON-DUCTED AIR FLOW",
+  "ko": "덕트 공기 흐름 표시"
+ },
+ "category": "배관 요소",
+ "role": "symbol",
+ "kind": "air_flow_arrow",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "structure",
+   "requires": [
+    "flow_arrow"
+   ],
+   "order": 3,
+   "basis": "ducted_air_flow_arrow"
+  }
+ ],
+ "sources": [
+  {
+   "set": "APR1400 DCD Rev.3",
+   "figure": "1.7-1",
+   "sheet": "2/4",
+   "page": "1.7-10",
+   "note": "HVAC EQUIPMENT / DAMPERS SYMBOLS 칸의 덕트 끝 화살표. 화살촉을 기호에 넣는 규칙은 pdf_vector._arrow_heads"
+  }
+ ]
+}

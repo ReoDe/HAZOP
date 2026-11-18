@@ -63,6 +63,10 @@ STRUCTURE_FEATURES = {
     "single_circle": "몸체가 원 하나뿐",
     "single_tombstone": "몸체가 비석 모양 하나뿐",
     "chevrons": "몸체가 모두 오각 화살표 모양",
+    "wave": "몸체가 모두 배관 선 가운데의 물결(좌우로 번갈아 굽이친 곡선)",
+    "filter_panel": "안이 무늬(변에서 변까지 빗금·격자, 작은 점·원 여럿, 폭을 가로지르는 갈매기)로 찬 좁은 사각형 판(공조기 여과 판)",
+    "flow_arrow": "곧은 선만으로 된 선 기호의 한 선 끝에 그 선을 따라 화살촉이 달림(덕트 끝 공기 흐름 화살표)",
+    "coil_panel": "폭을 가로지르는 지그재그가 들고 HC·CC 글자가 붙은 좁은 사각형 판(공조기 코일)",
 }
 
 
@@ -226,9 +230,21 @@ def _number(entry_id, name, value, above):
     return float(value)
 
 
+NAME_PIECE_RE = re.compile(r'"[A-Z]"|[A-Z0-9]+')
+NAME_ID_RE = re.compile(r'"[A-Z]"|[A-Z]{1,2}|[A-Z]*\d[A-Z0-9]*')  # 이름 뒤 번호·짧은 기호('TA02', '"B"', 'DD')
+
+
+def _ends_name(text, word):
+    """text 안에서 word 뒤의 조각이 모두 번호·짧은 기호인 자리가 있는가(word가 이름의 끝 낱말). 낱말에 번호가 바로 붙은
+    기기 번호 조각('CV-HX01')도 그 설비를 가리킨다(SNP 스캔에서 OCR이 이름 끝 'HX'를 놓친 'CV-HX01 REGENERATIVE')."""
+    pieces = NAME_PIECE_RE.findall(text)
+    return any(p == word and all(NAME_ID_RE.fullmatch(q) for q in pieces[i + 1:]) for i, p in enumerate(pieces)) or \
+        any(re.fullmatch(re.escape(word) + r"\d+[A-Z]?", p) for p in pieces)
+
+
 class Template:
     __slots__ = ("entry_id", "shape", "comp_key", "size", "size_ratio", "max_distance", "variants",
-                 "set_attributes", "order", "requires", "basis", "words")
+                 "set_attributes", "order", "requires", "basis", "words", "last", "unless")
 
     def __init__(self, entry_id, spec):
         self.entry_id = entry_id
@@ -258,6 +274,19 @@ class Template:
                         or any(not isinstance(w, str) or not WORD_RE.match(w) for w in self.words):
                     raise SymbolLibraryError("%s: words=%r는 영문 대문자 낱말 하나 이상" % (entry_id, self.words))
                 self.words = tuple(self.words)
+                # last(기본 참): 낱말이 이름의 끝 낱말일 때만 맞는다. 뒤에는 번호('TA02')·두 글자 이하 기호('A', '"B"',
+                # 'DD')만 올 수 있다. 'TURBINE GENERATOR BLDG'·'PUMP CONTROLLER'·'CONDENSER SHELL PRESS. HIGH'처럼 다른 것을
+                # 꾸미는 낱말은 그 설비가 아니다(143쪽 이름 낱말 전수 점검, 2026-11-16)
+                self.last = spec.get("last", True)
+                if not isinstance(self.last, bool):
+                    raise SymbolLibraryError("%s: last=%r는 true/false" % (entry_id, self.last))
+                # unless: 이 낱말 가운데 하나라도 라벨에 있으면 맞지 않는다('DUCT HEATER'는 공조 덕트 가열 코일의 이름인데,
+                # 이름 글자가 코일 상자가 아닌 옆 송풍기에 붙는 일이 많다. 코일은 상자 안 HC·EL 글자로 읽는다)
+                self.unless = spec.get("unless", [])
+                if not isinstance(self.unless, list) or any(not isinstance(w, str) or not WORD_RE.match(w)
+                                                            for w in self.unless):
+                    raise SymbolLibraryError("%s: unless=%r는 영문 대문자 낱말 목록" % (entry_id, self.unless))
+                self.unless = tuple(self.unless)
             return
         if self.shape != "grid":
             raise SymbolLibraryError("%s: 모르는 견본 모양 %r" % (entry_id, self.shape))
@@ -404,10 +433,14 @@ class Library:
                 return e, t.basis
         return None, None
 
-    def word_rule(self, tokens):
-        """라벨의 영문 낱말들 → (항목, 맞은 낱말들). 낱말이 모두 있는 견본 가운데 order가 가장 작은 것."""
+    def word_rule(self, tokens, text=None):
+        """라벨의 영문 낱말들 → (항목, 맞은 낱말들). 낱말이 모두 있는 견본 가운데 order가 가장 작은 것.
+        last 견본은 라벨 글자(text, 대문자)에서 그 낱말 뒤에 번호·한 글자만 올 때만 맞는다(text가 없으면 낱말 목록으로 본다)."""
         for _, e, t in self._label_words:
-            if all(w in tokens for w in t.words):
+            if any(w in tokens for w in t.unless):
+                continue
+            if all(w in tokens for w in t.words) and (not t.last or _ends_name(text if text is not None else
+                                                                                " ".join(tokens), t.words[-1])):
                 return e, t.words
         return None, None
 

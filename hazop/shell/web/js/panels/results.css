@@ -1,0 +1,50 @@
+/* 분석 결과 패널(3단계): 구간×편차 행렬(가상 스크롤), 워크시트, 권고. shell.css에서 옮김 */
+.results .panel-b { gap: var(--sp-3); }
+.res-head { justify-content: space-between; flex-wrap: wrap; }
+.res-head .acts { display: flex; gap: 4px; flex-wrap: wrap; }
+.runmenu { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2); }
+.runplan { border-color: var(--accent); }
+.res-hint { padding: var(--sp-3); }
+.res-matrix { flex: none; }
+.rc { display: inline-flex; align-items: baseline; gap: 4px; padding: 1px 6px; border-radius: var(--r-sm); position: relative; }
+.rc small { color: var(--muted); font-size: var(--fs-xs); }
+.rc.risk-1 { background: var(--ok-bg); }
+.rc.risk-2 { background: var(--accent-weak); }
+.rc.risk-3 { background: var(--warn-bg); }
+.rc.risk-4, .rc.risk-5 { background: var(--err-bg); }
+.rk { display: inline-block; padding: 1px 6px; border-radius: var(--r-sm); font-size: var(--fs-xs); white-space: nowrap; cursor: help; }
+.rk-na { background: var(--surface); border: 1px dashed var(--line); color: var(--muted); }
+.rk-ns { color: var(--muted); }
+.rk-fail { background: var(--warn-bg); color: var(--warn); }
+.rk-ex { color: var(--faint); text-decoration: line-through; }
+.rk-nr { color: var(--muted); border: 1px dotted var(--line); }
+.results .vg-cell .rk { white-space: normal; line-height: 1.1; text-align: center; }
+.results .vg-ch-in .ch-en { display: block; font-size: 9px; color: var(--muted); }
+.dot-fail { position: absolute; bottom: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-line); }
+.res-legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); align-items: center; }
+.worksheet .en { font-size: var(--fs-xs); }
+.exportcard { border-color: var(--accent); display: flex; flex-direction: column; gap: var(--sp-2); }
+.exp-scopes, .exp-nodes { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
+.exp-nodes { max-height: 140px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--sp-2); }
+.exp-opt { display: inline-flex; align-items: center; gap: 4px; }
+.dot-un { position: absolute; top: -3px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-line); }
+.worksheet .ent { border-top: 1px solid var(--line); padding: var(--sp-2) 0; }
+.entgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-2) var(--sp-3); }
+.ent-acts { margin-top: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-2); }
+.editgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-2); }
+.editgrid label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-xs); color: var(--muted); }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent-ink); cursor: pointer; text-align: left; font: inherit; }
+.rec .linkish { text-decoration: underline; }
+.tracebox input { flex: 1; min-width: 160px; height: 28px; }
+.runplan .conn-paid { color: var(--warn); font-weight: 600; }
+/* B3 상세 열 */
+.worksheet .intent { flex-basis: 100%; }
+.worksheet .basis { margin-top: var(--sp-1); }
+.worksheet .basis-b { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-1) var(--sp-2); border-left: 2px solid var(--line); }
+.worksheet .warn-t { color: var(--warn); }
+.worksheet .draft { font-style: italic; }
+.edit-more { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-2); }
+.edit-more .sub-h { color: var(--muted); margin-top: var(--sp-1); }
+.edit-more .chk { flex-direction: row; align-items: center; gap: var(--sp-1); }
+.edit-more .sg-row input.textbox { flex: 1; min-width: 160px; }
+.edit-more .fm { width: 120px; }

@@ -73,7 +73,8 @@ class ProposeTest(unittest.TestCase):
                          (len(self.g["nodes"]), len(self.g["nodes"]), [], 1.0))
         for n in self.s["nodes"]:
             self.assertLessEqual(active_count(n, self.g), segment.MAX_ACTIVE, n["node_id"])
-        self.assertEqual(self.s["status"], "proposed")
+        self.assertEqual({n["state"] for n in self.s["nodes"]}, {"applied"})
+        self.assertNotIn("status", self.s, "0.2: 확정은 구간마다(집합 status 없음)")
         self.assertEqual([n["node_id"] for n in self.s["nodes"]], ["S%d" % i for i in range(1, len(self.s["nodes"]) + 1)])
 
     def test_only_vessels_are_boundaries(self):
@@ -123,7 +124,8 @@ class EditTest(unittest.TestCase):
         self.assertEqual(len(merged["nodes"]), len(self.s["nodes"]) - 1)
         self.assertEqual(sn.nodes_of(merged, "n-E1"), sn.nodes_of(merged, "n-P1"))
         node = node_named(merged, "n-P1")
-        self.assertEqual(node["origin"], "merged")
+        self.assertEqual(node["origin"], "script", "v2: origin은 처음 만든 쪽(바꾸지 않음)")
+        self.assertEqual(merged["batches"][-1]["kind"], "merge")
         self.assertEqual(merged["history"][-1]["op"], "merge")
         self.assertEqual(sn.coverage(merged, self.g)["ratio"], 1.0)
         self.assertEqual(len(self.s["history"]), 1, "input not mutated")
@@ -141,7 +143,7 @@ class EditTest(unittest.TestCase):
         self.assertIn("n-V2", node_named(out, "n-V2")["members"])
         self.assertEqual(sn.nodes_of(out, "n-V2"), [src["node_id"]])
         new = node_named(out, "n-V1")
-        self.assertEqual((new["name"], new["origin"], new["members"]), ("앞쪽", "split", ["n-V1", "s-1"]))
+        self.assertEqual((new["name"], new["origin"], new["members"]), ("앞쪽", "user", ["n-V1", "s-1"]))
         ids = [n["node_id"] for n in out["nodes"]]
         self.assertEqual(ids.index(new_id), ids.index(src["node_id"]) + 1)
         with self.assertRaises(ValueError):
@@ -163,7 +165,7 @@ class EditTest(unittest.TestCase):
         nid = sn.nodes_of(self.s, "n-TI0")[0]
         moved = sn.add_member(sn.remove_member(self.s, nid, "n-TI0", at=AT), sn.nodes_of(self.s, "n-E1")[0], "n-TI0")
         self.assertNotIn(nid, [n["node_id"] for n in moved["nodes"]], "마지막 구성요소를 빼면 구간도 없앰")
-        self.assertEqual(sn.confirm(moved, self.g, "검토자", at=AT)["status"], "confirmed")
+        self.assertTrue(sn.all_confirmed(sn.confirm(moved, self.g, "검토자", at=AT)))
         import copy
         emptied = copy.deepcopy(self.s)  # 구간을 없애기 전 판이 저장한 빈 구간
         next(n for n in emptied["nodes"] if n["node_id"] == nid)["members"] = []
@@ -172,8 +174,7 @@ class EditTest(unittest.TestCase):
         pump = sn.nodes_of(self.s, "n-P1")[0]
         dropped = sn.remove_member(sn.add_member(self.s, pump, "n-V1"), pump, "n-P1")
         self.assertEqual(sn.coverage(dropped, self.g)["uncovered"], ["n-P1"])
-        with self.assertRaisesRegex(ValueError, "어느 구간에도 없는"):
-            sn.confirm(dropped, self.g, "검토자", at=AT)
+        self.assertTrue(sn.all_confirmed(sn.confirm(dropped, self.g, "검토자", at=AT)), "v2: 구간 밖이 있어도 확정")
         newer = dict(self.g, graph_version="v-2")
         self.assertTrue(sn.is_stale(self.s, newer))
         with self.assertRaisesRegex(ValueError, "그래프 판"):
@@ -183,14 +184,15 @@ class EditTest(unittest.TestCase):
 
     def test_confirm_locks_until_reopen(self):
         done = sn.confirm(self.s, self.g, "김검토", at=AT)
-        self.assertEqual((done["status"], done["confirmed_by"], done["confirmed_at"]), ("confirmed", "김검토", AT))
+        self.assertEqual(done["nodes"][0]["confirmed"], {"at": AT, "by": "김검토", "rev": 1})
         nid = done["nodes"][0]["node_id"]
         with self.assertRaises(ValueError):
             sn.rename(done, nid, "x")
         again = sn.reopen(done, at=AT)
-        self.assertEqual((again["status"], again["confirmed_by"]), ("proposed", None))
+        self.assertEqual({(n["state"], n["confirmed"]) for n in again["nodes"]}, {("applied", None)})
         self.assertEqual(sn.rename(again, nid, "x")["nodes"][0]["name"], "x")
-        self.assertEqual([h["op"] for h in again["history"]], ["propose", "confirm", "reopen"])
+        self.assertEqual([h["op"] for h in again["history"]][:2], ["propose", "confirm"])
+        self.assertEqual({h["op"] for h in again["history"][2:]}, {"reopen"})
 
 
 class StoreTest(unittest.TestCase):
@@ -217,14 +219,17 @@ class StoreTest(unittest.TestCase):
         self.assertFalse(sn.any_confirmed())
         sn.save(sn.confirm(s, g, "김검토", at=AT))
         self.assertTrue(sn.any_confirmed())
-        self.assertEqual(sn.load(g)["status"], "confirmed")
+        self.assertTrue(sn.all_confirmed(sn.load(g)))
         self.assertEqual(os.listdir(os.path.dirname(path)), ["graph-T.json"])
 
-    def test_saved_set_from_older_graph_is_stale(self):
+    def test_saved_set_from_older_graph_follows_the_new_version(self):
         g = synthetic_graph()
         sn.save(sn.propose(g, at=AT))
         newer = dict(g, graph_version="v-2")
-        self.assertTrue(sn.is_stale(sn.load(newer), newer))
+        moved = sn.load(newer)
+        self.assertFalse(sn.is_stale(moved, newer), "v2: 판 이전은 모든 구간에 적용(규격 §2.6)")
+        self.assertEqual(moved["history"][-1]["op"], "migrate_version")
+        self.assertEqual({n["state"] for n in moved["nodes"]}, {"applied"})
 
     def test_broken_file_is_not_confirmed_and_load_rejects_foreign_kind(self):
         g = synthetic_graph()

@@ -1,0 +1,31 @@
+{
+ "id": "common.flexible_hose_wave",
+ "revision": 1,
+ "added": "2026-11-15",
+ "updated": "2026-11-15",
+ "name": {
+  "en": "FLEXIBLE HOSE",
+  "ko": "유연 호스(배관 위 물결)"
+ },
+ "category": "배관 부품",
+ "role": "symbol",
+ "kind": "flexible_hose",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "structure",
+   "requires": [
+    "wave"
+   ],
+   "order": 75,
+   "basis": "wave_on_pipe"
+  }
+ ],
+ "sources": [
+  {
+   "set": "APR1400 DCD Rev.3",
+   "note": "범례 1.7-1 1/4 FLEXIBLE HOSE: 배관 선 가운데에 반원 굽이를 번갈아 그린 물결"
+  }
+ ]
+}

@@ -411,7 +411,8 @@ def run_batch(client, batch, node_set, view, pg, adj, at, kn=None):
             continue
         node = next(n for n in node_set["nodes"] if n["node_id"] == prop["node_id"])
         out["proposals"].append(dict(prop, input_fp=input_fingerprint(node, node_set, adj, prop["merge_with"]),
-                                     knowledge_fp=knowledge_fp(node, kn), model=model, via=via, at=at))
+                                     knowledge_fp=knowledge_fp(node, kn), graph_version=node_set.get("graph_version"),
+                                     model=model, via=via, at=at))
     missing = [nid for nid in batch["node_ids"] if nid not in seen]
     out["dropped"] += [{"node_id": nid, "reason": "AI가 이 구간에 답하지 않음", "at": at} for nid in missing]
     return out
@@ -487,9 +488,21 @@ def uses_knowledge(doc):
     return any(p["decision"] == "open" and "knowledge_fp" in p for p in doc["proposals"])
 
 
+def _version_moved(proposal, node_set):
+    """제안을 받은 뒤 그래프 판이 바뀌었는가. 제안의 split_off 등은 그 판의 구성요소 id라, 다시 추출로 순번이 맞바뀌면 구간
+    구성요소 목록(input_fp)이 같아도 다른 기호를 가리킨다. 판을 적지 않은 옛 제안은 그 뒤에 판 이전 기록이 있는지로 본다."""
+    if "graph_version" in proposal:
+        return proposal["graph_version"] != node_set.get("graph_version")
+    at = proposal.get("at")
+    rows = [h for h in node_set.get("history") or [] if isinstance(h, dict) and h.get("op") == "migrate_version"]
+    return bool(rows) and (not isinstance(at, str) or any(str(h.get("at") or "") >= at for h in rows))
+
+
 def is_stale(proposal, node_set, adj, kn=None):
-    """구간·이웃·병합 대상이 바뀌었거나, 제안이 본 지식 항목이 달라졌으면 True.
-    knowledge_fp를 적지 않은 옛 제안은 지식으로 판정하지 않는다."""
+    """구간·이웃·병합 대상이 바뀌었거나, 그래프 판이 바뀌었거나, 제안이 본 지식 항목이 달라졌으면 True.
+    knowledge_fp를 적지 않은 옛 제안은 지식으로 판정하지 않는다. 오래된 제안은 다시 받으면 된다."""
+    if _version_moved(proposal, node_set):
+        return True
     node = next((n for n in node_set["nodes"] if n["node_id"] == proposal["node_id"]), None)
     if node is None or input_fingerprint(node, node_set, adj, proposal.get("merge_with") or ()) != proposal.get("input_fp"):
         return True
@@ -532,12 +545,15 @@ EDITABLE = ("verdict", "merge_with", "split_off", "screen_to", "design_intent")
 
 def accept(node_set, doc, proposal_id, by, adj, edited=None, at=None, kn=None):
     """(새 집합, 새 묶음). edited를 주면 그 값(EDITABLE 키만)으로 고쳐서 받는다. adj는 지금 집합의 adjacency.
-    오래된 제안(구간·이웃·병합 대상·지식 항목이 바뀜)은 받지 않는다(ValueError). 집합 history에 ai_review_accept
+    오래된 제안(그래프 판·구간·이웃·병합 대상·지식 항목이 바뀜)은 받지 않는다(ValueError). 집합 history에 ai_review_accept
     (제안 ID, 고쳐서 받았으면 고친 내용 changes)를 남긴다. 구간 연산은 손으로 하는 편집과 같은 nodes.merge·split이다."""
     out_doc = copy.deepcopy(doc)
     prop = next((p for p in out_doc["proposals"] if p["id"] == proposal_id), None)
     if prop is None or prop["decision"] != "open":
         raise ValueError("처리할 수 없는 제안: %s" % proposal_id)
+    if _version_moved(prop, node_set):
+        raise ValueError("제안을 받은 뒤 도면을 다시 추출해 그래프 판이 바뀌어 오래된 제안입니다. 제안이 가리키는 구성요소가 "
+                         "새 판에서 다른 기호일 수 있으니 다시 검토하세요: %s" % proposal_id)
     if is_stale(prop, node_set, adj, kn):
         raise ValueError("구간이나 이 구간의 지식 항목이 바뀌어 오래된 제안입니다. 다시 검토하세요: %s" % proposal_id)
     bad = set(edited or {}) - set(EDITABLE)

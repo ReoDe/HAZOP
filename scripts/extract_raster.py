@@ -4,6 +4,8 @@
   python scripts/extract_raster.py "resources/references/pid-samples/SNP-M-102_RCS-pressurizer/01_SNP-M-102.png"
   python scripts/extract_raster.py --samples       # 샘플 6개 PNG 전체(.drawio.png 제외, 결정 D1 블라인드)
   python scripts/extract_raster.py --no-ocr 그림.png  # 글자 인식 없이(미확인 ocr_unavailable 기록)
+  python scripts/extract_raster.py 쪽.png --px-per-pt 4.1667 --json-out 결과.json
+      # 한 장을 추출해 결과 JSON만 쓴다(출력 폴더 없음). 스캔 PDF 읽기(raster_scan.run_raster)가 래스터 venv를 이렇게 부른다
 OpenCV(opencv-python-headless)가 필요하다(결정 D7, packaging/requirements-raster.txt의 별도 venv). 없으면 종료 코드 2.
 빈 파일·손상 파일·상한(파일 100 MB, 50 MP)을 넘는 입력은 형식 오류로 알리고 종료 코드 2(blocker로 기록하지 않음).
 글자 인식(rapidocr-onnxruntime)이 없으면 글자 없이 추출하고 미확인으로 남긴다.
@@ -58,6 +60,9 @@ def main(argv=None):
     ap.add_argument("--samples", action="store_true", help="참고자료 샘플 PNG 전체(.drawio.png 제외)")
     ap.add_argument("--no-ocr", action="store_true", help="글자 인식을 쓰지 않는다")
     ap.add_argument("--out-root", default=DEFAULT_OUT)
+    ap.add_argument("--px-per-pt", type=float, help="실제 배율(1pt당 픽셀). 없으면 파일의 dpi 또는 A3 가로 가정")
+    ap.add_argument("--json-out", help="그림 한 장의 추출 결과를 이 파일에만 쓴다")
+    ap.add_argument("--repo-root", help="--json-out: 결과의 파일 경로를 이 폴더 기준으로 적는다")
     args = ap.parse_args(argv)
     jobs = list(args.image) + (sample_images() if args.samples else [])
     if not jobs:
@@ -69,6 +74,18 @@ def main(argv=None):
         return 2
     if not has_ocr and not args.no_ocr:
         print("글자 인식(rapidocr-onnxruntime) 없음: 글자 없이 추출하고 미확인 ocr_unavailable을 남긴다.")
+    if args.json_out:
+        if len(jobs) != 1:
+            ap.error("--json-out은 그림 한 장만")
+        params = {"px_per_pt": args.px_per_pt} if args.px_per_pt else None
+        try:
+            result = raster.extract(jobs[0], repo_root=args.repo_root, params=params, use_ocr=not args.no_ocr)
+        except (OSError, raster.RasterInputError) as exc:
+            print("입력 형식 오류: %s: %s" % (os.path.basename(jobs[0]), exc))
+            return 2
+        with open(args.json_out, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(result, fh, ensure_ascii=False)
+        return 1 if result["validation"]["status"] == "blocked" else 0
     blocked = bad_input = 0
     for path in jobs:
         try:

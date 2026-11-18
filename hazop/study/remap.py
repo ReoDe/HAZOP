@@ -1,4 +1,8 @@
-"""확정 해제 → 다시 제안·편집 → 다시 확정할 때 옛 구간과 ⑤ 결과를 새 구간에 잇는다. 근거: 기획서/검토구간-분할설계.md §4.6.
+"""0.1 집합의 옛 구간과 ⑤ 결과를 새 구간에 잇는다. 근거: 기획서/검토구간-분할설계.md §4.6, docs/specs/study-node-segmentation.md §2.5.
+
+0.2(구간마다 확정, 칸마다 node_rev)에서는 구간 ID가 확정 해제·다시 확정을 거쳐도 그대로라 옮길 일이 없다. 이 모듈은
+0.1 결과를 처음 읽을 때(hazop.study.convert 1단계)만 쓴다. 0.1 집합에는 겹침이 없어 구성요소마다 구간 하나(node_map의 owner)가 맞다.
+옛 구간과 새 구간은 구성요소 집합으로만 맞춘다(구간 ID는 보지 않음. 0.1 propose는 S1부터 다시 매김).
 
 nodes.reopen이 확정본의 구간 구성요소를 node_set["previous"](최근 것이 뒤, 최대 KEEP개)에 남기고, 편집·다시 제안이
 그것을 물려준다. 결과를 이을 때는 결과의 확정 열쇠(study_nodes_ref.confirmed_at)와 같은 기록을 쓴다(여러 번 확정
@@ -100,30 +104,55 @@ def _in_snapshot_version(old_results, snap, node_set):
         return old_results
     pseudo = {"status": "confirmed", "confirmed_at": want["confirmed_at"], "graph_version": want["graph_version"],
               "history": node_set.get("history") or [], "nodes": snap["nodes"]}
-    moved, n = migrate.migrate_results(old_results, pseudo)
+    moved, n = migrate.legacy_migrate_results(old_results, pseudo)
     return moved if n is not None else None
 
 
-def carry_results(old_results, node_set, deviations):
+def empty_legacy(node_set, deviations):
+    """0.1 모양의 빈 결과(집합 확정본 열쇠 study_nodes_ref, 모든 구간 × 편차)."""
+    return {"schema_version": "0.1", "kind": "hazop_study_results", "graph_id": node_set.get("graph_id"),
+            "study_nodes_ref": {"graph_version": node_set.get("graph_version"),
+                                "confirmed_at": node_set.get("confirmed_at")},
+            "deviations": [dict(d) for d in deviations],
+            "cells": [{"node_id": n["node_id"], "deviation_id": d["deviation_id"], "state": "not_analyzed", "entries": []}
+                      for n in node_set["nodes"] for d in deviations],
+            "ai_log": []}
+
+
+def carry_results(old_results, node_set, deviations, partial=False):
     """(새 확정본의 결과, 보고) 또는 (None, 보고). 보고: {same_cells, moved_entries, scope_changed_entries,
     to_excluded: [옛 구간], unmapped: [옛 구간], unmapped_deviations: [...], reason}.
-    멈출 사유가 있으면 결과를 만들지 않는다(사람이 먼저 정리해야 함)."""
+    멈출 사유가 있으면 결과를 만들지 않는다(사람이 먼저 정리해야 함).
+    partial이면 멈추지 않는다: 옮길 곳이 없는 칸은 결과의 archived_cells({cell, reason})로 남기고 나머지를 옮긴다
+    (0.1 → 0.2 변환 §2.5 경우 D). 결과를 만들 기록 자체가 없으면 손댄 칸을 모두 archived_cells(legacy_unmapped)로 둔다."""
     from hazop.study import migrate
     from hazop.study import results as res
     report = {"same_cells": 0, "moved_entries": 0, "scope_changed_entries": 0, "to_excluded": [], "unmapped": [],
               "unmapped_deviations": [], "reason": None}
     snap = _matching(node_set, old_results)
-    if snap is None:
-        return None, dict(report, reason="옛 결과를 만든 확정본 기록이 없음")
-    base = _in_snapshot_version(old_results, snap, node_set)
+    base = None if snap is None else _in_snapshot_version(old_results, snap, node_set)
     if base is None:
-        return None, dict(report, reason="옛 결과의 그래프 판에서 지금 판으로 이어지는 판 이전 기록이 없음")
+        why = ("옛 결과를 만든 확정본 기록이 없음" if snap is None
+               else "옛 결과의 그래프 판에서 지금 판으로 이어지는 판 이전 기록이 없음")
+        if not partial:
+            return None, dict(report, reason=why)
+        out = empty_legacy(node_set, deviations)
+        item_of = {d.get("deviation_id"): d.get("item_id") for d in old_results.get("deviations") or []}
+        out["archived_cells"] = [{"cell": dict(copy.deepcopy(c), item_id=c.get("item_id") or item_of.get(c["deviation_id"])),
+                                  "reason": "legacy_unmapped", "note": why}
+                                 for c in old_results.get("cells") or [] if c.get("entries")
+                                 or c.get("state") != "not_analyzed"]
+        out["ai_log"] = list(old_results.get("ai_log") or [])
+        return out, dict(report, reason=why, unmapped=[{"node_id": a["cell"]["node_id"],
+                                                        "deviation_id": a["cell"]["deviation_id"]}
+                                                       for a in out["archived_cells"]])
     # 그래프 판이 바뀌었으면 판 이전이 내용 같음을 확인한 경우에만 같음으로 본다(migrate.plan kept)
     same_version = snap["study_nodes_ref"]["graph_version"] == node_set.get("graph_version")
-    content_same = same_version or bool(migrate._steps(dict(base, study_nodes_ref=dict(
+    content_same = same_version or bool(migrate.legacy_steps(dict(base, study_nodes_ref=dict(
         base["study_nodes_ref"], confirmed_at=node_set.get("confirmed_at"))), node_set))
     old_to_new, _rows = node_map(snap, node_set, content_same)
-    out = res.empty_results(dict(node_set, graph_version=snap["study_nodes_ref"]["graph_version"]), deviations)
+    out = empty_legacy(dict(node_set, graph_version=snap["study_nodes_ref"]["graph_version"]), deviations)
+    archived = []
     cells = {(c["node_id"], c["deviation_id"]): c for c in out["cells"]}
     new_dev = {d["item_id"]: d["deviation_id"] for d in deviations}
     old_dev = {d["deviation_id"]: d.get("item_id") for d in base.get("deviations") or []}
@@ -135,10 +164,14 @@ def carry_results(old_results, node_set, deviations):
             if touched:
                 report["unmapped_deviations" if did is None else "unmapped"].append(
                     {"node_id": c["node_id"], "deviation_id": c["deviation_id"]})
+                archived.append({"cell": dict(copy.deepcopy(c), item_id=old_dev.get(c["deviation_id"])),
+                                 "reason": "deviation_removed" if did is None else "legacy_unmapped"})
             continue
         if target["to_excluded"] and not target["exact"] and any(
                 e.get("status") in res.HUMAN_STATUSES for e in c["entries"]):
             report["to_excluded"].append(c["node_id"])
+            archived.append({"cell": dict(copy.deepcopy(c), item_id=old_dev.get(c["deviation_id"])),
+                             "reason": "to_excluded"})
             continue
         cell = cells[(target["node_id"], did)]
         if target["exact"]:
@@ -153,65 +186,25 @@ def carry_results(old_results, node_set, deviations):
             report["scope_changed_entries"] += 1
         cell["state"] = "analyzed" if cell["entries"] else "not_analyzed"
     report["to_excluded"] = sorted(set(report["to_excluded"]), key=_num)
-    if report["to_excluded"] or report["unmapped"] or report["unmapped_deviations"]:
+    stopped = report["to_excluded"] or report["unmapped"] or report["unmapped_deviations"]
+    if stopped and not partial:
         return None, dict(report, reason="옮길 곳이 정해지지 않은 옛 칸이 있음")
+    if stopped:
+        report["reason"] = "옮길 곳이 정해지지 않은 옛 칸 %d개를 보관함" % len(archived)
+    out["archived_cells"] = archived
     out["ai_log"] = list(base.get("ai_log") or [])
     out["carried_from"] = snap["study_nodes_ref"]
     if not same_version:
-        moved, n = migrate.migrate_results(out, node_set)
+        moved, n = migrate.legacy_migrate_results(out, node_set)
         if n is not None:  # 판 이전 기록이 이어지면 그대로 kg_paths·판을 지금으로 맞춘다
             out = moved
         else:  # 내용이 바뀐 새 판: 모든 항목이 이미 '범위 바뀜'이라 사람이 다시 본다
             out["study_nodes_ref"] = {"graph_version": node_set.get("graph_version"),
                                       "confirmed_at": node_set.get("confirmed_at")}
-    problems = res.validate(out, node_set)
+    problems = [] if partial else res.validate(out, node_set)
     if problems:
         return None, dict(report, reason="옮긴 결과에 문제 %d건(%s)" % (len(problems), problems[0]))
     return out, report
-
-
-def carry_saved(node_set, deviations):
-    """확정본 node_set의 저장된 결과가 옛 확정본 것이면 옮겨 바로 저장한다(옛 파일은 보관본). (옮긴 결과 또는 None, 보고).
-    ④ 확정 직후와 ⑤ 열기에서 같은 길로 부른다(어느 화면이 먼저든 모든 화면이 같은 결과를 읽게)."""
-    import os
-    from hazop import store_io
-    from hazop.study import nodes
-    from hazop.study import results as res
-    if node_set.get("status") != "confirmed" or not node_set.get("previous"):
-        return None, {"reason": None}
-    path = res.store_path(node_set.get("project_id"), node_set["graph_id"])
-    old = res.read(res._readable_path(node_set.get("project_id"), node_set["graph_id"]))
-    if old is not None and not res.is_stale(old, node_set):
-        return None, {"reason": None}
-    if old is None or _matching(node_set, old) is None:
-        old = _archived_match(path, node_set) or old  # 앞서 ⑤가 보관본으로 옮긴 옛 결과도 찾는다
-    if old is None:
-        return None, {"reason": None}
-    carried, report = carry_results(old, node_set, deviations)
-    if carried is None:
-        return None, report
-    if os.path.isfile(path):
-        os.replace(path, store_io.unused_name("%s.%s%%s.bak.json" % (path[:-5], nodes.now_utc().replace(":", ""))))
-    res.save_fp(carried, node_set.get("project_id"), expect=None)  # 옛 파일은 방금 보관본으로 옮겼다
-    return carried, report
-
-
-def _archived_match(path, node_set):
-    """path 옆 보관본(<이름>.<시각>.bak.json) 중 기억한 확정본으로 만든 가장 최근 결과."""
-    import os
-    from hazop.study import results as res
-    folder, base = os.path.split(path)
-    if not os.path.isdir(folder):
-        return None
-    for name in sorted((n for n in os.listdir(folder) if n.startswith(base[:-5] + ".") and n.endswith(".bak.json")),
-                       reverse=True):
-        try:
-            doc = res.read(os.path.join(folder, name))
-        except (OSError, ValueError):
-            continue
-        if doc is not None and _matching(node_set, doc) is not None:
-            return doc
-    return None
 
 
 def preview(node_set, new_set, deviations):

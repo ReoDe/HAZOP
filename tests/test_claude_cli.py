@@ -98,6 +98,28 @@ class AnalyzeTest(CliCase):
         self.assertTrue(os.path.normcase(c["cwd"]).startswith(os.path.normcase(self.run_root)))
         self.assertEqual(os.listdir(self.run_root), [], "끝나면 작업 폴더를 지움")
 
+    def test_images_go_as_stream_json_blocks_with_tools_still_off(self):
+        img = {"label": "그림 k-1", "media_type": "image/png", "data": "iVBORw0KGgo="}
+        r = self.client("ok").analyze(dict(REQUEST, images=[img]))
+        self.assertEqual(r["status"], "completed")
+        c = self.call()
+        args = c["args"]
+        self.assertEqual(args[args.index("--input-format") + 1], "stream-json")
+        self.assertEqual(args[args.index("--tools") + 1], "", "그림을 실어도 도구는 끈 채")
+        self.assertEqual(args[args.index("--disallowedTools") + 1], "mcp__*")
+        self.assertNotIn("--allowedTools", args)
+        msg = json.loads(c["stdin"])
+        self.assertEqual((msg["type"], msg["message"]["role"]), ("user", "user"))
+        blocks = msg["message"]["content"]
+        self.assertEqual([b["type"] for b in blocks], ["text", "image", "text"])
+        self.assertEqual(blocks[0]["text"], "그림 k-1")
+        self.assertEqual(blocks[1]["source"], {"type": "base64", "media_type": "image/png", "data": "iVBORw0KGgo="})
+        self.assertEqual(blocks[2]["text"], "구간 맥락 한국어\n\n편차 묶음")
+
+    def test_text_request_keeps_plain_stdin(self):
+        self.client("ok").analyze(REQUEST)
+        self.assertNotIn("--input-format", self.call()["args"])
+
     def test_garbage_lines_skipped(self):
         self.assertEqual(self.client("garbage").analyze(REQUEST)["status"], "completed")
 
@@ -297,12 +319,15 @@ class FindTest(unittest.TestCase):
 
 
 class ProvidersTest(unittest.TestCase):
-    def test_frozen_hides_subscription(self):
+    def test_frozen_offers_subscription(self):
+        """U3 2026-11-13 개정(DEC-0306): 배포본도 구독을 고를 수 있고, 확인이 통과하면 기본이 구독이다. 고정 응답은 숨긴다."""
         with mock.patch("hazop.paths.frozen_bundle_dir", return_value="C:/bundle"):
-            self.assertEqual(providers.available_methods(), ("api",))
-            self.assertEqual(providers.default_method("ok"), "api")
+            self.assertEqual(providers.available_methods(), ("subscription", "api"))
+            self.assertEqual(providers.default_method("ok"), "subscription")
+            self.assertEqual(providers.default_method("not_installed"), "api")
+            self.assertIsInstance(providers.make_client("subscription"), claude_cli.ClaudeCliClient)
             with self.assertRaises(ValueError):
-                providers.make_client("subscription")
+                providers.make_client("fixed", response_dir="x")
         with mock.patch("hazop.paths.frozen_bundle_dir", return_value=None):
             self.assertEqual(providers.default_method("ok"), "subscription")
             self.assertEqual(providers.default_method("login_required"), "api")

@@ -743,8 +743,9 @@ class BuriedPipeTest(unittest.TestCase):
         ex = extract([prim(GATE), prim([(130, 100), (136, 103), (136, 100), (130, 103), (130, 100)]),
                       dashed([(106, 101.5), (130, 101.5)])] + [dot(x, 101.5) for x in (113.3, 122.1)])
         self.assertFalse(any(o.get("reason") == "line_dot" for o in ex["drawing"]["ignored_objects"]))
-        self.assertNotIn("physical_connection", {r["kind"] for r in ex["relations"] + ex["unresolved_connectors"]
-                                                 if r["line_type"] == "pdf_dashed"})
+        # 점이 점선을 실선 배관으로 바꾸지 않는다. 두 밸브를 흐름 축으로 잇는 점선은 배관일 수 있으므로(APR1400 008쪽,
+        # _dashed_pipe) 관계 종류가 아니라 선 종류가 점선으로 남는지를 본다
+        self.assertEqual({r["line_type"] for r in ex["relations"] + ex["unresolved_connectors"]}, {"pdf_dashed"})
 
 
 def word(text, x0, top, size=3.0):
@@ -771,14 +772,30 @@ class IsaBubbleKindTest(unittest.TestCase):
     """기존 마지막 글자 규칙이 못 정한 계기 원만 ISA 기능 문자로 정한다(3e)."""
 
     def test_function_letters(self):
-        cases = {"ZL\n202C": "indicator", "LG\n5": "indicator", "FICKS\n101": "controller",
+        cases = {"LG\n5": "indicator", "FICKS\n101": "controller",
                  "PISL\n101": "switch", "LEITS\n2": "transmitter", "PTAL\n3110A": "transmitter"}
         for text, kind in cases.items():
             self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], kind, text)
 
-    def test_thermowell_alarm_and_annotation_get_no_kind(self):
-        # FE(원 안 검출부)는 배관 부품 kind로 두지 않는다. V(밸브)·설비 번호(RCP 1A)·PSE(파열판)도 계기 kind가 아니다(3e 검토)
-        for text in ("TEW\n4", "TEWIS\n1", "PDAH\n032", "LL", "HHL", "NO", "SY\n019", "RE\n073A", "FE\n341A",
+    def test_thermowell_is_a_temperature_element(self):
+        # TEW(보호관 온도 측정점)는 온도 측정점으로 본다(R3 개선 4, 2026-11-13. 3e에서는 종류를 비웠다)
+        for text in ("TEW\n4", "TEWIS\n1", "TEW 38A"):
+            self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], "temperature_element", text)
+
+    def test_legend_codes(self):
+        # APR1400 범례 1.7-1(2/4·3/4)·1.7-9가 이름을 준 계기 표기. 번호가 없어도 계기 원 안이면 정한다
+        cases = {"ZL\n202C": "pilot_light", "ZL": "pilot_light", "PDAH\n032": "alarm", "XAH\n051": "alarm",
+                 "PAL": "alarm", "PDAH": "alarm", "AX\n134": "sample_probe", "FG": "sight_glass",
+                 "LE\n058": "level_element", "TW\n311": "temperature_element",
+                 # 기능 문자 Y(3/4 RELAY, CONVERTER, COMPUTING)는 registry 0.11.0부터 relay_converter다(예전에는 종류 없음)
+                 "SY\n019": "relay_converter"}
+        for text, kind in cases.items():
+            self.assertEqual(pdf_vector._instrument_kind(text, 12.0)[0], kind, text)
+
+    def test_annotation_gets_no_kind(self):
+        # FE(원 안 검출부)는 배관 부품 kind로 두지 않는다. V(밸브)·설비 번호(RCP 1A)·PSE(파열판)도 계기 kind가 아니다(3e 검토).
+        # 범례 덧붙임 글자(LL·HL·FL)는 번호 없이 홀로 있으면 표시등이 아니다
+        for text in ("LL", "HL", "FL", "HHL", "NO", "RE\n073A", "FE\n341A",
                      "PSV\n101", "PSE\n101", "PCV\n101", "FCV\n101", "RCP\n1A"):
             self.assertIsNone(pdf_vector._instrument_kind(text, 12.0)[0], text)
 
@@ -819,10 +836,25 @@ class RuleTemplateTest(LibraryCase):
     def test_label_words_need_every_word(self):
         lib = self.write([rule_entry("t.sg", "steam_generator", [label_words(["STEAM", "GENERATOR"], 10)]),
                           rule_entry("t.pump", "pump", [label_words(["PUMP"], 20)])])
-        self.assertEqual(lib.word_rule(["STEAM", "GENERATOR", "FEED", "PUMP"])[0].id, "t.sg")
+        self.assertEqual(lib.word_rule(["STEAM", "GENERATOR", "FEED", "PUMP"])[0].id, "t.pump")  # 이름 끝 낱말이 이긴다
+        self.assertEqual(lib.word_rule(["FEED", "PUMP", "STEAM", "GENERATOR"])[0].id, "t.sg")
         self.assertEqual(lib.word_rule(["STEAM", "PUMP"])[0].id, "t.pump")
         self.assertEqual(lib.word_rule(["PUMP"])[1], ("PUMP",))
         self.assertEqual(lib.word_rule(["PUMPS"]), (None, None))
+
+    def test_last_word_template_needs_only_ids_after_the_word(self):
+        lib = self.write([rule_entry("t.turbine", "turbine", [dict(label_words(["TURBINE"], 10), last=True)]),
+                          rule_entry("t.pump", "pump", [label_words(["PUMP"], 20)])])
+        self.assertEqual(lib.word_rule(["LOW", "PRESSURE", "TURBINE", "A", "TA"], 'LOW PRESSURE TURBINE "A" TA02')[0].id,
+                         "t.turbine")
+        self.assertEqual(lib.word_rule(["TURBINE", "DRIVEN", "PUMP"], "TURBINE-DRIVEN PUMP")[0].id, "t.pump")
+        self.assertEqual(lib.word_rule(["TURBINE", "TRIP"], "TURBINE TRIP"), (None, None))
+
+    def test_unless_word_blocks_the_template(self):
+        # 'DUCT HEATER'는 공조 가열 코일의 이름이고 옆 송풍기에 붙기 쉬워 HEATER 견본이 맞지 않는다
+        lib = self.write([rule_entry("t.hx", "heat_exchanger", [dict(label_words(["HEATER"], 10), unless=["DUCT"])])])
+        self.assertEqual(lib.word_rule(["LP", "FW", "HEATER", "3A"], "LP FW HEATER 3A")[0].id, "t.hx")
+        self.assertEqual(lib.word_rule(["RSR", "ELECT", "DUCT", "HEATER"], "RSR ELECT. DUCT HEATER"), (None, None))
 
     def test_rule_templates_do_not_join_grid_matching(self):
         lib = self.write([rule_entry("t.plain", "manual_valve", [structure(["bowtie"], 20, "valve_body")])])
@@ -900,15 +932,28 @@ class CommonRuleTest(unittest.TestCase):
         (("REACTOR", "VESSEL"), "reactor_vessel"), (("STEAM", "GENERATOR"), "steam_generator"),
         (("PRESSURIZER",), "pressurizer"), (("CONDENSER",), "condenser"), (("TURBINE",), "turbine"),
         (("DEMINERALIZER",), "demineralizer"), (("FILTER",), "filter"), (("EXCHANGER",), "heat_exchanger"),
-        (("HX",), "heat_exchanger"), (("COOLER",), "heat_exchanger"), (("PUMP",), "pump"), (("TANK",), "tank"),
+        (("HX",), "heat_exchanger"), (("COOLER",), "heat_exchanger"), (("PUMP",), "pump"),
+        (("COMPRESSOR",), "compressor"),  # 2026-11-16 common.name_compressor(115). PUMP가 먼저, TANK가 나중이다
+        (("TANK",), "tank"),
+        (("VESSEL",), "vessel"),  # 옮긴 뒤 더함(common.name_vessel, 2026-11-16). REACTOR VESSEL·TANK가 먼저다
         (("VENT",), "vent"), (("ATM",), "vent"),
     ]
 
     def old_word_rule(self, tokens):
+        # 2026-11-16부터 이름 낱말은 이름의 끝 낱말일 때만 맞는다(견본 last 기본값). 뒤에는 두 글자 이하 기호(HX 등)만 올 수 있다
         for words, kind in self.WORDS:
-            if all(w in tokens for w in words):
+            if all(w in tokens for w in words) and \
+                    all(len(t) <= 2 for t in tokens[len(tokens) - tokens[::-1].index(words[-1]):]):
                 return kind, "text_word:%s" % "+".join(words)
         return None, None
+
+    def test_turbine_is_a_name_only_as_the_last_word(self):
+        # APR1400 143쪽에서 TURBINE 낱말이 정한 노드 53개 중 11개만 맞았다(2026-11-16). 건물 이름·구동 설명·신호 글자는 터빈이 아니다
+        for text, kind in (("LOW PRESSURE TURBINE A\nTA02", "turbine"), ('L.P. TURBINE "A"', "turbine"),
+                           ("AF PUMP\nTURBINE\nTA01A", "turbine"), ("HV04\nTURBINE\nGENERATOR BLDG.", None),
+                           ("TURBINE TRIP", None), ("BELOW 10%\nTURBINE LOAD", None),
+                           ("TURBINE-DRIVEN\nFEEDWATER PUMP", "pump")):
+            self.assertEqual(pdf_vector._kind_from_text(text)[0], kind, text)
 
     def test_shape_rules(self):
         lib = pdf_vector.symbol_library()
@@ -923,9 +968,30 @@ class CommonRuleTest(unittest.TestCase):
             tokens = [w for i, w in enumerate(vocab) if mask >> i & 1]
             self.assertEqual(pdf_vector._kind_from_text(" ".join(tokens)), self.old_word_rule(tokens), tokens)
 
+    def test_prefilter_and_afterfilter_names_are_filters(self):
+        # APR1400 046쪽 'AIR PREFILTER'·'AIR AFTERFILTER' 상자: FILTER가 붙어 한 낱말이 된 설비 이름
+        for text in ("AIR\nPREFILTER", "AIR\nAFTERFILTER"):
+            self.assertEqual(pdf_vector._kind_from_text(text)[0], "filter", text)
+
+    def test_strainer_vessel_and_cooler_names(self):
+        # 뷰어 그림이 생긴 종류(fadea7a)의 설비 이름 낱말. 압축기 냉각기(043쪽 'AIR COMPRESSOR "A" AFTERCOOLER')는 열교환기다.
+        # 'CONDENSATE RECEIVER TANK'처럼 TANK가 함께 있으면 탱크다. 046쪽 압축기 외곽이 제 이름을 갖게 되어(2026-11-16)
+        # COMPRESSOR 낱말로 압축기를 정한다
+        for text, kind in (("STRAINER\nST04A", "strainer"), ("AIR\nRECEIVER\n01", "vessel"),
+                           ("TK02A\nESSENTIAL\nCHILLED WATER\nAIR SEPARATOR", "vessel"), ("CATION BED VESSEL", "vessel"),
+                           ("AIR COMPRESSOR 01", "compressor"), ("AIR COMPRESSOR SKID", None), ('AIR COMPRESSOR\n"A"\nAFTERCOOLER', "heat_exchanger"),
+                           ('AIR COMPRESSOR\n"B"\nINTERCOOLER', "heat_exchanger"),
+                           ("CONDENSATE RECEIVER TANK", "tank"), ("REACTOR VESSEL", "reactor_vessel")):
+            self.assertEqual(pdf_vector._kind_from_text(text)[0], kind, text)
+
     def test_text_rules_through_the_adapter(self):
-        self.assertEqual(pdf_vector._kind_from_text("Steam Generator\nfeed pump"),
+        self.assertEqual(pdf_vector._kind_from_text("Steam Generator 1"),
                          ("steam_generator", "text_word:STEAM+GENERATOR"))
+        # 이름 끝 낱말이 설비다. 'STEAM GENERATOR FEED PUMP'는 증기발생기가 아니라 급수 펌프다
+        self.assertEqual(pdf_vector._kind_from_text("Steam Generator\nfeed pump"), ("pump", "text_word:PUMP"))
+        self.assertEqual(pdf_vector._kind_from_text("VENT TO\nAUX. BLDG\nHVAC")[0], "vent")  # 'TO …'는 행선지
+        self.assertEqual(pdf_vector._kind_from_text("EQUIPMENT\nWASTE TANK\nTK03\n(NOTE 2, 3)")[0], "tank")
+        self.assertEqual(pdf_vector._kind_from_text("PUMP CONTROLLER"), (None, None))
         self.assertEqual(pdf_vector._kind_from_text("TO M-102"), ("continuation", "text_to_from"))
         self.assertEqual(pdf_vector._kind_from_text("PUMPS"), (None, None))
 
@@ -1120,6 +1186,47 @@ class ActuatorMergeTest(unittest.TestCase):
         self.assertIn("actuator_merged", reasons)
         self.assertFalse([u for u in ex["validation"]["unknowns"] if u["check"] == "actuated_valve_pending"])
 
+    def test_operator_on_neighbour_stem_does_not_hold_manual_valve(self):
+        # APR1400 128쪽: 전동 밸브 바로 옆 수동 게이트 밸브. 구동부는 곧은 축으로 옆 밸브에 이어져 그 밸브 것이니, 거리만
+        # 가깝다고 수동 밸브의 종류를 보류하지 않는다
+        second = [(112, 100), (118, 103), (118, 100), (112, 103), (112, 100)]
+        prims = [prim(GATE, True), prim(second, True), prim([(0, 101.5), (100, 101.5)], False),
+                 prim([(106, 101.5), (112, 101.5)], False), prim([(118, 101.5), (200, 101.5)], False),
+                 ring(103, 94, 1.85), prim([(103, 95.85), (103, 101.5)], False)]
+        a = pdf_vector.analyze(400, 300, [word("M", 102.4, 93.0, 2.0)], prims)
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        self.assertEqual(sorted(n["kind"] for n in ex["nodes"] if n["category"] == "valve"),
+                         ["manual_valve", "motor_operated_valve"])
+
+    def test_loose_operator_off_the_stem_line_does_not_hold_manual_valve(self):
+        # APR1400 025쪽 V1105·046쪽 게이트 밸브: 축으로 이어지지 않은 구동부가 가깝기는 해도 몸통 축 자리(가운데에서 배관과
+        # 수직인 줄)를 벗어나 옆 밸브 쪽에 있다. 축 자리 위에 있으면 지금처럼 보류한다
+        def valve_of(ex):
+            (valve,) = [n for n in ex["nodes"] if n["evidence"].get("symbol_id") == "apr1400.gate_valve"]
+            return valve
+        beside = valve_of(self.run_page([ring(113, 94, 1.85)], [word("M", 112.4, 93.0, 2.0)]))
+        self.assertEqual(beside["kind"], "manual_valve")
+        above = valve_of(self.run_page([ring(103, 94, 1.85)], [word("M", 102.4, 93.0, 2.0)]))
+        self.assertEqual((above["kind"], above["category"]), (None, "valve"))
+
+    def test_hand_wheel_on_the_stem_makes_a_decorated_body_manual(self):
+        # 범례 1.7-1 1/4 HAND ACTUATOR: 축 끝 가로대(T). APR1400 063쪽 V349 그대로 몸통 귀퉁이에 'N' 글자 원이 붙어 기호 전체는
+        # 사전에 맞지 않지만, 몸통만 떼면 게이트 밸브이고 축 끝에 손잡이가 있으니 수동 밸브다
+        hand = [prim([(103, 100), (103, 96)], False), prim([(101.5, 96), (104.5, 96)], False)]
+        n_ring = [ring(98.75, 98.75, 1.25)]
+        ex = self.run_page(n_ring + hand, [word("N", 98.3, 98.0, 1.5)])
+        (valve,) = [n for n in ex["nodes"] if n["category"] == "valve"]
+        self.assertEqual((valve["kind"], valve["evidence"]["classification_basis"]),
+                         ("manual_valve", "valve_body:apr1400.gate_valve+hand_actuator"))
+        self.assertEqual(valve["attributes"].get("valve_type"), "gate")
+        # 몸통과 가로대 사이에 구동부 머리(닫힌 곡선)가 끼면 손잡이로 보지 않는다
+        dome = {"fill": False, "stroke": True, "fill_white": False, "stroke_white": False, "dash": None,
+                "subpaths": [([(101.6, 98.4), (102.3, 97.7), (103, 97.5), (103.7, 97.7), (104.4, 98.4), (101.6, 98.4)],
+                              True, [(101.6, 98.4), (102.3, 97.7), (103, 97.5), (103.7, 97.7), (104.4, 98.4),
+                                     (101.6, 98.4)], True)]}
+        ex = self.run_page(n_ring + hand + [dome], [word("N", 98.3, 98.0, 1.5)])
+        self.assertFalse([n for n in ex["nodes"] if n["kind"] == "manual_valve"])
+
     def test_valve_number_circle_becomes_evidence(self):
         ex = self.run_page([ring(90, 88, 4.5), prim([(93.2, 91.2), (99.6, 99.6)], False)], [word("302", 87.3, 86.5, 3.0)])
         self.assertTrue(any(n["evidence"].get("ident_number") == "302" for n in ex["nodes"]))
@@ -1172,6 +1279,11 @@ BLACK_GLOBE = [filled([(181.6, 270.3), (179.3, 265.6), (183.9, 265.6)]),
 GLOBE_PIPES = [pipe((181.6, 250.0), (181.6, 265.6)), pipe((181.6, 274.9), (181.6, 290.0))]
 
 
+# 몸통 가운데에서 올라간 축만 있고 끝에 손잡이 가로대(범례 HAND ACTUATOR 'T')가 없다: 기호 전체가 사전에 없고 손잡이도 없다
+STEM_ONLY = [pipe((103, 101.5), (103, 98.5))]
+HAND_BAR = [pipe((101.5, 98.5), (104.5, 98.5))]
+
+
 # 닫힌 밸브 양옆의 열린 게이트 밸브. 경로 분석의 출발점과 도착점으로 쓴다
 OPEN_LEFT = prim([(60, 100), (66, 103), (66, 100), (60, 103), (60, 100)])
 OPEN_RIGHT = prim([(140, 100), (146, 103), (146, 100), (140, 103), (140, 100)])
@@ -1217,12 +1329,14 @@ class FarApartTrianglesTest(unittest.TestCase):
         return pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
 
     def test_two_triangles_far_apart_in_one_large_symbol_are_not_a_valve_body(self):
-        (big,) = self.run_page([self.FRAME] + self.FAR)["nodes"]
+        big = max(self.run_page([self.FRAME] + self.FAR)["nodes"], key=lambda n: n["geometry"]["width"])
         self.assertIsNone(big["kind"])
 
     def test_letters_inside_that_symbol_are_not_taken_as_valve_marks(self):
-        """밸브로 읽히면 상자 안 글자가 모두 밸브 표기(symbol_marks)가 되어 다른 기호의 라벨·태그로 쓰이지 못한다."""
-        (big,) = self.run_page([self.FRAME] + self.FAR)["nodes"]
+        """밸브로 읽히면 상자 안 글자가 모두 밸브 표기(symbol_marks)가 되어 다른 기호의 라벨·태그로 쓰이지 못한다. 배관이
+        닿게 그린다. 선이 하나도 닿지 않는 큰 빈 상자는 노드가 아니라 틀이다(pdf_vector._frames)."""
+        pipe = prim([(220, 70), (300, 70)])
+        big = max(self.run_page([self.FRAME, pipe] + self.FAR)["nodes"], key=lambda n: n["geometry"]["width"])
         self.assertEqual((big["evidence"]["symbol_marks"], big["label_text"].split()), ([], ["TI", "101"]))
 
     def test_triangles_with_a_ball_between_them_are_still_a_valve_body(self):
@@ -1323,7 +1437,7 @@ class ClosedValveTest(unittest.TestCase):
 
     def test_filled_body_with_other_lines_attached_keeps_closed_but_not_the_kind(self):
         """몸통에 벨로스 같은 다른 선이 붙으면 기호 전체는 사전에 없다. 종류는 비워 두고 닫힘만 남긴다."""
-        bonnet = [pipe((103, 101.5), (103, 98.5)), pipe((101.5, 98.5), (104.5, 98.5))]
+        bonnet = STEM_ONLY
         ex = extract([filled(BLACK_GATE)] + bonnet + GATE_PIPES)
         (valve,) = closed_nodes(ex)
         self.assertEqual((valve["kind"], valve["attributes"]), (None, {"normal_position": "NC"}))
@@ -1332,9 +1446,22 @@ class ClosedValveTest(unittest.TestCase):
         self.assertIn("missing_kind", [u["check"] for u in ex["validation"]["unknowns"]
                                        if u["target"] == valve["local_id"]])
 
+    def test_valve_number_beside_body_of_unknown_kind_is_its_tag(self):
+        """종류를 못 정한 검정 몸통도 밸브다. 옆 밸브 번호는 그 몸통의 태그다(063쪽 V359·V361, 062쪽 V2120)."""
+        bonnet = STEM_ONLY
+        a = pdf_vector.analyze(400, 300, [word("V2120", 100.0, 104.0)], [filled(BLACK_GATE)] + bonnet + GATE_PIPES)
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        self.assertEqual([(n["kind"], n["tag"]) for n in closed_nodes(ex)], [(None, "V2120")])
+        # 축 끝에 손잡이 가로대가 있으면 손잡이로 여는 수동 밸브다(062쪽 V2120 벨로스 밸브)
+        a = pdf_vector.analyze(400, 300, [word("V2120", 100.0, 104.0)], [filled(BLACK_GATE)] + bonnet + HAND_BAR + GATE_PIPES)
+        ex = pdf_vector.build_extraction(a, 400, 300, 1, 0, "t.pdf", "0" * 64)
+        (valve,) = closed_nodes(ex)
+        self.assertEqual((valve["kind"], valve["tag"], valve["evidence"]["classification_basis"]),
+                         ("manual_valve", "V2120", "black_body:apr1400.gate_valve+hand_actuator"))
+
     def test_closed_body_of_unknown_kind_still_closes_the_path(self):
         """종류를 못 정한 닫힌 몸통도 경로 분석에서는 닫힌 밸브다. 아니면 닫힌 밸브가 있는 길이 정상 유로가 된다."""
-        bonnet = [pipe((103, 101.5), (103, 98.5)), pipe((101.5, 98.5), (104.5, 98.5))]
+        bonnet = STEM_ONLY
         ex = extract([OPEN_LEFT, OPEN_RIGHT, filled(BLACK_GATE)] + bonnet + OUTER_PIPES)
         (valve,) = closed_nodes(ex)
         self.assertEqual((valve["kind"], valve["category"], valve["classification"]), (None, "valve", "unclassified"))
@@ -1520,13 +1647,17 @@ class ValveLabelTest(unittest.TestCase):
         self.assertEqual([n["tag"] for n in ex["nodes"] if n["category"] == "valve"], [None])
 
     def test_lettered_diamond_does_not_take_a_valve_number(self):
-        """품질 등급 마름모('BI|CI')는 삼각형 둘이라 나비 규칙으로 밸브가 된다. 안에 글자가 든 몸통은 밸브 번호를 받지 않는다
-        (063쪽 V751·V713·V366)."""
+        """품질 등급 마름모('BI|CI')는 삼각형 둘이라 나비 규칙에 걸리지만 밸브가 아니라 안전등급 경계 표시다(범례 1.7-1 1/4
+        QUALITY GROUP/SAFETY CLASS, e3e3273). 밸브가 아니므로 옆 밸브 번호를 받지 않는다(063쪽 V751·V713·V366)."""
         diamond = [prim([(100, 100), (106, 97), (106, 103), (100, 100)]), prim([(112, 100), (106, 97), (106, 103), (112, 100)])]
         words = [word("B", 102.5, 98.5, 2.0), word("I", 103.7, 98.5, 2.0), word("C", 107.0, 98.5, 2.0),
                  word("I", 108.2, 98.5, 2.0), word("V751", 101.0, 106.0)]
         ex = extract_with_words(diamond, words)
-        self.assertEqual([(n["kind"], n["tag"]) for n in ex["nodes"] if n["category"] == "valve"], [("manual_valve", None)])
+        self.assertEqual([n for n in ex["nodes"] if n["category"] == "valve"], [])
+        # 마름모는 노드가 아니라 경계 표시로 남는다(ignored_objects)
+        self.assertEqual([n for n in ex["nodes"] if n["evidence"]["classification_basis"] == "safety_class_boundary"], [])
+        self.assertIn("safety_class_boundary", [o.get("reason") for o in ex["drawing"]["ignored_objects"]])
+        self.assertEqual([n for n in ex["nodes"] if n.get("tag") == "V751"], [])
 
     def test_labels_of_other_symbols_do_not_change(self):
         """위치 약어가 다른 기호의 라벨이면 그대로 둔다(밸브만 손본다)."""
@@ -1623,9 +1754,10 @@ class DictionaryAdditionTest(unittest.TestCase):
         (node,) = extract_wide(prims)["nodes"]
         self.assertEqual((node["kind"], node["evidence"].get("symbol_id")), ("psv", "apr1400.angle_relief_valve"))
 
-    def test_black_fill_alone_is_not_promoted(self):
-        """양끝 막대 없이 검은 마름모만 있으면 밸브로 올리지 않는다. 검정 견본 승격(_promote_black_symbols)에는 플러그
-        견본이 없어서다. 7pt 이하 작은 검은 플러그가 표식으로 남는 한계와 같은 길이다(F1-6 검토, 후속)."""
+    def test_black_plug_fill_is_a_closed_valve(self):
+        """배관 위 검은 마름모(검게 칠한 플러그 밸브)는 채움만으로도 닫힌 수동 밸브 몸통이다. 전에는 검정 견본 승격
+        (_promote_black_symbols)에 플러그 채움 견본이 없어 7pt 이하가 표식으로 남아 분기점이 되었다(F1-6 검토의 후속.
+        134쪽 V1015 채움 견본을 더함). 143쪽에서 분기점이던 자리 45곳이 수동 밸브가 되었고 표본 15/15가 밸브였다."""
         for size in (6.5, 7.28):
             half = size / 2
             diamond = filled([(100, 100 + half / 2), (100 + size / 2, 100), (100 + size, 100 + half / 2),
@@ -1633,7 +1765,8 @@ class DictionaryAdditionTest(unittest.TestCase):
             pipes = [pipe((80, 100 + half / 2), (100, 100 + half / 2)),
                      pipe((100 + size, 100 + half / 2), (120, 100 + half / 2))]
             nodes = extract_wide([diamond] + pipes)["nodes"]
-            self.assertEqual([n["kind"] for n in nodes if n["kind"]], [], size)
+            self.assertEqual([(n["kind"], n["attributes"].get("normal_position")) for n in nodes if n["kind"]],
+                             [("manual_valve", "NC")], size)
 
 
 class AddSymbolsSourcesTest(unittest.TestCase):

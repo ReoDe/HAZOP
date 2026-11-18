@@ -247,11 +247,12 @@ def study_view(study, graph, exp_ids=()):
     구간 구성요소(covers)는 선을 그리지 않는다. 구간 하나가 구성요소 수십 개에 선을 그어 시나리오가 보이지 않게 되기 때문이다.
     study: {"node_set", "results"(없으면 None), "note"} 또는 None. 원인·결과 노드는 이 도면 대상을 가리키는 참조가 있을 때만
     만든다(cause_at·affects 경로를 보이기 위해). 기각한 항목은 넣지 않는다. 대상을 찾지 못한 참조는 지우지 않고 센다."""
-    from hazop.graph.project import SEP
+    from hazop.graph.project import SEP, is_project_graph
     from hazop.study import refs, results as res
     if study is None:
         return [], [], None
     gid = graph["graph_id"]
+    whole = is_project_graph(graph)   # 프로젝트 그래프면 구성요소 ID가 곧 구간 멤버 ID이고, 대상 없는 참조는 도면을 가리지 않고 센다
     ids = {n["entity_id"] for n in graph["nodes"]}
     idx = {r: n["entity_id"] for r, n in refs.index(graph).items()}
     devs = {d["deviation_id"]: d["label"] for d in (study.get("results") or {}).get("deviations") or []}
@@ -269,6 +270,10 @@ def study_view(study, graph, exp_ids=()):
     for sn in (study.get("node_set") or {}).get("nodes") or []:
         members = []
         for m in sn["members"]:
+            if whole:
+                if m in ids:
+                    members.append(m)
+                continue
             g, sep, e = m.partition(SEP)
             if sep and g == gid and e in ids:
                 members.append(e)
@@ -276,7 +281,7 @@ def study_view(study, graph, exp_ids=()):
             continue
         snid = "st-" + sn["node_id"]
         n_scen = n_missing = 0
-        node(snid, "study_node", "%s %s" % (sn["node_id"], sn.get("name") or ""), sn["node_id"],
+        node(snid, "study_node", "%s %s" % (sn["node_id"], sn.get("name") or ""), sn["node_id"], anchor=members[0],
              detail={"name": sn.get("name"), "members": len(sn["members"]), "here": len(members)})
         for cell in cells.get(sn["node_id"], []):
             for e in cell["entries"]:
@@ -284,11 +289,12 @@ def study_view(study, graph, exp_ids=()):
                     continue
                 n_scen += 1
                 draft = res.is_ai_draft(e)
+                pending = e.get("status") != "approved"   # 승인 전(제안·수정·보류). 사람이 쓴 것도 승인 전이면 확정처럼 그리지 않는다
                 sc = "st-" + e["entry_id"]
-                miss = [r for r in refs.all_refs(e) if r not in idx and refs.drawing_of(r) == gid]
+                miss = [r for r in refs.all_refs(e) if r not in idx and (whole or refs.drawing_of(r) == gid)]
                 n_missing += len(miss)
                 node(sc, "scenario", "%s · %s" % (devs.get(cell["deviation_id"], cell["deviation_id"]), e.get("cause") or ""),
-                     sn["node_id"], draft=draft, missing=len(miss),
+                     sn["node_id"], draft=draft, pending=pending, missing=len(miss),
                      detail={"deviation": devs.get(cell["deviation_id"]), "cause": e.get("cause"),
                              "consequence": e.get("consequence"), "status": e.get("status"), "risk": e.get("risk"),
                              "missing": miss})
@@ -299,13 +305,13 @@ def study_view(study, graph, exp_ids=()):
                     if not hits:
                         continue
                     cid = "%s-%s" % (sc, suffix)
-                    node(cid, typ, e.get(typ) or "", sn["node_id"], draft=draft, detail={"text": e.get(typ)})
+                    node(cid, typ, e.get(typ) or "", sn["node_id"], draft=draft, pending=pending, detail={"text": e.get(typ)})
                     link("has_" + typ, sc, cid)
                     for h in dict.fromkeys(hits):
                         link(rel, cid, h)
                 for i, s in enumerate(refs.safeguard_items(e)):
                     gid_ = "%s-g%d" % (sc, i + 1)
-                    node(gid_, "safeguard", s["text"], sn["node_id"], draft=draft or not refs.is_confirmed(s, e),
+                    node(gid_, "safeguard", s["text"], sn["node_id"], draft=draft or not refs.is_confirmed(s, e), pending=pending,
                          role=s["role"], detail={"text": s["text"], "role": refs.ROLES[s["role"]]})
                     link("protected_by", sc, gid_, role=s["role"])
                     for r in s["refs"]:
@@ -679,3 +685,509 @@ def cross_path(pg, a, b):
 def filter_by_drawing(rows, drawing):
     """도면 필터: drawing이 None이면 그대로, 아니면 그 도면을 지나는 행(경로 단계·연결 표)만."""
     return list(rows) if not drawing else [r for r in rows if drawing in r["drawings"]]
+
+
+# ---------------------------------------------------------------- 새 화면 지식그래프 패널(프로젝트 전체, 완료 목록 2 A6)
+# 이전 ③ 화면은 도면 한 장씩 그렸다. 새 화면 패널은 프로젝트 그래프(도면 전체를 이은 망) 하나를 그린다. 계산(V5·A1~A5)은 하지 않고
+# 무엇이 있고 무엇과 이어졌는지만 보인다. 잠재 후보 상태는 hazop.kg.expect가 계산한 값을 그대로 싣는다(화면에서 조건을 다시 세지 않음).
+PANEL_NODE_CAP = 1500        # 한 번에 그리는 노드 수 상한. 넘으면 도면별 묶음 노드로 먼저 그리고 눌러 펼친다
+KN_GROUP = "kn"              # 어느 도면에도 걸리지 않은 지식 노드 묶음
+GROUP_PREFIX = "grp:"
+KN_PREFIX = "kn:"
+EXPECT_SHOWN = tuple(s for s, _, on in EXPECT_STATES if on)
+NEIGHBORS_SHOWN = 30
+ORIGIN_LABELS = {o: v["label_ko"] for o, v in REGISTRY.origins.items()}
+KS_LABELS = {"confirmed": "확인", "unknown": "미확인(사람 확인 전)", "hypothesis": "가설"}
+LINK_ST_LABELS = {"confirmed": "확정", "candidate": "후보(사람 확인 전)", "recheck": "재확인 필요", "excluded": "계산 제외(미확인·가설)"}
+KN_TYPE_LABELS = {"document": "문서", "doc_chunk": "문서 조각", "requirement": "요건", "setpoint": "설정치", "condition": "운전조건·설계값",
+                  "analysis_case": "해석 사례"}
+KN_FIELD_LABELS = {"name": "이름", "item": "항목", "text": "글", "value": "값", "unit": "단위"}
+SOURCE_LABELS = {"material_id": "자료 ID", "registration_version": "등록 버전", "document_id": "문서", "page": "쪽", "locator": "위치"}
+EXPECT_NOTE_TEXT = "잠재 후보는 사실이 아닙니다. 규칙상 있어야 할 것을 찾아 보라는 단서이며, 부재 확정은 근거를 본 사람만 합니다."
+
+
+class PanelLimit(ValueError):
+    """펼친 도면의 노드가 상한을 넘음."""
+
+    def __init__(self, count, cap):
+        super().__init__("펼친 도면의 노드 %s개가 상한 %s개를 넘습니다. 다른 도면을 접거나 검색으로 좁히세요."
+                         % (format(count, ","), format(cap, ",")))
+        self.count, self.cap = count, cap
+
+
+def _pid_label(n):
+    if n.get("tag"):
+        return str(n["tag"])
+    if n.get("kind") == "continuation":
+        first = (n.get("label_text") or "").split("\n")[0].strip()
+        if first:
+            return _short(first)
+    return n.get("kind") or n["entity_id"].split("/")[-1]
+
+
+def _kg_end(end, kn_ids, pg_nodes, by_soid):
+    from hazop.graph import project
+    if end.get("layer") == "knowledge":
+        return kn_ids.get(end.get("ref"))
+    if end.get("entity_id") and project.nid(end.get("graph_id"), end["entity_id"]) in pg_nodes:
+        return project.nid(end["graph_id"], end["entity_id"])
+    return by_soid.get((end.get("graph_id"), end.get("source_object_id")))
+
+
+def kg_link_state(l):
+    """지식 관계의 그리기 상태(이전 화면 screen_data와 같은 갈래): 재확인 필요 > 후보 > 확정(관계·지식 모두 확인) > 계산 제외."""
+    if l.get("recheck"):
+        return "recheck"
+    if l.get("link_status") == "candidate":
+        return "candidate"
+    if (l.get("link_status") or "confirmed") == "confirmed" and (l.get("knowledge_status") or "confirmed") == "confirmed":
+        return "confirmed"
+    return "excluded"
+
+
+def panel_model(pg, kg=None, expectations=None):
+    """프로젝트 그래프(+ 지식그래프, 잠재 후보) -> 패널 모델. 입력은 바꾸지 않는다.
+
+    - 배관 구간은 끝이 정확히 둘이면 접어 두 끝을 바로 잇는다(관계 kind "pipe"). 끝이 하나거나 셋 이상(분기)이면 작은 노드로 남긴다.
+      도면 연결 구간도 같은 방식이라 도면을 넘는 배관이 두 도면의 연결점을 바로 잇는다(cross=True).
+    - 노드마다 group(도면 graph_id, 또는 도면에 걸리지 않은 지식 노드는 KN_GROUP). 지식 노드와 잠재 후보는 이어진 도면 노드의 도면에 둔다.
+    - 지식그래프 관계 중 기각(rejected)은 넣지 않는다. 끝이 프로젝트 그래프에 없으면 세기만 한다(skipped).
+    - 잠재 후보는 expect.evaluate 결과의 상태·재확인을 그대로 싣는다."""
+    from hazop.graph import project
+    drawing = {s["graph_id"]: s.get("drawing_number") or s["graph_id"].replace("graph-", "", 1) for s in pg.get("sheets") or []}
+    pg_nodes = {n["entity_id"]: n for n in pg["nodes"]}
+    seg_ends = {}
+    for e in pg["edges"]:
+        if e.get("kind") == project.PHYSICAL and len(e.get("nodes") or ()) == 2:
+            seg_ends.setdefault(e["nodes"][0], []).append(e["nodes"][1])
+    nodes, links = {}, []
+
+    def add_link(lid, kind, s, t, **kw):
+        links.append(dict({"id": lid, "kind": kind, "s": s, "t": t}, **kw))
+
+    folded = set()
+    for sid, ends in seg_ends.items():
+        ends = list(dict.fromkeys(ends))
+        seg = pg_nodes.get(sid) or {}
+        if len(ends) == 2 and seg.get("node_type") == "pipe_segment":
+            folded.add(sid)
+            fd = seg.get("flow_direction") if isinstance(seg.get("flow_direction"), dict) else {}
+            flow = [fd.get("from"), fd.get("to")] if set(ends) == {fd.get("from"), fd.get("to")} else None
+            a, b = flow or ends
+            add_link(sid, "pipe", a, b, line=seg.get("line_no") or seg.get("tag"), flow=bool(flow),
+                     cross=seg.get("sheet") is None and bool(seg.get("sheet_link")))
+    for n in pg["nodes"]:
+        nid = n["entity_id"]
+        if nid in folded:
+            continue
+        seg = n.get("node_type") == "pipe_segment"
+        group = n.get("sheet") or next((pg_nodes[x]["sheet"] for x in seg_ends.get(nid, ()) if (pg_nodes.get(x) or {}).get("sheet")), None)
+        nodes[nid] = {"id": nid, "layer": "pid", "type": "pipe_segment" if seg else (n.get("category") or "unclassified"),
+                      "label": "" if seg else _pid_label(n), "group": group or KN_GROUP, "tag": n.get("tag")}
+    for sid, ends in seg_ends.items():
+        if sid not in folded:
+            for x in dict.fromkeys(ends):
+                add_link("%s>%s" % (sid, x), "pipe", sid, x)
+    for e in pg["edges"]:
+        if e.get("kind") != project.PHYSICAL and len(e.get("nodes") or ()) == 2:
+            add_link(e["entity_id"], e["kind"], e["nodes"][0], e["nodes"][1])
+
+    by_soid = {(n.get("sheet"), n.get("source_object_id")): n["entity_id"] for n in pg["nodes"] if n.get("source_object_id")}
+    skipped = {"knowledge_links": 0, "rejected": 0, "expectations": 0}
+    if kg:
+        kn_ids = {}
+        for k in kg.get("nodes") or []:
+            kid = KN_PREFIX + k["id"]
+            kn_ids[k["id"]] = kid
+            nodes[kid] = {"id": kid, "layer": "kn", "type": k.get("node_type") or "unclassified", "label": _label(k), "group": None,
+                          "ks": k.get("knowledge_status") or "confirmed", "ai": build.origin_of(k) == "ai_draft"}
+        for l in kg.get("links") or []:
+            if l.get("link_status") == "rejected":
+                skipped["rejected"] += 1
+                continue
+            ends = [_kg_end((l.get("ends") or {}).get(side) or {}, kn_ids, pg_nodes, by_soid) for side in ("from", "to")]
+            if None in ends or ends[0] not in nodes or ends[1] not in nodes:
+                skipped["knowledge_links"] += 1
+                continue
+            add_link(KN_PREFIX + l["id"], l["kind"], ends[0], ends[1], st=kg_link_state(l), ai=build.origin_of(l) == "ai_draft")
+        # 지식 노드는 이어진 도면 노드의 도면에 둔다. 지식끼리만 이어진 노드는 이웃 지식 노드의 도면을 한 번 더 따른다
+        for _ in range(2):
+            for l in links:
+                for a, b in ((l["s"], l["t"]), (l["t"], l["s"])):
+                    na, nb = nodes.get(a), nodes.get(b)
+                    if na and nb and na["layer"] == "kn" and na["group"] is None and nb["group"] not in (None, KN_GROUP):
+                        na["group"] = nb["group"]
+        for n in nodes.values():
+            if n["group"] is None:
+                n["group"] = KN_GROUP
+
+    exp_items = {}
+    for it in (expectations or {}).get("items") or []:
+        target = it.get("target_entity")
+        if target not in nodes:
+            skipped["expectations"] += 1
+            continue
+        xid = it["id"]
+        exp_items[xid] = it
+        nodes[xid] = {"id": xid, "layer": "exp", "type": "expectation", "label": _short(it["label"]), "group": nodes[target]["group"],
+                      "xs": it["state"], "recheck": bool(it["recheck"]), "rule": it["rule_id"], "target": target}
+        add_link("xrel-%s-t" % xid, "expects", target, xid)
+        if it["state"] in ("candidate_found", "confirmed_present"):
+            refs = (it.get("judgement") or {}).get("found") if it["state"] == "confirmed_present" else None
+            for ref in sorted(set(refs or [f["ref"] for f in it["found"]])):
+                g, _, soid = ref.partition("#")
+                e = by_soid.get((g, soid))
+                if e is not None and e != target and e in nodes:
+                    add_link("xrel-%s-%s" % (xid, e), "satisfied_by", xid, e)
+
+    groups, order = _panel_groups(pg, drawing, nodes)
+    links = [l for l in links if l["s"] in nodes and l["t"] in nodes]
+    return {"nodes": nodes, "links": links, "groups": groups, "order": order, "adj": _adjacency(links), "skipped": skipped,
+            "pg_nodes": pg_nodes, "drawing": drawing, "exp_items": exp_items, "sheets": [s["graph_id"] for s in pg.get("sheets") or []]}
+
+
+def _panel_groups(pg, drawing, nodes):
+    groups = {}
+    for gid in [s["graph_id"] for s in pg.get("sheets") or []] + [KN_GROUP, STUDY_GROUP]:
+        groups[gid] = {"id": gid, "label": drawing.get(gid) or GROUP_LABELS.get(gid, gid),
+                       "kind": gid if gid in (KN_GROUP, STUDY_GROUP) else "sheet", "count": 0, "gaps": 0}
+    for n in nodes.values():
+        g = groups.setdefault(n["group"], {"id": n["group"], "label": n["group"], "kind": "sheet", "count": 0, "gaps": 0})
+        g["count"] += 1
+        if n["layer"] == "exp" and n["xs"] in expect.GAP_STATES:
+            g["gaps"] += 1
+    return groups, [g for g in groups if groups[g]["count"]]
+
+
+def _adjacency(links):
+    adj = {}
+    for l in links:
+        adj.setdefault(l["s"], []).append(l)
+        adj.setdefault(l["t"], []).append(l)
+    return adj
+
+
+# ---------------------------------------------------------------- 검토 층(완료 목록 3 B6)
+STUDY_GROUP = "study"        # 도면 구성요소에 걸리지 않은 검토 결과 노드 묶음
+GROUP_LABELS = {KN_GROUP: "도면 밖 지식", STUDY_GROUP: "도면에 걸리지 않은 검토 결과"}
+STUDY_DETAIL_LABELS = {"name": "이름", "here": "그래프에 있는 구성요소", "members": "전체 구성요소", "deviation": "편차", "cause": "원인",
+                       "consequence": "결과", "text": "내용", "role": "역할", "status": "상태", "risk": "위험도"}
+STUDY_STATUS_LABELS = {"proposed": "AI 초안", "approved": "승인", "revised": "수정", "hold": "보류", "rejected": "기각"}
+
+
+def panel_with_study(model, study, pg):
+    """검토 층을 더한 새 패널 모델(입력 모델은 바꾸지 않는다). study: api_kg._study가 읽은 {"node_set", "results", "note", "ie"} 또는
+    None. study_view를 프로젝트 그래프로 불러 시나리오·보호수단·원인 위치·영향 대상과 초기사건 후보를 그대로 얹는다. 구성요소가 접힌
+    배관 구간이라 그림에 없으면 그 선만 빠진다. 검토 노드는 이어진 구성요소의 도면 묶음에 두고, 걸리지 않으면 STUDY_GROUP에 둔다."""
+    snodes, slinks, info = study_view(study, pg, set(model["exp_items"]))
+    nodes = dict(model["nodes"])
+    for n in snodes:
+        if n["id"] in nodes:
+            continue
+        anchor = (nodes.get(n.get("anchor")) or {}).get("group")
+        nodes[n["id"]] = {"id": n["id"], "layer": "study", "type": n["type"], "label": n.get("label") or n["type"], "group": anchor,
+                          "draft": bool(n.get("draft")), "pending": bool(n.get("pending") or n.get("draft")),
+                          "missing": n.get("missing") or 0, "detail": n.get("detail") or {}}
+    added, seen = [], set()
+    for l in slinks:
+        if l["id"] in seen or l["s"] not in nodes or l["t"] not in nodes:
+            continue
+        seen.add(l["id"])
+        added.append({"id": l["id"], "kind": l["kind"], "s": l["s"], "t": l["t"], "st": "study"})
+    links = list(model["links"]) + added
+    for _ in range(4):
+        for l in added:   # 검토 노드의 자리는 검토 관계로만 정해진다(도면 관계 수만 개를 돌 필요가 없다)
+            for a, b in ((l["s"], l["t"]), (l["t"], l["s"])):
+                na, nb = nodes[a], nodes[b]
+                if na["layer"] == "study" and na["group"] is None and nb["group"] not in (None, KN_GROUP, STUDY_GROUP):
+                    na["group"] = nb["group"]
+    for n in nodes.values():
+        if n["group"] is None:
+            n["group"] = STUDY_GROUP
+    groups, order = _panel_groups(pg, model["drawing"], nodes)
+    adj = dict(model["adj"])          # 바뀌는 끝의 목록만 새로 만든다(입력 모델의 목록은 그대로)
+    for l in added:
+        for end in (l["s"], l["t"]):
+            if adj.get(end) is model["adj"].get(end):
+                adj[end] = list(adj.get(end) or ())
+            adj[end].append(l)
+    out = dict(model, nodes=nodes, links=links, groups=groups, order=order, adj=adj)
+    out["study"] = info or {"nodes": [], "note": (study or {}).get("note"), "scenarios": 0, "missing": 0, "ie": None}
+    return out
+
+
+# ---------------------------------------------------------------- 관계 상세(완료 목록 3 B6)
+LINK_FIELD_LABELS = {"method": "찾은 방법", "confidence": "확신도", "ambiguous": "모호함", "match_text": "문서 속 글자",
+                     "reviewed_by": "확인한 사람", "reviewed_at": "확인한 때", "reason": "사유"}
+
+
+def kind_label(kind):
+    if kind == "pipe":
+        return "배관"
+    return (REGISTRY.relations.get(kind) or {}).get("label_ko") or kind
+
+
+def panel_link(model, lid, kg=None):
+    """관계(선) 상세 또는 None: 무엇(what), 근거(evidence), 두 끝. 원본은 읽기만 한다."""
+    l = next((x for x in model["links"] if x["id"] == lid), None)
+    if l is None:
+        return None
+    nodes = model["nodes"]
+
+    def end(i):
+        n = nodes[i]
+        return {"id": i, "label": n.get("label") or n["type"], "layer": n["layer"], "drawing": model["groups"][n["group"]]["label"]}
+    out = {"id": lid, "kind": l["kind"], "kind_label": kind_label(l["kind"]), "from": end(l["s"]), "to": end(l["t"]),
+           "what": [["관계", kind_label(l["kind"])]], "evidence": []}
+    if l["kind"] == "pipe":
+        out["what"] += [["라인", l.get("line") or "-"], ["흐름 방향", "확인됨" if l.get("flow") else "미확인"]]
+        if l.get("cross"):
+            out["what"].append(["도면", "도면을 넘는 배관"])
+        out["evidence"] = [["출처", "도면 추출(배관 구간)"]]
+    elif lid.startswith(KN_PREFIX):
+        raw = next((x for x in (kg or {}).get("links") or [] if KN_PREFIX + x["id"] == lid), {})
+        st = l.get("st") or kg_link_state(raw)
+        out["what"].append(["상태", LINK_ST_LABELS.get(st, st)])
+        if l.get("ai"):
+            out["what"].append(["만든 곳", "AI 초안"])
+        out["evidence"] = [[LINK_FIELD_LABELS[k], _short(raw[k], 80)] for k in LINK_FIELD_LABELS
+                           if raw.get(k) not in (None, "", False)] or [["근거", "기록된 근거 없음(사람 확인 필요)"]]
+    elif l.get("st") == "study":
+        out["evidence"] = [["출처", "분석 결과·초기사건 파일에서 읽음(고치기는 분석 결과·초기사건 패널에서)"]]
+    elif l["kind"] in ("expects", "satisfied_by"):
+        x = model["exp_items"].get(l["t"] if l["kind"] == "expects" else l["s"]) or {}
+        out["evidence"] = [["잠재 후보 규칙", "%s(판 %s)" % (x.get("rule_id"), x.get("rule_version"))], ["근거", x.get("basis") or "-"]]
+    else:
+        out["evidence"] = [["출처", "도면 추출"]]
+    return out
+
+
+# ---------------------------------------------------------------- 살펴보기(완료 목록 3 B6): 엔진 알고리즘 A1·A2
+EXPLORE_LABELS = {"reach": "도달 범위", "orphans": "고아 지식", "gaps": "근거 공백"}
+# 도달 범위 탐색 값: ④ 구간 JSON의 exploration 값(resources/samples/regions의 구간과 같음). 새 화면 구간에는 이 값이 없어 그대로 쓴다
+REACH_EXPLORATION = {"relation_kinds": ["has_endpoint", "measurement_connection", "signal_connection"], "max_depth": 12,
+                     "max_reached": 200, "boundary_extension_depth": 0}
+EXPLORE_ID_CAP = 5000
+
+
+def reach_region(pg, node_set, start):
+    """start가 든 확정 검토구간 하나로 algo.a1_propagation이 받는 구간 dict를 만든다. 들어 있는 구간이 하나가 아니면 None."""
+    from hazop.study import nodes as study_nodes
+    hits = [n for n in study_nodes.active_nodes(node_set) if start in n["members"]]
+    if len(hits) != 1:
+        return None
+    sn = hits[0]
+    by = {n["entity_id"]: n for n in pg["nodes"]}
+    return {"region_id": sn["node_id"], "region_version": sn.get("rev"), "name": sn.get("name"),
+            "graph_ref": {"graph_id": pg["graph_id"], "graph_version": pg["graph_version"]},
+            "members": [{"entity_id": m, "tag": by[m].get("tag")} for m in sn["members"] if m in by],
+            "focus_entities": [start], "exploration": dict(REACH_EXPLORATION)}
+
+
+def _explored(what, ids, model, note, also=(), **kw):
+    """엔진이 센 것(ids)을 그대로 센다(count). 그림에 없는 것(접힌 배관 구간 등)은 다시 세지 않고 drawn·hidden으로 차이만 적는다.
+    also: 강조만 하고 세지 않는 노드(도달 범위의 시작점)."""
+    ids = list(dict.fromkeys(ids))
+    shown = [i for i in dict.fromkeys(list(also) + ids) if i in model["nodes"]]
+    drawn = sum(1 for i in ids if i in model["nodes"])
+    seg = sum(1 for i in ids if i not in model["nodes"] and (model["pg_nodes"].get(i) or {}).get("node_type") == "pipe_segment")
+    other = len(ids) - drawn - seg
+    by_group = {}
+    for i in shown:
+        g = model["nodes"][i]["group"]
+        by_group[g] = by_group.get(g, 0) + 1
+    parts = (["배관 구간 %d개는 접혀 있음" % seg] if seg else []) + (["%d개는 그림에 없음" % other] if other else [])
+    out = {"what": what, "label": EXPLORE_LABELS[what], "active": True, "reason": None, "count": len(ids), "drawn": drawn,
+           "hidden": {"pipe_segments": seg, "other": other},
+           "drawn_note": "그림에는 %d곳(%s)" % (drawn, ", ".join(parts)) if parts else None,
+           "ids": shown[:EXPLORE_ID_CAP], "capped": len(shown) > EXPLORE_ID_CAP, "by_group": by_group, "note": note}
+    out.update(kw)
+    return out
+
+
+def _not_run(what, reason, **kw):
+    return dict({"what": what, "label": EXPLORE_LABELS[what], "active": False, "reason": reason, "count": 0, "ids": [],
+                 "capped": False, "by_group": {}, "note": None}, **kw)
+
+
+def panel_explore(model, pg, kg, node_set, what, start=None):
+    """살펴보기 결과: 강조할 패널 노드 ID와 건수. 계산은 hazop.kg.algo 그대로다(A1 도달 범위, A2 고아·근거 공백).
+    - reach: 고른 도면 구성요소가 든 확정 검토구간 하나 안에서 algo.a1_propagation. 시작점도 ids에 넣고 count는 닿은 곳 수.
+    - orphans·gaps: 지식그래프를 프로젝트 그래프 ID로 옮긴 사본(project.kg_view)으로 algo.check_inputs·a2_orphans_gaps.
+    계산할 수 없으면 active False와 사유. 연결·도달은 인과관계를 입증하지 않는다(algo.NOTE)."""
+    from hazop.graph import project
+    if what == "reach":
+        n = model["nodes"].get(start or "")
+        if n is None:
+            return _not_run(what, "도면 구성요소를 하나 고르면 그 구성요소가 든 검토구간 안에서 닿는 곳을 보입니다.")
+        if n["layer"] != "pid":
+            return _not_run(what, "도달 범위는 도면 구성요소에서만 셉니다. 지식·잠재 후보·검토 노드는 시작점이 될 수 없습니다.")
+        if not node_set or not [x for x in node_set.get("nodes") or [] if start in x.get("members", ())]:
+            return _not_run(what, "고른 구성요소가 어느 검토구간에도 들어 있지 않습니다. 구간 패널에서 구간에 넣으면 셀 수 있습니다.")
+        region = reach_region(pg, node_set, start)
+        if region is None:
+            return _not_run(what, "고른 구성요소가 확정 검토구간 하나에 들어 있지 않습니다(확정 전이거나 여러 구간에 듦).")
+        a1 = algo.a1_propagation(pg, [(region["region_id"], region, None)], start)
+        if not a1.get("active"):
+            return _not_run(what, "도달 범위를 셀 수 없습니다: %s" % a1.get("reason"))
+        reached = [r["entity_id"] for r in a1["exploration"]["reached"]]
+        return _explored(what, reached, model, algo.NOTE, also=[start], start=start, region=region["region_id"],
+                         limits=a1["summary"]["limits_hit"])
+    if kg is None:
+        return _not_run(what, "지식그래프가 없어 셀 수 없습니다. 도면을 추출하고 설계 문서를 등록하면 만들어집니다.")
+    kv = project.kg_view(kg, pg)
+    try:
+        algo.check_inputs(kv, pg)
+    except algo.AlgoError as exc:
+        return _not_run(what, "지식그래프 알고리즘을 실행하지 않았습니다: %s" % exc)
+    a2 = algo.a2_orphans_gaps(kv, pg)
+    if what == "orphans":
+        return _explored(what, [KN_PREFIX + o["id"] for o in a2["orphans"]], model,
+                         "설비에 적용되지 않았거나 도면과 이어지지 않은 지식입니다. %s" % algo.NOTE)
+    return _explored(what, [g["entity_id"] for g in a2["evidence_gaps"]], model,
+                     "문서가 언급하지만 설정치·요건이 걸리지 않은 구성요소입니다. %s. %s" % (a2["evidence_gap_note"], algo.NOTE))
+
+
+def panel_graph(model, expand=(), cap=None):
+    """그릴 그래프: 펼친 묶음(expand)의 노드는 그대로, 나머지 묶음은 묶음 노드 하나("grp:<gid>", count)로. 접힌 묶음으로 가는 관계는
+    묶음 노드로 이어 붙이고, 같은 두 끝으로 모이는 관계는 하나로 합쳐 개수(n)를 단다. 펼친 노드 수가 cap을 넘으면 PanelLimit."""
+    cap = PANEL_NODE_CAP if cap is None else cap
+    groups = model["groups"]
+    want = set(expand)
+    opened = [g for g in model["order"] if g in want]
+    total = sum(groups[g]["count"] for g in opened)
+    if total > cap:
+        raise PanelLimit(total, cap)
+    is_open = set(opened)
+    out_nodes = [dict(n) for n in model["nodes"].values() if n["group"] in is_open]
+    for g in model["order"]:
+        if g not in is_open:
+            gr = groups[g]
+            out_nodes.append({"id": GROUP_PREFIX + g, "layer": "group", "type": gr["kind"], "label": gr["label"], "group": g,
+                              "count": gr["count"], "gaps": gr["gaps"]})
+
+    def end(i):
+        n = model["nodes"][i]
+        return i if n["group"] in is_open else GROUP_PREFIX + n["group"]
+    seen, out_links = {}, []
+    for l in model["links"]:
+        s, t = end(l["s"]), end(l["t"])
+        if s == t:
+            continue
+        if s == l["s"] and t == l["t"]:
+            out_links.append(dict(l))
+            continue
+        key = tuple(sorted((s, t)))
+        if key in seen:
+            seen[key]["n"] += 1
+            continue
+        seen[key] = {"id": "agg:%s|%s" % key, "kind": "group", "s": key[0], "t": key[1], "n": 1}
+        out_links.append(seen[key])
+    return {"nodes": out_nodes, "links": out_links, "expanded": opened, "count": len(out_nodes), "cap": cap}
+
+
+def panel_search(model, text, limit=20):
+    """태그·이름·규칙 ID로 찾기(대소문자 무시, 부분 일치). 정확히 같은 것이 먼저, 다음은 도면 노드·지식·잠재 후보 순, 이름순."""
+    q = " ".join(str(text or "").split()).casefold()
+    if not q:
+        return []
+    hits = []
+    for n in model["nodes"].values():
+        keys = [str(x).casefold() for x in (n.get("tag"), n.get("label"), n.get("rule")) if x]
+        if not any(q in k for k in keys):
+            continue
+        rank = (0 if q in keys else 1, {"pid": 0, "kn": 1, "exp": 2}.get(n["layer"], 3), str(n.get("label") or ""), n["id"])
+        hits.append((rank, n))
+    hits.sort(key=lambda x: x[0])
+    return [{"id": n["id"], "label": n.get("label") or n["id"], "layer": n["layer"], "type": n["type"], "group": n["group"],
+             "drawing": model["groups"][n["group"]]["label"]} for _, n in hits[:limit]]
+
+
+def _plain_attrs(d, limit=12):
+    out = []
+    for k, v in sorted((d or {}).items()):
+        if isinstance(v, (str, int, float)) and not isinstance(v, bool) and str(v).strip():
+            out.append([k, _short(v, 80)])
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _expectation_detail(model, it):
+    nodes = model["nodes"]
+    needs = {r[3]: list(r[4]) for r in expect.TRANSITIONS if r[0] == it["state"] and r[2] == "human"}
+    j = it.get("judgement")
+    return {"label": it["label"], "rule_id": it["rule_id"], "rule_version": it["rule_version"], "basis_level": it["basis_label"],
+            "basis": it["basis"], "hazop": it["hazop"], "state": it["state"], "state_label": it["state_label"],
+            "auto_state_label": expect.STATES[it["auto_state"]], "recheck": bool(it["recheck"]),
+            "previous_label": expect.previous_label(it) if it["recheck"] else None, "note": it.get("note"),
+            "target": {"id": it["target_entity"], "label": (nodes.get(it["target_entity"]) or {}).get("label") or it["target_tag"]},
+            "found": [{"ref": f["ref"], "label": f.get("tag") or f["ref"].split("#")[-1]} for f in it["found"]],
+            "judgement": {k: j.get(k) for k in ("state", "action", "by", "at", "reason", "evidence")} if j else None,
+            "actions": [{"action": a, "label": expect.ACTION_LABELS[a], "needs": [[k, expect.NEED_LABELS[k]] for k in needs[a]]}
+                        for a in it["actions"]],
+            "digest": it["digest"], "caution": EXPECT_NOTE_TEXT}
+
+
+def panel_node(model, nid, kg=None):
+    """노드 상세 또는 None: 무엇인지(what), 근거(evidence), 속성(attrs), 도면 위치(at: {sheet, local_id} 또는 None), 이웃(최대
+    NEIGHBORS_SHOWN), 이 노드에 걸린 잠재 후보. 잠재 후보 노드면 expectation(규칙·근거·상태·판단 기록·할 수 있는 동작과 필수 입력)."""
+    n = model["nodes"].get(nid)
+    if n is None:
+        return None
+    nodes = model["nodes"]
+    out = {"id": nid, "layer": n["layer"], "type": n["type"], "label": n.get("label"), "group": n["group"],
+           "drawing": model["groups"][n["group"]]["label"], "at": None, "what": [], "evidence": [], "attrs": []}
+    if n["layer"] == "pid":
+        p = model["pg_nodes"][nid]
+        out["what"] = ([["태그", p["tag"]]] if p.get("tag") else []) + [["종류", p.get("kind") or "-"],
+                                                                      ["분류", p.get("category") or p.get("node_type") or "-"]]
+        out["evidence"] = [["도면", model["drawing"].get(p.get("sheet")) or "도면 연결 구간"],
+                           ["만든 곳", ORIGIN_LABELS.get(node_origin(p), node_origin(p))]]
+        if p.get("source_object_id"):
+            out["evidence"].append(["원본 객체", p["source_object_id"]])
+        out["attrs"] = _plain_attrs(p.get("attributes"))
+        if p.get("sheet") and p.get("local_id"):
+            out["at"] = {"sheet": p["sheet"], "local_id": p["local_id"]}
+    elif n["layer"] == "kn":
+        k = next((x for x in (kg or {}).get("nodes") or [] if KN_PREFIX + x["id"] == nid), {})
+        ks = k.get("knowledge_status") or "confirmed"
+        out["what"] = [["종류", KN_TYPE_LABELS.get(k.get("node_type"), k.get("node_type") or "-")], ["상태", KS_LABELS.get(ks, ks)]]
+        out["what"] += [[KN_FIELD_LABELS[f], _short(k[f], 80)] for f in ("name", "item", "text", "value", "unit") if k.get(f)]
+        src = k.get("source") if isinstance(k.get("source"), dict) else {}
+        out["evidence"] = [[SOURCE_LABELS.get(a, a), v] for a, v in _plain_attrs(src)] or [["출처", "없음(근거 확인 필요)"]]
+        out["evidence"].append(["만든 곳", ORIGIN_LABELS.get(build.origin_of(k), build.origin_of(k) or "-")])
+        out["ks"], out["ai"] = ks, build.origin_of(k) == "ai_draft"
+    elif n["layer"] == "study":
+        d = n.get("detail") or {}
+        out["what"] = [["종류", REGISTRY.label(n["type"], n["type"])]]
+        for k, lab in STUDY_DETAIL_LABELS.items():
+            v = d.get(k)
+            if v in (None, ""):
+                continue
+            out["what"].append([lab, STUDY_STATUS_LABELS.get(v, v) if k == "status" else str(v)])
+        out["what"] += [["대상 없음(재확인)", str(r)] for r in d.get("missing") or []]
+        made = "AI 초안·승인 전" if n.get("draft") else "승인 전" if n.get("pending") else "승인"
+        out["evidence"] = [["출처", "분석 결과·초기사건 파일(읽기 전용)"], ["작성", made]]
+        out["read_only"], out["draft"], out["pending"] = True, bool(n.get("draft")), bool(n.get("pending"))
+    else:
+        it = model["exp_items"][nid]
+        t = model["pg_nodes"].get(it["target_entity"]) or {}
+        out["expectation"] = _expectation_detail(model, it)
+        out["what"] = [["잠재 후보", it["label"]], ["규칙", "%s(판 %s)" % (it["rule_id"], it["rule_version"])]]
+        out["evidence"] = [["근거 수준", it["basis_label"]], ["근거", it["basis"]]]
+        if t.get("sheet") and t.get("local_id"):
+            out["at"] = {"sheet": t["sheet"], "local_id": t["local_id"]}
+    around = model["adj"].get(nid, ())
+    out["neighbors"] = []
+    for l in around[:NEIGHBORS_SHOWN]:
+        other = nodes[l["t"] if l["s"] == nid else l["s"]]
+        out["neighbors"].append({"id": other["id"], "label": other.get("label") or other["type"], "layer": other["layer"],
+                                 "type": other["type"], "kind": l["kind"], "kind_label": kind_label(l["kind"]),
+                                 "drawing": model["groups"][other["group"]]["label"],
+                                 "st": LINK_ST_LABELS.get(l.get("st")) if l.get("st") else None})
+    out["neighbors_total"] = len(around)
+    out["expectations"] = [{"id": l["t"], "label": nodes[l["t"]]["label"], "xs": nodes[l["t"]]["xs"],
+                            "state_label": expect.STATES[nodes[l["t"]]["xs"]], "recheck": nodes[l["t"]]["recheck"]}
+                           for l in around if l["kind"] == "expects" and l["s"] == nid]
+    return out

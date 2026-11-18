@@ -187,5 +187,98 @@ class DocumentLinkTest(unittest.TestCase):
             shutil.rmtree(tmp)
 
 
+def _files(folder):
+    out = {}
+    for name in sorted(os.listdir(folder)):
+        with open(os.path.join(folder, name), "rb") as fh:
+            out[name] = fh.read()
+    return out
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 없음(전용 venv에서 실행)")
+class RebuildCacheTest(unittest.TestCase):
+    """다시 만들기를 빠르게 하는 캐시(도면 graph.json 읽기 캐시, 결과 바이트 한 번만 만들기)가 결과를 한 글자도 바꾸지 않는다.
+    견줄 기준은 캐시를 모두 비운 처음부터 짓기다. 도면 하나를 고쳐 다시 써도 같은 규칙이다."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="hazop-kgcache-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.groot, self.droot = os.path.join(self.tmp, "graph"), os.path.join(self.tmp, "doc")
+        g2 = pid_graph()
+        g2["graph_id"] = g2["graph_id"] + "-2"
+        for name, g in (("g1", pid_graph()), ("g2", g2)):
+            os.makedirs(os.path.join(self.groot, name))
+            self.write_graph(name, g)
+        os.makedirs(os.path.join(self.droot, "d1"))
+        with open(os.path.join(self.droot, "d1", auto.DOC_FILE), "w", encoding="utf-8") as fh:
+            json.dump(document(), fh, ensure_ascii=False)
+        auto.forget_graphs()
+        self.addCleanup(auto.forget_graphs)
+
+    def write_graph(self, name, g):
+        with open(os.path.join(self.groot, name, "graph.json"), "w", encoding="utf-8") as fh:
+            json.dump(g, fh, ensure_ascii=False)
+
+    def build(self, out):
+        r = auto.build_project(PROJECT, self.groot, self.droot, os.path.join(self.tmp, "csv"), os.path.join(self.tmp, out))
+        return r, _files(r["dir"])
+
+    def fresh(self, out):
+        from hazop.graph import project
+        auto.forget_graphs()
+        auto.forget_heads()
+        project.clear_sheet_cache()   # 도면 읽기가 프로젝트 그래프의 pickle 캐시를 타지 않게 처음부터 읽는다
+        return self.build(out)
+
+    def test_cached_rebuild_equals_a_fresh_build(self):
+        _, first = self.build("a")
+        _, cached = self.build("b")
+        _, fresh = self.fresh("c")
+        self.assertEqual(cached, fresh)
+        self.assertEqual(first, fresh)
+
+    def test_an_edited_sheet_is_read_again(self):
+        self.build("a")
+        g = pid_graph()
+        tagged = next(n for n in g["nodes"] if n.get("tag"))
+        tagged["tag"] = tagged["tag"] + "-NEW"
+        g["graph_version"] = g["graph_version"] + "x"
+        self.write_graph("g1", g)
+        r, cached = self.build("b")
+        _, fresh = self.fresh("c")
+        self.assertEqual(cached, fresh)
+        self.assertIn(g["graph_version"], json.dumps(r["kg"]["graph_refs"]))
+
+    def test_gc_state_changes_neither_the_output_nor_the_gc_setting(self):
+        """build_project는 짓는 동안 순환 수거를 멈추고 끝나면 되돌린다. 수거가 켜져 있든 꺼져 있든 결과 바이트는 같다."""
+        import gc
+        was = gc.isenabled()
+        self.addCleanup(lambda: gc.enable() if was else gc.disable())
+        gc.enable()
+        _, on = self.fresh("on")
+        self.assertTrue(gc.isenabled())
+        gc.disable()
+        _, off = self.fresh("off")
+        self.assertFalse(gc.isenabled())      # 처음부터 꺼져 있던 것을 켜지 않는다
+        self.assertEqual(on, off)
+
+    def test_build_does_not_change_the_cached_graphs(self):
+        self.build("a")
+        graphs, _ = auto.project_graphs(PROJECT, self.groot)
+        before = json.dumps(graphs, sort_keys=True, ensure_ascii=False)
+        self.build("b")
+        self.assertEqual(json.dumps(auto.project_graphs(PROJECT, self.groot)[0], sort_keys=True, ensure_ascii=False), before)
+
+    def test_outputs_are_serialized_once_per_file(self):
+        from unittest import mock
+        calls = []
+        real = build.dump_bytes
+        with mock.patch.object(build, "dump_bytes", lambda obj: calls.append(1) or real(obj)):
+            r, files = self.build("a")
+        # knowledge는 kg_version 해시에 한 번(build_kg), 쓰기에 한 번. 큰 knowledge_graph와 current는 한 번씩(전에는 쓰기에서 한 번씩 더 했다)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(files[build.KG_FILE], real(r["kg"]))
+
+
 if __name__ == "__main__":
     unittest.main()

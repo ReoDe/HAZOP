@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <polygon points="0,40 50,70 0,100" fill="none" stroke="currentColor"/>
+  <polygon points="100,40 50,70 100,100" fill="none" stroke="currentColor"/>
+  <line x1="50" y1="70" x2="50" y2="38" fill="none" stroke="currentColor"/>
+  <path d="M28,38 A22,22 0 0 1 72,38 Z" fill="none" stroke="currentColor"/>
+</svg>

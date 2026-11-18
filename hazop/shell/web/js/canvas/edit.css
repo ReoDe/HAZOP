@@ -1,0 +1,27 @@
+/* 도면 고치기(edit.js): 작은 알약 하나와 고른 것에 맞는 작은 카드. 색·간격은 앱 토큰을 쓴다. */
+.edit-pill { right: 12px; bottom: 64px; z-index: 6; padding: 2px 4px; display: flex; flex-direction: column; gap: 2px; max-width: min(380px, calc(100% - 24px)); }
+.edit-pill .ep-row { display: flex; align-items: center; gap: 2px; }
+.edit-pill .ep-on { font-size: var(--fs-sm); color: var(--ui, #0a5fc2); padding: 0 6px; }
+.edit-pill .ep-count { border: 0; background: var(--surface-2, #f2f4f7); border-radius: 999px; padding: 1px 8px; font: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.edit-pill .ep-hint { font-size: var(--fs-sm); color: var(--muted); padding: 2px 6px 4px; }
+.edit-pill .ep-hint.warn, .edit-pill .warn { color: var(--warn-ink, #8a5a00); }
+.edit-pill .ep-hint.err { color: var(--err, #b42318); }
+.edit-pill .ep-log { margin: 2px 0 4px; padding-left: 22px; max-height: 180px; overflow: auto; font-size: var(--fs-sm); }
+.edit-pill .linkish { border: 0; background: none; color: var(--ui, #0a5fc2); cursor: pointer; padding: 0; font: inherit; font-size: var(--fs-sm); text-decoration: underline; }
+.edit-card { right: 12px; top: 56px; z-index: 7; width: 280px; max-height: calc(100% - 180px); overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.edit-card select { max-width: 100%; }
+.edit-card .ec-h { display: flex; align-items: center; gap: 6px; }
+.edit-card .ec-h .btn { margin-left: auto; }
+.edit-card .ec-unk { margin: 2px 0 4px; padding-left: 18px; font-size: var(--fs-sm); }
+.edit-card .ec-foot { justify-content: space-between; }
+.hz-cv[data-edit] .hz-cv-vp { cursor: default; }
+.hz-cv[data-edit="path"] .hz-cv-vp { cursor: crosshair; }
+.hz-cv[data-edit="connect"] .hz-cv-vp, .hz-cv[data-edit="endpoint"] .hz-cv-vp { cursor: pointer; }
+/* 도면 연결 짝(link_card.js): 고치기 카드 안의 한 칸 */
+.edit-card .ec-link { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line, #e3e6ea); }
+.edit-card .ec-link .warn { color: var(--warn); }
+.edit-card .ec-pick { display: flex; flex-direction: column; gap: 4px; }
+.edit-card .ec-cands { list-style: none; margin: 0; padding: 0; max-height: 168px; overflow: auto; border: 1px solid var(--line, #e3e6ea); border-radius: var(--r-sm); font-size: var(--fs-sm); }
+.edit-card .ec-cands li { padding: 3px 6px; cursor: pointer; }
+.edit-card .ec-cands li:hover { background: var(--surface-2, #f2f4f7); }
+.edit-card .ec-cands li.on { background: var(--accent-weak); outline: 1px solid var(--accent); }

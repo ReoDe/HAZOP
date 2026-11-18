@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import openpyxl  # noqa: E402
 
 from hazop.export import study_xlsx as sx  # noqa: E402
+from hazop.study import nodes as sn  # noqa: E402
 from hazop.study import results as res  # noqa: E402
 from tests.test_study_span import AT, two_sheets  # noqa: E402
 
@@ -36,6 +37,7 @@ def sample():
     """(results, node_set, pg). 걸친 구간 S_a: 승인 1·제안 1(다른 도면 태그·근거·경고) + 해당 없음 칸.
     단일 구간 S_b: 실패 칸 + 수정 1(수식 모양·경로·키 모양 글자) + 기각 1."""
     _, _, pg, ns = two_sheets()
+    ns = sn.confirm(ns, pg, "검토자", at=AT)  # ⑤ 칸은 확정 구간에만 있다(검토구간 규격 v2 §2.4)
     span_node = next(n["node_id"] for n in sx.span.annotate(ns, pg)["nodes"] if n["spans_drawings"])
     single = next(n["node_id"] for n in ns["nodes"] if n["node_id"] != span_node)
     r = res.empty_results(ns, DEVS)

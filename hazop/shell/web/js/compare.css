@@ -1,0 +1,13 @@
+/* 견주기 화면(compare.js): 왼쪽 칸 원본, 오른쪽은 줄어든 도면 캔버스(정리된 보기), 아래 왼쪽에 남은 것 넘기기 카드 */
+.canvas.cmp-side .hz-sheet { margin-left: 50%; width: 50% !important; }
+.cmp-pane { position: absolute; left: 0; top: 0; bottom: 0; width: 50%; z-index: 2; background: #fff; border-right: 2px solid var(--line); overflow: hidden; touch-action: none; }
+.cmp-pane svg { cursor: grab; display: block; }
+.cmp-cap { position: absolute; left: 10px; bottom: 8px; padding: 1px 8px; border-radius: var(--r-sm); background: var(--surface); border: 1px solid var(--line); font-size: var(--fs-xs); color: var(--muted); pointer-events: none; }
+.cmp-fit { position: absolute; right: 10px; bottom: 8px; }
+.cmpcard { position: absolute; left: 12px; bottom: 40px; z-index: 5; width: 340px; max-width: 46%; padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
+.cmp-mode { display: flex; gap: 4px; }
+.cmp-mode button { flex: 1; height: 28px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); cursor: pointer; font: inherit; }
+.cmp-mode button.on { background: var(--accent-weak); border-color: var(--accent); color: var(--accent-ink); }
+.cmp-step { display: flex; flex-direction: column; gap: 4px; }
+.cmp-list { max-height: 160px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); padding: 4px 8px; }
+.cmp-list .row { display: flex; justify-content: space-between; padding: 2px 0; font-size: var(--fs-sm); }

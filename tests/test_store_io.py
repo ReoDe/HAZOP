@@ -127,10 +127,10 @@ class LoadTest(WorkRootCase):
     def test_version_migration_on_load_does_not_overwrite_a_change_made_after_reading(self):
         """판 이전은 읽은 파일 자리에 다시 쓴다. 읽은 뒤 바뀐 파일이면 쓰지 않고 읽은 내용만 돌려준다."""
         old = self.confirmed()
-        for key in ("member_refs", "member_digest"):
+        for key in ("graph_member_refs", "member_digest"):
             old.pop(key)
         path = sn.save(old)
-        outside = old_bytes(dict(old, confirmed_by="바깥에서 고친 사람"), False)
+        outside = old_bytes(dict(old, drawing_number="바깥에서 고침"), False)
         real = migrate.with_refs
 
         def refs_then_outside_edit(node_set, graph):
@@ -139,17 +139,17 @@ class LoadTest(WorkRootCase):
         with mock.patch.object(migrate, "with_refs", side_effect=refs_then_outside_edit):
             loaded = sn.load(self.g)
         self.assertEqual(raw(path), outside, "바깥에서 고친 내용이 그대로")
-        self.assertEqual(loaded["confirmed_by"], "검토자A")
+        self.assertEqual(loaded["nodes"][0]["confirmed"]["by"], "검토자A")
 
     def test_load_gives_the_fingerprint_of_what_it_read_or_wrote(self):
         self.assertEqual(sn.load_fp(self.g), (None, None))
         path = sn.save(sn.propose(self.g, at=AT))
         self.assertEqual(sn.load_fp(self.g)[1], store_io.fingerprint(path))
         old = self.confirmed()
-        old.pop("member_refs")
+        old.pop("graph_member_refs")
         sn.save(old)
         doc, fp = sn.load_fp(self.g)
-        self.assertIn("member_refs", doc)
+        self.assertIn("graph_member_refs", doc)
         self.assertEqual(fp, store_io.fingerprint(path), "참조를 채워 다시 쓴 파일의 지문")
         _path, saved_fp = sn.save_fp(sn.reopen(doc, at=AT), expect=fp)
         self.assertEqual(saved_fp, store_io.fingerprint(path))
@@ -240,11 +240,11 @@ class OldFilesTest(WorkRootCase):
 
     def test_confirmed_set_without_refs_keeps_its_confirmation_and_original_is_backed_up(self):
         old = self.confirmed()
-        for key in ("member_refs", "member_digest"):
+        for key in ("graph_member_refs", "member_digest"):
             old.pop(key)
         path = put(sn.store_path(None, "graph-T"), old_bytes(old, False))
         loaded = sn.load(self.g)
-        for key in ("status", "confirmed_at", "confirmed_by", "nodes", "history"):
+        for key in ("nodes", "history", "set_rev", "batches"):
             self.assertEqual(loaded[key], old[key], key)
         self.assertEqual(json.loads(raw(path)), loaded)
         copies = [os.path.join(d, f) for d, _s, fs in os.walk(paths.folder("backup")) for f in fs]
@@ -286,13 +286,18 @@ class Stored01FilesTest(WorkRootCase):
         return raw(os.path.join(REPO_ROOT, "tests", "fixtures", "store-0.1", name))
 
     def test_study_nodes(self):
+        """0.1 집합은 처음 읽을 때 0.2로 바꾸고 원본은 <이름>.v0.1.bak.json으로 남긴다(검토구간 규격 §2.5)."""
+        from hazop.study import convert
         data = self.old("study-nodes.json")
         path = put(sn.store_path(None, "graph-T"), data)
         doc, fp = sn.load_fp(self.g)
-        self.assertEqual((doc, raw(path)), (json.loads(data), data), "읽어도 파일을 바꾸지 않음(확정·이름·이력 그대로)")
-        self.assertEqual((doc["status"], doc["confirmed_by"], doc["nodes"][0]["name"]), ("confirmed", "검토자A", "사람이 정한 이름"))
+        self.assertEqual(raw(convert.backup_path(path)), data, "원본 그대로 보관")
+        old = json.loads(data)
+        self.assertEqual({(n["state"], n["confirmed"]["by"]) for n in doc["nodes"]}, {("confirmed", "검토자A")})
+        self.assertEqual(doc["nodes"][0]["name"], "사람이 정한 이름")
+        self.assertEqual(doc["history"][:len(old["history"])], old["history"])
         sn.save(doc, expect=fp)
-        self.assertEqual(raw(path), data)
+        self.assertEqual(sn.load(self.g), doc, "닫고 다시 열어도 같음")
         gone = next(h["detail"]["new_node_id"] for h in doc["history"] if h["op"] == "split")
         self.assertNotIn(gone, [n["node_id"] for n in doc["nodes"]])
         big = max(doc["nodes"], key=lambda n: len(n["members"]))
@@ -300,13 +305,19 @@ class Stored01FilesTest(WorkRootCase):
         self.assertEqual(again["history"][-1]["detail"]["new_node_id"], "S%d" % (int(gone[1:]) + 1), "병합으로 지운 번호 다음")
 
     def test_analysis_results(self):
+        """0.1 결과는 집합과 함께 0.2로 바뀐다(칸 열쇠 item_id, node_rev). 승인 항목·칸 상태는 그대로다."""
         data = self.old("analysis-results.json")
+        old = json.loads(data)
+        put(sn.store_path(None, "graph-T"), self.old("study-nodes.json"))
         path = put(res.store_path(None, "graph-T"), data)
-        doc, fp = res.load_fp(json.loads(self.old("study-nodes.json")))
-        self.assertEqual(doc, json.loads(data))
-        self.assertEqual(doc["cells"][0]["entries"][0]["status"], "approved")
-        res.save_fp(doc, None, expect=fp)
-        self.assertEqual(raw(path), data)
+        with mock.patch.object(res, "load_deviations", lambda path=None: old["deviations"]):
+            doc, fp = res.load_fp(sn.load(self.g))
+            res.save_fp(doc, None, expect=fp)
+        self.assertEqual(doc["schema_version"], res.SCHEMA_VERSION)
+        self.assertEqual(doc["cells"][0]["entries"], old["cells"][0]["entries"])
+        self.assertEqual([(c["node_id"], c["deviation_id"], c["state"]) for c in doc["cells"]],
+                         [(c["node_id"], c["deviation_id"], c["state"]) for c in old["cells"]])
+        self.assertEqual(json.loads(raw(path))["cells"][0]["entries"][0]["status"], "approved")
 
     def test_initiating_events(self):
         data = self.old("initiating-events.json")

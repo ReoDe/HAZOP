@@ -1,0 +1,248 @@
+"""벡터 PDF 흐름 방향(pdf_vector): 선 위·끝의 채운 화살촉 삼각형과 분기점·2포트 기호의 흐름 보존으로 방향을 정한다.
+
+규격: docs/specs/extraction.md '읽기 품질 지표'(연결 (나) 흐름 방향). 특정 쪽 좌표·번호로 가르지 않는다.
+"""
+
+import glob
+import os
+import unittest
+
+from hazop import paths
+from hazop.extract.adapters import pdf_vector as pv
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def tri(tip, base_mid, half=2.5):
+    """tip 쪽을 가리키는 채운 삼각형 marker(닫힌 4점)."""
+    dx, dy = tip[0] - base_mid[0], tip[1] - base_mid[1]
+    L = (dx * dx + dy * dy) ** 0.5
+    nx, ny = -dy / L * half, dx / L * half
+    a, b = (base_mid[0] + nx, base_mid[1] + ny), (base_mid[0] - nx, base_mid[1] - ny)
+    pts = [tip, a, b, tip]
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return {"id": "m", "pts": pts, "bbox": [min(xs), min(ys), max(xs), max(ys)]}
+
+
+class ChainFlowTest(unittest.TestCase):
+    prm = dict(pv.PARAMS)
+
+    def test_arrow_at_end_points_along_chain(self):
+        ch = {"pts": [(0, 0), (100, 0)]}
+        self.assertEqual(pv._chain_flow(ch, [tri((100, 0), (94, 0))], self.prm), 1)
+        self.assertEqual(pv._chain_flow(ch, [tri((0, 0), (6, 0))], self.prm), -1)
+
+    def test_arrow_in_middle_of_bent_chain(self):
+        ch = {"pts": [(0, 0), (50, 0), (50, 80)]}
+        self.assertEqual(pv._chain_flow(ch, [tri((50, 40), (50, 34))], self.prm), 1)
+
+    def test_no_or_conflicting_or_off_line_arrows(self):
+        ch = {"pts": [(0, 0), (100, 0)]}
+        self.assertIsNone(pv._chain_flow(ch, [], self.prm))
+        self.assertIsNone(pv._chain_flow(ch, [tri((100, 0), (94, 0)), tri((0, 0), (6, 0))], self.prm))
+        self.assertIsNone(pv._chain_flow(ch, [tri((50, 20), (44, 20))], self.prm))  # 선에서 떨어진 화살촉
+        self.assertIsNone(pv._chain_flow(ch, [tri((50, 6), (50, 0))], self.prm))   # 선과 직각인 화살촉
+
+    def test_non_triangle_marker_is_ignored(self):
+        diamond = {"id": "d", "pts": [(48, 0), (50, -2), (52, 0), (50, 2), (48, 0)], "bbox": [48, -2, 52, 2]}
+        self.assertIsNone(pv._chain_flow({"pts": [(0, 0), (100, 0)]}, [diamond], self.prm))
+
+
+def rel(i, a, b, flow=None):
+    return {"local_id": "r%d" % i, "kind": "physical_connection",
+            "endpoints": [{"end": "source", "node_local_id": a}, {"end": "target", "node_local_id": b}],
+            "flow_direction": {"from": a, "to": b} if flow == "+" else ({"from": b, "to": a} if flow == "-" else None)}
+
+
+class PropagateTest(unittest.TestCase):
+    def test_through_two_port_valve_and_tee(self):
+        nodes = {"v": "manual_valve", "t": "tee", "p": "pump", "a": "tank", "b": "tank"}
+        # a → v → t → (p, b): a-v 방향만 앎. 밸브를 지나 v-t, 분기점은 나가는 쪽 하나만 모름이 아니므로 그대로
+        rels = [rel(1, "a", "v", "+"), rel(2, "v", "t"), rel(3, "t", "p"), rel(4, "t", "b", "+")]
+        n = pv._propagate_flows(rels, nodes)
+        self.assertEqual(rels[1]["flow_direction"]["from"], "v")
+        self.assertEqual(rels[2]["flow_direction"], None)  # 분기점: 들어옴 1·나감 1·모름 1이면 정하지 않는다
+        self.assertEqual(n, 1)
+
+    def test_tee_with_all_known_out_gets_inlet(self):
+        nodes = {"t": "tee", "x": "tank", "y": "tank", "z": "tank"}
+        rels = [rel(1, "t", "x", "+"), rel(2, "t", "y", "+"), rel(3, "z", "t")]
+        pv._propagate_flows(rels, nodes)
+        self.assertEqual((rels[2]["flow_direction"]["from"], rels[2]["flow_direction"]["to"]), ("z", "t"))
+
+    def test_pump_passes_flow_suction_to_discharge(self):
+        nodes = {"a": "tank", "p": "pump", "b": "tank"}
+        rels = [rel(1, "a", "p"), rel(2, "p", "b", "+")]
+        pv._propagate_flows(rels, nodes)
+        self.assertEqual(rels[0]["flow_direction"]["to"], "p")
+
+    def test_equipment_is_not_propagated_through(self):
+        nodes = {"a": "tank", "k": "tank", "b": "tank"}
+        rels = [rel(1, "a", "k", "+"), rel(2, "k", "b")]
+        self.assertEqual(pv._propagate_flows(rels, nodes), 0)
+        self.assertIsNone(rels[1]["flow_direction"])
+
+    def test_air_handler_compartment_passes_flow(self):
+        # APR1400 072쪽 공조기: 덕트가 닿는 빈 칸은 종류가 없어도 공기가 지나간다. 덕트 화살표 방향이 첫 여과 판까지 간다
+        nodes = {"d": "damper", "c": None, "f": "filter"}
+        rels = [rel(1, "d", "c", "+"), rel(2, "c", "f")]
+        self.assertEqual(pv._propagate_flows(rels, nodes), 0)
+        pv._propagate_flows(rels, nodes, {"c"})
+        self.assertEqual(rels[1]["flow_direction"]["to"], "f")
+
+
+class FakeSym:
+    def __init__(self, bbox, markers, dashes=()):
+        self.bbox, self.markers, self.dashes = bbox, markers, list(dashes)
+
+
+def pipe(i, a, b, pa, pb, flow=None):
+    r = rel(i, a, b, flow)
+    r["endpoints"][0]["point"], r["endpoints"][1]["point"] = list(pa), list(pb)
+    return r
+
+
+class EndSymbolFlowTest(unittest.TestCase):
+    # 덕트 끝 공기 흐름 화살표(APR1400 077쪽 축전지실 배기): 막대가 덕트 끝, 화살촉이 덕트 쪽을 가리키면 공기가 덕트로 들어간다
+    def test_air_arrow_pointing_into_duct_flows_into_duct(self):
+        arrow = FakeSym([0, 0, 3, 14], [tri((1.5, 2), (1.5, 8))])  # 위(y 작은 쪽)를 가리킴, 덕트는 위 끝 막대에 닿음
+        rels = [pipe(1, "a", "f", (1.5, 0), (1.5, -60)), rel(2, "f", "x")]
+        n = pv._end_symbol_flows(rels, {"a": arrow}, {"a": "air_flow_arrow", "f": "fan", "x": "damper"})
+        self.assertEqual(n, 1)
+        self.assertEqual((rels[0]["flow_direction"]["from"], rels[0]["flow_direction"]["basis"]), ("a", "air_flow_arrow"))
+
+    def test_air_arrow_pointing_away_from_duct_flows_out_of_duct(self):
+        arrow = FakeSym([0, 0, 14, 3], [tri((0, 1.5), (6, 1.5))])  # 왼쪽을 가리킴, 덕트는 오른쪽 막대에 닿음
+        rels = [pipe(1, "f", "a", (80, 1.5), (14, 1.5))]
+        pv._end_symbol_flows(rels, {"a": arrow}, {"a": "air_flow_arrow", "f": "fan"})
+        self.assertEqual(rels[0]["flow_direction"]["to"], "a")
+
+    def test_existing_direction_and_side_touch_are_kept(self):
+        arrow = FakeSym([0, 0, 3, 14], [tri((1.5, 2), (1.5, 8))])
+        rels = [pipe(1, "a", "f", (1.5, 0), (1.5, -60), "-")]
+        self.assertEqual(pv._end_symbol_flows(rels, {"a": arrow}, {"a": "air_flow_arrow"}), 0)
+        self.assertEqual(rels[0]["flow_direction"]["from"], "f")
+        side = [pipe(1, "a", "f", (3, 7), (60, 7))]  # 화살표 축 옆(가운데 높이)에 닿은 선은 정하지 않는다
+        self.assertEqual(pv._end_symbol_flows(side, {"a": arrow}, {"a": "air_flow_arrow"}), 0)
+
+
+def dot(x, y):
+    return {"id": "d", "pts": [(x - 0.45, y), (x, y - 0.45), (x + 0.45, y), (x, y + 0.45), (x - 0.45, y)],
+            "bbox": [x - 0.45, y - 0.45, x + 0.45, y + 0.45]}
+
+
+class CheckValveFlowTest(unittest.TestCase):
+    # 범례 1.7-1 CHECK, APR1400 141쪽 V1016: 경첩 점이 왼쪽 위 끝에 있으면 왼쪽에서 들어와 오른쪽으로 나간다
+    def test_flow_runs_from_hinge_dot_side(self):
+        cv = FakeSym([0, 0, 7.7, 3.4], [], [dot(0.45, 0.4)])
+        rels = [pipe(1, "a", "c", (-20, 1.7), (0, 1.7)), pipe(2, "c", "b", (7.7, 1.7), (30, 1.7))]
+        self.assertEqual(pv._end_symbol_flows(rels, {"c": cv}, {"c": "check_valve"}), 2)
+        self.assertEqual([(r["flow_direction"]["from"], r["flow_direction"]["to"]) for r in rels], [("a", "c"), ("c", "b")])
+        self.assertEqual(rels[0]["flow_direction"]["basis"], "check_valve_hinge")
+
+    def test_vertical_valve_with_dot_at_bottom_flows_up(self):
+        cv = FakeSym([0, 0, 4.1, 6.4], [], [dot(0.4, 6.0)])
+        rels = [pipe(1, "c", "a", (2, 0), (2, -20)), pipe(2, "b", "c", (2, 30), (2, 6.4))]
+        pv._end_symbol_flows(rels, {"c": cv}, {"c": "check_valve"})
+        self.assertEqual([r["flow_direction"]["from"] for r in rels], ["c", "b"])
+
+    def test_no_dot_middle_dot_or_same_side_pipes_set_nothing(self):
+        rels = lambda: [pipe(1, "a", "c", (-20, 1.7), (0, 1.7)), pipe(2, "c", "b", (7.7, 1.7), (30, 1.7))]
+        for cv in (FakeSym([0, 0, 7.7, 3.4], []), FakeSym([0, 0, 7.7, 3.4], [], [dot(3.85, 0.4)])):
+            self.assertEqual(pv._end_symbol_flows(rels(), {"c": cv}, {"c": "check_valve"}), 0)
+        cv = FakeSym([0, 0, 7.7, 3.4], [], [dot(0.45, 0.4)])
+        same = [pipe(1, "a", "c", (-20, 1.7), (0, 1.7)), pipe(2, "c", "b", (0, 3.4), (0, 30))]
+        self.assertEqual(pv._end_symbol_flows(same, {"c": cv}, {"c": "check_valve"}), 0)
+
+    def test_drawn_arrow_against_hinge_leaves_valve_alone(self):
+        # APR1400 056쪽 V2008: 경첩 점은 왼쪽인데 배관 화살촉은 왼쪽을 가리킨다. 화살촉을 믿고 반대쪽 배관도 정하지 않는다
+        cv = FakeSym([0, 0, 7.7, 3.4], [], [dot(0.45, 0.4)])
+        rels = [pipe(1, "a", "c", (-20, 1.7), (0, 1.7), "-"), pipe(2, "c", "b", (7.7, 1.7), (30, 1.7))]
+        self.assertEqual(pv._end_symbol_flows(rels, {"c": cv}, {"c": "check_valve"}), 0)
+        self.assertIsNone(rels[1]["flow_direction"])
+
+
+def node(i, x, y, w, h, kind=None):
+    return {"local_id": i, "kind": kind, "geometry": {"x": x, "y": y, "width": w, "height": h}}
+
+
+class InlineUnclassifiedTest(unittest.TestCase):
+    # APR1400 099쪽 관 끝 눈금(미분류)처럼 배관이 꿰고 지나가는 미분류 노드는 흐름 보존이 넘어간다
+    def test_pipe_through_unclassified_node_carries_flow(self):
+        nodes = [node("u", 10, 0, 0.3, 8), node("a", -30, 2, 4, 4, "manual_valve"), node("h", 40, 2, 8, 4, "flexible_hose")]
+        rels = [pipe(1, "a", "u", (-26, 4), (10.15, 4), "+"), pipe(2, "u", "h", (10.15, 4), (40, 4))]
+        passes = pv._inline_unclassified(rels, nodes)
+        self.assertEqual(passes, {"u"})
+        pv._propagate_flows(rels, {n["local_id"]: n["kind"] for n in nodes}, passes)
+        self.assertEqual(rels[1]["flow_direction"]["to"], "h")
+
+    def test_unclassified_with_pipes_at_right_angle_or_three_pipes_is_not_passed(self):
+        nodes = [node("u", 0, 0, 20, 20)]
+        corner = [pipe(1, "a", "u", (-10, 10), (0, 10)), pipe(2, "u", "b", (10, 0), (10, -10))]
+        self.assertEqual(pv._inline_unclassified(corner, nodes), set())
+        three = [pipe(1, "a", "u", (-10, 10), (0, 10)), pipe(2, "u", "b", (20, 10), (30, 10)), pipe(3, "u", "c", (10, 20), (10, 30))]
+        self.assertEqual(pv._inline_unclassified(three, nodes), set())
+
+
+class FalseArrowTest(unittest.TestCase):
+    prm = dict(pv.PARAMS)
+
+    def test_small_arrow_bracket_is_a_mark_not_two_vents(self):
+        # APR1400 091쪽: 배관이 가운데를 지나는 ㄇ 모양 가는 선, 두 끝에 같은 쪽을 가리키는 화살촉
+        bracket = {"id": "b", "pts": [(0, 4.6), (0, 0), (5.3, 0), (5.3, 4.6)], "bbox": [0, 0, 5.3, 4.6]}
+        arrows = [dict(tri((x, 4.6), (x, 2.7), half=0.45), id="m%d" % i) for i, x in enumerate((0, 5.3))]
+        cls = {"polys": [bracket], "markers": arrows}
+        self.assertEqual({o["id"] for o in pv._arrow_brackets(cls, self.prm, set())}, {"b", "m0", "m1"})
+        apart = [arrows[0], dict(tri((5.3, -2), (5.3, -0.1), half=0.45), id="m2")]  # 한 화살촉이 반대쪽: 표시 아님
+        flipped = {"id": "b", "pts": [(0, 4.6), (0, 0), (5.3, 0), (5.3, -2)], "bbox": [0, -2, 5.3, 4.6]}
+        self.assertEqual(pv._arrow_brackets({"polys": [flipped], "markers": apart}, self.prm, set()), [])
+
+
+class ContradictionTest(unittest.TestCase):
+    def test_tee_with_pipe_through_instrument_branch_is_not_closed(self):
+        # 129쪽: 분기점 오른쪽 배관이 유량계 상자를 꿰어 측정선이 된다. 그 가지를 모르면 남은 하나를 정하지 않는다
+        nodes = {"t": "tee", "v": "solenoid_valve", "c": "check_valve"}
+        rels = [rel(1, "c", "t", "+"), rel(2, "t", "v")]
+        pv._propagate_flows(rels, nodes, (), {"t"})
+        self.assertIsNone(rels[1]["flow_direction"])
+        pv._propagate_flows(rels, nodes)
+        self.assertEqual(rels[1]["flow_direction"]["to"], "v")
+
+    def test_only_propagated_flows_at_contradiction_are_reverted(self):
+        nodes = {"v": "manual_valve", "t": "tee", "a": "tank", "b": "tank", "c": "tank"}
+        rels = [rel(1, "a", "v", "+"), rel(2, "b", "v", "+"), rel(3, "a", "t", "+"), rel(4, "t", "b", "+"),
+                rel(5, "t", "c", "+")]
+        rels[0]["flow_direction"]["basis"] = "pdf_arrowhead"
+        rels[1]["flow_direction"]["basis"] = "flow_continuity"
+        for r in rels[2:]:
+            r["flow_direction"]["basis"] = "flow_continuity"
+        self.assertEqual(pv._revert_contradictions(rels, nodes), 1)
+        self.assertEqual([r["flow_direction"] is None for r in rels], [False, True, False, False, False])
+
+    def test_pipe_through_instrument_box_versus_taps(self):
+        box = {"local_id": "i", "geometry": {"x": 0, "y": 0, "width": 15, "height": 44}}
+        bubble = {"local_id": "j", "geometry": {"x": 100, "y": 0, "width": 13.6, "height": 13.6}}
+        meas = [{"endpoints": [{"node_local_id": "t"}, {"node_local_id": "i"}], "evidence": {"pdf_path": [[-30, 43], [6, 43]]}},
+                {"endpoints": [{"node_local_id": "i"}, {"node_local_id": "m"}], "evidence": {"pdf_path": [[9, 43], [60, 43]]}},
+                {"endpoints": [{"node_local_id": "p"}, {"node_local_id": "j"}], "evidence": {"pdf_path": [[106.8, -20], [106.8, 0]]}},
+                {"endpoints": [{"node_local_id": "j"}, {"node_local_id": "q"}], "evidence": {"pdf_path": [[106.8, 13.6], [106.8, 30]]}}]
+        self.assertEqual(pv._through_instruments(meas, {"i": box, "j": bubble}), {"i"})
+
+
+class SnpFlowTest(unittest.TestCase):
+    """SNP 가상 도면은 drawio에서 그린 화살촉이 PDF에 그대로 있다. 추출이 방향을 하나 이상 정하는지."""
+
+    def test_snp_extraction_has_flow_directions(self):
+        import tempfile
+        pdf = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
+        ex = pv.extract(pdf, page=0, repo_root=tempfile.mkdtemp())
+        flows = [r for r in ex["relations"] if r.get("flow_direction")]
+        self.assertGreaterEqual(len(flows), 5)
+        for r in flows:
+            self.assertIn(r["flow_direction"]["basis"], ("pdf_arrowhead", "flow_continuity"))
+        unknown = {u["target"] for u in ex["validation"]["unknowns"] if u["check"] == "unknown_flow_direction"}
+        self.assertFalse(unknown & {r["local_id"] for r in flows})
+
+
+if __name__ == "__main__":
+    unittest.main()

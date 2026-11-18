@@ -22,6 +22,7 @@ import getpass
 import hashlib
 import json
 import os
+import threading
 
 from hazop import paths, store_io
 from hazop.extract import svg_align
@@ -39,6 +40,9 @@ REPO_ROOT = paths.REPO_ROOT
 DEFAULT_STORE = paths.store_root()  # HAZOP_STORE_ROOT 또는 <작업 루트>/store (가져올 때 결정)
 SVG_ROLE = "svg"
 NO_SVG_FIELD = "derived_files"
+# 색인(registry.json)을 읽고 고쳐 쓰는 일은 한 프로세스 안에서 한 번에 하나만(새 화면은 등록·표제란 확정을 작업 스레드에서 나란히 돌린다).
+# 잠그지 않으면 두 작업이 같은 색인을 읽고 따로 저장해 한쪽의 새 버전이 색인에서 빠진다.
+INDEX_LOCK = threading.RLock()
 
 
 def _now():
@@ -147,8 +151,8 @@ def _unknowns(record):
             reason = ("사람 확정 전. 표제란 자동 후보 %r" % cand["value"] if cand
                       else "미확인(표제란 자동 후보 없음, 사람 입력 없음)")
             out.append({"field": field, "reason": reason})
-    if record.get("format") == "pdf":
-        return out  # PDF는 원본에서 도면 SVG를 그리므로(추출 단계) 원본 옆 SVG를 찾지 않는다
+    if record.get("format") in fileinfo.NO_SVG_FORMATS:
+        return out  # PDF는 원본에서 도면 SVG를 그리고(추출 단계) DEXPI는 그림이 파일 안에 있어 원본 옆 SVG를 찾지 않는다
     pages = [pid for d in record.get("documents") or [] for pid in d.get("page_ids") or []]
     covered = {pid for e in _svg_entries(record) for pid in e.get("page_ids") or []}
     missing = [pid for pid in pages if pid not in covered]
@@ -324,6 +328,26 @@ def _unfinished_trace_only(store, material_id, sha):
 
 def register(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
              now=None):
+    """_register_one과 같되, 같은 프로젝트에 사람이 확정한 같은 도면 번호를 다른 형식(drawio·PDF·DEXPI)의 자료가 이미 쓰고 있으면
+    결과에 conflicts(hazop.graph.sources.registration_conflicts)와 알림 문장을 더한다. 등록 자체는 막지 않고 그래프에 쓰는 원본도 바꾸지 않는다
+    (고르기는 hazop.graph.sources.choose)."""
+    with INDEX_LOCK:
+        result = _register_one(source_path, project_id, material_type, store_root, metadata, actor, now)
+    rec = result.get("record") or {}
+    if rec.get("status") == "registered" and rec.get("drawing_number") and material_type == "P&ID":
+        from hazop.graph import sources
+        found = [c for c in sources.registration_conflicts(project_id, store_root or DEFAULT_STORE)
+                 if c["drawing_number"] == rec["drawing_number"]]
+        if found:
+            result["conflicts"] = found
+            result["notes"] = list(result.get("notes") or []) + [
+                "같은 도면 번호 %s를 다른 형식(%s)의 자료도 쓰고 있음: 그래프에 쓸 원본을 사람이 골라야 함(그 전에는 먼저 있던 형식을 씀)"
+                % (rec["drawing_number"], "·".join(sorted({x["format"] for x in found[0]["materials"]})))]
+    return result
+
+
+def _register_one(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
+                  now=None):
     """원본 1개를 등록한다. 원본 파일은 읽기만 한다. material_type: P&ID(draw.io·벡터 PDF) 또는
     design_document(글자가 있는 PDF 설계 문서). 저장 구조는 같다.
 
@@ -367,7 +391,7 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
         return _result(rec, "failed")
     try:
         # PDF는 원본 옆 SVG를 파생 자료로 등록하지 않는다(같은 폴더의 drawio SVG를 잘못 붙이지 않게)
-        svgs = [] if info["format"] == "pdf" else _read_svgs(source_path, info["pages"])
+        svgs = [] if info["format"] in fileinfo.NO_SVG_FORMATS else _read_svgs(source_path, info["pages"])
     except OSError as exc:
         rec = _on_hold(project_id, material_type, source_path,
                        [_problem("unreadable", "원본 옆 SVG를 읽을 수 없음: %s" % exc, NO_SVG_FIELD)])["record"]
@@ -517,6 +541,8 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
         "history": [{"at": at, "by": actor, "action": "register", "reason": None}],
         "validation": {"status": "passed", "blockers": [], "unknowns": []},
     }
+    if info.get("dexpi_flavor"):  # DEXPI 파일: 2.0 이후 DEXPI XML(dexpi_xml)인지 Proteus 1.x(proteus)인지(HZ-PLN-22 §4.1)
+        record["dexpi_flavor"] = info["dexpi_flavor"]
     record["derived_files"] = _derived_entries(record, svgs)
     _apply_meta(record, metadata, actor, at)
     record["validation"]["unknowns"] = _unknowns(record)
@@ -528,6 +554,61 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
     problems = _store_original(store, record, data) + _store_derived(store, record, svgs)
     path = _finalize(store, index, record, problems, at, actor)
     return _result(record, record["status"], path)
+
+
+def latest(project_id, material_id, store_root=None):
+    """자료의 최신 등록 버전 (등록정보, 스냅샷 경로). 없으면 (None, None)."""
+    store = Store(store_root or paths.store_root(), project_id)
+    if not os.path.isfile(store.index_path):
+        return None, None
+    entry = next((m for m in store.load_index(project_id)["materials"] if m["material_id"] == material_id), None)
+    if entry is None or not entry.get("versions"):
+        return None, None
+    path = store.snapshot_path(material_id, entry["versions"][-1])
+    return _read_json(path), path
+
+
+def clear_metadata(project_id, material_id, fields, by, reason=None, store_root=None, now=None):
+    """사람이 확정한 식별정보(META_FIELDS 가운데 fields)를 확정 전(None)으로 되돌린다. register의 사람 확정 입력과 같이 새 등록
+    버전을 만들고 이력에 action 'unconfirm_metadata'(before·after None·reason·by)를 남긴다. 원본·파생 자료는 그대로 쓴다.
+    되돌릴 것이 없으면 outcome 'reused'. 반환은 register와 같은 꼴. 등록 완료가 아니거나 모르는 항목이면 ValueError."""
+    bad = [f for f in fields if f not in META_FIELDS]
+    if bad:
+        raise ValueError("알 수 없는 식별정보 항목: %s" % ", ".join(bad))
+    with INDEX_LOCK:
+        return _clear_metadata(project_id, material_id, fields, by, reason, store_root, now)
+
+
+def _clear_metadata(project_id, material_id, fields, by, reason, store_root, now):
+    store = Store(store_root or paths.store_root(), project_id)
+    index = store.load_index(project_id)
+    entry = next((m for m in index["materials"] if m["material_id"] == material_id), None)
+    if entry is None:
+        raise ValueError("등록된 자료가 아님: %s" % material_id)
+    last = entry["versions"][-1]
+    path = store.snapshot_path(material_id, last)
+    record = _read_json(path)
+    if record.get("status") != "registered":
+        raise ValueError("등록 완료된 자료만 확정을 되돌릴 수 있음: status=%r" % record.get("status"))
+    at = (now or _now)()
+    new = json.loads(json.dumps(record))
+    for field in fields:
+        if new[field] is None:
+            continue
+        new["history"].append({"at": at, "by": by, "action": "unconfirm_metadata", "field": field,
+                               "before": new[field], "after": None, "reason": reason or "사람 확정 취소"})
+        new[field] = None
+    if new["history"] == record["history"]:
+        return _result(record, "reused", path, ["되돌릴 확정값이 없음"])
+    new["registration_version"] = last + 1
+    new["validation"]["unknowns"] = _unknowns(new)
+    new_path = store.snapshot_path(material_id, new["registration_version"])
+    if os.path.isfile(new_path):
+        raise ValueError("색인에 없는 버전 파일 %d.json 이 이미 있음. 덮어쓰지 않음" % new["registration_version"])
+    _write_snapshot(store, new)
+    entry["versions"].append(new["registration_version"])
+    store.save_index(index)
+    return _result(new, "new_version", new_path, ["확정 취소: 새 등록 버전 %d" % new["registration_version"]])
 
 
 def load_for_extraction(registration_path):

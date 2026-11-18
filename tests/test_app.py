@@ -33,6 +33,10 @@ TRANSPORT_MODULES = ("urllib.request", "http.client", "socket", "ssl", "requests
 TRANSPORT_OWNER = os.path.join(REPO_ROOT, "hazop", "study", "claude_http.py")
 # 구독 연결: 하위 프로세스는 hazop/study/claude_cli.py만 띄운다(기획서/AI연결-구독제.md §6.6). 우회 경로도 막는다.
 PROCESS_OWNER = os.path.join(REPO_ROOT, "hazop", "study", "claude_cli.py")
+# 둘째 예외: 스캔 읽기(HZ-PLN-23 §4). OpenCV·OCR은 배포본이 아닌 별도 venv에 두므로(결정 D7) 그 venv의 Python을 부른다.
+# 이 모듈 하나에 모으고, 고정된 인터프리터(래스터 venv python)·고정된 스크립트(scripts/extract_raster.py)만 목록 인자로,
+# 셸 없이, 시간 한도를 두고 부르며, 명령 줄에는 임시 폴더의 page.png|page.jpg·extraction.json 이름만 넣는다(2026-11-14).
+SCAN_PROCESS_OWNER = os.path.join(REPO_ROOT, "hazop", "extract", "adapters", "raster_proc.py")
 BANNED_CALLS = ("os.startfile", "os.system", "os.popen", "os.spawn", "os.exec", "QProcess")
 
 
@@ -124,7 +128,7 @@ class StaticTest(unittest.TestCase):
     def test_subprocess_only_in_claude_cli(self):
         pkg = glob.glob(os.path.join(REPO_ROOT, "hazop", "**", "*.py"), recursive=True)
         spawn = {os.path.relpath(f, REPO_ROOT) for f in pkg if network_imports(f, ("subprocess",))}
-        self.assertEqual(spawn, {os.path.relpath(PROCESS_OWNER, REPO_ROOT)})
+        self.assertEqual(spawn, {os.path.relpath(PROCESS_OWNER, REPO_ROOT), os.path.relpath(SCAN_PROCESS_OWNER, REPO_ROOT)})
         bad = {}
         for f in pkg:
             with open(f, encoding="utf-8") as fh:
@@ -135,9 +139,10 @@ class StaticTest(unittest.TestCase):
                 if any(name == b or name.startswith(b) for b in BANNED_CALLS):
                     bad.setdefault(os.path.relpath(f, REPO_ROOT), []).append(name)
         self.assertEqual(bad, {})
-        with open(PROCESS_OWNER, encoding="utf-8") as fh:
-            src = fh.read()
-        self.assertNotIn("shell=True", src)
+        for owner in (PROCESS_OWNER, SCAN_PROCESS_OWNER):
+            with open(owner, encoding="utf-8") as fh:
+                src = fh.read()
+            self.assertNotIn("shell=True", src)
         self.assertNotIn("/IM", src, "프로세스 이름으로 끄지 않음")
         self.assertEqual(network_imports(PROCESS_OWNER), [], "구독 연결 파일은 네트워크 모듈을 쓰지 않음")
 

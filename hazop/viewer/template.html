@@ -551,7 +551,7 @@ function hazopPathEngine(G) {
   function uncrowdTags() {
     var shown = tagRecs.filter(function (r) { return r.span && r.small; });
     shown.forEach(function (r) { r.span.classList.remove("crowded"); });
-    var rank = function (r) { var c = r.box.classList; return c.contains("selected") || c.contains("hz-pick") ? 0 : c.contains("hz-seg-in") ? 1 : 2; };
+    var rank = function (r) { var c = r.box.classList; return c.contains("selected") || c.contains("hz-pick") || c.contains("hz-sel") ? 0 : c.contains("hz-seg-in") ? 1 : 2; };
     var order = shown.map(function (r, i) { return { r: r, i: i, k: rank(r), rect: r.span.getBoundingClientRect() }; });
     order.sort(function (a, b) { return a.k - b.k || a.i - b.i; });
     var taken = floatRects(), crowded = [];
