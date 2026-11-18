@@ -368,6 +368,7 @@ def _link_by_ends(node_set, graph, new_basis, by_id, link, contested, old_basis_
                 continue
             ends = sorted(set(v[4]))
             images = [link.get(x) for x in ends]
+            # old_key 검사는 판 사진(snapshot)에서는 뜻이 같다: 같은 열쇠의 쌍둥이도 old에 있어 같은 새 구간을 골라 _drop_contested가 둘 다 뺀다(test_two_parallel_pipes_meeting_one_new_pipe_are_both_lost). 손댄 집합을 막으려 둔다
             if None in images or old_key[json.dumps(v[:4] + [ends])] != 1:
                 continue
             if any(old_touch[json.dumps(v[:4] + [x])] != new_touch[json.dumps(v[:4] + [y])] for x, y in zip(ends, images)):

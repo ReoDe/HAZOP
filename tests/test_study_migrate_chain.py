@@ -274,6 +274,15 @@ class LinkRuleTest(WorkRoot):
         g2 = graph("v2", [self.PP, self.VV, self.WW], [("La", ["p", "q"]), ("Lb", ["q", "w"]), ("BY", ["p", "w"])])
         self.assertEqual(moved_uids(g1, g2, ["L1"]), {"L1": None})
 
+    def test_two_parallel_pipes_meeting_one_new_pipe_are_both_lost(self):
+        """옛 판의 나란한 두 구간(같은 두 끝, 같은 겉모습)이 새 판 하나로 모이면 둘 다 묘비. 끝마다 닿는 수를 맞춰 두어
+        닿는 수 검사가 아니라 두 옛 구간이 한 새 구간을 다투는 것(contested)으로 막히는 경우다."""
+        syms = [self.PP, self.VV, self.WW, self.TT]
+        g1 = graph("v1", syms, [("A", ["p", "q"]), ("B", ["p", "q"]), ("C", ["p", "w"]), ("D", ["q", "t"])])
+        g2 = graph("v2", syms, [("L", ["p", "q"]), ("E", ["p", "w"]), ("F", ["p", "t"]), ("G", ["q", "w"]),
+                                ("H", ["q", "t"])])
+        self.assertEqual(moved_uids(g1, g2, ["A", "B"]), {"A": None, "B": None})
+
     def test_two_old_symbols_meeting_one_new_symbol_are_both_lost(self):
         g1 = graph("v1", [("a", "pump", [0, 0, 5, 5]), ("b", "pump", [0.8, 0, 5, 5])])
         g2 = graph("v2", [("a", "pump", [0.4, 0, 5, 5])])
