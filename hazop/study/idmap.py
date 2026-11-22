@@ -16,6 +16,10 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
 - 구간(members를 가진 사전)은 members에 지금 판의 살아 있는 id만 두고 잃은 것은 lost(묘비 id)에 둔다. 실행 취소 기록의
   before·after와 조각 기록도 같은 규칙이라 되돌려도 묘비는 묘비다.
 - 등록되지 않은 자리에서 옛 판 id를 만나면 report["unregistered"]에 경로를 적는다(시험에서는 비어 있어야 한다).
+- 경로의 `[]`는 목록의 항목, `{}`는 ID를 열쇠로 쓰는 사전의 값이다. 경로가 `{}`로 끝나면 그 사전의 열쇠를 옮긴다(키 다시
+  짓기). 옮긴 열쇠가 다른 항목의 열쇠와 겹치면 뒤 항목은 묘비 열쇠로 둔다(어느 쪽이 맞는지 모르므로 덮지 않음). 값이 자기
+  열쇠를 `key`로 들고 있으면 그것도 같이 바꾼다.
+- 프로젝트 문서(⑥ 초기사건 IE, FMEA, 잠재 후보 판단 LATENT)도 같은 표로 옮긴다(차례는 hazop.study.follow).
 """
 
 import collections
@@ -35,7 +39,10 @@ MARK_TOL = 1.0  # pt. 같은 기호를 다시 읽으면 상자가 그대로다
 MARK_LEN = 8
 
 MEMBERS, EID, REF, EXP = "members", "eid", "ref", "exp"
+HEAD, TAIL = "head", "tail"  # "<참조>|<나머지>"(기본사건 열쇠), "<규칙>|<참조>"(잠재 후보 판단 열쇠)
 SET, RESULTS = "study_set", "results"
+IE, FMEA, LATENT = "ie", "fmea", "latent"
+MARKER_FIELDS = ("ref_versions", "ref_migrations")  # 프로젝트 문서의 판 표지와 옮긴 기록(hazop.study.follow)
 
 _PID_ID = re.compile(r"(^|/)(entity|relation)-")
 _RELATION_ID = re.compile(r"(^|/)relation-|^xlink-[0-9a-f]+-[ab]$")  # 도면 연결 구간의 두 끝 관계도 순번처럼 바뀐다
@@ -51,6 +58,9 @@ _REF_FIELDS = (("cause_refs[].ref", REF), ("consequence_refs[].ref", REF), ("saf
                ("expectation_refs[]", EXP))
 
 
+_JUDGEMENT_FIELDS = (("key", TAIL), ("target", REF), ("found[]", REF), ("rejected[]", REF))
+
+
 def _entry_fields(base):
     return (tuple((base + "." + p, s) for p, s in _REF_FIELDS) + ((base + ".ai_basis.kg_paths[][]", EID),)
             + tuple((base + ".history[].before." + p, s) for p, s in _REF_FIELDS))
@@ -61,6 +71,13 @@ FIELDS = {
           + _node_fields("previous[].nodes[]") + _node_fields("legacy.previous[].nodes[]")
           + _node_fields("legacy.excluded_nodes[]")),
     RESULTS: _entry_fields("cells[].entries[]") + _entry_fields("archived_cells[].cell.entries[]"),
+    # 표제 대상·기본사건 참조. 기본사건 열쇠는 앞 참조만 옮기고 '|고장모드'는 그대로. tag·name은 사본이라 옮기지 않는다
+    IE: (("headings{}.targets[]", REF), ("basic_events{}.ref", REF), ("basic_events{}.key", HEAD),
+         ("history[].before.targets[]", REF)),
+    FMEA: (("rows{}.ref", REF), ("rows{}.entity_id", EID), ("history[].before.ref", REF)),  # 행 고침 이력에 entity_id는 없음
+    # 열쇠 다시 짓기("judgements{}")는 값의 key를 옮긴 뒤에 한다(_rekey가 옮긴 key로 자기 열쇠를 알아봄)
+    LATENT: (tuple(("judgements{}." + p, s) for p, s in _JUDGEMENT_FIELDS)
+             + tuple(("judgements{}.history[]." + p, s) for p, s in _JUDGEMENT_FIELDS) + (("judgements{}", TAIL),)),
 }
 # 일부러 옮기지 않는 자리: 지난 일의 기록(history·version_migrations), 판 이전 끝에 새로 만드는 판 사진, 묘비 기록
 IGNORED = {
@@ -68,6 +85,7 @@ IGNORED = {
           "member_digest", "tombstones", "tomb_seq", "legacy.member_digest", "legacy.member_refs"),
     RESULTS: ("version_migrations", "cells[].entries[].history", "archived_cells[].cell.entries[].history",
               "legacy", "carried_from", "study_nodes_ref"),
+    IE: MARKER_FIELDS, FMEA: MARKER_FIELDS, LATENT: MARKER_FIELDS,
 }
 
 
@@ -432,24 +450,29 @@ def from_record(detail, graph_id):
 
 # ---------------------------------------------------------------- 적용
 
+_STEPS = re.compile(r"\[\]|\{\}")
+
+
 def walk(doc, path):
-    """경로(a.b[].c)가 가리키는 자리마다 (담은 것, 열쇠 또는 번호)."""
+    """경로(a.b[].c{}.d)가 가리키는 자리마다 (담은 것, 열쇠 또는 번호). `[]`는 목록 항목, `{}`는 사전 값."""
     parts = path.split(".")
     out = []
 
     def go(node, i):
         part = parts[i]
-        name, lists = part.rstrip("[]"), part.count("[]")
+        name = _STEPS.sub("", part)
         last = i == len(parts) - 1
         if not isinstance(node, dict) or name not in node:
             return
         holders = [(node, name)]
-        for _ in range(lists):
+        for step in _STEPS.findall(part):
             nxt = []
             for h, k in holders:
                 v = h[k]
-                if isinstance(v, list):
+                if step == "[]" and isinstance(v, list):
                     nxt += [(v, j) for j in range(len(v))]
+                elif step == "{}" and isinstance(v, dict):
+                    nxt += [(v, j) for j in list(v)]
             holders = nxt
         for h, k in holders:
             if last:
@@ -492,6 +515,18 @@ class _Ctx:
         if not self.t["partial"] and drawing_of(x) in self.drawings:  # 옛 판 사진에 없는 이 도면의 참조
             return tomb_id(self.t["graph_id"], self.t["to"], "r-" + _sha8(x))
         return x
+
+    def head(self, x):
+        if not isinstance(x, str) or "|" not in x:
+            return x
+        r, sep, rest = x.partition("|")
+        return self.ref(r) + sep + rest
+
+    def tail(self, x):
+        if not isinstance(x, str) or "|" not in x:
+            return x
+        rest, sep, r = x.partition("|")
+        return rest + sep + self.ref(r)
 
     def exp(self, x):
         from hazop.kg import expect
@@ -553,7 +588,13 @@ def apply(doc, kind, table):
             target["changed"] += 1
             target["lost"] += is_tomb(b) and not is_tomb(a)
             target["found"] += is_tomb(a) and not is_tomb(b)
+    fn = {REF: ctx.ref, HEAD: ctx.head, TAIL: ctx.tail, EXP: ctx.exp}
     for path, space in FIELDS[kind]:
+        if path.endswith("{}"):
+            for holder, key in walk(out, path[:-2]):
+                if isinstance(holder[key], dict):
+                    holder[key] = _rekey(holder[key], fn[space], table, count, space)
+            continue
         for holder, key in walk(out, path):
             v = holder[key]
             if space == MEMBERS:
@@ -562,14 +603,28 @@ def apply(doc, kind, table):
                 continue
             if space == EID:
                 w = ctx.eid(v, paths=path.endswith("kg_paths[][]"))
-            elif space == REF:
-                w = ctx.ref(v)
             else:
-                w = ctx.exp(v)
+                w = fn[space](v)
             count(space, v, w)
             holder[key] = w
     report["unregistered"] = _unregistered(out, kind, table)
     return out, report
+
+
+def _rekey(d, fn, table, count, space):
+    """ID를 열쇠로 쓰는 사전 d의 열쇠를 fn으로 옮긴 새 사전(차례 그대로). 옮긴 열쇠가 앞 항목과 겹치면 뒤 항목은 그 옛 열쇠의
+    지문으로 지은 묘비 열쇠로 둔다. 값의 key가 (이미 옮긴) 자기 열쇠면 같이 바꾼다."""
+    out = {}
+    for k, v in d.items():
+        nk = fn(k)
+        if nk in out:
+            rest, sep, _r = k.partition("|") if space == TAIL else ("", "", k)
+            nk = rest + sep + tomb_id(table["graph_id"], table["to"], "k-" + _sha8(k))
+            if isinstance(v, dict) and v.get("key") == fn(k):
+                v["key"] = nk
+        count(space, k, nk)
+        out[nk] = v
+    return out
 
 
 def _unregistered(doc, kind, table):
@@ -584,6 +639,8 @@ def _unregistered(doc, kind, table):
         else:
             leaves.add(path)
     ignored = set(IGNORED[kind])
+    # ID를 열쇠로 쓰는 사전(경로에 {}로 적은 것). 그 아래는 열쇠 대신 {}로 맞춘다
+    maps = {p[:m.start()] for p, _s in FIELDS[kind] for m in _STEPS.finditer(p) if m.group() == "{}"}
     hits = []
 
     def go(v, pat, where):
@@ -591,7 +648,7 @@ def _unregistered(doc, kind, table):
             return
         if isinstance(v, dict):
             for k, x in v.items():
-                go(x, "%s.%s" % (pat, k) if pat else str(k), where + (str(k),))
+                go(x, pat + "{}" if pat in maps else "%s.%s" % (pat, k) if pat else str(k), where + (str(k),))
         elif isinstance(v, list):
             for i, x in enumerate(v):
                 go(x, pat + "[]", where + ("[%d]" % i,))

@@ -5,6 +5,8 @@ P5(설계 §8.2): 같은 폴더의 <프로젝트>.fmea.json(FMEA 행, hazop.ie.f
 - 저장은 읽은 뒤 파일이 바뀌었는지 지문으로 보고, 바뀌었으면 Conflict로 거절한다. 쓰기·지문·백업은 검토구간 등과 같은
   공용 규칙(hazop.store_io)을 쓴다.
 - 읽지 못한 파일을 덮어쓰기 전에는 화면이 사람에게 묻고 backup으로 원본을 data/backup/<시각>-초기사건읽기실패/ 아래에 둔다.
+- 읽을 때 ⑥ 문서와 FMEA 문서의 참조를 검토구간 판 이전에 맞춰 메모리에서 옮긴다(hazop.study.follow.catch_up, 판 표지
+  ref_versions). 파일은 집합을 판 이전할 때(migrate.on_load) 또는 사람이 저장할 때 쓴다.
 """
 
 import json
@@ -12,6 +14,7 @@ import os
 
 from hazop import paths, store_io
 from hazop.ie import model
+from hazop.study import idmap
 from hazop.store_io import Conflict, fingerprint, now_utc  # noqa: F401  이 모듈 이름으로도 쓴다
 
 BACKUP_LABEL = "초기사건읽기실패"
@@ -42,7 +45,12 @@ def load(project_id):
     bad = model.problems(doc)
     if bad:
         raise Unreadable(path, bad)
-    return doc, fp
+    return _caught_up(doc, idmap.IE, project_id), fp
+
+
+def _caught_up(doc, kind, project_id):
+    from hazop.study import follow
+    return follow.catch_up(doc, kind, project_id)[0]
 
 
 def save(doc, expect):
@@ -90,7 +98,7 @@ def mld_path(project_id):
     return _side_path(project_id, ".mld.json")
 
 
-def _load_side(path, mod, project_id):
+def _load_side(path, mod, project_id, kind=None):
     data, fp = store_io.read_bytes(path)
     if data is None:
         return mod.empty(project_id), None
@@ -101,13 +109,13 @@ def _load_side(path, mod, project_id):
     bad = mod.problems(doc)
     if bad:
         raise Unreadable(path, bad)
-    return doc, fp
+    return (_caught_up(doc, kind, project_id) if kind else doc), fp
 
 
 def load_fmea(project_id):
     """(FMEA 문서, 지문). 파일이 없으면 (빈 문서, None). 읽을 수 없으면 Unreadable."""
     from hazop.ie import fmea
-    return _load_side(fmea_path(project_id), fmea, project_id)
+    return _load_side(fmea_path(project_id), fmea, project_id, idmap.FMEA)
 
 
 def save_fmea(doc, expect):

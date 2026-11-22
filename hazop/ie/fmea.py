@@ -19,7 +19,7 @@ import re
 
 from hazop import store_io
 from hazop.ie import model
-from hazop.study import migrate
+from hazop.study import idmap, migrate
 from hazop.study import refs
 
 KIND = "hazop_fmea"
@@ -460,7 +460,7 @@ def set_status(doc, rids, status, by, at=None):
         r = doc["rows"].get(rid)
         if r is None:
             raise ValueError("없는 FMEA 행: %s" % rid)
-        if status == "approved" and not r.get("ref"):
+        if status == "approved" and (not r.get("ref") or idmap.is_tomb(r["ref"])):
             raise ValueError("%s: 도면 구성요소에 대응하지 않아 승인할 수 없습니다(구성요소를 먼저 고르세요)" % rid)
     todo = [rid for rid in rids if doc["rows"][rid]["status"] != status]
     if not todo:

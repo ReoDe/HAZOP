@@ -334,6 +334,26 @@ def confirm_problems(doc, gid, results, facts=None, node_set=None):
                 out.append("%s: AI 초안 %s(받아들이기 전)" % (rid, what))
             elif not in_scope(table, r, facts):
                 out.append("%s: ⑤ 출처 항목의 승인이 모두 풀려 묶음에서 빠지는 %s" % (rid, what))
+    return out + lost_problems(doc, gid, facts)
+
+
+def lost_problems(doc, gid, facts):
+    """다시 추출 뒤 찾지 못한 대상(묘비)이 그룹에 남은 자리. 남아 있으면 확정하지 못한다: 사람이 ⑤를 다시 승인해 그룹을 다시
+    확정해도, 표제·기본사건이 가리킬 기호를 모르는 채로 확정 묶음이 나가지 않게 한다(설계 §M3)."""
+    g = doc["groups"][gid]
+    keys = {doc["candidates"][iec]["key"] for iec in members_of(doc, gid)}
+    out = []
+    for iec in members_of(doc, gid):
+        e = (facts.get(doc["candidates"][iec]["key"]) or {}).get("entry") or {}
+        if any(idmap.is_tomb(r) for r in refs.all_refs(e)):
+            out.append("%s: ⑤ 참조 대상을 다시 추출 뒤 찾지 못함(⑤에서 대상을 고친 뒤 확정)" % iec)
+    for hid in g["heading_ids"]:
+        if doc["headings"][hid]["status"] == "live" and any(idmap.is_tomb(t) for t in doc["headings"][hid]["targets"]):
+            out.append("%s: 표제 대상을 다시 추출 뒤 찾지 못함(대상을 고치거나 뺀 뒤 확정)" % hid)
+    for bid, b in sorted(doc["basic_events"].items()):
+        mine = set(b["heading_ids"]) & set(g["heading_ids"]) or any(s["key"] in keys for s in b["sources"])
+        if b["status"] == "live" and mine and idmap.is_tomb(b["ref"]):
+            out.append("%s: 기본사건 대상을 다시 추출 뒤 찾지 못함(지운 뒤 확정)" % bid)
     return out
 
 

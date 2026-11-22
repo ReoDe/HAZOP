@@ -634,23 +634,45 @@ def _check_store(doc, project_id, path):
         raise ExpectError("%s: 다른 프로젝트(%s)의 판단 파일" % (path, doc.get("project_id")))
 
 
-def load_judgements(path, project_id):
-    """판단 파일 -> {키: 기록}. 파일이 없으면 빈 dict. 파일 형식이 틀리면 ExpectError(덮어쓰지 않게 호출자가 멈춘다).
-    기록 하나하나의 검사는 evaluate가 한다(어긋난 기록도 그대로 돌려줘 저장 때 잃지 않게)."""
+def empty_store(project_id):
+    return {"kind": STORE_KIND, "schema_version": STORE_SCHEMA_VERSION, "project_id": project_id, "judgements": {}}
+
+
+def read_store(path, project_id):
+    """판단 파일 문서(판 이전을 따라 옮기기 전). 없으면 None. 형식이 틀리면 ExpectError."""
     if not os.path.isfile(path):
-        return {}
+        return None
     try:
         with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
     except ValueError as exc:
         raise ExpectError("%s: 잠재 후보 판단 파일 JSON 오류: %s" % (path, exc)) from None
     _check_store(doc, project_id, path)
-    return doc["judgements"]
+    return doc
+
+
+def load_store(path, project_id):
+    """판단 파일 문서. 검토구간 판 이전에 맞춰 열쇠·대상 참조를 메모리에서 옮긴다(hazop.study.follow, 판 표지 ref_versions).
+    파일이 없으면 빈 문서."""
+    from hazop.study import follow, idmap
+    doc = read_store(path, project_id)
+    if doc is None:
+        return empty_store(project_id)
+    return follow.catch_up(doc, idmap.LATENT, project_id)[0]
+
+
+def load_judgements(path, project_id):
+    """판단 파일 -> {키: 기록}. 파일이 없으면 빈 dict. 파일 형식이 틀리면 ExpectError(덮어쓰지 않게 호출자가 멈춘다).
+    기록 하나하나의 검사는 evaluate가 한다(어긋난 기록도 그대로 돌려줘 저장 때 잃지 않게). 열쇠와 대상 참조는 검토구간
+    판 이전에 맞춰 옮긴 것이다(묘비가 된 열쇠는 evaluate가 고아 판단으로 알림)."""
+    return load_store(path, project_id)["judgements"]
 
 
 def save_judgement(path, project_id, rec):
-    """판단 하나를 파일에 더한다(같은 키는 바꾸고 이전 기록은 history에 남김). 기존 파일을 읽지 못하면 쓰지 않는다."""
-    current = load_judgements(path, project_id)
+    """판단 하나를 파일에 더한다(같은 키는 바꾸고 이전 기록은 history에 남김). 기존 파일을 읽지 못하면 쓰지 않는다.
+    판 표지(ref_versions)와 옮긴 기록(ref_migrations)은 그대로 둔다."""
+    doc = load_store(path, project_id)
+    current = doc["judgements"]
     prev = current.get(rec["key"])
     new = dict(rec)
     if isinstance(prev, dict):
@@ -658,6 +680,6 @@ def save_judgement(path, project_id, rec):
     elif prev is not None:
         new["history"] = [prev]
     current[rec["key"]] = new
-    build.write_json_atomic(path, {"kind": STORE_KIND, "schema_version": STORE_SCHEMA_VERSION,
-                                   "project_id": project_id, "judgements": dict(sorted(current.items()))})
+    build.write_json_atomic(path, dict(doc, kind=STORE_KIND, schema_version=STORE_SCHEMA_VERSION, project_id=project_id,
+                                       judgements=dict(sorted(current.items()))))
     return current

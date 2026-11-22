@@ -453,4 +453,8 @@ def on_load(node_set, graph, path, fp):
                 res.write(rpath, moved, expect=rfp)
             except (OSError, store_io.Conflict) as exc:  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
                 _log.warning("분석 결과 판 이전을 저장하지 못함: %s (%s)", rpath, exc)
+    from hazop.study import follow
+    for kind, what in follow.write_after(out, BACKUP_LABEL):  # ⑥ 문서·FMEA·잠재 후보 판단. 못 쓴 것은 읽을 때 따라 옮긴다
+        if isinstance(what, str):
+            _log.warning("%s 문서 판 이전을 저장하지 못함: %s", kind, what)
     return out, fp
