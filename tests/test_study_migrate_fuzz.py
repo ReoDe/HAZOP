@@ -25,6 +25,11 @@
 ⑦ 순번 구성요소를 이었으면 앞뒤 기호의 종류·태그·위치가 같다.
 ⑧ 내용이 같은 다시 추출(순서만 섞임·판 문자열만 바뀜·범주만 바뀜)은 확인할 수 있는 구성요소를 잃지 않고 재확인 구간을 만들지 않는다.
 
+프로젝트 문서(M3: ⑥ 초기사건 문서·FMEA·잠재 후보 판단, hazop.study.follow)도 ⑤ 결과처럼 따라간다. 판 이전마다 따라가거나
+건너뛰고(판 표지로 늦게 따라옴), 되돌아온 판에서 새로 단 표제 대상을 함께 보며, 판 표지가 없는 옛 문서는 사슬 끝에 한 번
+따라간다(문서 시각 사이에 판 이전이 끼면 묘비). ①~⑥을 같은 진짜 정체로 판정한다. 시각은 사슬 차례대로 c00(집합) <
+c00a(문서) < c01(첫 판 이전) < c01b(그 뒤 새로 제안한 집합) < c02 … 이다.
+
 시드 수는 HAZOP_FUZZ_SEEDS(기본 SEEDS)로 늘린다.
 """
 
@@ -48,7 +53,7 @@ from hazop import paths  # noqa: E402
 from hazop.extract import ids  # noqa: E402
 from hazop.graph import project  # noqa: E402
 from hazop.kg import expect  # noqa: E402
-from hazop.study import idmap, migrate, node_tools  # noqa: E402
+from hazop.study import follow, idmap, migrate, node_tools  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 
 SEEDS = int(os.environ.get("HAZOP_FUZZ_SEEDS") or 200)
@@ -60,6 +65,7 @@ LIMIT = "표지가 같은 다른 기호(알려진 한계)"
 LIMIT_PIPE = "같은 두 끝 사이 겉모습이 같은 상자 없는 배관(알려진 한계, 위 한계 수에 듦)"
 RULE = "R-1"
 SET_HOLDERS = tuple(p for p, s in idmap.FIELDS[idmap.SET] if s == idmap.MEMBERS)
+DOC_KINDS = (idmap.IE, idmap.FMEA, idmap.LATENT)
 
 
 def to_b_form(ns, g):
@@ -336,8 +342,9 @@ def stale_targets(world, g):
 
 # ---------------------------------------------------------------- 집합과 결과
 
-def make_set(r, g, form=None):
+def make_set(r, g, form=None, at="c00"):
     ns = sn.new_set(g)
+    ns["history"].append({"at": at, "op": "propose", "detail": {}})
     ids_ = [n["entity_id"] for n in g["nodes"]]
     for i in range(r.randint(1, 4)):
         mem = sorted(r.sample(ids_, r.randint(1, len(ids_))))
@@ -350,17 +357,17 @@ def make_set(r, g, form=None):
             if x < 0.4 and live:
                 n = r.choice(live)
                 if len(n["members"]) > 1:
-                    ns = sn.split(ns, n["node_id"], r.sample(n["members"], len(n["members"]) // 2), at="t")
+                    ns = sn.split(ns, n["node_id"], r.sample(n["members"], len(n["members"]) // 2), at=at)
             elif x < 0.7 and live:
                 n = r.choice(live)
-                ns = sn.remove_member(ns, n["node_id"], r.choice(n["members"]), at="t")
+                ns = sn.remove_member(ns, n["node_id"], r.choice(n["members"]), at=at)
             elif len(live) > 1:
-                ns = sn.merge(ns, [n["node_id"] for n in r.sample(live, 2)], at="t")
+                ns = sn.merge(ns, [n["node_id"] for n in r.sample(live, 2)], at=at)
         except ValueError:
             pass
     pick = [n["node_id"] for n in ns["nodes"] if r.random() < 0.6]
     if pick:
-        ns = sn.confirm_nodes(ns, g, pick, "x", at="t")
+        ns = sn.confirm_nodes(ns, g, pick, "x", at=at)
     for n in ns["nodes"]:
         if n["state"] == "confirmed" and r.random() < 0.2:
             n["state"], n["locked"] = "locked", {"at": "t", "by": "x"}
@@ -405,6 +412,47 @@ def make_results(r, ns, g, stale):
                  "reason": "x"} for c in cells[:1] if r.random() < 0.4]
     return {"schema_version": "0.3", "graph_id": g["graph_id"], "graph_version": g["graph_version"], "cells": cells,
             **({"archived_cells": archived} if archived else {})}
+
+
+def make_doc(r, kind, g, at="c00a"):
+    """프로젝트 문서 하나(등록부 자리만 채운 꼴). 참조는 이 판 그래프의 것."""
+    gid = g["graph_id"]
+    nodes = [n for n in g["nodes"] if idmap.ref_of(n, gid)]
+    refs = [idmap.ref_of(n, gid) for n in nodes]
+    pick = lambda k: r.sample(refs, min(k, len(refs)))  # noqa: E731
+    if kind == idmap.IE:
+        bes = {}
+        for i, x in enumerate(pick(r.randint(1, 4)), 1):
+            bes["BE-%03d" % i] = {"ref": x, "key": "%s|%s" % (x, r.choice(["FTO", "FTC", ""]))}
+        return {"headings": {"H-%02d" % i: {"targets": pick(r.randint(1, 3))} for i in range(1, r.randint(2, 4))},
+                "basic_events": bes, "history": [{"at": at, "op": "edit", "before": {"targets": pick(2)}}]}
+    if kind == idmap.FMEA:
+        rows = {"FM-%03d" % i: {"ref": idmap.ref_of(n, gid), "entity_id": n["entity_id"], "status": "approved"}
+                for i, n in enumerate(r.sample(nodes, min(3, len(nodes))), 1)}
+        return {"rows": rows, "history": [{"at": at, "op": "edit", "before": {"ref": r.choice(refs)}}],
+                "imports": [{"at": at}]}
+    judg = {}
+    for x in pick(3):
+        k = "%s|%s" % (r.choice(["E01", "E04"]), x)
+        rec = {"key": k, "target": x, "found": pick(1), "rejected": pick(1), "at": at}
+        judg.setdefault(k, dict(rec, history=[copy.deepcopy(rec)]))  # 파일에서 읽은 문서처럼 목록을 함께 쓰지 않음
+    return {"judgements": judg}
+
+
+def doc_slots(doc, kind):
+    """{(등록 경로, 공간): [값]} 프로젝트 문서의 등록된 자리 전부(차례 고정, 열쇠 꼴은 참조 부분만, 공간은 REF로)."""
+    out = {}
+    for p, s in idmap.FIELDS[kind]:
+        if p.endswith("{}"):
+            vals = [k for h, key in idmap.walk(doc, p[:-2]) for k in h[key]]
+        else:
+            vals = [h[k] for h, k in idmap.walk(doc, p)]
+        if s == idmap.HEAD:
+            vals = [v.partition("|")[0] for v in vals]
+        elif s == idmap.TAIL:
+            vals = [v.partition("|")[2] for v in vals]
+        out[(p, idmap.REF if s in (idmap.HEAD, idmap.TAIL) else s)] = vals
+    return out
 
 
 def holders(ns):
@@ -571,14 +619,14 @@ class Track:
 
     # -- 결과
 
-    def adopt_results(self, slots, doc, truth):
-        for key, vals in ref_slots(doc).items():
+    def adopt_results(self, slots, doc, truth, kind=idmap.RESULTS):
+        for key, vals in (ref_slots(doc) if kind == idmap.RESULTS else doc_slots(doc, kind)).items():
             rows = slots.setdefault(key, [])
             for v in vals[len(rows):]:
                 rows.append({"uid": truth.resolve(key[1], v), "orig": v, "dead": False})
 
-    def check_results(self, slots, doc, truth_new, label):
-        for key, vals in ref_slots(doc).items():
+    def check_results(self, slots, doc, truth_new, label, kind=idmap.RESULTS):
+        for key, vals in (ref_slots(doc) if kind == idmap.RESULTS else doc_slots(doc, kind)).items():
             rows = slots.get(key, [])
             if len(rows) != len(vals):
                 self.j.note("① 참조 수가 바뀜(%s)" % label, (self.seed, key[0], len(rows), len(vals)))
@@ -587,7 +635,7 @@ class Track:
                 self.j.stats["참조 점검"] += 1
                 if idmap.is_tomb(v):
                     row["dead"] = True
-                    self.j.stats["묘비가 된 ⑤ 참조"] += 1
+                    self.j.stats["묘비가 된 ⑤ 참조" if kind == idmap.RESULTS else "묘비가 된 문서 참조"] += 1
                     continue
                 u = truth_new.resolve(key[1], v)
                 if row["uid"] is None:
@@ -657,9 +705,10 @@ def plan_chain(r, project_mode):
     return first, steps
 
 
-def unregistered(ns, res):
+def unregistered(ns, res, docs=()):
     rows = [h["detail"] for h in ns["history"] if h["op"] == migrate.OP]
     rows += res.get("version_migrations") or []
+    rows += [m for d in docs for m in d.get("ref_migrations") or []]
     return [p for r in rows for p in r.get("unregistered") or []]
 
 
@@ -686,6 +735,15 @@ def run(seeds, judge):
             track.adopt_set(ns, truth)
             live_slots = {}
             track.adopt_results(live_slots, res, truth)
+            docs, doc_slots_ = {}, {}
+            old_docs = {}  # 판 표지가 없는 옛 문서: 사슬 끝에 한 번 따라간다
+            for kind in DOC_KINDS:
+                docs[kind] = make_doc(r, kind, g)
+                doc_slots_[kind] = {}
+                track.adopt_results(doc_slots_[kind], docs[kind], truth, kind)
+                old_docs[kind] = (make_doc(r, kind, g), {})
+                track.adopt_results(old_docs[kind][1], old_docs[kind][0], truth, kind)
+            mixed = r.random() < 0.3  # 옛 문서를 사슬 가운데에 고침(그 시각 사이에 판 이전이 낌)
             late = None
             seen = {g["graph_version"]}
             backups, restored = [(copy.deepcopy(ns), g, truth)], False
@@ -708,7 +766,7 @@ def run(seeds, judge):
                     for m in res["version_migrations"]:
                         m.pop("step", None)
                 stage = "판 이전 %d(%s)" % (i, kind)
-                ns2, p = migrate.migrate_set(ns, g2, at="t%d" % i)
+                ns2, p = migrate.migrate_set(ns, g2, at="c%02d" % i)
                 if p["state"] != "kept":
                     judge.note("⑤ 판이 다른데 판 이전을 하지 않음", (seed, i, p["state"]))
                     break
@@ -721,9 +779,9 @@ def run(seeds, judge):
                 if kind in ("reorder", "restamp", "recategorize") and not restored:  # 되돌린 집합에는 앞 세계가 다르다
                     track.check_same_content(ns, ns2, p, g)
                 stage = "두 번 적용 %d" % i
-                if not same(migrate.migrate_set(copy.deepcopy(ns), g2, at="t%d" % i)[0], ns2):
+                if not same(migrate.migrate_set(copy.deepcopy(ns), g2, at="c%02d" % i)[0], ns2):
                     judge.note("④ 같은 판 이전을 두 번 하면 다름", (seed, i))
-                if migrate.migrate_set(ns2, g2, at="t%d" % i)[0] is not ns2:
+                if migrate.migrate_set(ns2, g2, at="c%02d" % i)[0] is not ns2:
                     judge.note("④ 같은 판에서 다시 바꿈", (seed, i))
                 stage = "결과 %d" % i
                 if late is None and r.random() < 0.3:  # 이 판 이전부터 결과 저장이 실패해 늦게 따라옴
@@ -740,6 +798,24 @@ def run(seeds, judge):
                     track.check_results(live_slots, res, truth2, "따라감")
                     if not same(migrate.migrate_results(res, ns2, at="again")[0], res):
                         judge.note("④ 판이 같은 결과를 다시 옮김", (seed, i))
+                stage = "문서 %d" % i
+                for kind in DOC_KINDS:
+                    if r.random() < 0.2:
+                        judge.stats["문서가 이번 판 이전을 건너뜀"] += 1
+                        continue
+                    moved, _rep = follow.follow(docs[kind], kind, ns2, at="c%02da" % i)
+                    if follow.follow(moved, kind, ns2, at="again")[0] is not moved:
+                        judge.note("④ 판이 같은 문서를 다시 옮김", (seed, i, kind))
+                    docs[kind] = moved
+                    judge.stats["문서 따라감"] += 1
+                    track.check_results(doc_slots_[kind], moved, truth2, "문서 " + kind, kind)
+                if mixed and i == 1:  # 옛 문서에 첫 판 이전 뒤 시각의 기록이 더해짐(참조는 그대로)
+                    for kind, (d, _s) in old_docs.items():
+                        if kind == idmap.LATENT:
+                            for rec in d["judgements"].values():
+                                rec["history"].append({"at": "c01a"})
+                        else:
+                            d["history"].append({"at": "c01a", "op": "edit"})
                 stage = "되돌리기 %d" % i
                 undo_check(track, ns2, truth2)
                 track.see(truth2)
@@ -748,6 +824,11 @@ def run(seeds, judge):
                     ids_ = [n["entity_id"] for n in g2["nodes"]]
                     res["cells"].append({"node_id": "S1", "entries": [make_entry(r, g2, r.sample(ids_, min(3, len(ids_))), None)]})
                     track.adopt_results(live_slots, res, truth2)
+                    if (docs[idmap.IE].get("ref_versions") or {}).get(ns2["graph_id"], {}).get("graph_version") == g2["graph_version"]:
+                        judge.stats["되돌아온 판에서 새로 단 문서 참조"] += 1
+                        docs[idmap.IE]["headings"]["H-9%d" % i] = {"targets": [idmap.ref_of(n, g2["graph_id"]) for n in g2["nodes"]
+                                                                            if idmap.ref_of(n, g2["graph_id"])][:2]}
+                        track.adopt_results(doc_slots_[idmap.IE], docs[idmap.IE], truth2, idmap.IE)
                     ns2 = copy.deepcopy(ns2)
                     ns2["nodes"].append(dict({"node_id": "S9%d" % i, "name": "new", "basis": "b",
                                               "members": sorted(r.sample(ids_, min(2, len(ids_))))},
@@ -755,7 +836,7 @@ def run(seeds, judge):
                     track.adopt_set(ns2, truth2)
                 if late is None and res["graph_version"] == g2["graph_version"] and r.random() < 0.25:
                     judge.stats["구간을 새로 제안"] += 1  # 옛 집합의 묘비를 모르는 새 집합
-                    ns2, _ = make_set(r, g2, "new")
+                    ns2, _ = make_set(r, g2, "new", at="c%02db" % i)
                     track.sets = {}
                     track.adopt_set(ns2, truth2)
                 seen.add(g2["graph_version"])
@@ -775,9 +856,19 @@ def run(seeds, judge):
                 judge.stats["늦게 따라온 결과"] += 1
                 moved, _ = migrate.migrate_results(late[0], ns, at="late")
                 track.check_results(late[1], moved, truth, "늦게 따라옴")
+            stage = "문서 늦게 따라옴"
+            for kind in DOC_KINDS:
+                moved, rep = follow.follow(docs[kind], kind, ns, at="end")
+                track.check_results(doc_slots_[kind], moved, truth, "문서 마지막에 따라감", kind)
+                docs[kind] = moved
+                d, slots = old_docs[kind]
+                moved, rep = follow.follow(d, kind, ns, at="end")
+                judge.stats["표지 없는 옛 문서 " + ("묘비(증명 못 함)" if rep and rep.get("unproven") else "옮김")] += 1
+                track.check_results(slots, moved, truth, "표지 없는 옛 문서", kind)
+                old_docs[kind] = (moved, slots)
             stage = "형식 검사"
             sn._check_shape(json.loads(json.dumps(ns)), "x")
-            for p in unregistered(ns, res):
+            for p in unregistered(ns, res, list(docs.values()) + [d for d, _s in old_docs.values()]):
                 judge.note("⑥ 등록되지 않은 자리의 옛 id", (seed, p))
         except Exception as exc:  # noqa: BLE001  예외 자체가 불변식 ⑤ 위반이다
             tb = traceback.extract_tb(exc.__traceback__)[-1]
@@ -810,11 +901,13 @@ class MigrateFuzzTest(unittest.TestCase):
         judge = run(range(SEEDS), Judge())
         s = judge.stats
         self.assertGreater(s["판 이전"], 3 * SEEDS, "판 이전을 사슬로 실제로 돌림")
+        self.assertGreater(s["문서 따라감"], 6 * SEEDS, "프로젝트 문서를 실제로 따라감")
         self.assertGreater(s["앞 판으로 되돌아감"], SEEDS // 4, "앞 판으로 되돌아가는 사슬을 실제로 돌림")
         self.assertGreater(s["사슬 프로젝트 그래프"], SEEDS // 5, "프로젝트 그래프를 실제로 돌림")
         for k in ("다시 추출 reorder", "다시 추출 restamp", "다시 추출 recategorize", "되돌림", "되찾은 묘비", "늦게 따라온 결과",
                   "되돌아온 판에서 새로 단 참조", "결과가 이번 판 이전을 건너뜀", "구간을 새로 제안", "옛 꼴 이력 줄",
-                  "결과 줄 번호 없음", "집합을 백업으로 되돌림"):
+                  "결과 줄 번호 없음", "집합을 백업으로 되돌림", "문서가 이번 판 이전을 건너뜀",
+                  "되돌아온 판에서 새로 단 문서 참조", "표지 없는 옛 문서 옮김", "표지 없는 옛 문서 묘비(증명 못 함)"):
             self.assertGreater(s[k], SEEDS // 20, k)
         for form in ("new", "a", "b"):
             self.assertGreater(s["집합 꼴 " + form], SEEDS // 10)
