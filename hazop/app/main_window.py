@@ -6,7 +6,7 @@
 
 import os
 
-from PySide6.QtCore import QRectF, QSize, Qt, QUrl
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QDialog, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
                                QLineEdit, QMainWindow, QMenuBar, QMessageBox, QPushButton, QSplitter, QStackedWidget,
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QComboBox, QDialog, Q
                                QVBoxLayout, QWidget)
 
 from hazop import paths
-from hazop.app import conn_view, data, explorer, palette, project_ctx, related, tokens
+from hazop.app import conn_view, data, explorer, icons, palette, project_ctx, related, tokens
 from hazop.app.related_panel import RelatedPanel
 from hazop.app.screens.analysis import AnalysisScreen
 from hazop.app.screens.initiating import InitiatingScreen
@@ -23,7 +23,8 @@ from hazop.app.screens.register import RegisterScreen
 from hazop.app.screens.results import ResultsScreen
 from hazop.app.screens.review import ReviewScreen
 from hazop.app.screens.study import StudyNodesScreen
-from hazop.app.screens.viewer import ViewerScreen
+from hazop.app.chat_panel import ChatPanel
+from hazop.app.screens.viewer import ViewerHost, ViewerScreen
 from hazop.app.ai_conn import AiConnection
 from hazop.app.conn_widgets import ConnChip, ConnPopup
 from hazop.app.settings_dialog import ACTION_HELP, SettingsDialog, show_help
@@ -52,6 +53,7 @@ RELATED_DEFAULT = (6,)  # 관련 항목을 처음부터 펴 두는 화면(⑤). 
 GLOBAL_KEYS = (("Ctrl+P", "명령 팔레트(구간 #, 구성요소 @, 명령 >)"), ("Ctrl+1 ~ Ctrl+6", "단계 ①~⑥으로 이동"),
                ("Alt+← / Alt+→", "뒤로 / 앞으로"), ("Ctrl+Z", "방금 한 동작 실행 취소(토스트가 있을 때)"),
                ("Ctrl+Shift+E", "탐색기 필터"), ("Ctrl+Alt+B", "관련 항목 패널 접기/펴기"),
+               ("Ctrl+K / Ctrl+Alt+K", "채팅 창 펴기 / 접기·펴기"),
                ("Ctrl+T / Ctrl+W", "새 탭 / 탭 닫기"), ("Ctrl+Tab", "다음 탭"), ("Ctrl+\\", "오른쪽 분할 켜기/끄기"),
                ("Ctrl+Enter (팔레트)", "새 탭으로 열기"), ("?  또는  F1", "단축키 표"))
 HISTORY_MAX = 50
@@ -59,7 +61,29 @@ DRAWING_SCREENS = (1, 5, 6)  # 도면 선택(combo)이 있는 화면 ②④⑤: 
 EXPLORER_RIGHT_MAX = 84  # 탐색기 오른쪽 글자 열 최대 폭(미확인 11·미3·실패2)
 EXPLORER_OPEN_MAX = 30  # 이보다 항목이 많은 묶음(권고 등)은 접어서 연다
 MSG_KEEP = 480  # 상태줄 메시지가 연결 칩보다 먼저 받는 폭(넘으면 메시지가 줄어듦)
+CHAT_MIN, CHAT_DEFAULT, CHAT_MAX, CHAT_STRIP = 320, 360, 480, 36  # 오른쪽 열 폭(끌어서 조절)과 접힌 띠 폭(화면 명세 §12.1)
+RELATED_COL_MIN = 240   # 관련 항목 탭일 때 오른쪽 열의 최소 폭(좁은 창에서 ⑤가 탐색기와 함께 보이도록 채팅보다 좁게 허용)
+CENTER_MIN = 640   # 가운데 단계 본문의 최소 폭. 모자라면 오른쪽 열을 먼저 접고 그다음 왼쪽 목록을 접는다
+START_W, START_H, WIDE_START_W = 1440, 860, 1600  # 처음 뜨는 창 크기. 화면이 CHAT_OPEN_FROM 이상이면 WIDE_START_W까지 키운다
+CHAT_OPEN_FROM = 1500  # 창 폭이 이 값 미만이면 저장된 선택이 없을 때 접힌 채 시작(1366 접힘, 1920 펼침)
 EXPLORER_FOLDED = (3,)  # 이전 ⑤ 결정 폼은 1366에서 탐색기 폭(200)이면 가로가 6px 모자라 탐색기를 접는다
+
+
+def plan_columns(free, center_min, explorer_wanted, column_wanted, column_min=CHAT_MIN):
+    """레일을 뺀 폭 free에서 (왼쪽 목록을 보일지, 오른쪽 열을 펼칠지)를 정한다. 가운데가 center_min보다 좁아지면
+    오른쪽 열을 먼저 접고, 그래도 모자라면 왼쪽 목록을 접는다(화면 명세 §12.1). 접힌 오른쪽 열은 띠 폭만 쓴다."""
+    ex = EXPLORER_MIN if explorer_wanted else 0
+    column_on = column_wanted and free - ex - column_min >= center_min
+    strip_or_col = column_min if column_on else CHAT_STRIP
+    explorer_on = explorer_wanted and free - EXPLORER_MIN - strip_or_col >= center_min
+    return explorer_on, column_on
+
+
+def start_size(avail_w, avail_h=None):
+    """처음 뜨는 창 크기. 넓은 화면(논리 폭 1,500 이상)에서는 채팅 창이 펴진 채 시작하는 폭까지 키운다."""
+    if avail_w >= CHAT_OPEN_FROM:
+        return min(avail_w, WIDE_START_W), min(avail_h or START_H, START_H)
+    return START_W, START_H
 
 
 def clamp_width(total, lo, hi, vw):
@@ -143,7 +167,128 @@ class CurrentPageStack(QStackedWidget):
         return w.sizeHint() if w is not None else super().sizeHint()
 
 
+class ChatColumn(QWidget):
+    """오른쪽 열 틀(화면 명세 §12.1). 탭 둘: '채팅'(첫 탭) · '관련 항목'. 접히면 폭 36 띠(채팅·관련 항목 단추)만 남는다.
+    채팅 내용물은 뒤 단위가 MainWindow.set_chat_widget으로 끼운다. 지금은 '준비 중' 안내 위젯이 들어 있다."""
+
+    def __init__(self, main):
+        super().__init__()
+        self.setObjectName("chat_column")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        self.strip = QWidget()
+        self.strip.setObjectName("chat_strip")
+        self.strip.setFixedWidth(CHAT_STRIP)
+        sl = QVBoxLayout(self.strip)
+        sl.setContentsMargins(2, 6, 2, 6)
+        sl.setSpacing(4)
+        self.strip_chat = QPushButton()
+        self.strip_chat.setObjectName("chat_strip_chat")
+        self.strip_chat.setToolTip("채팅 창 펴기 (Ctrl+K)")
+        self.strip_chat.setAccessibleName("채팅 창 펴기")
+        self.strip_chat.clicked.connect(main.open_chat)
+        self.unread = False
+        self.strip_related = QPushButton()
+        self.strip_related.setObjectName("chat_strip_related")
+        self.strip_related.setToolTip("관련 항목 펴기 (Ctrl+Alt+B)")
+        self.strip_related.setAccessibleName("관련 항목 펴기")
+        self.strip_related.clicked.connect(main.open_related)
+        self.strip_chat.setIcon(icons.icon("message-circle", size=20))
+        self.strip_related.setIcon(icons.icon("link", size=20))
+        for b in (self.strip_chat, self.strip_related):
+            b.setIconSize(QSize(20, 20))
+            b.setFixedSize(CHAT_STRIP - 4, 32)
+            b.setFocusPolicy(Qt.TabFocus)
+            sl.addWidget(b)
+        sl.addStretch(1)
+        lay.addWidget(self.strip)
+        self.body = QWidget()
+        self.body.setObjectName("chat_body")
+        bl = QVBoxLayout(self.body)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(0)
+        head = QWidget()
+        hl = QHBoxLayout(head)
+        hl.setContentsMargins(6, 6, 6, 6)
+        hl.setSpacing(4)
+        self.tab_chat = QPushButton("채팅")
+        self.tab_related = QPushButton("관련 항목")
+        self.tab_chat.setIcon(icons.icon("message-circle", size=14))
+        self.tab_related.setIcon(icons.icon("link", size=14))
+        for b in (self.tab_chat, self.tab_related):
+            b.setCheckable(True)
+            b.setObjectName("chat_tab")
+            hl.addWidget(b)
+        self.tab_chat.clicked.connect(main.open_chat)
+        self.tab_related.clicked.connect(main.open_related)
+        hl.addStretch(1)
+        self.fold = QPushButton()
+        self.fold.setIcon(icons.icon("layout-sidebar-right-collapse", size=18))
+        self.fold.setObjectName("chat_fold")
+        self.fold.setFixedWidth(30)
+        self.fold.setToolTip("오른쪽 열 접기 (Ctrl+Alt+K)")
+        self.fold.setAccessibleName("오른쪽 열 접기")
+        self.fold.clicked.connect(main.toggle_chat)
+        hl.addWidget(self.fold)
+        bl.addWidget(head)
+        self.pages = QStackedWidget()
+        bl.addWidget(self.pages, 1)
+        self.chat_page = QWidget()
+        self.holder = QVBoxLayout(self.chat_page)
+        self.holder.setContentsMargins(0, 0, 0, 0)
+        self.pages.addWidget(self.chat_page)
+        lay.addWidget(self.body, 1)
+        self.widget = None
+        self.set_tab("chat")
+
+    def set_unread(self, unread):
+        """접힌 띠의 채팅 단추에 '새 답' 점을 찍거나 지운다."""
+        self.unread = bool(unread)
+        # 새 답이 있으면 채팅 아이콘이 강조색으로 바뀐다(글자 점 대신 아이콘)
+        self.strip_chat.setIcon(icons.icon("message-circle", color="warn-line" if self.unread else None, size=20))
+        self.strip_chat.setToolTip("채팅 창 펴기 (Ctrl+K)" + (" · 새 답이 있습니다" if self.unread else ""))
+        self.strip_chat.setAccessibleName("채팅 창 펴기, 새 답 있음" if self.unread else "채팅 창 펴기")
+
+    def attach_related(self, panel):
+        self.related_page = panel
+        self.pages.addWidget(panel)
+
+    @staticmethod
+    def placeholder():
+        w = QLabel("AI 채팅은 준비 중입니다.")
+        w.setObjectName("chat_placeholder")
+        w.setAlignment(Qt.AlignCenter)
+        w.setWordWrap(True)
+        return w
+
+    def set_widget(self, widget):
+        if self.widget is not None:
+            self.holder.removeWidget(self.widget)
+            self.widget.hide()
+            if self.widget.objectName() == "chat_placeholder":
+                self.widget.deleteLater()  # 안내 위젯만 이 틀이 소유한다. 끼워 준 위젯은 건드리지 않는다
+            else:
+                self.widget.setParent(None)
+        self.widget = widget if widget is not None else self.placeholder()
+        self.holder.addWidget(self.widget)
+        self.widget.show()
+
+    def set_collapsed(self, collapsed):
+        self.strip.setVisible(collapsed)
+        self.body.setVisible(not collapsed)
+
+    def set_tab(self, name):
+        related = name == "related" and getattr(self, "related_page", None) is not None
+        self.pages.setCurrentWidget(self.related_page if related else self.chat_page)
+        self.tab_chat.setChecked(not related)
+        self.tab_related.setChecked(related)
+
+
 class MainWindow(QMainWindow):
+    stage_changed = Signal(int, int)  # (화면 index, 단계 번호 0~5): 단계 화면이 바뀔 때. 채팅이 '지금 단계'를 알게 한다
+    drawing_changed = Signal(object)  # 지금 도면(추출 이름 또는 None)이 바뀔 때
+
     def __init__(self, settings_path=None, ask_reviewer=True, debug=False):
         super().__init__()
         self.debug = debug  # True면 상태줄에 Python↔웹 메시지 등 개발자 정보를 보여 준다(--debug)
@@ -157,7 +302,7 @@ class MainWindow(QMainWindow):
         self._conn_alerted = None
         self.run_ctx = None
         self.setWindowTitle(APP_NAME)
-        self.resize(1440, 860)
+        self.resize(*start_size(*self._screen_size()))
         self.setStyleSheet(tokens.qss())
         self.tasks = TaskRunner(self)
         self.tasks.started.connect(self._task)
@@ -205,8 +350,23 @@ class MainWindow(QMainWindow):
         self.split_index = None   # 오른쪽 분할에 옮겨 둔 화면 index
         self._placeholder = None
         self.related = RelatedPanel(self.open_target)
-        self.split.addWidget(self.related)
+        self.chat_column = ChatColumn(self)
+        self.chat_column.set_widget(None)
+        self.chat_column.attach_related(self.related)
+        self.split.addWidget(self.chat_column)
         self.split.setStretchFactor(1, 1)
+        self._chat_open = False       # 사용자(또는 창 폭 규칙)가 정한 채팅 펼침. 처음 보일 때(showEvent) 정한다
+        self._ex_yielded = False      # 오른쪽 열을 열려고 왼쪽 목록이 비켜 준 상태
+        self._col_on = False          # 지금 실제로 펼쳐져 있는지(자리가 모자라면 펼치기를 원해도 접힌다)
+        self._chat_w = CHAT_DEFAULT
+        try:
+            self._chat_w = max(CHAT_MIN, min(CHAT_MAX, int(self.settings.get("chat_width") or CHAT_DEFAULT)))
+        except (TypeError, ValueError):
+            pass
+        self._chat_started = False
+        self._chat_view = None
+        self.chat_column.set_collapsed(True)
+        self.split.splitterMoved.connect(self._chat_dragged)
         body.addWidget(self.split, 1)
         cl.addLayout(body, 1)
         self.setCentralWidget(central)
@@ -232,6 +392,7 @@ class MainWindow(QMainWindow):
                                                             ms=10000))
         self._menus()
         self._shortcuts()
+        self._chat_setup()
         self.toast_box = Toast(central)
         self._size_panels()
         self.go(0)
@@ -554,6 +715,7 @@ class MainWindow(QMainWindow):
 
     def toggle_explorer(self):
         self.explorer_wanted = not self.explorer_wanted
+        self._ex_yielded = False
         self._fit_explorer()
 
     def focus_explorer_filter(self):
@@ -563,27 +725,276 @@ class MainWindow(QMainWindow):
         self.explorer_filter.setFocus()
         self.explorer_filter.selectAll()
 
+    def _screen_size(self):
+        scr = QApplication.primaryScreen()
+        geo = scr.availableGeometry() if scr is not None else None
+        return (geo.width(), geo.height()) if geo is not None else (START_W, START_H)
+
+    def _col_min(self):
+        return RELATED_COL_MIN if self.related_shown.get(self.stack.currentIndex(), False) else CHAT_MIN
+
+    def _column_wanted(self):
+        return self._chat_open or self.related_shown.get(self.stack.currentIndex(), False)
+
     def _fit_explorer(self):
-        """탐색기는 원할 때, 그리고 창 폭이 레일 + 탐색기 + 화면 최소 폭 이상일 때만 보인다(1366 폭 유지).
-        관련 항목은 화면마다 기억한 펼침 상태를 따른다."""
-        need = RAIL_W + EXPLORER_MIN + self.stack.minimumSizeHint().width()
-        ex, rel = self.explorer_panel.isHidden(), self.related.isHidden()
-        self.explorer_panel.setVisible(self.explorer_wanted and self.width() >= need
-                                       and self.stack.currentIndex() not in EXPLORER_FOLDED)
-        self.related.setVisible(self.related_shown.get(self.stack.currentIndex(), False))
-        if (ex, rel) != (self.explorer_panel.isHidden(), self.related.isHidden()):
+        """왼쪽 목록과 오른쪽 열을 정한다. 가운데가 CENTER_MIN(또는 화면 자체의 최소 폭)보다 좁아지면 오른쪽 열을 먼저 접고
+        그다음 왼쪽 목록을 접는다(plan_columns). 오른쪽 열의 탭은 화면마다 기억한 관련 항목 펼침을 따른다."""
+        cur = self.stack.currentIndex()
+        rel = self.related_shown.get(cur, False)
+        cmin = max(CENTER_MIN, self.stack.minimumSizeHint().width())
+        ex_ok = self.explorer_wanted and cur not in EXPLORER_FOLDED
+        ex_on, col_on = plan_columns(self.width() - RAIL_W, cmin, ex_ok, self._column_wanted(), self._col_min())
+        before = (self.explorer_panel.isHidden(), self._col_on, self.chat_column.pages.currentWidget())
+        self.explorer_panel.setVisible(ex_on)
+        self._col_on = col_on
+        self.chat_column.set_tab("related" if rel else "chat")
+        self.chat_column.set_collapsed(not col_on)
+        if col_on and not rel:
+            self.chat_column.set_unread(False)  # 채팅 탭이 보이면 새 답 표시를 지운다
+        self._apply_chat_limits()
+        if before != (self.explorer_panel.isHidden(), self._col_on, self.chat_column.pages.currentWidget()):
             self._size_panels()
 
     def _size_panels(self):
-        """처음과 창 크기가 바뀔 때: 탐색기·관련 항목 폭을 명세의 clamp 값으로 맞춘다(가운데가 나머지)."""
+        """처음과 창 크기가 바뀔 때: 왼쪽 목록·오른쪽 열 폭을 맞춘다(가운데가 나머지, CENTER_MIN은 지킨다)."""
         w = self.width()
-        ew = clamp_width(w, EXPLORER_MIN, EXPLORER_MAX, EXPLORER_VW)
-        rw = clamp_width(w, RELATED_MIN, RELATED_MAX, RELATED_VW)
+        free = w - RAIL_W
+        cmin = max(CENTER_MIN, self.stack.minimumSizeHint().width())
         self.explorer_panel.setMinimumWidth(160)
-        self.related.setMinimumWidth(220)
-        ew = 0 if self.explorer_panel.isHidden() else ew
-        rw = 0 if self.related.isHidden() else rw
-        self.split.setSizes([ew, max(200, w - RAIL_W - ew - rw), rw])
+        ew_min = 0 if self.explorer_panel.isHidden() else EXPLORER_MIN
+        cw = CHAT_STRIP
+        if self._col_on:
+            cw = max(self._col_min(), min(self._chat_w, free - ew_min - cmin))
+        ew = 0 if self.explorer_panel.isHidden() else max(ew_min, min(clamp_width(w, EXPLORER_MIN, EXPLORER_MAX, EXPLORER_VW),
+                                                                        free - cw - cmin))
+        self.split.setSizes([ew, max(200, free - ew - cw), cw])
+
+    # ------------------------------------------------------------ 오른쪽 열 틀(S-frame)
+    def _apply_chat_limits(self):
+        col = self.chat_column
+        if self._col_on:
+            # 최소 폭은 Qt의 하드 최소로 두지 않는다. 화면 힌트가 일시적으로 낡은 값일 때 창 최소 폭이 부풀어 창이 넓어지기 때문이다.
+            # 대신 plan_columns·_size_panels가 가운데 폭을 지키고, 끌어서 줄이는 것은 _chat_dragged가 최소로 되돌린다.
+            col.setMinimumWidth(0)
+            col.setMaximumWidth(CHAT_MAX)
+        else:
+            col.setFixedWidth(CHAT_STRIP)
+
+    def chat_collapsed(self):
+        """채팅을 접어 두었는지(사용자 선택). 자리가 모자라 자동으로 접힌 것은 따로 _col_on으로 본다."""
+        return not self._chat_open
+
+    def chat_widget(self):
+        return self.chat_column.widget
+
+    def set_chat_widget(self, widget):
+        """채팅 창 내용물을 끼운다(뒤 단위 C2의 hazop/app/chat_panel.py). None이면 '준비 중' 안내로 되돌린다.
+        끼운 위젯의 소유는 호출한 쪽이 이어 간다(이 틀은 떼기만 한다)."""
+        self.chat_column.set_widget(widget)
+
+    # 채팅 창 내용물(C2): 세션·프로젝트 자료·뷰어를 이어 준다. 부품(hazop.chat.*)이 없어도 앱은 뜬다.
+    def _chat_setup(self):
+        self._chat_ctx = None
+        self.viewer_host = ViewerHost(self.webview, self._chat_names, self._chat_switch, parent=self)
+        self.chat_panel = ChatPanel(self._chat_session, env_provider=self._chat_env, host=self.viewer_host,
+                                    view_fn=self._chat_view_dict, model=self.settings.get("chat_model") or "fast", parent=self,
+                                    project_fn=self._chat_project_id)
+        self.chat_panel.modelChanged.connect(self._chat_model_saved)
+        self.chat_panel.guideRequested.connect(self._chat_guide)
+        self.chat_panel.answered.connect(self._chat_answered)
+        self.drawing_changed.connect(lambda _d: self.chat_panel.check_project())  # 프로젝트가 바뀌면 대화를 끝낸다
+        self.chat_panel.escaped.connect(lambda: self._focus_main(self.current_screen()))
+        self.ai_conn.changed.connect(self._chat_availability)
+        self.set_chat_widget(self.chat_panel)
+        self._chat_availability()
+
+    def _chat_project_id(self):
+        names = [self.drawing] if self.drawing else []
+        names += [e["name"] for e in data.list_extractions() if e["name"] not in names]
+        for name in names[:1]:
+            try:
+                ctx = project_ctx.load(name)
+            except (OSError, ValueError, KeyError):
+                return None
+            return ctx.project_id if ctx and not ctx.error else None
+        return None
+
+    def _chat_names(self):
+        pid = self._chat_project_id()
+        return project_ctx.graph_names(pid) if pid else {}
+
+    def _chat_switch(self, name):
+        if not self._has_canvas(self.current_screen()):
+            self.go(1)
+        scr = self.canvas_screen()
+        h = getattr(scr, "select_drawing", None)
+        if h:
+            h(name)
+
+    def _chat_env(self):
+        """-> (CardEnv, 프로젝트 그래프) 또는 None. 같은 프로젝트면 파일 지문이 같을 때 읽은 묶음을 다시 쓴다."""
+        pid = self._chat_project_id()
+        if not pid:
+            return None
+        from hazop.chat import card as chatcard
+        from hazop.chat import context as chatcontext
+        ctx = self._chat_ctx
+        ctx = chatcontext.refresh(ctx) if ctx is not None and ctx.project_id == pid else chatcontext.load_context(pid)
+        self._chat_ctx = ctx
+        return chatcard.ContextEnv(ctx), ctx.pg
+
+    def _chat_session(self, model, callbacks):
+        pid = self._chat_project_id()
+        if not pid:
+            raise ValueError("프로젝트가 없습니다. 먼저 도면을 등록하고 추출하세요.")
+        try:
+            from hazop.chat.session import ChatSession
+        except ImportError as exc:
+            raise ValueError("이 설치에는 채팅 부품이 없습니다(%s)." % exc) from exc
+        from hazop.chat import card as chatcard
+        return ChatSession(pid, model=model, schema=chatcard.CARD_SCHEMA, system_prompt=chatcard.SYSTEM_PROMPT, **callbacks)
+
+    def _chat_view_dict(self):
+        sel = self.selection or {}
+        picked = [sel[k] for k in ("entity_id", "node_id") if sel.get(k)]
+        return {"stage": STAGE_GLYPHS[self.stage_of(self.stack.currentIndex())], "sheet": self.drawing, "selected": picked}
+
+    def _chat_answered(self):
+        """답이 왔는데 채팅 탭이 보이지 않으면(접힘·자리 모자람·관련 항목 탭) 띠에 점을 찍는다."""
+        if not self._col_on or self.related_shown.get(self.stack.currentIndex(), False):
+            self.chat_column.set_unread(True)
+
+    def _chat_model_saved(self, model):
+        self.settings["chat_model"] = model
+        try:
+            paths.save_settings(self.settings, self.settings_path)
+        except OSError:
+            pass
+
+    def _chat_availability(self, user_check=False):
+        """연결 상태를 채팅 창에 알린다. 채팅이 스스로 건 막힘은 ai_conn.changed(다른 AI 작업·확인·모델 변경마다 옴)로 풀지 않고
+        사용자가 연결을 다시 확인한 결과(user_check)나 한도 재설정 시각으로만 푼다."""
+        st = self.ai_conn.status("subscription")
+        self.chat_panel.set_availability(st.get("state"), st.get("detail") or "", user_check=user_check)
+
+    def _chat_guide(self, name):
+        if name == "install":
+            self.conn_action("install_help", "subscription")
+        elif name == "login":
+            self.conn_action("terminal_login", "subscription")
+        else:
+            self.open_ai_settings("subscription")
+
+    def chat_view(self):
+        """채팅이 알아야 할 지금 화면: 화면 index, 단계 번호(0~5), 지금 도면."""
+        idx = self.stack.currentIndex()
+        return {"index": idx, "stage": self.stage_of(idx), "drawing": self.drawing}
+
+    def _notify_chat(self):
+        """단계와 도면이 바뀌었으면 stage_changed·drawing_changed를 낸다(같은 값이면 내지 않는다)."""
+        idx = self.stack.currentIndex()
+        old = self._chat_view
+        self._chat_view = (idx, self.drawing)
+        if old is None or old[0] != idx:
+            self.stage_changed.emit(idx, self.stage_of(idx))
+        if old is None or old[1] != self.drawing:
+            self.drawing_changed.emit(self.drawing)
+
+    def _save_chat_pref(self):
+        self.settings["chat_collapsed"] = not self._chat_open
+        self.settings["chat_width"] = self._chat_w
+        try:
+            paths.save_settings(self.settings, self.settings_path)
+        except OSError:
+            pass  # 창 배치 기억을 못 써도 앱은 계속 쓴다
+
+    def _refit(self, remember=False):
+        was = self._col_on
+        self._fit_explorer()
+        self._size_panels()
+        if remember:
+            self._save_chat_pref()
+        if self._col_on and not was and hasattr(self, "chat_panel"):
+            QTimer.singleShot(0, self.chat_panel.refresh_examples)  # 펼칠 때 예시 질문의 태그를 지금 프로젝트에서 채운다
+
+    def _make_room(self):
+        """사용자가 오른쪽 열을 직접 열 때 자리가 모자라면 왼쪽 목록이 비켜 준다(창을 줄일 때의 순서와는 따로).
+        열을 닫으면 비켜 준 왼쪽 목록이 돌아온다."""
+        cur = self.stack.currentIndex()
+        cmin = max(CENTER_MIN, self.stack.minimumSizeHint().width())
+        free = self.width() - RAIL_W
+        ex_ok = self.explorer_wanted and cur not in EXPLORER_FOLDED
+        low = self._col_min()
+        if ex_ok and not plan_columns(free, cmin, True, True, low)[1] and plan_columns(free, cmin, False, True, low)[1]:
+            self.explorer_wanted, self._ex_yielded = False, True
+
+    def _give_back(self):
+        if self._ex_yielded:
+            self.explorer_wanted, self._ex_yielded = True, False
+
+    def _set_chat_open(self, open_, remember=True):
+        """open_이면 채팅 탭으로, 아니면 오른쪽 열 전체(채팅·관련 항목)를 접는다."""
+        self._chat_open = open_
+        self.related_shown[self.stack.currentIndex()] = False
+        if open_:
+            self._make_room()
+        else:
+            self._give_back()
+        self._refit(remember)
+
+    def toggle_chat(self):
+        """Ctrl+Alt+K: 오른쪽 열을 접거나 편다. 접으면 채팅과 관련 항목이 함께 접힌다."""
+        if self._column_wanted():
+            self._set_chat_open(False)
+        else:
+            self._set_chat_open(True)
+
+    def open_chat(self):
+        """Ctrl+K: 채팅 탭으로 펴고 입력칸으로 간다."""
+        self._set_chat_open(True)
+        h = getattr(self.chat_widget(), "focus_input", None)
+        if h:
+            h()
+
+    def open_related(self):
+        """오른쪽 열을 관련 항목 탭으로 편다(이 화면에서)."""
+        cur = self.stack.currentIndex()
+        self.related_shown[cur] = True
+        self._make_room()
+        self._refit()
+        if self.related.isVisible() and getattr(self, "_related_stale", True):
+            self.refresh_related()
+
+    def chat_width(self):
+        """펴졌을 때 오른쪽 열의 폭(사용자가 끌어 바꾼 값, 설정 chat_width)."""
+        return self._chat_w
+
+    def set_chat_width(self, width):
+        self._chat_w = max(CHAT_MIN, min(CHAT_MAX, int(width)))
+        self._refit(remember=True)
+
+    def _chat_dragged(self, _pos, _index):
+        """가운데와 오른쪽 열 사이 손잡이를 끌면 새 폭을 기억한다."""
+        if not self._col_on or not self.chat_column.isVisible():
+            return
+        low = self._col_min()
+        if self.chat_column.width() < low:
+            self._size_panels()  # 최소보다 좁게 끌었으면 최소로 되돌린다
+            return
+        w = max(CHAT_MIN, min(CHAT_MAX, self.chat_column.width()))
+        if w != self._chat_w:
+            self._chat_w = w
+            self._save_chat_pref()
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        if not self._chat_started:
+            # 처음 보일 때 한 번: 저장된 선택이 있으면 그것, 없으면 창 폭이 1500 미만이면 접고 이상이면 편다
+            self._chat_started = True
+            pref = self.settings.get("chat_collapsed")
+            open_ = (not pref) if isinstance(pref, bool) else self.width() >= CHAT_OPEN_FROM
+            self._chat_open = open_
+            self._refit()
 
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
@@ -673,7 +1084,7 @@ class MainWindow(QMainWindow):
     def conn_action(self, name, method=None):
         """칩 상세 창·해결 안내의 동작. method를 주면 그 방식에 대해 한다(없으면 지금 방식)."""
         if name == "check":
-            self.ai_conn.check(method)
+            self.ai_conn.check(method, done=lambda _st: self._chat_availability(user_check=True))
         elif name == "to_api":
             self.open_ai_settings("api")
         elif name in ACTION_HELP:
@@ -682,7 +1093,7 @@ class MainWindow(QMainWindow):
             self.open_ai_settings(method)
 
     def recheck_ai(self):
-        self.ai_conn.check()
+        self.ai_conn.check(done=lambda _st: self._chat_availability(user_check=True))
 
     def _refresh_status(self):
         """왼쪽은 지금 도면과 개수, 오른쪽은 메시지·진행·저장·단축키 안내. 값이 없는 칸은 숨긴다."""
@@ -750,6 +1161,7 @@ class MainWindow(QMainWindow):
         글 입력칸에 초점이 있으면 글자 키는 입력이 먼저 받는다(Qt ShortcutOverride)."""
         keys = [("Ctrl+P", self.open_palette), ("Ctrl+Shift+P", lambda: self.open_palette(">")),
                 ("Ctrl+Z", self.undo), ("Ctrl+Alt+B", self.toggle_related),
+                ("Ctrl+K", self.open_chat), ("Ctrl+Alt+K", self.toggle_chat),
                 ("Ctrl+Shift+E", self.focus_explorer_filter), ("Alt+Left", self.back), ("Alt+Right", self.forward),
                 ("?", self.show_shortcuts), ("F1", self.show_shortcuts),
                 ("Ctrl+T", self.new_tab), ("Ctrl+W", lambda: self.close_tab(self.tab_bar.currentIndex())),
@@ -1018,11 +1430,12 @@ class MainWindow(QMainWindow):
         if need > self.width() - RAIL_W:
             self._refuse_split(need)
             return False
-        self._split_restore = ((cur, self.related_shown.get(cur, False)), self.explorer_wanted)
+        self._split_restore = ((cur, self.related_shown.get(cur, False)), self.explorer_wanted, self._chat_open)
         ew = 0 if self.explorer_panel.isHidden() else self.explorer_panel.width()
-        rw = 0 if self.related.isHidden() else self.related.width()
+        rw = self.chat_column.width()
         if need > self.width() - RAIL_W - ew - rw:
             self.related_shown[cur] = False
+            self._chat_open = False
             if need > self.width() - RAIL_W - ew:
                 self.explorer_wanted = False
             self._fit_explorer()
@@ -1052,7 +1465,7 @@ class MainWindow(QMainWindow):
         접힌 쪽을 빼므로 쓰지 않는다: 레일 + 보이는 탐색기·관련 항목 + 왼쪽 화면 + 오른쪽 칸 + 분할기 손잡이."""
         def least(w):
             return max(w.minimumSizeHint().width(), w.minimumWidth())
-        side = sum(least(p) for p in (self.explorer_panel, self.related) if not p.isHidden())
+        side = least(self.chat_column) + (0 if self.explorer_panel.isHidden() else least(self.explorer_panel))
         handles = self.split.handleWidth() * 2 + self.panes.handleWidth()
         return RAIL_W + side + least(self.stack.currentWidget()) + least(self.right_pane) + handles
 
@@ -1083,7 +1496,7 @@ class MainWindow(QMainWindow):
         self.split_btn.setChecked(False)
         restore = getattr(self, "_split_restore", None)
         if restore:
-            (cur_at_split, related_on), self.explorer_wanted = restore[0], restore[1]
+            (cur_at_split, related_on), self.explorer_wanted, self._chat_open = restore[0], restore[1], restore[2]
             self.related_shown[cur_at_split] = related_on
             self._split_restore = None
             self._fit_explorer()
@@ -1119,6 +1532,7 @@ class MainWindow(QMainWindow):
         self.invalidate_index()
         self._refresh_explorer()
         self._refresh_status()
+        self._notify_chat()
         return True
 
     def _sync_drawing_into(self, scr):
@@ -1155,7 +1569,12 @@ class MainWindow(QMainWindow):
     def toggle_related(self):
         cur = self.stack.currentIndex()
         self.related_shown[cur] = not self.related_shown.get(cur, False)
+        if self.related_shown[cur]:
+            self._make_room()
+        elif not self._chat_open:
+            self._give_back()
         self._fit_explorer()
+        self._size_panels()
         if self.related.isVisible() and getattr(self, "_related_stale", True):
             self.refresh_related()
 
@@ -1239,6 +1658,7 @@ class MainWindow(QMainWindow):
         self.refresh_stages()
         self._fit_explorer()
         self.refresh_related()
+        self._notify_chat()
         return True
 
     @staticmethod
@@ -1356,6 +1776,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.screens[5].kill_review()  # ④ AI 구간 검토: 받은 호출은 이미 저장했다. 남은 호출은 끊는다
+        self.chat_panel.shutdown()  # 채팅은 결과 파일을 쓰지 않으므로 진행 중 질문도 묻지 않고 끊는다
         self.tasks.wait(30000)
         self.webview.dispose()
         super().closeEvent(event)

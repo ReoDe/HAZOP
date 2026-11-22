@@ -207,13 +207,13 @@ class ResultsProjectUiTest(unittest.TestCase):
         sn.save(sn.confirm(sn.reopen(ns, at=AT), pg, "EJ", at="2026-11-10T00:00:00Z"))
         _app, scr = self.screen()
         self.assertEqual([e["status"] for c in scr.results["cells"] for e in c["entries"]], ["approved"])
-        self.assertIn("이전 확정본 결과를 옮김", scr.stale_chip.text())
         saved = res.load(sn.load(pg))
         self.assertFalse(res.is_stale(saved, sn.load(pg)), "옮긴 결과를 바로 저장해 다른 화면도 같은 결과를 읽음")
         self.assertEqual([e["status"] for c in saved["cells"] for e in c["entries"]], ["approved"])
 
     def test_screening_buckets_have_no_rows_and_low_nodes_come_last(self):
-        """⑤ 행렬·AI 일괄·Excel 범위는 스크리닝 제외 구간을 빼고, 낮음 구간은 맨 아래(S4, D6)."""
+        """⑤ 행렬·AI 일괄·Excel 범위는 확정·잠금 구간이고 낮음 구간은 맨 아래(규격 v2 S4·D6). 옛 '스크리닝 제외'로 확정한
+        구간은 읽을 때 미확정으로 내려와(§2.5, nodes.settle_screen) 행이 없다."""
         ns = self.confirm_project_set()
         status = {n["node_id"]: n["screen"]["status"] for n in ns["nodes"]}
         from hazop.app import project_ctx
@@ -227,7 +227,9 @@ class ResultsProjectUiTest(unittest.TestCase):
         rows = [scr._node_at(r) for r in range(scr.matrix.rowCount())]
         self.assertNotIn(keeps[0], rows, "제외 구간은 행이 없음")
         self.assertEqual(rows[-1], keeps[1], "낮음 구간은 맨 아래")
-        self.assertIn("스크리닝 제외 1개", scr.kpi.text())
+        self.assertEqual(sn.node_state(next(n for n in sn.load(pg)["nodes"] if n["node_id"] == keeps[0])), "applied",
+                         "옛 제외 구간은 미확정으로 읽힘")
+        self.assertNotIn("스크리닝 제외", scr.kpi.text(), "v2에는 제외 묶음 수가 없음")
         self.assertNotIn(keeps[0], {u["node_id"] for u in scr._plan("all")}, "AI 일괄 범위에서 뺌")
         self.assertIn(keeps[1], {u["node_id"] for u in scr._plan("all")}, "낮음은 AI 일괄 범위에 넣음")
         path = scr.export_excel(os.path.join(self.tmp, "x.xlsx"), scope="all", reviewer="EJ")
@@ -237,11 +239,8 @@ class ResultsProjectUiTest(unittest.TestCase):
         cover = {r[0].value: r[1].value for r in openpyxl.load_workbook(path).worksheets[0].iter_rows() if r[0].value}
         self.assertEqual(cover.get("구간 수", len(rows)), len(rows), "표지 구간 수 = 내보낸 구간")
         did = scr.deviations[0]["deviation_id"]
-        self.assertFalse(scr.open_cell(keeps[0], did), "제외 구간 칸은 열지 않고 안내만")
-        doc = scr.results
-        cell = next(c for c in doc["cells"] if (c["node_id"], c["deviation_id"]) == (keeps[0], did))
-        cell["ai_run"] = {"status": "failed", "error": "x"}
-        self.assertEqual(scr._plan("failed"), [], "제외 구간 실패 칸은 다시 실행 범위에 없음")
+        self.assertFalse(scr.open_cell(keeps[0], did), "미확정 구간 칸은 열지 않고 안내만")
+        self.assertNotIn(keeps[0], {u["node_id"] for u in scr._plan("failed")}, "미확정 구간은 다시 실행 범위에 없음")
 
     def test_no_cell_open_hint(self):
         self.confirm_project_set()

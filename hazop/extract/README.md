@@ -5,6 +5,7 @@
 ## 무엇을 넣는가
 
 - draw.io·PDF 도면에서 설비·배관·계기를 읽는 규칙, 기호 사전 읽기, 수정 연산, 추출 결과 보고
+- DEXPI 파일(DEXPI XML 2.0, Proteus 1.x)을 읽어 같은 추출 결과로 옮기는 코드(`adapters/dexpi_read.py`·`dexpi_import.py`)와 DEXPI 클래스 대응표(`dexpi_map.py`)
 
 ## 넣지 않는 것
 

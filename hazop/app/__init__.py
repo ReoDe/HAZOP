@@ -13,6 +13,9 @@ def make_application(argv=None):
 
     from hazop.app import tokens
 
+    from hazop.shell import scheme
+    scheme.register()  # 앱 전용 주소 체계 hazop-app://는 QApplication보다 먼저 등록한다(hazop/shell/scheme.py)
+
     app = QApplication.instance()
     if app is None:
         QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)

@@ -1,0 +1,34 @@
+{
+ "id": "apr1400.hvac_filter_panel",
+ "revision": 1,
+ "added": "2026-11-15",
+ "updated": "2026-11-15",
+ "name": {
+  "en": "PREFILTER / HEPA FILTER / CARBON ADSORBER / POSTFILTER / MOISTURE SEPARATOR",
+  "ko": "공조기 여과 판(전치·HEPA·활성탄·후치 여과기, 습분 분리기)"
+ },
+ "category": "설비",
+ "role": "symbol",
+ "kind": "filter",
+ "attributes": {},
+ "enabled": true,
+ "match": [
+  {
+   "shape": "structure",
+   "requires": [
+    "filter_panel"
+   ],
+   "order": 1,
+   "basis": "hvac_filter_panel"
+  }
+ ],
+ "sources": [
+  {
+   "set": "APR1400 DCD Rev.3",
+   "figure": "1.7-1",
+   "sheet": "2/4",
+   "page": "1.7-10",
+   "note": "HVAC EQUIPMENT 칸의 무늬 판 다섯(빗금·격자·점·원·갈매기). 무늬 판을 찾는 규칙은 pdf_vector._panels"
+  }
+ ]
+}

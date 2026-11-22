@@ -19,6 +19,9 @@ from hazop.study.apikey import mask
 from hazop.study.nodes import now_utc
 
 
+NOTICE_NO_SUBSCRIPTION = ai_settings.NOTICE_NO_SUBSCRIPTION
+
+
 def _status(via, state, detail="", **kw):
     return dict({"via": via, "state": state, "detail": detail, "plan": None, "limit": None,
                  "checked_at": claude_cli.now_kst()}, **kw)
@@ -28,11 +31,14 @@ class AiConnection(QObject):
     changed = Signal()
     notice = Signal(str)
 
-    def __init__(self, prefs, keys, debug=False, cli_factory=None, opener=None, parent=None):
+    def __init__(self, prefs, keys, debug=False, cli_factory=None, opener=None, parent=None, auto_api=True):
         """cli_factory(cli_path, **설정) -> 구독 클라이언트(check·analyze·cancel). 확인과 실행이 같은 것을 쓴다.
         시험과 사용자 시나리오 검사(--_app)는 가짜 CLI를 주입한다(설정 파일·화면에서는 바꿀 수 없음).
-        opener: API 연결 시험의 전송 함수(claude_http, 시험용 대역)."""
+        opener: API 연결 시험의 전송 함수(claude_http, 시험용 대역).
+        auto_api: 사용자가 방식을 고른 적이 없을 때 구독을 쓸 수 없으면 앱이 API 키로 넘어가는지(이전 화면 동작).
+        새 화면은 False로 만든다: 과금 경로는 사용자가 고른 경우에만 쓰고, 구독을 쓸 수 없으면 '연결 안 됨'으로 두고 알린다(INTENT §3.5)."""
         super().__init__(parent)
+        self.auto_api = bool(auto_api)
         self.opener = opener
         self.prefs = prefs
         self.keys = keys
@@ -41,6 +47,7 @@ class AiConnection(QObject):
         self.tasks = TaskRunner(self)
         self._status = {m: _status(m, "unchecked", checked_at=None) for m in self.methods()}
         self._api_override = None  # 실행 중 받은 API 상태. 키·모델·시험 결과가 바뀌면 버린다
+        self._limits = {}          # 구독 한도 창별 마지막 값(five_hour·seven_day 등). 받은 창만 있다
         self._auto = self.prefs.auto_method or ("subscription" if "subscription" in self.methods() else "api")
         self.running = False
         self.progress = ""
@@ -59,6 +66,8 @@ class AiConnection(QObject):
         chosen = self.prefs.chosen_method
         if chosen in self.methods():
             return chosen
+        if not self.auto_api and "subscription" in self.methods():
+            return "subscription"          # 이전 화면이 기억해 둔 앱 기본값(api)도 따르지 않는다. 과금은 사용자가 고른 경우에만
         return self._auto if self._auto in self.methods() else self.methods()[0]
 
     def is_chosen(self):
@@ -102,11 +111,21 @@ class AiConnection(QObject):
         """실행 흐름이 받은 상태를 반영한다(예: 호출 중 로그인이 풀림 → login_required)."""
         via = status.get("via") or self.method
         status = dict(_status(via, "unchecked"), **status)
+        self._keep_limit(status)
         if via == "api":
             self._api_override = (self._api_key(), status)
         else:
             self._status[via] = status
         self.changed.emit()
+
+    def _keep_limit(self, status):
+        limit = status.get("limit")
+        if status.get("via") == "subscription" and isinstance(limit, dict) and limit.get("window"):
+            self._limits[limit["window"]] = dict(limit)
+
+    def limits(self):
+        """구독 한도 창별 마지막 값 {창: limit}(받은 창만)."""
+        return dict(self._limits)
 
     def refresh(self):
         """설정 창이 키·모델을 바꾼 뒤: 실행 중 받은 API 상태를 버리고 다시 그리게 한다."""
@@ -173,6 +192,7 @@ class AiConnection(QObject):
             if not isinstance(status, dict) or "state" not in status:
                 status = _status(method, "error", "확인 결과를 읽지 못함")
             self._status[method] = dict(_status(method, "unchecked"), **status)
+            self._keep_limit(self._status[method])
             self.changed.emit()
             if done:
                 done(self._status[method])
@@ -192,6 +212,11 @@ class AiConnection(QObject):
 
     def _decide_auto(self):
         has_key = self.keys.get() is not None
+        if not self.auto_api:
+            self.changed.emit()
+            if has_key and not self.can_start("subscription"):
+                self.notice.emit(NOTICE_NO_SUBSCRIPTION)
+            return
         new = ai_settings.auto_method(self._status["subscription"]["state"], has_key, self.methods())
         text = ai_settings.auto_notice(self.prefs.auto_method, new, has_key)
         self._auto = new

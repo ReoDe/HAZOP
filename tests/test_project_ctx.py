@@ -65,12 +65,15 @@ class ProjectCtxTest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def old_set_with_result(self, status="approved"):
-        old = sn.confirm(sn.propose(self.a, at=AT), self.a, "EJ", at=AT)
-        sn.save(old)
-        r = res.empty_results(old, res.load_deviations())
+        """0.1 도면별 확정본과 그 결과(옛 앱이 쓴 모양)."""
+        from hazop.study import remap
+        old = dict(sn.propose(self.a, at=AT), schema_version="0.1", status="confirmed", confirmed_at=AT,
+                   confirmed_by="EJ")
+        sn.write(sn.store_path(old["project_id"], old["graph_id"]), old)
+        r = remap.empty_legacy(old, res.load_deviations())
         cell = r["cells"][0]
         cell.update(state="analyzed", entries=[{"entry_id": "e1", "origin": "ai_draft", "status": status, "cause": "c"}])
-        res.save(r, old["project_id"])
+        res.write(res.store_path(old["project_id"], old["graph_id"]), r)
         return old
 
     def test_label_counts_and_chip_on_viewed_drawing_only(self):
@@ -94,7 +97,7 @@ class ProjectCtxTest(unittest.TestCase):
         ctx = self.pc.load("SNP-M-101")
         ns, saved = ctx.load_set()
         self.assertTrue(saved)
-        self.assertEqual(ns["status"], "proposed")  # 범위가 넓어진 구간이 있어 사람이 다시 확정
+        self.assertEqual({n["state"] for n in ns["nodes"]}, {"applied"})  # 범위가 넓어진 구간이 있어 사람이 다시 확정
         self.assertIn("graph-SNP-M-101:S1", [i for n in ns["nodes"] for i in n.get("legacy_ids", [])])
         self.assertEqual(ns["legacy_sources"][0]["confirmed_by"], "EJ")
         self.assertIn("백업", ctx.notice)

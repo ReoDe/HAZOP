@@ -1,0 +1,173 @@
+{
+  "package": "@tabler/icons",
+  "version": "3.51.0",
+  "license": "MIT",
+  "source_url": "https://registry.npmjs.org/@tabler/icons/-/icons-3.51.0.tgz",
+  "archive_sha256": "b30108713d3fa60aee862c2a133225da8e0f309be0708fe2925763ff810c766c",
+  "fetched": "2026-11-13",
+  "style": "outline (icons/outline/<이름>.svg 원본 그대로)",
+  "icons": {
+    "alert-triangle": {
+      "sha256": "92a951d8e90c1b1d986449e74a8b2e1c52982dc3dbe09b141ac11990420408f4"
+    },
+    "arrow-back-up": {
+      "sha256": "f50453256d271a311cd614d98d8168a5a9f3dd4ee54e3e14e5592c72d59d13a0"
+    },
+    "arrow-forward-up": {
+      "sha256": "a17ac6aeba9ca74873cbdcd262c084ab09edafee1a78eb38f17b38fd0afe0c2b"
+    },
+    "arrows-maximize": {
+      "sha256": "783d491ed6046e51b9b09d377b8a5dc1c01aec3ecd28546b67065a326ca7f672"
+    },
+    "arrows-move": {
+      "sha256": "45b5a5c95a430f7512b9b20d48a3fed70571f4cb31069da74000c94550c7ec4c"
+    },
+    "check": {
+      "sha256": "012d69548a769f4287e0af4c535b2cdf6e40457651de8078c4e588f0488952d6"
+    },
+    "chevron-down": {
+      "sha256": "a3a801faaeeb084e8a96897a5e2f355870b861e9606a1b50a89011b2718cc322"
+    },
+    "chevron-left": {
+      "sha256": "55836d95fec17c6eaafa376b1c203c79fd04baf32fe1cd528a6df6884e16e866"
+    },
+    "chevron-right": {
+      "sha256": "0142561fc2fd1b6a18b2cb0c08959b6037643aecf6adc6612aefe16ec4f39f0f"
+    },
+    "chevron-up": {
+      "sha256": "b832f0550c1d0ea213538fb55d1849e080a0c5e9c86063913b061d81b41fe31c"
+    },
+    "circle-check": {
+      "sha256": "321fb0a26939c8bb1674e8a62c90d0538db23cbb9c46d4c1cce25e0ea313d5bd"
+    },
+    "copy": {
+      "sha256": "01da13d33d6163f37ee81f397e567832068d836af0307118156370716357be07"
+    },
+    "cpu": {
+      "sha256": "0d7f49173c8b2053c5299977925a6e908ac5bc0d67717e146df02c2f3f9787e7"
+    },
+    "device-floppy": {
+      "sha256": "d58998beb9fff85444691e8ff7e5324bafbbdfc789257133d31ff5f18a44df65"
+    },
+    "eye": {
+      "sha256": "d74739aaa5c3e99e9b6519cd70089e550593b9495d39ac586de601c49ceaa9a6"
+    },
+    "file-export": {
+      "sha256": "b95c4aa38b170a84c5685cb16d8f295cf689763e9eb5bde2b73ec9d3798607cc"
+    },
+    "file-text": {
+      "sha256": "12e8c1a05fe3c14fb9f44e98145afa96c14ee0d9dddfdd69b75c53c31486cae8"
+    },
+    "files": {
+      "sha256": "7ee1d0ad1a3a4b5e637b628695f8ecfb2b5daedf6d0a2c46cd40d9729daeab3c"
+    },
+    "info-circle": {
+      "sha256": "bf4377dff0aaaddf1676a4bb7292f90f1102f19daaca7021331ba6a191317c1c"
+    },
+    "layout-sidebar-left-collapse": {
+      "sha256": "9c546a639dbfff17ec8f017c32bb3330eba4fdfc4554fdbe2e00c6d10a4261d9"
+    },
+    "layout-sidebar-left-expand": {
+      "sha256": "0354e9ebeb4f875dedf6b5b242790e7bfd2a098eb8008323b82a81f255449ff6"
+    },
+    "layout-sidebar-right-collapse": {
+      "sha256": "fb879034fea9f5f0572d655eb10af8e140cd188e2fec4de17c7a17097980e1e9"
+    },
+    "layout-sidebar-right-expand": {
+      "sha256": "a3dc73b5b1a3fa230d9f5c7e7f9d0a2c868eef094b0bb85d64731e5d5ce85deb"
+    },
+    "link": {
+      "sha256": "63c88f996a6c8c3a1687b92f75ef11cab9a549a1408f9ed85d7baf78c7cad12d"
+    },
+    "link-off": {
+      "sha256": "0beae9702aae3e48a436a0a63737bfb1c8591251c2e98aafff6ea98ae7c692ed"
+    },
+    "loader-2": {
+      "sha256": "334442673d4063d87ff80316a97fcf49c578600c0ac9213c84267e0a9bda9a15"
+    },
+    "lock": {
+      "sha256": "748ef36a7e3b7a4dc2b44a16576dc60123968a6c8184155015f85cfa442ce7d7"
+    },
+    "lock-open": {
+      "sha256": "681702f968770541c584a4002f800de73b74c625d91442f13b17cb053816d917"
+    },
+    "map-pin": {
+      "sha256": "4ca0c252b79ea1dd51d6ad73e4187427a32db8b5d8b5225b40c3b5e132c4824c"
+    },
+    "message-circle": {
+      "sha256": "5ceee2b67520bdeadbb44e53a6180859d6016ae21ec1ce4ae93a643f6ba2bf5c"
+    },
+    "message-plus": {
+      "sha256": "8147640cb65bfb48bd6c0b72ba16857e834b40f3dc130f83f3c650b585005da9"
+    },
+    "minus": {
+      "sha256": "cf4f0524ab16cd0a8db04fa9f35a2e419fb4a41808d739938848b6e77ce39026"
+    },
+    "pencil": {
+      "sha256": "61c3c827745d917f5fb153bd052209210f190af5f446284326421e5421cdbb25"
+    },
+    "player-stop": {
+      "sha256": "75f1904477cb0250c54ec6b47f361f66dc2c7162f25715546cf65cdc2dc891dc"
+    },
+    "plug-connected": {
+      "sha256": "ddfa8fee264960660766f8df44f590361940912afaa2d38f6443133c33d833ea"
+    },
+    "plus": {
+      "sha256": "c273c746b4db19bebe87aaad5142f649c8e60cecfeb63d457ad4633d9907d17d"
+    },
+    "pointer": {
+      "sha256": "c3f00957eea16052a8cdc45b28144a56c6590429b5216f388c91027e903fdfc3"
+    },
+    "refresh": {
+      "sha256": "9fc98696bf2fbdd64e4f258c615aec25462761c673a66ca88e9ce4f0184cab42"
+    },
+    "route": {
+      "sha256": "f3221c089a05868154d9fed0251899ca39aaaf7fc5a200f318d1791b6e0e107a"
+    },
+    "ruler-2": {
+      "sha256": "eaea8382d4d7c21484fe5e430d0a30dce833f0a6a5325319be713a5c8564a812"
+    },
+    "search": {
+      "sha256": "57e054b6c1508be40d5eba1ea434b702f5ff55dca04e28e5e3f22472c2f6176d"
+    },
+    "select": {
+      "sha256": "6137a47cb4104e27a1ac00b08b9f4e17c1c97005d56feb2d0b1a4ec0ec999936"
+    },
+    "send": {
+      "sha256": "f113c08fed00aa7363586bb680216c88893b8782a3aa16a366b0009427c8a0bf"
+    },
+    "settings": {
+      "sha256": "f885061801bae8e3d0bcead9ee473f7831d8a5dfe78506a17f8202f7a1949505"
+    },
+    "sparkles": {
+      "sha256": "ffafcb1ef22c839851ebcda13a9c73c62b36615acc458faa2f158254edadf3b6"
+    },
+    "table": {
+      "sha256": "84e391f68fd2f93762366a6ee9cde7670abcea02736d0e46150fef8047c88a94"
+    },
+    "topology-star-3": {
+      "sha256": "46ff89cf178e1c691cfce34e48673afb799701dff0a12cd4a3e238db10443404"
+    },
+    "trash": {
+      "sha256": "94176fd47075e845088ac13745104d722daae7fa8be94ae9665c143f8e2705a7"
+    },
+    "upload": {
+      "sha256": "7f0524e0eb36c694dda24352199d1b2b4609b98a0096d10cf1eb0f82cf8084d8"
+    },
+    "vector-triangle": {
+      "sha256": "41af06132415f638c2dddebcf69823ae4fdcf5b8fb39c73c435bb66dd5afafd4"
+    },
+    "x": {
+      "sha256": "445e1b53563ad7e089f94dee923c2ef3444c63d45294a733687471a76a3c3b8d"
+    },
+    "zoom-in": {
+      "sha256": "4926dec8d4d4f6b35b38ebcfe862d04fc608d583671050c208deb7a85e330ba9"
+    },
+    "zoom-out": {
+      "sha256": "a2c4969a99707b42fe81d603930172fe2ab1277c0f4dd06ba750d3b96ae677aa"
+    },
+    "zoom-scan": {
+      "sha256": "569b8484c50c16e521e30a9ad17a15f5b83a5a9615db1bdd52a228deef2d461e"
+    }
+  }
+}

@@ -5,7 +5,7 @@
 
 - 입구: scripts/run_app.py → 실행 파일 HAZOP.exe(창 프로그램, 콘솔 없음). 결과는 <out>/dist/HAZOP/(one-folder, 배포용).
   런타임 훅 packaging/rthook_applog.py: <작업 루트>/logs/app.log에 logging·stdout·stderr·미처리 예외를 남긴다(HAZOP.exe만).
-- datas: 템플릿 2개, hazop/kg/vendor, 기획서/HAZOP기법지침.md, 데이터/이탈후보·기준표·패턴, scripts/extract_drawio.py·
+- datas: 템플릿 2개, hazop/kg/vendor, hazop/shell/web(새 웹 화면: html·css·js·묶음 라이브러리 vendor/), 기획서/HAZOP기법지침.md, 데이터/이탈후보·기준표·패턴, scripts/extract_drawio.py·
   extract_pdf.py·build_graph.py(화면이 importlib로 읽는 파일, hazop/app/data.py SCRIPT_NAMES). 참고자료/ 샘플은 넣지 않는다(D5안).
 - 제3자 고지(W9, D15): licenses/는 datas(_internal/licenses/)가 아니라 빌드 뒤 결과 폴더의 실행 파일 옆 licenses/로
   복사한다(copy_licenses). 빌드 뒤 검사가 실행 파일 옆 사본이 저장소와 같고 _internal/licenses/가 없는지 본다.
@@ -74,14 +74,15 @@ DATA_FILES = (
     paths.file_rel("guide"),
     "scripts/extract_drawio.py",
     "scripts/extract_pdf.py",
+    "scripts/extract_dexpi.py",
     "scripts/build_graph.py",
 )
 # 자원 폴더는 hazop.paths.FOLDERS의 resource 행에서 만든다(묶음 안에서도 같은 상대 위치)
-DATA_DIRS = ("hazop/kg/vendor",) + tuple(paths.folder_rel(n) for n, f in paths.FOLDERS.items() if f.root == "resource")
+DATA_DIRS = ("hazop/kg/vendor", "hazop/shell/web") + tuple(paths.folder_rel(n) for n, f in paths.FOLDERS.items() if f.root == "resource")
 # 패키징 D5안: 저장소에만 있는 자료(샘플 도면·표본)는 넣지 않는다
 EXCLUDED_DIRS = tuple(paths.folder_rel(n) for n, f in paths.FOLDERS.items() if f.root == "repo")
 EXCLUDES = ("anthropic", "httpx")
-SCRIPT_MODULES = ("extract_drawio", "extract_pdf", "build_graph")
+SCRIPT_MODULES = ("extract_drawio", "extract_pdf", "extract_dexpi", "build_graph")
 # W9(D15): 제3자 고지는 실행 파일 옆 licenses/에 둔다(D9의 _internal/licenses/를 대체, 사용자 결정 2026-11-06)
 LICENSES_DIR = "licenses"
 # W9(D15): PDF 어댑터. pdf_vector가 pdfplumber를 함수 안에서 import하므로 명시적으로 묶는다.
@@ -145,6 +146,9 @@ CHECK_MODULES = ("check_kg_screen", "check_kg", "check_kg_algo", "check_kg_rende
                  "analyze", "extract_drawio", "build_graph")
 
 
+DATA_EXCLUDE = ("hazop/shell/web/test",)   # 웹 단위 시험(시험 모드에서만 쓴다)은 배포본에 넣지 않는다
+
+
 def datas_list(repo_root=REPO_ROOT):
     """[(저장소 상대 원본 파일, 묶음 안 대상 폴더)] — '/' 구분, 정렬. 빠진 파일·폴더는 FileNotFoundError."""
     out = []
@@ -160,6 +164,8 @@ def datas_list(repo_root=REPO_ROOT):
             dirs[:] = sorted(x for x in dirs if x != "__pycache__")
             for f in sorted(files):
                 src = os.path.relpath(os.path.join(d, f), repo_root).replace("\\", "/")
+                if any(src == x or src.startswith(x + "/") for x in DATA_EXCLUDE):
+                    continue
                 out.append((src, os.path.dirname(src)))
     return sorted(out)
 

@@ -7,6 +7,7 @@
 - `pid-samples/`: 샘플 도면(검사·시험 입력). 폴더 이름은 기준값의 키다
 - `pid-symbol-catalog/`: 받은 P&ID 기호 카탈로그
 - `APR1400_DCD/`: APR1400 DCD 도면 목록과 추출 도구(원본 PDF는 git에 없다)
+- `dexpi-schema/`: DEXPI XML 2.0.1 스키마(XSD) 원본. 시험만 읽고 앱에 묶지 않는다(`licenses/dexpi/NOTICE.md`)
 - `hazop-method/`, `photos/`: 로컬 전용 자료(git 제외)
 
 ## 넣지 않는 것
@@ -16,7 +17,7 @@
 
 ## 이름 형식
 
-받은 파일 이름을 그대로 두는 폴더가 있다(`pid-samples`, `pid-symbol-catalog`, `APR1400_DCD`. HZ-GOV-02 §5.5).
+받은 파일 이름을 그대로 두는 폴더가 있다(`pid-samples`, `pid-symbol-catalog`, `APR1400_DCD`. HZ-GOV-02 §5.5). `dexpi-schema/`는 `dexpi-xml-schema-<판>.xsd`로 이름을 바꿔 둔다.
 
 ## 주인
 

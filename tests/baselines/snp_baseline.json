@@ -276,7 +276,7 @@
     "RC-V030"
    ],
    "unclassified": 0,
-   "unknowns": 40
+   "unknowns": 10
   },
   "SNP-M-102_RCS-pressurizer": {
    "kinds": {
@@ -308,7 +308,7 @@
     "RC-V111"
    ],
    "unclassified": 0,
-   "unknowns": 19
+   "unknowns": 5
   },
   "SNP-M-201_CVCS": {
    "kinds": {
@@ -346,7 +346,7 @@
     "CV-V202"
    ],
    "unclassified": 0,
-   "unknowns": 23
+   "unknowns": 3
   },
   "SNP-M-301_SIS": {
    "kinds": {
@@ -377,7 +377,7 @@
     "SI-V006"
    ],
    "unclassified": 0,
-   "unknowns": 24
+   "unknowns": 3
   },
   "SNP-M-401_CCW": {
    "kinds": {
@@ -403,7 +403,7 @@
     "CC-V101B"
    ],
    "unclassified": 2,
-   "unknowns": 31
+   "unknowns": 9
   },
   "SNP-M-501_MS-FW": {
    "kinds": {
@@ -422,17 +422,22 @@
    "pipes": 20,
    "proposed_nodes": 3,
    "tags": [
+    "FW-FIC503",
+    "FW-FT503",
     "FW-FV501",
     "FW-PP01",
     "FW-PP02",
     "FW-V502",
     "MS-CD01",
+    "MS-FT502",
     "MS-PSV501",
+    "MS-PT501",
+    "MS-PT503",
     "MS-TB01",
     "MS-V501"
    ],
    "unclassified": 0,
-   "unknowns": 27
+   "unknowns": 5
   }
  },
  "project": {

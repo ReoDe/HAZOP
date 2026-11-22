@@ -473,7 +473,7 @@ class AppColorTest(unittest.TestCase):
         self.assertTrue(all(v for v in cd.APP_COLOR_ALLOW.values()))
         from hazop.app import tokens
         with open(tokens.__file__, encoding="utf-8") as fh:
-            found = {lit for _n, lit in cd.app_color_literals(fh.read(), ("COLORS",))}
+            found = {lit for _n, lit in cd.app_color_literals(fh.read(), cd.APP_COLOR_EXCLUDE_BLOCKS["hazop/app/tokens.py"])}
         self.assertEqual(found, {k[1] for k in cd.APP_COLOR_ALLOW})
 
     def test_tokens_colors_block_only_excluded(self):

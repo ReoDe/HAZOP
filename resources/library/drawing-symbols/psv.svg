@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <polygon points="28,100 72,100 50,62" fill="none" stroke="currentColor"/>
+  <polygon points="50,62 88,42 88,82" fill="none" stroke="currentColor"/>
+  <polyline points="50,62 50,46 38,40 62,32 38,24 62,16 50,10" fill="none" stroke="currentColor"/>
+</svg>

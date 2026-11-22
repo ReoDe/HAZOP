@@ -1,0 +1,29 @@
+/* 설정 패널의 AI 연결 카드(A8). 단순하게: 지금 연결 한 줄 + 구독/API 키 두 카드. 색·간격은 tokens.css 변수만 쓴다 */
+.settings .set-now { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2); }
+.settings .set-now .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.settings .set-now.ok .dot { background: var(--ok); }
+.settings .set-now.warn .dot { background: var(--warn-line); }
+.settings .set-now.err .dot { background: var(--err); }
+.settings .set-now span:last-child { margin-left: auto; color: var(--muted); }
+.settings .set-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--sp-2); margin-top: var(--sp-3); }
+.settings .set-card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--line); border-radius: 8px; }
+.settings .set-card.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.settings .set-card-h { display: flex; align-items: center; gap: var(--sp-2); }
+.settings .set-card-h .chip, .settings .set-card-h > :last-child { margin-left: auto; }
+.settings .set-inuse { font-size: var(--fs-sm); color: var(--accent-ink); }
+.settings .set-why { color: var(--warn); }
+.settings .set-model { height: 30px; width: 100%; }
+.settings .set-key { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+.settings .set-key > span, .settings .set-key select { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings .set-key select { height: 28px; }
+.settings .set-card-b { display: flex; justify-content: space-between; gap: var(--sp-1); margin-top: auto; }
+.settings .set-ask { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--warn-line);
+  background: var(--warn-bg); border-radius: 8px; margin-top: var(--sp-2); font-size: var(--fs-sm); }
+.settings .set-ask-b { display: flex; gap: var(--sp-1); }
+.settings .set-advice { line-height: 1.45; }
+.settings .set-chat { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-3); }
+.settings .set-chat label { font-weight: 600; }
+.settings .set-chat .set-model { width: auto; min-width: 120px; }
+.settings .set-msg { margin-top: var(--sp-2); color: var(--muted); }
+.settings .set-msg.err { color: var(--err); }

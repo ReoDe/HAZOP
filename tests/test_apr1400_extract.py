@@ -61,10 +61,11 @@ class InstrumentTags(unittest.TestCase):
         self.assertEqual(got, want)
 
     def test_instrument_symbol_kinds(self):
-        """PT는 전송기. TEW(보호관, DCD 범례 1.7-1에서 TE와 다름)는 맞는 종류가 레지스트리에 없어 종류를 비우고
-        계기 모양으로만 태그를 붙인다."""
+        """PT는 전송기. TEW(보호관 온도 측정점, DCD 범례 1.7-1 TEW THERMOWELL)는 레지스트리에 보호관 종류가 없어
+        온도 측정점인 temperature_element로 본다(R3 개선 4, 2026-11-13. 3e에서는 종류를 비웠다)."""
         kinds = {item["tag"]: node_at(self.ex, item["bbox"])["kind"] for item in self.key["instruments"]}
-        self.assertEqual(kinds, {"TEW 106": None, "PT 106": "transmitter", "TEW 107": None, "TEW 108": None})
+        self.assertEqual(kinds, {"TEW 106": "temperature_element", "PT 106": "transmitter",
+                                 "TEW 107": "temperature_element", "TEW 108": "temperature_element"})
 
     def test_no_tag_outside_the_text_layer(self):
         """태그는 PDF 텍스트 층에 찍힌 글자다. 추출 결과의 label_text와 견주면 라벨에서 만든 태그는 늘 통과하므로,
@@ -195,8 +196,15 @@ class ClosedValves(unittest.TestCase):
 
     def test_pipe_network_is_not_cut_into_more_pieces_than_before_closed_valves_were_read(self):
         """닫힌 밸브를 따로 읽기 전(2ce16b9)에 물리 배관으로 이어진 노드 묶음(둘 이상)은 012쪽 2개(큰 것 51노드),
-        062쪽 22개였다. 밸브를 맞닿은 기호와 떼어 놓고 잇지 않으면 012쪽이 5개로 갈라진다(F1-3 검토)."""
-        before = {12: (2, 51), 62: (22, 12)}
+        062쪽 22개였다. 밸브를 맞닿은 기호와 떼어 놓고 잇지 않으면 012쪽이 5개로 갈라진다(F1-3 검토).
+        062쪽은 배관 끝 화살촉을 끝 기호로 읽은 뒤(9df3e7f) 26개다. 끊김 기호에서 집수정 안으로 들어가 화살촉으로 끝나는
+        배수 유입관 4개가 전에는 노드 하나뿐이라 세지 않다가, 화살촉 끝 노드가 생겨 두 노드 묶음이 됐다. 그 전 22개
+        묶음은 그대로다(어느 것도 갈라지지 않음).
+        012쪽은 IRWST를 담는 외곽으로 읽은 뒤 3개다. 탱크 안 RCGVS 살포기가 탱크에 먹히지 않고 제 조각(분사구 두 개를 잇는
+        머리관)으로 남아 두 노드 묶음 하나가 생겼다. 그 전 두 묶음(큰 것 52노드)은 그대로다.
+        안전등급 마름모를 노드로 두지 않은 뒤 큰 묶음은 46노드다. 빠진 6개는 지시선 하나로 배관에 매달려 있던 마름모
+        잎 노드이고(012쪽 마름모 7개 가운데 6개), 배관이 갈라진 곳은 없다."""
+        before = {12: (3, 45), 62: (26, 12)}
         for seq, (ex, _) in self.pages.items():
             group = {n["local_id"]: n["local_id"] for n in ex["nodes"]}
 
@@ -265,8 +273,10 @@ class ValveLabels(unittest.TestCase):
 
     def test_position_words_are_not_tags_or_labels(self):
         for seq, (ex, _) in self.pages.items():
-            self.assertEqual([n["label_text"] for n in ex["nodes"]
-                              if n["category"] == "valve" and n["tag"] and n["label_text"].strip() in ("LC", "LC,FC")],
+            # 위치 약어가 태그가 되지 않는다. 번호 원으로 태그를 단 밸브(R3 개선 6)는 이름표 글자에 위치 약어가 남을 수 있어
+            # 이름표가 아니라 태그를 본다
+            self.assertEqual([n["tag"] for n in ex["nodes"]
+                              if n["category"] == "valve" and (n["tag"] or "").strip() in ("LC", "LC,FC", "FC")],
                              [], seq)
 
 
@@ -295,6 +305,39 @@ class ValveNumbersNotTakenByNeighbours(unittest.TestCase):
         self.assertEqual(wrong, [])
 
 
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_063), "pdfplumber 또는 APR1400 063쪽 PDF 없음(저장소 밖 자료)")
+class DiaphragmUnderSolenoidPilot(unittest.TestCase):
+    """063쪽 공기구동 밸브 515·516·240·522·523: 다이어프램 바로 위에 솔레노이드 파일럿 밸브를 얹어 그렸다. 둘을 한 기호로
+    묶으면 사전 구동부에 맞지 않아 밸브가 구동부 없는 글로브로 남는다. 파일럿 몸통(꼬인 나비)은 S 상자 선 하나만 닿아도
+    끝막음이 아니다."""
+
+    BODIES = {"515": (282.8, 118.8), "516": (400.2, 118.8), "240": (735.8, 202.6), "522": (408.6, 470.8),
+              "523": (500.9, 470.8)}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_063, page=0)
+
+    def test_valve_under_a_piloted_diaphragm_is_air_operated(self):
+        kinds = {num: (node_at(self.ex, (x, y, x, y)) or {}).get("kind") for num, (x, y) in self.BODIES.items()}
+        self.assertEqual(kinds, {num: "air_operated_valve" for num in self.BODIES})
+
+    def test_pilot_valve_is_not_a_pipe_cap(self):
+        self.assertIsNone((node_at(self.ex, (735.7, 192.2, 735.7, 192.2)) or {}).get("kind"))
+
+
+PAGE_111 = paths.folder("APR1400", "by-drawing", "111_Ch10_Fig10.4.5-1_s1of2_Circulating_Water_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_111), "pdfplumber 또는 APR1400 111쪽 PDF 없음(저장소 밖 자료)")
+class ScallopedOutlineIsNotAVent(unittest.TestCase):
+    """111쪽: 반원을 잇달아 그린 둥근 외곽의 끝 반원(371~375, 370~379)은 곧은 배관 다리 없이 곡선에 이어져 구스넥 벤트가 아니다."""
+
+    def test_last_lobe_is_not_a_vent(self):
+        ex = pdf_vector.extract(PAGE_111, page=0)
+        self.assertIsNone((node_at(ex, (373.1, 374.8, 373.1, 374.8)) or {}).get("kind"))
+
+
 PAGE_016 = paths.folder("APR1400", "by-drawing", "016_Ch06_Fig6.3.2-1_s2of4_Safety_Injection_Shutdown_Cooling_System_Flow_Diagram.pdf")
 PAGE_025 = paths.folder("APR1400", "by-drawing", "025_Ch09_Fig9.2.2-1_s1of4_Component_Cooling_Water_System_Flow_Diagram.pdf")
 
@@ -303,7 +346,7 @@ PAGE_025 = paths.folder("APR1400", "by-drawing", "025_Ch09_Fig9.2.2-1_s1of4_Comp
                      "pdfplumber 또는 APR1400 016·025쪽 PDF 없음(저장소 밖 자료)")
 class CircledValvesKeepTheirCircleNumber(unittest.TestCase):
     """번호 원이 합쳐진 밸브는 그 원이 번호다. 옆 밸브의 번호 글자를 태그로 가져가면 안 된다(F1-6 뒤 F1-5 적용 때 찾음:
-    016쪽 구동 밸브 348이 V158을, 025쪽 방출 밸브 1108이 V1110을 가져감)."""
+    016쪽 구동 밸브 348이 V158을, 025쪽 방출 밸브 1108이 V1110을 가져감). R3 개선 6부터 그 원의 번호가 태그다."""
 
     CASES = ((PAGE_016, "V158", "348"), (PAGE_025, "V1110", "1108"))
 
@@ -312,7 +355,7 @@ class CircledValvesKeepTheirCircleNumber(unittest.TestCase):
             ex = pdf_vector.extract(path, page=0)
             got = [(n["tag"], n["evidence"].get("ident_number")) for n in ex["nodes"]
                    if n["evidence"].get("ident_number") == circle]
-            self.assertEqual(got, [(None, circle)], number)
+            self.assertEqual(got, [(circle, circle)], number)
 
 
 @unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_025), "pdfplumber 또는 APR1400 025쪽 PDF 없음(저장소 밖 자료)")
@@ -349,13 +392,14 @@ class LargeSymbolRegression(unittest.TestCase):
         self.assertEqual(kinds, {name: "indicator" for name in self.INDICATORS})
 
     def test_large_symbol_is_not_read_as_a_valve(self):
-        """미확인이던 묶음이 제어 밸브로 확정되면 종류 없음 미확인까지 사라진다. 종류 없음과 그 미확인이 함께 남아야 한다."""
+        """큰 묶음이 제어 밸브로 읽히면 안 된다. 담는 외곽(faf498c) 뒤로는 탱크·응축기·배관이 한 덩어리(85,184,644,528)로
+        묶이지 않고 가장 큰 노드가 이름을 받은 탱크 외곽이다(그림으로 확인: 그만한 기호는 쪽에 없다)."""
         big = max(self.ex["nodes"], key=lambda n: (n.get("geometry") or {}).get("width", 0) *
                   (n.get("geometry") or {}).get("height", 0))
-        self.assertEqual([round(v) for v in node_box(big)], [85, 184, 644, 528])
-        self.assertEqual((big["kind"], big["category"]), (None, None))
-        self.assertIn("missing_kind", [u["check"] for u in self.ex["validation"]["unknowns"]
-                                       if u["target"] == big["local_id"]])
+        self.assertEqual((big["kind"], " ".join(big["label_text"].split())), ("tank", "CONDENSATE RECEIVER TANK"))
+        wide_valves = [n for n in self.ex["nodes"] if (n["kind"] or "").endswith("valve") and
+                       (n.get("geometry") or {}).get("width", 0) > 40]
+        self.assertEqual(wide_valves, [])
 
 
 def ticks_near(ex, point, reach=5.0):
@@ -493,6 +537,11 @@ class PrefixInference(unittest.TestCase):
         got = self.tags([(None, None, "AX\n134")], instruments={"n0"})
         self.assertEqual(got, ["AX-134"])
 
+    def test_extra_function_letters_between_letters_and_number_are_skipped(self):
+        """9.2.4-1 시트 4(097쪽) 'LIS / AHL / 3025A'·'LTI / AHL / 001A': 가운데 줄은 덧붙인 경보 글자다."""
+        got = self.tags([("switch", "instrument", "LIS\nAHL\n3025A"), ("indicator", "instrument", "LTI\nAHL\n001A")])
+        self.assertEqual(got, ["LIS-3025A", "LTI-001A"])
+
     def test_valve_number_next_to_a_small_dot_is_not_an_instrument_tag(self):
         """9.3.3-1 시트 1 체크밸브 힌지 점(0.9pt) 옆 'V1006', 9.4.1-1 댐퍼 축 점(6pt) 옆 'Y0013A'(검토 지적)."""
         for label, size in (("V1006", 0.9), ("Y0013A", 6.0), ("V5402", 12.0)):
@@ -536,13 +585,296 @@ class SplitLetters(unittest.TestCase):
         self.assertEqual(self.texts(words), ["FILTER (FT32A)"])
 
     def test_narrowly_spaced_words_keep_their_space(self):
-        """10.4.8-1 시트 2 'V1337 V1338'(간격 0.232pt), 9.4.3-1 'MOTOR DRIVEN'(0.254pt)이 붙지 않는다(검토 지적)."""
+        """10.4.8-1 시트 2 'V1337 V1338'(간격 0.232pt), 9.4.3-1 'MOTOR DRIVEN'(0.254pt)이 붙지 않는다(검토 지적).
+        나란한 두 밸브 번호는 이웃한 두 밸브의 번호라 한 줄로도 잇지 않는다."""
         words = [self.word("V1337", 100.0, 109.6, 50.0, 3.7), self.word("V1338", 109.832, 119.4, 50.0, 3.7)]
-        self.assertEqual(self.texts(words), ["V1337 V1338"])
+        self.assertEqual(sorted(self.texts(words)), ["V1337", "V1338"])
+        words = [self.word("MOTOR", 100.0, 109.6, 50.0, 3.7), self.word("DRIVEN", 109.854, 121.0, 50.0, 3.7)]
+        self.assertEqual(self.texts(words), ["MOTOR DRIVEN"])
 
     def test_words_far_apart_on_one_row_stay_apart(self):
         words = [self.word("LEFT", 100.0, 108.0, 50.0), self.word("RIGHT", 120.0, 130.0, 50.0)]
         self.assertEqual(sorted(self.texts(words)), ["LEFT", "RIGHT"])
+
+
+PAGE_002 = paths.folder("APR1400", "by-drawing", "002_Ch01_Fig1.7-1_s2of4_Flow_Diagram_Symbols_and_Legend.pdf")
+PAGE_072 = paths.folder("APR1400", "by-drawing", "072_Ch09_Fig9.4.2-1_s1of2_Fuel_Handling_Area_HVAC_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_002) and os.path.isfile(PAGE_072),
+                     "pdfplumber 또는 APR1400 002·072쪽 PDF 없음(저장소 밖 자료)")
+class CentrifugalFans(unittest.TestCase):
+    """범례 1.7-1 2/4 CENTRIFUGAL FAN OR BLOWER(달팽이 몸통 + 안쪽 짧은 호)는 사전 apr1400.centrifugal_fan으로 fan이 된다.
+    범례 기호(002쪽)와 072쪽 공조기 칸 안 송풍기 넷."""
+
+    def test_legend_and_hvac_fans(self):
+        legend = pdf_vector.extract(PAGE_002, page=0)
+        self.assertEqual(node_at(legend, [352, 128, 352, 128])["kind"], "fan")
+        ex = pdf_vector.extract(PAGE_072, page=0)
+        for at in ((540.5, 189.5), (515.0, 301.5), (603.5, 446.5), (603.5, 619.8)):
+            self.assertEqual((node_at(ex, [at[0], at[1], at[0], at[1]]) or {}).get("kind"), "fan", at)
+
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_025), "pdfplumber 또는 APR1400 025쪽 PDF 없음(저장소 밖 자료)")
+class TombstonesSideBySide(unittest.TestCase):
+    """025쪽 FT 073C·FT 071A·TEW 069: 계기 비석 셋을 1.5~2pt 사이로 나란히 그렸다. 비석 가운데 점선의 끝 토막이 옆 비석
+    벽까지 닿음 거리 안이라, 그 토막을 구동부 축으로 읽어 셋을 한 노드로 묶고 첫 비석 글자만 태그로 남기던 자리다."""
+
+    def test_each_tombstone_keeps_its_own_tag(self):
+        ex = pdf_vector.extract(PAGE_025, page=0)
+        tags = [(node_at(ex, (x, 152.0, x, 152.0)) or {}).get("tag") for x in (884.3, 901.2, 917.4)]
+        self.assertEqual(tags, ["FT-073C", "FT-071A", "TEW-069"])
+
+
+
+PAGE_046 = paths.folder("APR1400", "by-drawing", "046_Ch09_Fig9.3.1-1_Instrument_Air_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_046), "pdfplumber 또는 APR1400 046쪽 PDF 없음(저장소 밖 자료)")
+class PiecesSetOnAnEquipmentOutline(unittest.TestCase):
+    """046쪽 공기 압축기 01·02: 모서리를 따낸 L자 외곽 윗변 바깥에 필터 상자 F와 VET 계기 비석을 붙여 그렸다. 셋이 한 노드로
+    묶이면 라벨이 VET가 되어 압축기 이름이 닿지 않는다. 외곽은 제 이름 'AIR COMPRESSOR 0n'을 갖고, F와 비석은 제 노드다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_046, page=0)
+
+    def test_outline_box_and_tombstone_are_three_nodes(self):
+        for dy, name in ((0.0, "AIR COMPRESSOR 01"), (195.4, "AIR COMPRESSOR 02")):
+            comp = node_at(self.ex, (150.0, 395.0 + dy, 150.0, 395.0 + dy))
+            box = node_at(self.ex, (143.5, 353.7 + dy, 143.5, 353.7 + dy))
+            stone = node_at(self.ex, (174.5, 350.0 + dy, 174.5, 350.0 + dy))
+            self.assertEqual(" ".join(comp["label_text"].split()), name)
+            self.assertEqual(len({comp["local_id"], box["local_id"], stone["local_id"]}), 3, name)
+            self.assertEqual((stone["category"], stone["label_text"]), ("instrument", "VET"), name)
+
+
+
+PAGE_097 = paths.folder("APR1400", "by-drawing", "097_Ch09_Fig9.5.4-1_Diesel_Fuel_Oil_Transfer_System_Flow_Diagram.pdf")
+PAGE_105 = paths.folder("APR1400", "by-drawing", "105_Ch10_Fig10.3.2-1_s1of2_Main_Steam_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_097) and os.path.isfile(PAGE_105),
+                     "pdfplumber 또는 APR1400 097·105쪽 PDF 없음(저장소 밖 자료)")
+class StackedInstrumentsAreTwoNodes(unittest.TestCase):
+    """위아래로 변만 맞대 그린 계기 원·비석 둘(097쪽 TEW 003 위 TI 003, 105쪽 FT 1022Y 아래 PT 1023D)은 저마다 제 노드다.
+    둥근 몸체가 맞닿았다고 한 기호로 묶으면 아래 계기가 위 계기의 글자를 태그로 가져가고 위 계기는 노드가 없다."""
+
+    CASES = ((PAGE_097, (338.5, 595.0), (338.5, 608.4), ("TEW-003", "TI-003")),
+             (PAGE_105, (291.6, 598.5), (291.9, 611.8), ("FT-1022Y", "PT-1023D")))
+
+    def test_upper_and_lower_keep_their_tags(self):
+        for path, top, bottom, want in self.CASES:
+            ex = pdf_vector.extract(path, page=0)
+            got = tuple((node_at(ex, (x, y, x, y)) or {}).get("tag") for x, y in (top, bottom))
+            self.assertEqual(got, want, path)
+
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_097), "pdfplumber 또는 APR1400 097쪽 PDF 없음(저장소 밖 자료)")
+class GooseneckBesideASafetyClassMark(unittest.TestCase):
+    """097쪽 위 구스넥 벤트: 끝 막대가 안전등급 경계 마름모 상자 귀퉁이(마름모 변에서 4.6pt)에 들어 마름모에 먹히던 자리.
+    마름모는 변까지 잰다. 막대가 제 기호로 남아 구스넥 규칙이 벤트로 읽는다."""
+
+    def test_upper_vent_is_read(self):
+        ex = pdf_vector.extract(PAGE_097, page=0)
+        self.assertEqual((node_at(ex, (656.3, 178.684, 656.3, 178.684)) or {}).get("kind"), "vent")
+
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_025) and os.path.isfile(PAGE_097),
+                     "pdfplumber 또는 APR1400 025·097쪽 PDF 없음(저장소 밖 자료)")
+class FlowElementsUnderFEBubbles(unittest.TestCase):
+    """배관 위 요소가 측정선으로 FE 계기 원에 이어지면 유량 요소다. 원은 계기로 둔다. 태그는 식별자라 요소에는 붙이지
+    않고 원 번호는 근거(fe_bubble_tag)에만 남긴다(025쪽 차압 탭 상자 FE 003·047·049·071, 097쪽 FE 031 아래 오리피스 판)."""
+
+    def test_pipe_elements_are_flow_elements_without_the_bubble_tag(self):
+        ex = pdf_vector.extract(PAGE_025, page=0)
+        nodes = [node_at(ex, (x, y, x, y)) or {} for x, y in ((420.0, 243.5), (655.0, 177.5), (650.5, 269.5), (901.0, 188.5))]
+        self.assertEqual([(n.get("kind"), n.get("tag"), (n.get("evidence") or {}).get("fe_bubble_tag")) for n in nodes],
+                         [("flow_element", None, t) for t in ("FE-003", "FE-047", "FE-049", "FE-071")])
+        bubble = node_at(ex, (413.0, 261.7, 413.0, 261.7))
+        self.assertNotEqual((bubble or {}).get("kind"), "flow_element")
+        ex = pdf_vector.extract(PAGE_097, page=0)
+        self.assertEqual((node_at(ex, (642.9, 562.0, 642.9, 562.0)) or {}).get("kind"), "flow_element")
+
+
+
+PAGE_128 = paths.folder("APR1400", "by-drawing", "128_Ch10_Fig10.4.9-1_s1of3_Auxiliary_Feedwater_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_128), "pdfplumber 또는 APR1400 128쪽 PDF 없음(저장소 밖 자료)")
+class BoundaryBoxWithWordsIsNotACheckValve(unittest.TestCase):
+    """128쪽 건물 경계 표시 'AB ▶|◀ YARD' 상자는 화살촉 둘과 칸막이 선이라 '선과 표식' 체크밸브 구조로 읽혔다.
+    상자 안에 낱말이 있으면 체크밸브가 아니다."""
+
+    def test_ab_yard_boxes_have_no_kind(self):
+        ex = pdf_vector.extract(PAGE_128, page=0)
+        kinds = [(node_at(ex, (937.6, 249.7, 937.6, 249.7)) or {}).get("kind"),
+                 (node_at(ex, (937.6, 569.5, 937.6, 569.5)) or {}).get("kind")]
+        self.assertEqual(kinds, [None, None])
+
+
+PAGE_134 = paths.folder("APR1400", "by-drawing", "134_Ch11_Fig11.2-1_s1of7_Liquid_Radwaste_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_134), "pdfplumber 또는 APR1400 134쪽 PDF 없음(저장소 밖 자료)")
+class DoubleActingCylinderStack(unittest.TestCase):
+    """134쪽(개발용) 펌프 출구 플러그 밸브 위에 반쪽 칠한 상자·X 상자·S 상자 둘·IA 글자로 그린 복동 실린더 구동부(범례 4/4
+    VALVE OPERATOR CONTROLS)는 한 공기구동 밸브다. 옆 FL은 고장 위치 속성이고, 구동부 조각은 노드로 남지 않는다."""
+
+    VALVE = (387.1, 146.0)
+    PIECES = ((379.6, 128.3), (387.0, 135.6), (379.6, 142.8), (387.0, 139.1))
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_134, page=0)
+
+    def test_valve_is_air_operated_with_fail_position(self):
+        n = node_at(self.ex, self.VALVE + self.VALVE) or {}
+        self.assertEqual((n.get("kind"), (n.get("attributes") or {}).get("fail_position"),
+                          (n.get("attributes") or {}).get("actuator_type")),
+                         ("air_operated_valve", "FL", "pneumatic+solenoid_pilot"))
+
+    def test_operator_pieces_are_merged(self):
+        valve = node_at(self.ex, self.VALVE + self.VALVE)
+        self.assertEqual([node_at(self.ex, p + p) is valve or node_at(self.ex, p + p) is None for p in self.PIECES],
+                         [True] * len(self.PIECES))
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_134), "pdfplumber 또는 APR1400 134쪽 PDF 없음(저장소 밖 자료)")
+class BlackPlugValves(unittest.TestCase):
+    """134쪽(개발용) 검게 칠한 플러그 밸브(범례 1/4 PLUG (2-WAY) 닫힘 |◆|)는 분기점이 아니라 닫힌 밸브 노드다. 번호 글자가
+    태그가 되고, 그 위 실린더 구동부 묶음은 공기구동 밸브로 합친다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ex = pdf_vector.extract(PAGE_134, page=0)
+
+    def test_closed_plug_valves_are_valve_nodes(self):
+        got = [((node_at(self.ex, (x, y, x, y)) or {}).get("kind"), (node_at(self.ex, (x, y, x, y)) or {}).get("tag"),
+                ((node_at(self.ex, (x, y, x, y)) or {}).get("attributes") or {}).get("normal_position"))
+               for x, y in ((368.5, 153.3), (616.2, 221.9), (298.0, 341.5))]
+        self.assertEqual(got, [("manual_valve", t, "NC") for t in ("V1015", "V2013", "V1007")])
+
+    def test_cylinder_stack_on_a_black_plug_is_air_operated(self):
+        n = node_at(self.ex, (409.3, 290.6, 409.3, 290.6)) or {}
+        self.assertEqual((n.get("kind"), (n.get("attributes") or {}).get("normal_position")), ("air_operated_valve", "NC"))
+
+
+PAGE_007 = paths.folder("APR1400", "by-drawing", "007_Ch05_Fig5.1.2-2_Reactor_Coolant_Pump_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_007) and os.path.isfile(PAGE_134),
+                     "pdfplumber 또는 APR1400 007·134쪽 PDF 없음(저장소 밖 자료)")
+class HatchedFramesAreNotSafetyValves(unittest.TestCase):
+    """빗금을 친 큰 틀(134쪽 FLOOR DRAIN PUMP PP01 등 펌프 패키지 틀, 007쪽 UPPER OIL RESERVOIR·PUMP SEALS 상자)과
+    공압선 빗금이 걸린 번호 원(134쪽 001)은 몸체+스프링 사선 규칙으로 안전밸브가 되지 않는다(개발용 쪽)."""
+
+    def test_no_large_spring_bodies(self):
+        found = []
+        for path in (PAGE_007, PAGE_134):
+            ex = pdf_vector.extract(path, page=0)
+            found += [" ".join(n["label_text"].split()) for n in ex["nodes"] if n["kind"] == "psv"
+                      and max(n["geometry"]["width"], n["geometry"]["height"]) > 10]
+        self.assertEqual(found, [])
+
+
+class OperatorStackKinds(unittest.TestCase):
+    """밸브 축 위 구동부 묶음의 종류(합성 입력). S 상자 하나뿐이면 전자 밸브, 사전에 없는 조각이 섞이면 IA 글자가 있을 때만
+    공기구동 밸브, 근거가 없으면 정하지 않는다."""
+
+    class Piece:
+        def __init__(self, x, y):
+            self.bbox = (x, y, x + 3.7, y + 3.6)
+
+    class Hit:
+        def __init__(self, actuator_type):
+            self.outcome = "matched"
+            self.entry = type("E", (), {"attributes": {"actuator_type": actuator_type, "motive_power": "electric"}})()
+
+    def test_single_solenoid_box_is_a_solenoid_valve(self):
+        e = pdf_vector._stack_entry([self.Piece(0, 0)], [self.Hit("solenoid")], [], [])
+        self.assertEqual((e.kind, e.attributes["actuator_type"]), ("solenoid_valve", "solenoid"))
+
+    def test_unknown_pieces_need_instrument_air(self):
+        pieces = [self.Piece(0, 0), self.Piece(0, 3.6), self.Piece(-6, -6)]
+        hits = [None, None, self.Hit("solenoid")]
+        self.assertIsNone(pdf_vector._stack_entry(pieces, hits, [], []))
+        ia = [{"text": "IA", "bbox": (-4.0, 1.0, -1.0, 3.0)}]
+        e = pdf_vector._stack_entry(pieces, hits, ia, [])
+        self.assertEqual((e.kind, e.attributes), ("air_operated_valve", {"actuator_type": "pneumatic+solenoid_pilot",
+                                                                         "motive_power": "air"}))
+
+
+def _flag(nid, letter):
+    return {"local_id": nid, "kind": "continuation", "label_text": letter,
+            "evidence": {"classification_basis": "symbol:apr1400.sequence_letter"}}
+
+
+def _rel(kind, a, b):
+    return {"kind": kind, "endpoints": [{"node_local_id": a}, {"node_local_id": b}]}
+
+
+class SameSheetLetterPairs(unittest.TestCase):
+    """같은 쪽 순서 문자 깃발은 글자가 같은 것끼리 한 배관으로 잇는다(정답지 규약 4절)."""
+
+    def test_flags_with_the_same_letter_on_pipes_are_paired(self):
+        nodes = [_flag("f1", "G"), _flag("f2", "G"), _flag("f3", "C")]
+        rels = [_rel("physical_connection", "v1", "f1"), _rel("physical_connection", "f2", "v2"),
+                _rel("physical_connection", "f3", "v3")]
+        self.assertEqual(pdf_vector.same_sheet_letter_pairs(nodes, rels), [("f1", "f2")])
+
+    def test_flags_on_signal_lines_are_not_paired(self):
+        nodes = [_flag("f1", "A"), _flag("f2", "A")]
+        rels = [_rel("signal_connection", "i1", "f1"), _rel("physical_connection", "f2", "v2")]
+        self.assertEqual(pdf_vector.same_sheet_letter_pairs(nodes, rels), [])
+
+
+def _upright_flag(x, y):
+    """세로로 세운 순서 문자 깃발(APR1400 015쪽과 같은 치수: 상자 6.0x14.0, 위 삼각·아래 홈 2.8)과 아래로 나가는 배관."""
+    from tests.test_adapter import line, prim
+    box = [(x, y), (x + 6.01, y), (x + 6.01, y + 13.97), (x, y + 13.97), (x, y)]
+    return [prim(box, closed=True, fill=True, white=True), prim(box, closed=True),
+            prim([(x, y), (x + 6.01, y), (x + 3.0, y - 2.79), (x, y)], closed=True, fill=True),
+            prim([(x, y + 13.96), (x, y + 16.75), (x + 3.0, y + 13.96), (x + 6.01, y + 16.75), (x + 6.01, y + 13.96),
+                  (x, y + 13.96)], closed=True, fill=True),
+            line((x + 3.0, y + 13.96), (x + 3.0, y + 60.0), width=0.5)]
+
+
+def _turned_letter(text, x, y):
+    return {"text": text, "x0": x + 2.0, "x1": x + 5.2, "top": y + 5.7, "bottom": y + 7.9, "size": 3.18,
+            "upright": False, "direction": "btt"}
+
+
+class UprightSequenceLetterFlags(unittest.TestCase):
+    """세로 깃발 안 글자는 돌려 쓴 글자다. 깃발이 그 글자를 제 글자로 받아야 같은 글자 깃발끼리 이어진다."""
+
+    def test_turned_letter_inside_an_upright_flag_is_its_letter(self):
+        from tests.test_adapter import pdf_run
+        ex = pdf_run(_upright_flag(100, 100) + _upright_flag(300, 100),
+                     [_turned_letter("B", 100, 100), _turned_letter("B", 300, 100)])
+        flags = [n for n in ex["nodes"] if n["kind"] == "continuation"]
+        self.assertEqual([n["label_text"] for n in flags], ["B", "B"])
+        self.assertEqual([r["line_type"] for r in ex["relations"] if r["line_type"] == "pdf_sequence_letter"],
+                         ["pdf_sequence_letter"])
+
+
+PAGE_141 = paths.folder("APR1400", "by-drawing", "141_Ch11_Fig11.3-1_Gaseous_Radwaste_System_Flow_Diagram.pdf")
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER and os.path.isfile(PAGE_141), "pdfplumber 또는 APR1400 141쪽 PDF 없음(저장소 밖 자료)")
+class SequenceLetterFlagsJoinThePipe(unittest.TestCase):
+    """141쪽(개발용): 오른쪽 위 'G' 깃발로 나간 배관은 아래 'G' 깃발에서 체크 밸브 V1027로 이어진다."""
+
+    def test_pipe_continues_from_one_g_flag_to_the_other(self):
+        ex = pdf_vector.extract(PAGE_141, page=0)
+        top, bottom = node_at(ex, (963, 222, 977, 228)), node_at(ex, (672, 567, 687, 573))
+        self.assertEqual((top["label_text"], bottom["label_text"]), ("G", "G"))
+        joined = [r for r in ex["relations"] if r["kind"] == "physical_connection"
+                  and {e["node_local_id"] for e in r["endpoints"]} == {top["local_id"], bottom["local_id"]}]
+        self.assertEqual([r["line_type"] for r in joined], ["pdf_sequence_letter"])
 
 
 if __name__ == "__main__":

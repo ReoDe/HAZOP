@@ -17,7 +17,7 @@ import io
 import re
 
 EXTRACTOR = "hazop.kg.docextract"
-EXTRACTOR_VERSION = "0.1.1"
+EXTRACTOR_VERSION = "0.1.2"   # 0.1.2: 문서 번호·개정(doc_number·revision)을 첫 쪽에서 읽는다
 SCHEMA_VERSION = "0.1"
 AUTHOR = "자동 추출(%s)" % EXTRACTOR
 AUTO_REASON = "자동 추출 — 사람 확인 전"
@@ -45,6 +45,9 @@ CONDITION_WORDS = re.compile(r"(?:운전|설계|최대|최소)\s*(?:압력|온�
 MODE_WORDS = re.compile(r"정상\s*운전|기동|고온\s*대기|저온\s*정지|normal\s+operation|startup|shutdown", re.I)
 REQUIREMENT_RE = re.compile(r"야\s*한다|할\s*것|않아야|\bshall\b|\bmust\b|"
                             r"(?:높아|낮아|올라가|내려가|상실되|초과하|도달하|넘으)(?:지)?면")
+# 같은 문서의 새 판을 가리는 근거(첫 쪽 머리). 못 읽으면 None이고, 그때는 등록할 때 사람에게 묻는다(hazop.kg.doc_revisions)
+DOC_NO_RE = re.compile(r"(?:문서\s*번호|도서\s*번호|document\s*(?:no\.?|number))\s*[:：]?\s*([A-Za-z0-9][A-Za-z0-9._/-]{2,40})", re.I)
+REV_RE = re.compile(r"(?:개정(?:\s*번호)?|rev(?:ision)?\.?)\s*[:：]?\s*([0-9]{1,3}|[A-Z]{1,2})(?![A-Za-z0-9])", re.I)
 INTENT_RE = re.compile(r"설계\s*의도|목적은|기능은|design\s+intent", re.I)
 
 
@@ -161,6 +164,13 @@ def link_record(lid, kind, frm, to, reason=AUTO_REASON):
             "unused_mention_columns": []}
 
 
+def identity(pages):
+    """첫 쪽(없으면 둘째 쪽) 글에서 (문서 번호, 개정). 못 읽은 값은 None."""
+    text = " ".join(" ".join(lines) for _, lines in pages[:2])
+    m, r = DOC_NO_RE.search(text), REV_RE.search(text)
+    return (m.group(1).rstrip(".-/") if m else None), (r.group(1).upper() if r else None)
+
+
 def extract(pages, material_id, registration_version, document_id, title=None, source_sha256=None):
     """쪽 목록(read_pages 결과) -> 문서 지식 dict. ID는 자료 ID(해시 12자리)·쪽·순번으로 결정적으로 만든다."""
     key = (material_id or "unregistered").split("-")[-1]
@@ -215,6 +225,7 @@ def extract(pages, material_id, registration_version, document_id, title=None, s
         "extractor": {"name": EXTRACTOR, "version": EXTRACTOR_VERSION},
         "material_id": material_id, "registration_version": registration_version, "document_id": document_id,
         "title": title, "source_sha256": source_sha256, "page_count": len(pages),
+        "doc_number": identity(pages)[0], "revision": identity(pages)[1],
         "nodes": nodes, "links": links, "tag_mentions": mentions,
         "summary": dict(counts, links=len(links), tag_mentions=len(mentions)),
         "validation": {"status": "blocked" if blockers else "passed", "blockers": blockers, "unknowns": unknowns},

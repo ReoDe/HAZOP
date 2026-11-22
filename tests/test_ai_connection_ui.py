@@ -232,13 +232,15 @@ class PrefsTest(unittest.TestCase):
         self.assertEqual(ai_settings.auto_notice("subscription", "api", True), ai_settings.NOTICE_TO_API)
         self.assertIsNone(ai_settings.auto_notice("subscription", "subscription", True))
 
-    def test_bundle_hides_subscription_and_ignores_saved_choice(self):
+    def test_bundle_offers_subscription_but_hides_fixed(self):
+        """U3 2026-11-13 개정(DEC-0306): 내부용 배포본에도 구독 연결. 고정 응답(시험용)은 여전히 숨긴다."""
         with mock.patch.object(sys, "_MEIPASS", self.tmp, create=True):
-            self.assertEqual(providers.available_methods(), ("api",))
+            self.assertEqual(providers.available_methods(), ("subscription", "api"))
             prefs = AiPrefs({"ai_method": "subscription"})
-            self.assertIsNone(prefs.chosen_method)
+            self.assertEqual(prefs.chosen_method, "subscription")
+            self.assertIsNone(AiPrefs({"ai_method": "fixed"}).chosen_method)
             with self.assertRaises(ValueError):
-                prefs.choose("subscription")
+                prefs.choose("fixed")
 
 
 class ConnCase(unittest.TestCase):
@@ -480,21 +482,17 @@ class SettingsDialogFlowTest(ConnCase):
         self.assertEqual(conn.method, "subscription")
         self.assertEqual(dlg.use_btn.text(), "이 방식으로 사용(&U)")
 
-    def test_bundle_shows_api_only_without_subscription_words(self):
+    def test_bundle_shows_subscription_and_api(self):
+        """U3 2026-11-13 개정(DEC-0306): 배포본 설정 창도 구독·API 둘을 보이고, 디버그여도 고정 응답은 없다."""
         with mock.patch.object(sys, "_MEIPASS", self.tmp, create=True):
             self.settings["ai_method"] = "subscription"
             conn = self.conn(debug=True)
-            self.assertEqual(conn.methods(), ("api",))
-            self.assertEqual(conn.method, "api")
+            self.assertEqual(conn.methods(), ("subscription", "api"))
+            self.assertEqual(conn.method, "subscription")
             dlg = self.dialog(conn)
-            self.assertEqual(dlg.width(), 600)
-            self.assertFalse(hasattr(dlg, "method_list"))
-            self.assertFalse(dlg.use_btn.isVisibleTo(dlg))
-            text = self.texts(dlg)
-            self.assertIn("이 배포본은 API 키로만 AI에 연결합니다.", text)
-            self.assertNotIn("구독", text)
-            chip = conn_view.chip_text(conn.method, conn.status(), conn.model())
-            self.assertTrue(chip.startswith("API 키 · "), chip)
+            self.assertEqual(dlg.methods, ("subscription", "api"))
+            self.assertTrue(hasattr(dlg, "method_list"))
+            self.assertNotIn("이 배포본은 API 키로만 AI에 연결합니다.", self.texts(dlg))
 
 
 class MainWindowChipTest(ConnCase):

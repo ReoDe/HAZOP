@@ -457,7 +457,7 @@ class StudyNodesScreen(QWidget):
 
     def is_done(self):
         if self.node_set is not None:
-            return self.node_set.get("status") == "confirmed"
+            return bool(nodes.active_nodes(self.node_set))
         return nodes.any_confirmed(project_only=True)
 
     def explorer_items(self):
@@ -601,7 +601,7 @@ class StudyNodesScreen(QWidget):
             self.app.refresh_stages()
             return
         self.view = self.ctx.view(ns)
-        confirmed = ns["status"] == "confirmed"
+        confirmed = nodes.all_confirmed(ns)
         # 옮긴 집합은 다시 확정해야 한다는 알림이라 확정되면 내린다.
         self.notice_bar.set_messages(None if confirmed else self.notice)
         index = {n["node_id"]: i for i, n in enumerate(ns["nodes"])}   # 색은 집합 순서로(목록 거르기와 무관하게 같은 색)
@@ -658,12 +658,13 @@ class StudyNodesScreen(QWidget):
             "프로젝트 그래프(도면·도면 연결)가 바뀌었습니다(저장본 %s → 현재 %s). '다시 제안'으로 새로 만들거나 확정 해제 뒤 고치세요."
             % (ns.get("graph_version"), self.graph.get("graph_version")) if stale else migrate.notice(ns))
         if confirmed:
-            at = ns.get("confirmed_at")
+            last = max((n.get("confirmed") or {} for n in ns["nodes"]), key=lambda c: c.get("at") or "", default={})
+            at = last.get("at")
             try:
                 at = kst_text(at)
             except (TypeError, ValueError):
                 pass
-            self.chip_status.set_state("확정 · %s · %s" % (ns.get("confirmed_by"), at), "passed")
+            self.chip_status.set_state("확정 · %s · %s" % (last.get("by"), at), "passed")
             self.gate.setText("확정됨. 고치려면 '확정 해제'를 누르세요.")
         else:
             self.chip_status.set_state("제안 · 저장됨" if self.saved else "제안 · 저장 전(편집·확정하면 저장)", "warn")
@@ -823,7 +824,7 @@ class StudyNodesScreen(QWidget):
 
     def _update_buttons(self):
         ns = self.node_set
-        editable = bool(ns) and ns["status"] != "confirmed"
+        editable = bool(ns) and not nodes.all_confirmed(ns)
         checked = self.checked_node_ids()
         cur = self.current_node()
         picked = self.selected_members()
@@ -838,9 +839,9 @@ class StudyNodesScreen(QWidget):
         self.remove_btn.setText("빈 구간 지우기" if hollow else "구간에서 빼기")
         self.remove_btn.setEnabled(editable and (bool(picked) or hollow))
         self.add_btn.setEnabled(editable and cur is not None and bool(self.uncovered_list.selectedItems()))
-        self.confirm_btn.setEnabled(editable and not cov["uncovered"] and not empties and not stale and bool(ns["nodes"]))
-        self.reopen_btn.setEnabled(bool(ns) and ns["status"] == "confirmed")
-        self.repropose_btn.setEnabled(bool(ns) and ns["status"] != "confirmed")
+        self.confirm_btn.setEnabled(editable and not empties and not stale and bool(ns["nodes"]))  # 구간 밖은 막지 않음
+        self.reopen_btn.setEnabled(bool(ns) and bool(nodes.active_nodes(ns)))
+        self.repropose_btn.setEnabled(bool(ns) and not nodes.active_nodes(ns))  # 다시 제안은 확정 구간까지 바꾸므로
         self.to_results_btn.setEnabled(cur is not None)
         cur_status = _status(cur) if cur else None
         self.take_out_act.setEnabled(editable and cur_status == "excluded")
@@ -1033,15 +1034,38 @@ class StudyNodesScreen(QWidget):
         return True
 
     def _undo_to(self, old, keep):
-        """확정·확정 해제도 집합 상태가 바뀐 것이므로 같은 길(저장)로 직전 집합을 되살린다.
-        토스트가 떠 있는 사이 다른 도면으로 옮겼으면 old만 저장하고 지금 화면은 건드리지 않는다."""
-        new, fp = self.node_set, self.disk_fp
+        """편집 토스트의 실행 취소: 그 편집이 만든 묶음을 node_tools.undo_batch로 되돌린다(묶음 검사·잠금을 거침, 규격 §2.3).
+        옛 집합 전체를 다시 저장하지 않으므로 그 사이 다른 구간을 확정·잠금해도 풀리지 않는다. 묶음을 만들지 않은 동작
+        (확정·확정 해제)에는 실행 취소가 없다(반대 동작이 있음). 다른 도면으로 옮겼으면 되돌리지 않는다."""
+        new = self.node_set
+        old_h = old.get("history") or []
+        if (new.get("history") or [])[:len(old_h)] != old_h:  # 다시 제안: 집합을 통째로 바꿈(확정 구간·보관 결과가 없을 때만 됨)
+            fp = self.disk_fp
+
+            def restore():
+                if self.node_set is not None and self.node_set["graph_id"] == old["graph_id"]:
+                    self._replace(nodes.keep_issued(old, self.node_set), keep)
+                    return
+                self._restore_elsewhere(old, new, fp)
+            return restore
+        if not new.get("batches") or new.get("batch_seq") == old.get("batch_seq"):
+            return None
+        bid = new["batches"][-1]["batch_id"]
 
         def undo():
-            if self.node_set is not None and self.node_set["graph_id"] == old["graph_id"]:
-                self._replace(nodes.keep_issued(old, self.node_set), keep)
+            if self.node_set is None or self.node_set["graph_id"] != old["graph_id"]:
+                self.app.status_message("다른 도면으로 옮겨 실행 취소하지 않았습니다.")
                 return
-            self._restore_elsewhere(old, new, fp)
+            from hazop.study import node_tools
+            from hazop.study import results as res
+            try:
+                saved = res.load(self.node_set)
+            except (OSError, ValueError) as exc:
+                self.msg.setText("실행 취소할 수 없음: 분석 결과를 읽지 못함(%s)" % exc)
+                return
+            saved = saved or res.empty_results(self.node_set, [])
+            self._apply(lambda s: node_tools.undo_batch(s, saved, bid, s.get("set_rev"), self._reviewer() or "사용자",
+                                                        "user")[0], keep)
         return undo
 
     def _restore_elsewhere(self, old, new, fp):
@@ -1194,10 +1218,23 @@ class StudyNodesScreen(QWidget):
         return self._apply(lambda s: nodes.rename(s, cur["node_id"], name), keep=cur["node_id"],
                            done="%s 이름을 바꿨습니다" % cur["node_id"])
 
+    def _held_results(self):
+        """이 집합의 ⑤ 결과 파일에 항목이 있는 칸이 있으면 True(읽지 못해도 True: 덮어쓸 위험을 피함)."""
+        from hazop.study import results as res
+        try:
+            doc = res.read_fp(res.store_path(self.node_set.get("project_id"), self.node_set["graph_id"]))[0]
+        except (OSError, ValueError):
+            return True
+        return any(c.get("entries") for c in (doc or {}).get("cells") or [])
+
     def repropose(self, ask=True):
         """현재 그래프로 다시 제안한다. 저장본에 편집 기록이 있으면 버릴지 묻는다. 새 제안은 바로 저장하고,
         버린 집합은 토스트의 실행 취소로 되살릴 수 있다."""
-        if not self.graph or (self.node_set and self.node_set["status"] == "confirmed"):
+        if not self.graph or (self.node_set and nodes.active_nodes(self.node_set)):
+            return False
+        if self.node_set and self._held_results():
+            self.msg.setText("확정 해제로 보관 중인 ⑤ 결과가 있어 다시 제안하지 않습니다(구간 ID를 새로 매기면 결과가 다른 구간에 "
+                             "붙음). 구간을 고쳐 다시 확정하세요.")
             return False
         edited = self.saved and len(self.node_set.get("history") or []) > 1
         if ask and edited and QMessageBox.question(
@@ -1261,23 +1298,7 @@ class StudyNodesScreen(QWidget):
                 return False
         left = self.review_counts()["open"]
         done = "구간을 확정했습니다" + (" · 처리하지 않은 AI 제안 %d건이 남았습니다" % left if left else "")
-        if not self._apply(lambda s: nodes.confirm(s, self.graph, reviewer), done=done):
-            return False
-        self._carry_results()
-        return True
-
-    def _carry_results(self):
-        """다시 확정했으면 옛 확정본의 ⑤ 결과를 바로 옮겨 저장한다(⑤를 열기 전에도 ⑥·탐색기가 같은 결과를 읽게)."""
-        from hazop.study import results as res
-        try:
-            carried, report = remap.carry_saved(self.node_set, res.load_deviations())
-        except (OSError, ValueError) as exc:
-            self.app.log_error("분석 결과 옮기기 실패", exc)
-            return
-        if carried is not None:
-            self.app.toast("이전 확정본의 ⑤ 결과를 옮겼습니다: 범위 바뀜 %d건은 다시 확인" % report["scope_changed_entries"])
-        elif report.get("to_excluded") or report.get("unmapped"):
-            self.app.toast("⑤ 결과를 옮기지 못했습니다: %s" % report.get("reason"))
+        return self._apply(lambda s: nodes.confirm(s, self.graph, reviewer), done=done)
 
     def reopen(self):
         return self._apply(nodes.reopen, done="확정을 해제했습니다")
@@ -1375,7 +1396,7 @@ class StudyNodesScreen(QWidget):
             lab.setWordWrap(True)
             lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
             v.addWidget(lab)
-        editable = self.node_set["status"] != "confirmed"
+        editable = not nodes.all_confirmed(self.node_set)
         rows = [QHBoxLayout(), QHBoxLayout()]  # 좁은 패널(1366×768)에서 단추 글자가 잘리지 않게 두 줄
         for r, key, text, fn in ((0, "accept", "받아들이기", lambda: self.accept_review(prop["id"])),
                                  (0, "reject", "기각…", lambda: self.reject_review(prop["id"])),

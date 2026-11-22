@@ -1,8 +1,8 @@
 {
  "id": "common.name_turbine",
- "revision": 1,
+ "revision": 2,
  "added": "2026-11-11",
- "updated": "2026-11-11",
+ "updated": "2026-11-16",
  "name": {
   "en": "TURBINE",
   "ko": "터빈(이름 낱말)"
@@ -18,13 +18,18 @@
    "words": [
     "TURBINE"
    ],
-   "order": 50
+   "order": 50,
+   "last": true
   }
  ],
  "sources": [
   {
    "set": "일반 P&ID 표기",
    "note": "pdf_vector.py의 장비 이름 낱말 표(EQUIPMENT_WORDS)를 옮긴 것(S7, 2026-11-11)"
+  },
+  {
+   "set": "APR1400 DCD Rev.3",
+   "note": "143쪽에서 TURBINE 낱말이 정한 노드 53개 중 맞은 것 11개(2026-11-16). 건물 이름(TURBINE GENERATOR BLDG)·구동 설명(TURBINE-DRIVEN)·신호(TURBINE TRIP/LOAD)에 붙지 않게 이름 끝 낱말일 때만 본다"
   }
  ]
 }

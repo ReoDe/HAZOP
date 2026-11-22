@@ -1,50 +1,77 @@
-"""그래프 판 이전: 판이 바뀐 그래프에 확정 검토구간과 ⑤ 결과를 source_object_id로 다시 대응시킨다.
-근거: 기획서/지식그래프-스키마.md §8.2 '판 이전', §9 U10(가)(사용자 채택 2026-11-08).
+"""그래프 판 이전: 판이 바뀐 그래프에 검토구간과 ⑤ 결과를 다시 대응시킨다. 무엇이 무엇으로 가는지(대응표)와 어디에 id가
+있는지(등록부)는 hazop.study.idmap이 맡고, 여기서는 차례(옛 꼴 바꾸기 → 표 계산 → 적용 → 재확인 → 쓰기)만 맡는다.
+근거: 기획서/지식그래프-스키마.md §8.2 '판 이전', §9 U10(가), docs/specs/study-node-segmentation.md §2.6.
 
-- 확정할 때 구성요소마다 안정 참조("<도면 graph_id>#<source_object_id>")를 member_refs에 남긴다. 그래프를 다시 만들면
-  entity_id는 바뀔 수 있어도 이 참조는 그대로라서, 판이 바뀐 뒤에도 옛 구성요소를 새 entity_id로 찾을 수 있다.
-- 확정을 유지하는 조건은 보수적이다. 옛 참조 집합과 새 그래프의 참조 집합이 정확히 같고 양쪽 모두 참조가 하나씩만
-  있을 때만 유지한다. 구성요소가 빠지거나 늘거나 겹치거나 참조가 없으면 손대지 않는다(지금처럼 '재확인 필요').
-- 참조가 같아도 구성요소의 종류·태그·배관 번호·흐름 방향·정상 위치·고장 위치·연결(member_digest)이 바뀌었으면 유지하지 않는다.
-  분류(category)는 kind에서 레지스트리로 정해지므로 넣지 않는다(레지스트리 분류 이동만으로 재확인되지 않게, M2 U9).
-  분류를 넣어 계산한 옛 기록("md-")은 그 기록을 만들 때의 분류표(레지스트리 0.2.0)로 새 그래프를 다시 계산해 비교한다.
-  ② 도면 사람 수정(태그·종류·흐름·끝점)은 '재확인 필요'로 알린다는 결정(결정로그 2026-11-07)을 지키고,
-  밸브가 펌프로 바뀐 것처럼 구간 판단이 달라질 변경에서 확정을 그대로 두지 않기 위해서다.
-- 유지하면 구성요소·판만 바꾸고 history에 판 이전(옛 판 → 새 판, 대응 수, 바뀐 ID)을 남긴다. 확정자·확정 시각은 그대로다.
-- ⑤ 결과는 같은 확정본(confirmed_at)을 가리키면 판과 kg_paths의 구성요소 ID만 바꾼다. 문장·사람 편집·상태는 건드리지 않는다.
-- 같은 입력에 두 번 적용해도 결과가 같다(판이 같으면 아무것도 하지 않음).
+- 집합의 판 사진(graph_member_refs·graph_member_marks·graph_member_basis)은 그래프 전체 구성요소의 안정 참조·표시·id 근거다.
+  판이 같으면 사진을 채우기만 하고(읽기만으로 구성요소를 잃지 않음), 판이 다르면 사진으로 대응표를 만든다(idmap.compute).
+  구간 밖 구성요소가 늘거나 줄어도 재확인 사유가 아니다(§1 #17·#18).
+- 판 이전은 모든 구간에 적용하고 재확인은 구간마다 정한다. 구간마다 내용 지문(md3-: 그 구간 구성요소와 거기 닿는 관계의
+  종류·태그·배관 번호·흐름·정상 위치·고장 위치)을 남기고, 지문이 바뀌었거나 구성요소를 잃었거나 되찾은 구간만 rev를
+  올린다. 그 구간이 확정이면 적용됨으로 내리고(⑤ 칸은 보관), 잠금이면 잠금을 두고 version_changed를 단다(§5.3).
+- ⑤ 결과는 판 이전 줄 번호(step)로 따라간다. 결과에 마지막으로 적용한 줄 번호를 적고 그 뒤 줄만 적용한다(앞 판으로 돌아온
+  뒤 그 판에서 단 참조를 되돌아감에 다시 넣지 않음). 줄에는 그대로 이어진 것도 적어, 늦게 따라와도 즉시 옮긴 것과 같은 표다.
+- 0.1 파일의 함수(member_refs·member_digest·legacy_steps·legacy_migrate_results)는 0.1 결과를 처음 이을 때만 쓴다.
+- 같은 입력에 두 번 적용해도 결과가 같다(판이 같으면 아무것도 하지 않음, 묘비 id는 잃은 기호의 지문으로 결정됨).
 """
 
 import copy
 import hashlib
 import json
 import logging
-import re
 
 from hazop import store_io
+from hazop.study import idmap
+from hazop.study.idmap import ref_of  # noqa: F401  여러 곳(ie·shell·refs)이 이 이름으로 부른다
 
 OP = "migrate_version"
-_PID_ID = re.compile(r"(^|/)(entity|relation)-")
+_PID_ID = idmap._PID_ID
+POSITION_ATTRS = ("normal_position", "fail_position")
+SCHEMA = "0.3"            # 묘비 꼴 집합(hazop.study.nodes.SCHEMA_VERSION과 같음)
+SCHEMAS = ("0.2", "0.3")  # 0.2는 읽을 때 0.3으로 바꾼다
 
 
-def ref_of(node, graph_id):
-    """구성요소의 안정 참조. 도면 연결 구간은 ID 자체가 양 끝 연결점의 안정 참조로 만든 해시라 그대로 쓴다."""
-    soid = node.get("source_object_id")
-    if soid:
-        return "%s#%s" % (node.get("sheet") or graph_id, soid)
-    if (node.get("sheet_link") or {}).get("link_id") == node["entity_id"]:
-        return node["entity_id"]
-    return None
+def node_digests(graph, members_by_node, names=None):
+    """{node_id: "md3-…"}. members_by_node: {node_id: [entity_id]}. 그래프에 없는 구성요소가 있거나 빈 구간은 뺀다.
+    names {entity_id: 옛 판 참조}를 주면 그 구성요소는 참조 대신 그 이름으로 센다(판 이전에서 이은 구성요소를 옛 판 이름으로
+    불러, 순번만 다시 매겨진 것은 내용이 바뀐 것으로 보지 않는다)."""
+    gid = graph.get("graph_id")
+    by_id = {n["entity_id"]: n for n in graph.get("nodes", [])}
+    ref = {e: ref_of(n, gid) for e, n in by_id.items()}
+    ref.update((e, r) for e, r in (names or {}).items() if e in ref)
+    touching = {}
+    for e in graph.get("edges", []):
+        row = json.dumps([e.get("kind")] + sorted(ref.get(x) or "" for x in e.get("nodes") or []), ensure_ascii=False)
+        for x in set(e.get("nodes") or []):
+            touching.setdefault(x, []).append(row)
 
+    def row(n):
+        a = n.get("attributes") or {}
+        flow = ([ref.get((n.get("flow_direction") or {}).get(k)) or "" for k in ("from", "to")]
+                if isinstance(n.get("flow_direction"), dict) else None)
+        return [ref[n["entity_id"]] or "", n.get("kind"), n.get("tag"), n.get("line_no"), flow,
+                [a.get(k) for k in POSITION_ATTRS]]
+    out = {}
+    for nid, members in members_by_node.items():
+        if not members or any(m not in by_id for m in members):
+            continue
+        nodes = sorted((row(by_id[m]) for m in set(members)), key=json.dumps)
+        edges = sorted({r for m in set(members) for r in touching.get(m, [])})
+        canon = json.dumps({"nodes": nodes, "edges": edges}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        out[nid] = "md3-" + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:16]
+    return out
+
+
+def node_digest(graph, members):
+    return node_digests(graph, {"_": members}).get("_")
+
+
+# ---------------------------------------------------------------- 0.1 집합의 기록(0.1 결과를 처음 이을 때만)
 
 def member_refs(node_set, graph):
-    """{구성요소 entity_id: 안정 참조 또는 None}. 그래프에 없는 구성요소도 None."""
+    """(0.1) {구간 구성요소 entity_id: 안정 참조 또는 None}. 그래프에 없는 구성요소도 None."""
     by_id = {n["entity_id"]: n for n in graph.get("nodes", [])}
     members = sorted({m for n in node_set["nodes"] for m in n["members"]})
     return {m: ref_of(by_id[m], graph.get("graph_id")) if m in by_id else None for m in members}
-
-
-POSITION_ATTRS = ("normal_position", "fail_position")
 
 
 def _digest(graph, prefix, category=None, positions=False):
@@ -67,15 +94,12 @@ def _digest(graph, prefix, category=None, positions=False):
 
 
 def member_digest(graph):
-    """구간 판단에 쓰는 내용(구성요소 종류·태그·배관 번호·흐름 방향·정상 위치·고장 위치, 관계 종류와 양 끝)을 참조로 적은 해시.
-    정상·고장 위치는 ⑤ 원인·결과 판단이 기대므로 바뀌면 재확인한다(결정로그 2026-11-07 "② 수정 시 ④·⑤ 재확인").
-    entity_id·판·도면 위치·그 밖의 속성·분류는 넣지 않는다(재추출·필드 추가·레지스트리 분류 이동으로는 바뀌지 않게)."""
+    """(0.1) 그래프 전체 내용 해시(md2-). 0.1 확정본이 남긴 값과 비교할 때만 쓴다."""
     return _digest(graph, "md2-", positions=True)
 
 
 def legacy_member_digest(graph):
-    """옛 "md-" 기록과 비교할 값: 분류를 M2 이전 분류표(rules.LEGACY_KIND_CATEGORY)로 다시 정해 옛 방식대로 계산한다.
-    배관 구간과 표에 없는 kind는 그래프의 분류를 쓰되, 그 뒤 레지스트리에 생긴 kind는 그때처럼 None으로 본다."""
+    """옛 "md-" 기록과 비교할 값: 분류를 M2 이전 분류표(rules.LEGACY_KIND_CATEGORY)로 다시 정해 옛 방식대로 계산한다."""
     from hazop.extract.rules import KIND_CATEGORY, LEGACY_KIND_CATEGORY
 
     def category(n):
@@ -92,85 +116,8 @@ def digest_matches(recorded, graph):
     return recorded == (member_digest(graph) if recorded.startswith("md2-") else legacy_member_digest(graph))
 
 
-def _usable(node_set, graph):
-    return (isinstance(node_set, dict) and node_set.get("status") == "confirmed"
-            and graph.get("graph_version") and "nodes" in graph)
-
-
-def with_refs(node_set, graph):
-    """판이 같은 확정본에 member_refs가 없거나 모자라거나 내용 기록이 옛 방식(md-)이면 채운 사본, 아니면 입력 그대로.
-    판이 같으면 그래프 내용도 같으므로 옛 기록을 지금 방식으로 다시 계산해도 된다."""
-    if not _usable(node_set, graph) or node_set.get("graph_version") != graph["graph_version"]:
-        return node_set
-    members = {m for n in node_set["nodes"] for m in n["members"]}
-    if set(node_set.get("member_refs") or {}) == members and (node_set.get("member_digest") or "").startswith("md2-"):
-        return node_set
-    out = copy.deepcopy(node_set)
-    out.update(member_refs=member_refs(out, graph), member_digest=member_digest(graph))
-    return out
-
-
-def plan(node_set, graph):
-    """{"state": "same"|"kept"|"recheck"|"skip", "reason", "matched", "renamed"{옛 ID: 새 ID}}.
-    skip은 확정본이 아니거나 그래프가 비교할 수 없는 것(이전 대상 아님)."""
-    out = {"state": "skip", "reason": None, "matched": 0, "renamed": {}}
-    if not _usable(node_set, graph):
-        return out
-    if node_set.get("graph_version") == graph["graph_version"]:
-        return dict(out, state="same")
-    members = sorted({m for n in node_set["nodes"] for m in n["members"]})
-    old = node_set.get("member_refs") or {}
-    new = {}
-    for n in graph["nodes"]:
-        new.setdefault(ref_of(n, graph.get("graph_id")), []).append(n["entity_id"])
-    olds = [old.get(m) for m in members]
-    reason = None
-    if not members:
-        reason = "구성요소 없음"
-    elif any(r is None for r in olds):
-        reason = "옛 판의 안정 참조가 없는 구성요소 %d개" % sum(r is None for r in olds)
-    elif len(set(olds)) != len(olds):
-        reason = "옛 판에서 참조가 겹치는 구성요소가 있음"
-    elif None in new:
-        reason = "새 판에 안정 참조가 없는 구성요소 %d개" % len(new[None])
-    elif any(len(v) > 1 for v in new.values()):
-        reason = "새 판에서 한 참조가 여러 구성요소에 대응됨(모호)"
-    else:
-        missing = sorted(set(olds) - set(new))
-        extra = sorted(set(new) - set(olds))
-        if missing:
-            reason = "새 판에 없는 구성요소 %d개(%s)" % (len(missing), ", ".join(missing[:3]))
-        elif extra:
-            reason = "새 판에 늘어난 구성요소 %d개(%s)" % (len(extra), ", ".join(extra[:3]))
-        elif not node_set.get("member_digest"):
-            reason = "옛 판의 구성요소 내용 기록(member_digest)이 없음"
-        elif not digest_matches(node_set["member_digest"], graph):
-            reason = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
-    if reason:
-        return dict(out, state="recheck", reason=reason)
-    mapping = {m: new[old[m]][0] for m in members}
-    return dict(out, state="kept", matched=len(mapping), renamed={a: b for a, b in mapping.items() if a != b})
-
-
-def migrate_set(node_set, graph, at=None):
-    """(집합, plan). 유지할 수 있으면 구성요소·판을 새 판으로 바꾼 사본, 아니면 입력 그대로."""
-    p = plan(node_set, graph)
-    if p["state"] != "kept":
-        return node_set, p
-    from hazop.study.nodes import map_members
-    ren = p["renamed"]
-    out = map_members(node_set, ren)
-    old_version = out.get("graph_version")
-    out["graph_version"] = graph["graph_version"]
-    out.update(member_refs=member_refs(out, graph), member_digest=member_digest(graph))
-    out["history"].append(store_io.history_row(OP, {"detail": {
-        "from": old_version, "to": graph["graph_version"],
-        "matched": p["matched"], "renamed": dict(sorted(ren.items()))}}, at))
-    return out, p
-
-
-def _steps(results, node_set):
-    """결과의 판에서 집합의 판까지 이어지는 판 이전 기록(순서대로). 이어지지 않으면 None."""
+def legacy_steps(results, node_set):
+    """(0.1) 결과의 판에서 집합의 판까지 이어지는 판 이전 기록(순서대로). 이어지지 않으면 None."""
     ref = results.get("study_nodes_ref") or {}
     if ref.get("confirmed_at") != node_set.get("confirmed_at") or node_set.get("status") != "confirmed":
         return None
@@ -183,11 +130,10 @@ def _steps(results, node_set):
     return steps if steps and cur == node_set.get("graph_version") else None
 
 
-def migrate_results(results, node_set, at=None):
-    """(결과, 바꾼 kg_paths ID 수 또는 None). 같은 확정본을 옛 판으로 가리키는 결과만 판·kg_paths ID를 바꾼 사본.
-    이어지는 판 이전 기록이 없으면 입력 그대로(결과의 is_stale이 지금처럼 재확인으로 보여 줌)."""
+def legacy_migrate_results(results, node_set, at=None):
+    """(0.1) (결과, 바꾼 kg_paths ID 수 또는 None). 같은 확정본을 옛 판으로 가리키는 0.1 결과만 판·kg_paths ID를 바꾼 사본."""
     from hazop.study.nodes import now_utc
-    steps = _steps(results, node_set)
+    steps = legacy_steps(results, node_set)
     if steps is None:
         return results, None
     current = {m for n in node_set["nodes"] for m in n["members"]}
@@ -197,8 +143,19 @@ def migrate_results(results, node_set, at=None):
         back = {m: inv.get(back.get(m, m), back.get(m, m)) for m in current}
     forward = {old: new for new, old in back.items()}
     out = copy.deepcopy(results)
+    changed = _rename_paths(out, forward)[0]
+    old_version = out["study_nodes_ref"]["graph_version"]
+    out["study_nodes_ref"]["graph_version"] = node_set["graph_version"]
+    out.setdefault("version_migrations", []).append({
+        "at": at or now_utc(), "from": old_version, "to": node_set["graph_version"],
+        "kg_path_ids_changed": changed, "kg_path_ids_unmapped": _rename_paths(out, {})[1]})
+    return out, changed
+
+
+def _rename_paths(results, forward):
+    """results(고침)의 kg_paths ID를 forward로 바꾼다. (바꾼 수, 대응 없는 ID 수)."""
     changed = unmapped = 0
-    for cell in out.get("cells") or []:
+    for cell in results.get("cells") or []:
         for e in cell.get("entries") or []:
             basis = e.get("ai_basis")
             if not isinstance(basis, dict) or not isinstance(basis.get("kg_paths"), list):
@@ -210,12 +167,239 @@ def migrate_results(results, node_set, at=None):
                         path[i] = forward[x]
                     elif isinstance(x, str) and _PID_ID.search(x):
                         unmapped += 1
-    old_version = out["study_nodes_ref"]["graph_version"]
-    out["study_nodes_ref"]["graph_version"] = node_set["graph_version"]
-    out.setdefault("version_migrations", []).append({
+    return changed, unmapped
+
+
+# ---------------------------------------------------------------- 0.2·0.3 집합
+
+def _usable(node_set, graph):
+    return (isinstance(node_set, dict) and node_set.get("schema_version") in SCHEMAS
+            and graph.get("graph_version") and "nodes" in graph)
+
+
+def _upgrade(node_set):
+    """옛 꼴(0.2: A꼴 표시 없음, B꼴 lost_members)을 묘비 꼴(0.3)로. 할 일이 없으면 입력 그대로."""
+    out, _rep = idmap.upgrade(node_set)
+    if out.get("schema_version") != SCHEMA:
+        out = dict(out if out is not node_set else copy.deepcopy(node_set), schema_version=SCHEMA)
+    return out
+
+
+def with_refs(node_set, graph):
+    """판이 같은 집합을 묘비 꼴로 바꾸고, 판 사진이나 확정·잠금 구간의 지문(md3-)이 모자라면 채운 사본. 할 일이 없으면
+    입력 그대로. 묘비를 만들지 않는다(읽기만으로 구성요소를 잃지 않음)."""
+    if not _usable(node_set, graph) or node_set.get("graph_version") != graph["graph_version"]:
+        return node_set
+    out = _upgrade(node_set)
+    have = out.get("member_digest") or {}
+    todo = {n["node_id"]: n["members"] for n in out["nodes"]  # 적용됨 구간은 지문이 없어도 됨(판이 바뀌면 rev만 오름)
+            if n.get("state") in ("confirmed", "locked") and not str(have.get(n["node_id"]) or "").startswith("md3-")}
+    fresh = node_digests(graph, todo) if todo else {}
+    if out is node_set and not fresh and idmap.has_snapshot(node_set, graph):
+        return node_set
+    out = copy.deepcopy(out)
+    out.update(idmap.snapshot(graph))
+    out["member_digest"] = dict(have, **fresh)
+    return out
+
+
+def plan(node_set, graph):
+    """{"state": "same"|"kept"|"skip", "reason", "matched", "table"(idmap.compute), "recheck"{node_id: 사유}}.
+    kept는 판 이전을 적용한다는 뜻이고 재확인은 recheck에 든 구간만이다. skip은 0.2·0.3 집합이 아니거나 그래프를 비교할 수
+    없는 것."""
+    out = {"state": "skip", "reason": None, "matched": 0, "table": None, "recheck": {}}
+    if not _usable(node_set, graph):
+        return out
+    if node_set.get("graph_version") == graph["graph_version"]:
+        return dict(out, state="same")
+    ns = _upgrade(node_set)
+    table = idmap.compute(ns, graph)
+    eid = table["eid"]
+    recorded = ns.get("member_digest") or {}
+    legacy = (ns.get("legacy") or {}).get("member_digest")
+    legacy_same = bool(legacy) and digest_matches(legacy, graph)
+    moved = {n["node_id"]: [eid.get(m, m) for m in n["members"]] for n in ns["nodes"]}
+    old_refs = ns.get("graph_member_refs") or {}
+    names = {e: old_refs[m] for m, e in eid.items() if not idmap.is_tomb(e) and old_refs.get(m)}
+    fresh = node_digests(graph, {k: v for k, v in moved.items() if not any(idmap.is_tomb(x) for x in v)}, names)
+    recheck = {}
+    for n in ns["nodes"]:
+        nid = n["node_id"]
+        gone = sorted(m for m, x in zip(n["members"], moved[nid]) if idmap.is_tomb(x))
+        back = [t for t in n.get("lost") or [] if t in table["found"]]
+        rec = str(recorded.get(nid) or "")
+        if gone:
+            recheck[nid] = "새 판에서 찾지 못한 구성요소 %d개(%s)" % (
+                len(gone), ", ".join(idmap.describe(ns, m) for m in gone[:3]))
+        elif back:
+            recheck[nid] = "잃었던 구성요소 %d개를 같은 자리에서 되찾음" % len(back)
+        elif rec.startswith("md3-"):
+            if rec != fresh.get(nid):
+                recheck[nid] = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
+        elif not legacy_same and n.get("state") in ("confirmed", "locked"):
+            recheck[nid] = "옛 판의 구간 내용 기록이 없음"  # 확정한 적 없는 적용됨 구간은 분석 전이라 판만 옮김
+    members = {m for n in ns["nodes"] for m in n["members"]}
+    matched = sum(1 for m in members if not idmap.is_tomb(eid.get(m, m)))
+    return dict(out, state="kept", matched=matched, table=table, recheck=recheck)
+
+
+def migrate_set(node_set, graph, at=None):
+    """(집합, plan). 판 이전을 적용한 사본 또는 입력 그대로. 재확인 구간은 rev가 오르고, 확정이면 적용됨으로 내리며,
+    잠금이면 잠금을 두고 version_changed를 단다. 이미 적용됨인 구간도 구성요소 ID는 새 판으로 바뀐다."""
+    p = plan(node_set, graph)
+    if p["state"] != "kept":
+        return node_set, p
+    from hazop.study.nodes import now_utc
+    at = at or now_utc()
+    table = p["table"]
+    out, rep = idmap.apply(_upgrade(node_set), idmap.SET, table)
+    old_version = out.get("graph_version")
+    demoted = []
+    for n in out["nodes"]:
+        why = p["recheck"].get(n["node_id"])
+        if why is None:
+            continue
+        if n.get("state") == "locked":  # 잠금은 두고 결과도 그대로(§5.3). rev는 사람이 잠금을 풀 때 오른다
+            n["version_changed"] = {"from": old_version, "to": graph["graph_version"], "reason": why, "at": at}
+            continue
+        n["rev"] = (n.get("rev") or 1) + 1
+        if n.get("state") == "confirmed":
+            n["state"], n["confirmed"] = "applied", None
+            demoted.append(n["node_id"])
+    tombs = dict(out.get("tombstones") or {})
+    for t, rec in table["new_tombs"].items():  # 있는 묘비 id는 new_tombs에 들지 않아 앞 기록을 덮지 않는다
+        tombs[t] = dict(rec, at=at)
+    for t in set(table["eid"].values()) & set(tombs):  # 되찾았던 기호를 다시 잃으면 다시 되찾을 수 있게
+        if isinstance(tombs[t], dict) and tombs[t].get("found") is not None:
+            tombs[t] = dict(tombs[t], found=None)
+    out.pop("tomb_seq", None)  # 일련번호 묘비 id(지문 id 전)가 남긴 값
+    for t, (e, r) in table["found"].items():
+        tombs[t] = dict(tombs.get(t) or {}, found={"entity_id": e, "ref": r, "version": graph["graph_version"], "at": at})
+    out["tombstones"] = dict(sorted(tombs.items()))
+    out["graph_version"] = graph["graph_version"]
+    out.update(idmap.snapshot(graph))
+    out["member_digest"] = node_digests(graph, {n["node_id"]: n["members"] for n in out["nodes"]})
+    if (out.get("legacy") or {}).get("member_digest"):  # 한 번 이어 쓴 뒤로는 구간 지문만 쓴다
+        out["legacy"] = dict(out["legacy"], member_digest=None)
+    out["set_rev"] = (out.get("set_rev") or 0) + 1
+    detail = {"from": old_version, "to": graph["graph_version"], "matched": p["matched"], "step": len(lines(out)) + 1}
+    detail.update(idmap.record(table))
+    detail.update(unregistered=rep["unregistered"], recheck=dict(sorted(p["recheck"].items())), demoted=demoted)
+    out["history"].append(store_io.history_row(OP, {"detail": detail}, at))
+    return out, p
+
+
+def lines(node_set):
+    """집합 이력의 판 이전 줄 detail(차례대로). 줄 번호(step)는 이 목록의 1부터 센 자리다(이력은 지우지 않음)."""
+    return [h.get("detail") or {} for h in node_set.get("history") or [] if isinstance(h, dict) and h.get("op") == OP]
+
+
+def _end(rows, start):
+    """줄들이 start에서 빠짐없이 이어지면 마지막 판, 아니면 None."""
+    cur = start
+    for d in rows:
+        if d.get("from") != cur:
+            return None
+        cur = d.get("to")
+    return cur
+
+
+BROKEN_CHAIN = "이력 줄이 결과의 판에서 지금 판까지 빠짐없이 이어지지 않음"
+AMBIGUOUS_START = "결과에 판 이전 줄 번호가 없고 결과의 판에서 시작하는 줄이 이력에 둘 이상(되돌아온 사슬)"
+PARTIAL_ROWS = "옛 꼴 이력 줄(바뀐 것만 적음)로는 그대로 이어진 참조를 증명하지 못함"
+
+
+def _steps(results, node_set):
+    """(결과에 아직 적용하지 않은 판 이전 줄들, 마지막 줄 번호, 옮기지 못한 까닭). 결과가 지금 판이면 ([], None, None).
+    결과가 마지막으로 옮겨진 줄 번호(version_migrations[-1].step, 그 줄의 to가 결과의 판일 때)가 있으면 그 뒤 줄들이다.
+    번호가 없는 결과(새로 만든 것, 옛 판이 옮긴 것)는 결과의 판에서 시작하는 줄이 하나뿐일 때 그 줄부터다. 어느 쪽이든
+    줄들이 지금 판까지 빠짐없이 이어져야 한다. 아니면 이어졌다는 것을 증명하지 못한 것이라 까닭을 돌려준다."""
+    rows = lines(node_set)
+    have, want = results.get("graph_version"), node_set.get("graph_version")
+    marks = [m for m in results.get("version_migrations") or [] if isinstance(m, dict)]
+    step = marks[-1].get("step") if marks else None
+    if type(step) is int and 1 <= step <= len(rows) and rows[step - 1].get("to") == have:
+        if _end(rows[step:], have) == want:
+            return rows[step:], len(rows), None
+        return None, None, BROKEN_CHAIN
+    if have == want:
+        return [], None, None
+    starts = [i for i, d in enumerate(rows) if d.get("from") == have]
+    if len(starts) > 1:
+        return None, None, AMBIGUOUS_START
+    if not starts or _end(rows[starts[0]:], have) != want:
+        return None, None, BROKEN_CHAIN
+    return rows[starts[0]:], len(rows), None
+
+
+def _unproven_table(doc, node_set):
+    """이어졌다는 것을 증명하지 못한 결과에 쓸 표: 대상 참조·근거 경로의 그래프 id·잠재 후보를 모두 묘비로 한다. 파일 id(source)
+    참조도 그 판에 대상이 있었는지 모르므로 묘비다. 근거 경로의 지식 id(cond-…)는 그대로."""
+    gid, to = node_set.get("graph_id"), node_set.get("graph_version")
+    t = idmap._empty_table(gid, doc.get("graph_version"), to, False)
+
+    def values(space):
+        return {h[k] for p, s in idmap.FIELDS[idmap.RESULTS] if s == space for h, k in idmap.walk(doc, p)
+                if isinstance(h[k], str) and not idmap.is_tomb(h[k])}
+    refs = values(idmap.REF)
+    known = set(node_set.get("graph_member_refs") or {})
+    t["ref"] = {r: idmap.tomb_id(gid, to, "r-" + idmap._sha8(r)) for r in sorted(refs)}
+    t["eid"] = {x: idmap.tomb_id(gid, to, "e-" + idmap._sha8(x)) for x in sorted(values(idmap.EID))
+                if x in known or _PID_ID.search(x) or x.startswith("xlink-")}
+    t["drawings"] = sorted({idmap.drawing_of(r) for r in refs} - {None} | ({gid} if gid else set()))
+    t["unproven"] = True
+    return t
+
+
+def migrate_results(results, node_set, at=None, table=None):
+    """(결과, 바꾼 근거 경로 ID 수 또는 None). 0.2·0.3 결과의 판과 등록된 id 필드(원인·영향·보호수단 참조, 잠재 후보 ID,
+    근거 경로)를 판 이전 대응대로 지금 판으로 바꾼 사본. 적용할 줄은 _steps가 고르고(결과가 마지막으로 옮겨진 줄 번호 뒤),
+    그 줄이 table(방금 계산한 대응표) 하나면 그 표를, 아니면 이력 줄에서 만든 표를 차례로 적용한다. 옮긴 마지막 줄 번호를
+    version_migrations[].step에 적는다. 판이 다른데 줄들이 지금 판까지 이어진다는 것을 증명하지 못하면(잘린 이력, 번호 없는
+    결과의 판에서 시작하는 줄이 여럿, 거칠 줄에 바뀐 것만 적은 옛 꼴 줄이 있음) 순번 참조를 모두 묘비로 하고 그 까닭을
+    version_migrations[].unproven에 적는다.
+    새 판 구성요소에 안정 참조가 없어 묘비가 된 참조 수는 refs_unnamed다. 판이 같으면 None이고, 49033f1 판의 `~lost`만
+    묘비로 바꾼 사본(바꿀 것이 없으면 입력 그대로)을 돌려준다. 0.1 결과는 legacy_migrate_results로."""
+    if results.get("schema_version") not in ("0.2", "0.3"):  # results.CELL_SCHEMA_VERSIONS(순환 import를 피해 값으로)
+        return legacy_migrate_results(results, node_set, at)
+    doc, _n = idmap.upgrade_results(results, node_set)
+    steps, step, why = _steps(doc, node_set)
+    if why is not None:  # 판이 다른데 이어진 것을 증명하지 못함: 옮기지 않고 순번 참조를 모두 묘비로(재확인)
+        tables = [_unproven_table(doc, node_set)]
+        step = len(lines(node_set)) or None
+    elif not steps:
+        return doc, None
+    elif table is not None and len(steps) == 1 and (table["from"], table["to"]) == (steps[0].get("from"), steps[0].get("to")):
+        tables = [table]  # 방금 계산한 표(이력 줄과 같은 표)
+    else:
+        tables = [idmap.from_record(d, node_set.get("graph_id")) for d in steps]
+        if any(t["partial"] for t in tables):
+            why, tables = PARTIAL_ROWS, [_unproven_table(doc, node_set)]
+    held = {h[k] for p, s in idmap.FIELDS[idmap.RESULTS] if s == idmap.REF for h, k in idmap.walk(doc, p)}
+    from hazop.study.nodes import now_utc
+    total = {"changed": 0, "lost": 0, "found": 0}
+    kg = {"changed": 0, "lost": 0}
+    unregistered = set()
+    for t in tables:
+        doc, rep = idmap.apply(doc, idmap.RESULTS, t)
+        for k in total:
+            total[k] += rep[k]
+        for k in kg:
+            kg[k] += rep["spaces"].get(idmap.EID, {}).get(k, 0)
+        unregistered.update(rep["unregistered"])
+    old_version = doc.get("graph_version")
+    doc["graph_version"] = node_set["graph_version"]
+    doc.setdefault("version_migrations", []).append({
         "at": at or now_utc(), "from": old_version, "to": node_set["graph_version"],
-        "kg_path_ids_changed": changed, "kg_path_ids_unmapped": unmapped})
-    return out, changed
+        "kg_path_ids_changed": kg["changed"] - kg["lost"], "kg_path_ids_unmapped": kg["lost"],
+        "refs_changed": total["changed"] - total["lost"] - total["found"], "refs_lost": total["lost"],
+        "refs_found": total["found"],
+        # 표시 없이 참조만 믿고 이은 옛 판 이전이 끼어 있으면 화면이 확인을 띄울 근거(idmap.needs_check)
+        "check": "ref" if any(t["check"] == "ref" for t in tables) else "mark",
+        "unregistered": sorted(unregistered), "step": step,
+        **({"unproven": why} if why else {}),
+        **({"refs_unnamed": n} if (n := len(held & {r for t in tables for r in t.get("unnamed") or ()})) else {})})
+    return doc, kg["changed"] - kg["lost"]
 
 
 def notice(node_set):
@@ -224,8 +408,10 @@ def notice(node_set):
     if not h or h[-1].get("op") != OP:
         return None
     d = h[-1]["detail"]
-    return "그래프 판이 바뀌어(%s → %s) 구성요소 %d개를 새 판에 다시 맞췄습니다. 확정은 그대로입니다." % (
-        d["from"], d["to"], d["matched"])
+    again = len(d.get("recheck") or {})
+    return "그래프 판이 바뀌어(%s → %s) 구성요소 %d개를 새 판에 다시 맞췄습니다. %s" % (
+        d["from"], d["to"], d["matched"],
+        "내용이 바뀐 구간 %d개만 다시 확인이 필요합니다." % again if again else "확정은 그대로입니다.")
 
 
 BACKUP_LABEL = "판이전"
@@ -240,8 +426,9 @@ def unwritten(node_set, graph):
 
 def on_load(node_set, graph, path, fp):
     """nodes.load_fp가 부른다. fp는 node_set을 읽은 바이트의 지문이다. (집합, 지금 파일의 지문)을 돌려준다.
-    참조를 채우거나 판을 이전했으면 옛 파일을 백업한 뒤 읽은 파일 자리에 쓰고, 같은 확정본의 ⑤ 결과 파일도 함께 이전한다.
-    쓸 일이 없으면 아무것도 쓰지 않는다. 읽은 뒤 파일이 바뀌었으면 쓰지 않는다."""
+    옛 꼴을 바꾸거나 참조를 채우거나 판을 이전했으면 옛 파일을 백업한 뒤 읽은 파일 자리에 원자적으로 쓰고(실패하면 원본
+    그대로 두고 읽은 집합을 돌려줌), ⑤ 결과 파일도 같은 대응표로 옮겨 쓴다. 쓸 일이 없으면 아무것도 쓰지 않는다.
+    읽은 뒤 파일이 바뀌었으면 쓰지 않는다."""
     from hazop.study import results as res
     out = with_refs(node_set, graph)
     out, p = migrate_set(out, graph)
@@ -253,18 +440,17 @@ def on_load(node_set, graph, path, fp):
     except (OSError, store_io.Conflict) as exc:  # 백업·쓰기를 못 하면 이전하지 않는다. 부른 쪽은 unwritten으로 알아보고 알린다
         _log.warning("검토구간 판 이전을 저장하지 못함: %s (%s)", path, exc)
         return node_set, fp
-    if p["state"] == "kept":
-        rpath = res._readable_path(out.get("project_id"), out["graph_id"])
-        try:
-            doc, rfp = res.read_fp(rpath)
-        except (OSError, ValueError):  # 읽지 못하는 결과는 그대로 두고 화면이 지금처럼 문제로 보여 준다
-            doc = None
-        if doc is not None and doc.get("graph_id") == out["graph_id"]:
-            moved, n = migrate_results(doc, out)
-            if n is not None:
-                try:
-                    store_io.backup_file(rpath, BACKUP_LABEL)
-                    res.write(rpath, moved, expect=rfp)
-                except (OSError, store_io.Conflict) as exc:  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
-                    _log.warning("분석 결과 판 이전을 저장하지 못함: %s (%s)", rpath, exc)
+    rpath = res._readable_path(out.get("project_id"), out["graph_id"])
+    try:
+        doc, rfp = res.read_fp(rpath)
+    except (OSError, ValueError):  # 읽지 못하는 결과는 그대로 두고 화면이 지금처럼 문제로 보여 준다
+        doc = None
+    if doc is not None and doc.get("graph_id") == out["graph_id"] and doc.get("schema_version") in ("0.2", "0.3"):
+        moved, _n = migrate_results(doc, out, table=p["table"])
+        if moved is not doc:
+            try:
+                store_io.backup_file(rpath, BACKUP_LABEL)
+                res.write(rpath, moved, expect=rfp)
+            except (OSError, store_io.Conflict) as exc:  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
+                _log.warning("분석 결과 판 이전을 저장하지 못함: %s (%s)", rpath, exc)
     return out, fp

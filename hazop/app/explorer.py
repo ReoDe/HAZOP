@@ -12,6 +12,7 @@ from hazop.app.screens.study import seg_icon
 from hazop.extract import corrections
 from hazop.graph import project
 from hazop.ie import model as ie_model
+from hazop.study import nodes as study_nodes
 from hazop.study import results as res
 from hazop.study import span
 
@@ -168,7 +169,7 @@ def project_nodes(win):
             and study.node_set.get("graph_id") == pg["graph_id"] else None)  # ④가 연 프로젝트 집합(저장 전 포함)
     ns = live or (idx.node_set if idx else None)
     view = (idx.view_of(ns) if live else idx.view) if ns else None
-    usable = idx is not None and (live is None or live.get("status") == "confirmed")  # 결과는 확정본에만 있다
+    usable = idx is not None and (live is None or bool(study_nodes.active_nodes(live)))  # 결과는 확정·잠금 구간에만 있다
     rs = win.screens[6]
     results = (rs.results if rs.results is not None and rs.name == win.drawing else idx.results if idx else None)
     if results is not None and ns and res.is_stale(results, ns):
@@ -202,7 +203,9 @@ def study_module(win):
     cover = None
     if ns:
         cover, c = idx.ctx.coverage_text(ns)
-        state = {"confirmed": "확정됨", "proposed": "제안(확정 전)"}.get(ns.get("status"), ns.get("status") or "—")
+        active = study_nodes.active_nodes(ns)
+        state = ("확정됨" if study_nodes.all_confirmed(ns) else "일부 확정 %d/%d" % (len(active), len(ns["nodes"]))
+                 if active else "적용됨(확정 전)")
         info = [("상태 · %s" % state, "구간 집합 상태. 확정해야 ⑤ 분석을 합니다."),
                 ("덮음률 · %d%%" % round(c["project"]["ratio"] * 100), "%s\n모든 구성요소가 어느 구간에 들어가야 100%%" % cover),
                 ("미포함 %d" % (c["project"]["total"] - c["project"]["covered"]),
@@ -225,7 +228,7 @@ def _result_rows(view):
     if not view:
         return view
     status = lambda n: (n.get("screen") or {}).get("status") or "keep"  # noqa: E731
-    shown = [n for n in view["nodes"] if status(n) != "excluded"]
+    shown = [n for n in view["nodes"] if status(n) != "excluded" and study_nodes.is_active(n)]
     return dict(view, nodes=[n for n in shown if status(n) != "low"] + [n for n in shown if status(n) == "low"])
 
 
@@ -235,7 +238,7 @@ def results_module(win):
     dn = win.explorer_drawing_choice(pg)
     scope = dn or (pg["project_id"] if pg else None)
     rs = win.screens[6]
-    confirmed = bool(ns) and ns.get("status") == "confirmed"
+    confirmed = bool(ns) and bool(study_nodes.active_nodes(ns))
     shown = results if usable else None
     cached, counted = getattr(rs, "summary_of", (None, None))
     summary = (counted if shown is cached else res.matrix_summary(shown)) if shown else None

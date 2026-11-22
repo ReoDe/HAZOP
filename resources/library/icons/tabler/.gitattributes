@@ -1,0 +1,2 @@
+# 원본 바이트를 그대로 둔다(manifest.json의 SHA-256 대조, tests/test_icons.py).
+* -text

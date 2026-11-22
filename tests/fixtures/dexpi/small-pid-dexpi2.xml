@@ -1,0 +1,286 @@
+<Model name="small" uri="http://www.example.org/hazop-test">
+  <!-- 손으로 만든 시험용 DEXPI XML 2.0 파일(HAZOP 저장소의 시험 입력, 공개 예제를 옮긴 것이 아님).
+       펌프 P-101 -> 볼밸브 V-101 -> 분기 TE-1 -> 탱크 T-101, 분기에서 도면 연결 기호 OC1, 믹서 M-101 -> 탱크.
+       V-101은 제어 밸브(구동계 AS1, FailClose), PT-101이 TE-1의 압력을 재서 V-101을 제어한다. 좌표는 mm, y는 아래로 커진다. -->
+  <Import prefix="Core" source="https://data.dexpi.org/models/2.0.1/Core.xml"/>
+  <Import prefix="Plant" source="https://data.dexpi.org/models/2.0.1/Plant.xml"/>
+  <Object type="Core/EngineeringModel">
+    <Components property="ConceptualModel">
+      <Object id="PlantModel1" type="Plant/PlantModel">
+        <Components property="MetaData">
+          <Object id="Meta1" type="Plant/Diagram.PlantMetaData">
+            <Data property="DrawingName"><String>Small test P&amp;ID</String></Data>
+            <Data property="DrawingNumber"><String>TEST-1</String></Data>
+          </Object>
+        </Components>
+        <Components property="TaggedPlantItems">
+          <Object id="Pump1" type="Plant/ProcessEquipment.CentrifugalPump">
+            <Components property="Chambers">
+              <Object id="PumpChamber1" type="Plant/ProcessEquipment.Chamber">
+                <Data property="UpperLimitDesignPressure">
+                  <AggregatedDataValue type="Core/PhysicalQuantities.PhysicalQuantity">
+                    <Data property="Unit"><DataReference data="Core/PhysicalQuantities.PressureGaugeUnit.Bar"/></Data>
+                    <Data property="Value"><Double>16.0</Double></Data>
+                  </AggregatedDataValue>
+                </Data>
+              </Object>
+            </Components>
+            <Components property="Nozzles">
+              <Object id="PumpN1" type="Plant/ProcessEquipment.ProcessNozzle">
+                <Components property="Nodes"><Object id="Nd1" type="Plant/Piping.PipingNode"/></Components>
+                <Data property="SubTagName"><String>N1</String></Data>
+              </Object>
+              <Object id="PumpN2" type="Plant/ProcessEquipment.ProcessNozzle">
+                <Components property="Nodes"><Object id="Nd2" type="Plant/Piping.PipingNode"/></Components>
+                <Data property="SubTagName"><String>N2</String></Data>
+              </Object>
+            </Components>
+            <Data property="TagName"><String>P-101</String></Data>
+          </Object>
+          <Object id="Tank1" type="Plant/ProcessEquipment.Tank">
+            <Components property="Nozzles">
+              <Object id="TankN1" type="Plant/ProcessEquipment.ProcessNozzle">
+                <Components property="Nodes"><Object id="Nd3" type="Plant/Piping.PipingNode"/></Components>
+                <Data property="SubTagName"><String>N1</String></Data>
+              </Object>
+              <Object id="TankN2" type="Plant/ProcessEquipment.ProcessNozzle">
+                <Components property="Nodes"><Object id="Nd4" type="Plant/Piping.PipingNode"/></Components>
+                <Data property="SubTagName"><String>N2</String></Data>
+              </Object>
+            </Components>
+            <Data property="TagName"><String>T-101</String></Data>
+          </Object>
+          <Object id="Mixer1" type="Plant/ProcessEquipment.Mixer">
+            <Components property="Nozzles">
+              <Object id="MixN1" type="Plant/ProcessEquipment.ProcessNozzle">
+                <Components property="Nodes"><Object id="Nd5" type="Plant/Piping.PipingNode"/></Components>
+                <Data property="SubTagName"><String>N1</String></Data>
+              </Object>
+            </Components>
+            <Data property="TagName"><String>M-101</String></Data>
+          </Object>
+        </Components>
+        <Components property="PipingNetworkSystems">
+          <Object id="Sys1" type="Plant/Piping.PipingNetworkSystem">
+            <Data property="FluidCode"><String>W</String></Data>
+            <Data property="LineNumber"><String>L-100</String></Data>
+            <Data property="PipingClassCode"><String>A1</String></Data>
+            <Components property="Segments">
+              <Object id="Seg1" type="Plant/Piping.PipingNetworkSegment">
+                <Data property="NominalDiameterRepresentation"><String>DN 80</String></Data>
+                <Components property="Items">
+                  <Object id="Valve1" type="Plant/Piping.BallValve">
+                    <Components property="Nodes">
+                      <Object id="NV1" type="Plant/Piping.PipingNode"/>
+                      <Object id="NV2" type="Plant/Piping.PipingNode"/>
+                    </Components>
+                    <Data property="PipingComponentNumber"><String>V-101</String></Data>
+                  </Object>
+                  <Object id="Tee1" type="Plant/Piping.PipeTee">
+                    <Components property="Nodes">
+                      <Object id="NT1" type="Plant/Piping.PipingNode"/>
+                      <Object id="NT2" type="Plant/Piping.PipingNode"/>
+                      <Object id="NT3" type="Plant/Piping.PipingNode"/>
+                    </Components>
+                  </Object>
+                  <Object id="OffOut1" type="Plant/Piping.FlowOutPipeOffPageConnector">
+                    <Components property="Nodes"><Object id="NC1" type="Plant/Piping.PipingNode"/></Components>
+                    <Components property="ConnectorReference">
+                      <Object type="Plant/Piping.PipeOffPageConnectorReferenceByNumber">
+                        <Data property="ReferencedConnectorNumber"><String>OC-9</String></Data>
+                        <Data property="ReferencedDrawingNumber"><String>DWG-2</String></Data>
+                      </Object>
+                    </Components>
+                  </Object>
+                </Components>
+                <Components property="Connections">
+                  <Object id="Pipe1" type="Plant/Piping.Pipe">
+                    <References objects="#PumpN2" property="SourceItem"/>
+                    <References objects="#Nd2" property="SourceNode"/>
+                    <References objects="#Valve1" property="TargetItem"/>
+                    <References objects="#NV1" property="TargetNode"/>
+                  </Object>
+                  <Object id="Pipe2" type="Plant/Piping.Pipe">
+                    <References objects="#Valve1" property="SourceItem"/>
+                    <References objects="#NV2" property="SourceNode"/>
+                    <References objects="#Tee1" property="TargetItem"/>
+                    <References objects="#NT1" property="TargetNode"/>
+                  </Object>
+                  <Object id="Pipe3" type="Plant/Piping.Pipe">
+                    <References objects="#Tee1" property="SourceItem"/>
+                    <References objects="#NT2" property="SourceNode"/>
+                    <References objects="#TankN1" property="TargetItem"/>
+                    <References objects="#Nd3" property="TargetNode"/>
+                  </Object>
+                  <Object id="Pipe4" type="Plant/Piping.Pipe">
+                    <References objects="#Tee1" property="SourceItem"/>
+                    <References objects="#NT3" property="SourceNode"/>
+                    <References objects="#OffOut1" property="TargetItem"/>
+                    <References objects="#NC1" property="TargetNode"/>
+                  </Object>
+                </Components>
+              </Object>
+            </Components>
+          </Object>
+          <Object id="Sys2" type="Plant/Piping.PipingNetworkSystem">
+            <Data property="LineNumber"><String>L-200</String></Data>
+            <Components property="Segments">
+              <Object id="Seg2" type="Plant/Piping.PipingNetworkSegment">
+                <Components property="Connections">
+                  <Object id="Pipe5" type="Plant/Piping.Pipe">
+                    <References objects="#MixN1" property="SourceItem"/>
+                    <References objects="#Nd5" property="SourceNode"/>
+                    <References objects="#TankN2" property="TargetItem"/>
+                    <References objects="#Nd4" property="TargetNode"/>
+                  </Object>
+                </Components>
+              </Object>
+            </Components>
+          </Object>
+        </Components>
+        <Components property="ProcessInstrumentationFunctions">
+          <Object id="PIF1" type="Plant/Instrumentation.ProcessInstrumentationFunction">
+            <Data property="ProcessInstrumentationFunctionCategory"><String>P</String></Data>
+            <Data property="ProcessInstrumentationFunctionNumber"><String>101</String></Data>
+            <Data property="ProcessInstrumentationFunctions"><String>IC</String></Data>
+            <Components property="ProcessSignalGeneratingFunctions">
+              <Object id="PSGF1" type="Plant/Instrumentation.ProcessSignalGeneratingFunction">
+                <Data property="ProcessSignalGeneratingFunctionNumber"><String>PT-101</String></Data>
+                <References objects="#Tee1" property="SensingLocation"/>
+              </Object>
+            </Components>
+            <Components property="SignalConveyingFunctions">
+              <Object id="ML1" type="Plant/Instrumentation.MeasuringLineFunction">
+                <References objects="#PSGF1" property="Source"/>
+                <References objects="#PIF1" property="Target"/>
+              </Object>
+              <Object id="SC1" type="Plant/Instrumentation.SignalConveyingFunction">
+                <References objects="#PIF1" property="Source"/>
+                <References objects="#AF1" property="Target"/>
+              </Object>
+            </Components>
+          </Object>
+        </Components>
+        <Components property="ActuatingSystems">
+          <Object id="AS1" type="Plant/Instrumentation.ActuatingSystem">
+            <Data property="ActuatingSystemNumber"><String>PV-101</String></Data>
+            <Components property="ControlledActuator">
+              <Object id="CA1" type="Plant/Instrumentation.ControlledActuator">
+                <Data property="FailAction"><DataReference data="Plant/Enumerations.FailActionClassification.FailClose"/></Data>
+              </Object>
+            </Components>
+            <Components property="OperatedValveReference">
+              <Object type="Plant/Instrumentation.OperatedValveReference">
+                <References objects="#Valve1" property="Valve"/>
+              </Object>
+            </Components>
+          </Object>
+        </Components>
+        <Components property="ActuatingFunctions">
+          <Object id="AF1" type="Plant/Instrumentation.ActuatingFunction">
+            <Data property="ActuatingFunctionNumber"><String>PV-101</String></Data>
+            <References objects="#AS1" property="Systems"/>
+          </Object>
+        </Components>
+      </Object>
+    </Components>
+    <Components property="Diagram">
+      <Object type="Core/Diagram.Diagram">
+        <Components property="Groups">
+          <Object type="Core/Diagram.Border">
+            <Components property="Elements">
+              <Object type="Core/Diagram.PolyLine">
+                <Data property="Points">
+                  <AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>1.0</Double></Data><Data property="Y"><Double>1.0</Double></Data></AggregatedDataValue>
+                  <AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>419.0</Double></Data><Data property="Y"><Double>296.0</Double></Data></AggregatedDataValue>
+                </Data>
+              </Object>
+            </Components>
+          </Object>
+          <Object type="Core/Diagram.RepresentationGroup">
+            <Components property="Groups">
+              <Object type="Core/Diagram.RepresentationGroup">
+                <Components property="Groups">
+                  <Object type="Core/Diagram.PipeFlowArrow">
+                    <Components property="Elements">
+                      <Object type="Core/Diagram.ShapeUsage">
+                        <Data property="IsMirrored"><Boolean>false</Boolean></Data>
+                        <Data property="Position">
+                          <AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>82.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue>
+                        </Data>
+                        <Data property="Rotation"><Double>0.0</Double></Data>
+                        <Data property="ScaleX"><Double>1.0</Double></Data>
+                        <Data property="ScaleY"><Double>1.0</Double></Data>
+                        <References objects="#ShapeArrow1" property="Shape"/>
+                      </Object>
+                    </Components>
+                  </Object>
+                </Components>
+                <References objects="#Seg1" property="Represents"/>
+              </Object>
+            </Components>
+            <References objects="#Sys1" property="Represents"/>
+          </Object>
+          <Object type="Core/Diagram.RepresentationGroup">
+            <Components property="Groups">
+              <Object type="Core/Diagram.Static">
+                <Components property="Elements">
+                  <Object type="Core/Diagram.ConnectorLine">
+                    <References objects="#Pos2" property="Source"/>
+                    <References objects="#Pos3" property="Target"/>
+                  </Object>
+                </Components>
+              </Object>
+            </Components>
+            <References objects="#Pipe1" property="Represents"/>
+          </Object>
+          <Object type="Core/Diagram.RepresentationGroup">
+            <Components property="Groups">
+              <Object type="Core/Diagram.Static">
+                <Components property="Elements">
+                  <Object type="Core/Diagram.ShapeUsage">
+                    <Data property="Position">
+                      <AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>60.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue>
+                    </Data>
+                    <References objects="#ShapeArrow1" property="Shape"/>
+                  </Object>
+                </Components>
+              </Object>
+            </Components>
+            <References objects="#Pump1" property="Represents"/>
+          </Object>
+          <Object id="Pos1" type="Plant/Diagram.PipingNodePosition"><References objects="#Nd1" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>50.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos2" type="Plant/Diagram.PipingNodePosition"><References objects="#Nd2" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>70.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos3" type="Plant/Diagram.PipingNodePosition"><References objects="#NV1" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>95.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos4" type="Plant/Diagram.PipingNodePosition"><References objects="#NV2" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>105.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos5" type="Plant/Diagram.PipingNodePosition"><References objects="#NT1" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>135.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos6" type="Plant/Diagram.PipingNodePosition"><References objects="#NT2" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>145.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos7" type="Plant/Diagram.PipingNodePosition"><References objects="#NT3" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>140.0</Double></Data><Data property="Y"><Double>100.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos8" type="Plant/Diagram.PipingNodePosition"><References objects="#NC1" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>140.0</Double></Data><Data property="Y"><Double>80.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos9" type="Plant/Diagram.PipingNodePosition"><References objects="#Nd3" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>180.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos10" type="Plant/Diagram.PipingNodePosition"><References objects="#Nd4" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>200.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue></Data></Object>
+          <Object id="Pos11" type="Plant/Diagram.PipingNodePosition"><References objects="#Nd5" property="Node"/><Data property="Position"><AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>230.0</Double></Data><Data property="Y"><Double>120.0</Double></Data></AggregatedDataValue></Data></Object>
+        </Components>
+        <References objects="#PlantModel1" property="Represents"/>
+      </Object>
+    </Components>
+    <Components property="ShapeCatalogues">
+      <Object type="Core/Diagram.ShapeCatalogue">
+        <Components property="Shapes">
+          <Object id="ShapeArrow1" type="Core/Diagram.Shape">
+            <Data property="Name"><String>DIRECTION_OF_FLOW_SHAPE_FOR_PRIMARY_SEGMENT</String></Data>
+            <Components property="Primitives">
+              <Object type="Core/Diagram.PolyLine">
+                <Data property="Points">
+                  <AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>-2.5</Double></Data><Data property="Y"><Double>-2.5</Double></Data></AggregatedDataValue>
+                  <AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>0.0</Double></Data><Data property="Y"><Double>0.0</Double></Data></AggregatedDataValue>
+                  <AggregatedDataValue type="Core/Diagram.Point"><Data property="X"><Double>-2.5</Double></Data><Data property="Y"><Double>2.5</Double></Data></AggregatedDataValue>
+                </Data>
+              </Object>
+            </Components>
+          </Object>
+        </Components>
+      </Object>
+    </Components>
+  </Object>
+</Model>

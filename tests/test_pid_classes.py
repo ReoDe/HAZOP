@@ -247,12 +247,13 @@ class PositionOpsTest(unittest.TestCase):
     def test_legacy_digest_is_upgraded_while_version_is_same(self):
         g0 = gb.build_graph(_tiny_extraction())
         ns = sn.confirm(sn.propose(g0, at=AT), g0, "검토자A", at=AT)
-        ns["member_digest"] = migrate.legacy_member_digest(g0)
+        fresh = dict(ns["member_digest"])
+        ns["member_digest"], ns["legacy"] = {}, {"member_digest": migrate.legacy_member_digest(g0)}  # 0.1에서 바꾼 집합
         up = migrate.with_refs(ns, g0)
-        self.assertEqual(up["member_digest"], migrate.member_digest(g0))
+        self.assertEqual(up["member_digest"], fresh, "판이 같을 때 구간 지문(md3)으로 채움")
         ext = _tiny_extraction()
         g1 = gb.build_graph(corrections.apply(ext, [self.make(ext, "set_normal_position", "s1", {"value": "NC"})]))
-        self.assertEqual(migrate.plan(up, g1)["state"], "recheck")
+        self.assertTrue(migrate.plan(up, g1)["recheck"])
 
     def test_kind_change_before_position_is_checked_at_apply(self):
         ext = _tiny_extraction()
@@ -271,9 +272,10 @@ class PositionOpsTest(unittest.TestCase):
         ops = [self.make(ext, "set_normal_position", "s1", {"value": "NC"})]
         g1 = gb.build_graph(corrections.apply(ext, ops))
         self.assertNotEqual(g1["graph_version"], g0["graph_version"])
-        self.assertEqual(migrate.plan(ns, g1)["state"], "recheck")
+        hit = set(sn.nodes_of(ns, next(n["entity_id"] for n in g0["nodes"] if n["source_object_id"] == "s1")))
+        self.assertLessEqual(hit, set(migrate.plan(ns, g1)["recheck"]))
         tag_ops = [self.make(ext, "set_tag", "s1", {"tag": "RC-V009"})]
-        self.assertEqual(migrate.plan(ns, gb.build_graph(corrections.apply(ext, tag_ops)))["state"], "recheck")
+        self.assertLessEqual(hit, set(migrate.plan(ns, gb.build_graph(corrections.apply(ext, tag_ops)))["recheck"]))
 
     def test_ops_saved_before_m2_still_apply_to_moved_kinds(self):
         """M2 이전 수정 기록: 오리피스 지문(base·refs)의 분류가 equipment여도, set_kind·add_node 값이 equipment여도 적용된다."""
@@ -310,22 +312,22 @@ class DigestTest(unittest.TestCase):
         g1 = copy.deepcopy(g0)
         g1["graph_version"] = "v-new"
         next(n for n in g1["nodes"] if n["source_object_id"] == "s1")["category"] = "inline_component"
-        self.assertEqual(migrate.plan(ns, g1)["state"], "kept")
+        self.assertEqual((migrate.plan(ns, g1)["state"], migrate.plan(ns, g1)["recheck"]), ("kept", {}))
         moved, _ = migrate.migrate_set(ns, g1, at=AT)
-        self.assertTrue(moved["member_digest"].startswith("md2-"))
+        self.assertTrue(all(d.startswith("md3-") for d in moved["member_digest"].values()))
 
     def test_legacy_digest_compares_with_old_categories(self):
         g_old = self.graph(("orifice", "equipment"))
         ns = sn.confirm(sn.propose(g_old, at=AT), g_old, "검토자A", at=AT)
         legacy = migrate._digest(g_old, "md-", lambda n: n.get("category"))  # M2 이전 계산식 그대로
-        ns["member_digest"] = legacy
+        ns["member_digest"], ns["legacy"] = {}, {"member_digest": legacy}  # 0.1에서 바꾼 집합(구간 지문 없음)
         g_new = self.graph(("orifice", "inline_component"))
         g_new["graph_version"] = "v-new"
         self.assertEqual(migrate.legacy_member_digest(g_new), legacy)
-        self.assertEqual(migrate.plan(ns, g_new)["state"], "kept")
+        self.assertEqual(migrate.plan(ns, g_new)["recheck"], {})
         g_kind = self.graph(("vent", "inline_component"))   # kind가 실제로 바뀌면 재확인
         g_kind["graph_version"] = "v-kind"
-        self.assertEqual(migrate.plan(ns, g_kind)["state"], "recheck")
+        self.assertTrue(migrate.plan(ns, g_kind)["recheck"])
 
     def test_legacy_digest_treats_new_kinds_as_unclassified_then(self):
         g = self.graph(("drain", "inline_component"))
@@ -380,9 +382,10 @@ class SaveRebuildTest(unittest.TestCase):
         self.assertEqual(node["attributes"]["normal_position"], "NC")
         self.assertEqual(node["origin"], "human_edit")
         self.assertEqual(res["recheck"], ["④ 검토구간 확정본이 고치기 전 도면 기준입니다. 재확인이 필요합니다."])
-        held = sn.load(g1)
-        self.assertEqual(held["graph_version"], graph["graph_version"])
-        self.assertTrue(sn.is_stale(held, g1))
+        moved = sn.load(g1)  # ④가 열면 판 이전: 고친 요소가 든 구간만 확정을 푼다(규격 §2.6)
+        self.assertFalse(sn.is_stale(moved, g1))
+        n11 = node["entity_id"]
+        self.assertEqual({n["state"] for n in moved["nodes"] if n11 in n["members"]}, {"applied"})
         with open(corrections.store_path(name), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["ops"][0]["op"], "set_normal_position")
 

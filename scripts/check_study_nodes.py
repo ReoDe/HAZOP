@@ -73,11 +73,10 @@ def check_round_trip(g, s):
                   and len(sn.nodes_of(s, n["members"][0])) == 1), None)
     if multi:
         dropped = sn.remove_member(s, multi["node_id"], multi["members"][0], at=AT)
-        try:
+        try:  # v2: 구간 밖 구성요소가 있어도 확정한다(규격 §3)
             sn.confirm(dropped, g, "검사", at=AT)
-            f.append("미포함 구성요소가 있는데 확정됨")
-        except ValueError:
-            pass
+        except ValueError as exc:
+            f.append("구간 밖 구성요소가 있다고 확정을 막음(%s)" % exc)
     done = sn.confirm(s, g, "검사", at=AT)
     sn.save(done)
     loaded = sn.load(g)
@@ -87,12 +86,19 @@ def check_round_trip(g, s):
         f.append("any_confirmed가 False")
     changed = copy.deepcopy(g)
     changed["graph_version"] += "-changed"
+    gone = changed["nodes"][0]["entity_id"]
     changed["nodes"][0]["source_object_id"] = "gone-%s" % changed["nodes"][0]["source_object_id"]
-    if not sn.is_stale(sn.load(changed), changed):
-        f.append("구성요소가 바뀐 그래프 판을 stale로 감지하지 못함")
+    after = sn.load(changed)
+    hit = set(sn.nodes_of(done, gone))
+    near = {x for e in g["edges"] if gone in (e.get("nodes") or []) for x in e["nodes"]}  # 그 요소에 닿는 관계도 내용
+    touched = {n["node_id"] for n in done["nodes"] if near & set(n["members"])}
+    states = {n["node_id"]: n["state"] for n in after["nodes"]}
+    if sn.is_stale(after, changed) or any(states[nid] != "applied" for nid in hit)             or any(states[nid] != "confirmed" for nid in states if nid not in hit | touched):
+        f.append("구성요소가 바뀐 그래프 판에서 그 구간만 재확인으로 내리지 못함(%s)" % sorted(hit))
+    sn.save(done)
     newer = dict(g, graph_version=g["graph_version"] + "-new")
     moved = sn.load(newer)
-    if sn.is_stale(moved, newer) or moved["history"][-1]["op"] != "migrate_version" or moved["status"] != "confirmed":
+    if sn.is_stale(moved, newer) or moved["history"][-1]["op"] != "migrate_version" or not sn.all_confirmed(moved):
         f.append("구성요소가 같은 그래프 판 변경에서 확정을 판 이전하지 못함")
     try:
         sn.confirm(sn.reopen(loaded, at=AT), newer, "검사", at=AT)

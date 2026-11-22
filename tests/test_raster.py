@@ -219,8 +219,10 @@ class SyntheticImageTest(unittest.TestCase):
         self.assertEqual(ext["unresolved_connectors"], [])
         self.assertEqual([t["text"] for t in ext["texts"]], ["L-001"])
         self.assertIn("선 라벨", ext["texts"][0]["note"])
-        bases = sorted(e["point_basis"] for e in ext["relations"][0]["endpoints"])
-        self.assertIn("raster_arrowhead", bases)
+        # 화살촉에 닿은 선은 벡터 PDF처럼 화살촉 꼭짓점까지 늘여 오른쪽 상자에 붙고, 화살촉은 흐름 방향으로 읽힌다
+        rel = ext["relations"][0]
+        right = [n["local_id"] for n in ext["nodes"] if n["geometry"]["x"] > 500]
+        self.assertEqual((rel["flow_direction"] or {}).get("to"), right[0])
 
     def test_bow_tie_valve(self):
         import cv2
@@ -344,10 +346,10 @@ class InputLimitTest(unittest.TestCase):
             self.assertEqual(buf.getvalue().count("입력 형식 오류"), 2)
 
     def test_header_pixel_limit_before_decode(self):
-        """머리말의 폭·높이로 해독 전에 막는다(50 MP 상한, 실제 큰 영상을 만들지 않고 머리말만 바꿔 시험)."""
+        """머리말의 폭·높이로 해독 전에 막는다(80 MP 상한, 실제 큰 영상을 만들지 않고 머리말만 바꿔 시험)."""
         import struct
         import zlib
-        w, h = 10000, 6000  # 60 MP
+        w, h = 10000, 9000  # 90 MP
         ihdr = struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)
 
         def chunk(kind, body):
@@ -372,7 +374,9 @@ class RasterSampleTest(unittest.TestCase):
         name, drawio_path, png_path = check_adapter.raster_samples()[0]
 
         def drop(ext):
-            ext["relations"] = ext["relations"][5:]
+            # 고정 개수(5)를 지우면 추출이 나아질수록 하한 위에 머문다(a27336d 뒤 F1 0.955 → 0.871, 하한 0.85).
+            # 하한이 잡아야 하는 것은 관계를 크게 잃은 경우라 절반을 지운다
+            ext["relations"] = ext["relations"][len(ext["relations"]) // 2:]
             return ext
         errs, row, _ = check_adapter.evaluate_raster(name, drawio_path, png_path, mutate=drop)
         self.assertTrue(any("relations_f1" in e for e in errs), errs)

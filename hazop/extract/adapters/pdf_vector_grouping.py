@@ -10,11 +10,15 @@ import math
 
 from .pdf_vector_common import (
     _union, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist, _poly_box_dist,
-    _uf_groups, _center, _is_circle, _is_chevron,
+    _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _pt_circle_dist, _bbox_pts,
+    _end_runs, _meets_at_end,
 )
 
 
 class _Sym:
+    panel = None  # 공조기 판(_panel_sym): 'filter' 또는 'coil'
+    housing = False  # 공조기 칸 줄의 한 칸(_housing_chains). 공기가 지나간다
+
     def __init__(self, members, stroke_only=False):
         self.bodies = [m for m in members if m.get("kind_") == "body"]
         self.strokes = [m for m in members if m.get("kind_") == "poly"]
@@ -49,7 +53,28 @@ class _Sym:
         other.alive = False
         self._recalc()
 
+    @property
+    def outline(self):
+        """장비 외곽(pdf_vector._traced_fills)이 든 기호. 다 그린 도형이라 바로 옆 기호의 선을 제 일부로 삼지 않는다.
+        외곽 위에 겹쳐 그린 닫힌 도형(125쪽 증기발생기 위 머리)이 함께 묶여도 장비 외곽이다."""
+        return any(b.get("traced") for b in self.bodies)
+
+    @property
+    def class_only(self):
+        """몸체가 모두 안전등급 경계 마름모(pdf_vector._mark_class_boundaries)인 기호."""
+        return bool(self.bodies) and all(b.get("class_mark") for b in self.bodies)
+
+    @property
+    def rings(self):
+        """담는 외곽(_cluster_bodies가 container로 표시한 몸체)의 꺾은선 목록. 담는 외곽의 안쪽은 빈 자리다. 기호에 닿는다는
+        것은 외곽 변에 닿는다는 뜻이고, 안에 그린 선·화살촉·기호는 따로 읽는다. 외곽이 기호 몸체의 절반도 안 되면(스캔에서 빗금
+        탱크 벽 칸 하나가 담는 외곽 크기, SNP-M-301) 그 기호는 담는 외곽이 아니다."""
+        area = _w(self.core) * _h(self.core)
+        return [b["pts"] for b in self.bodies if b.get("container") and _w(b["bbox"]) * _h(b["bbox"]) >= 0.5 * area]
+
     def inner_tol(self, prm):
+        if self.outline or self.rings:
+            return prm["inner_tol_min"]
         return max(prm["inner_tol_min"], min(prm["inner_tol_max"],
                                              prm["inner_tol_ratio"] * max(_w(self.core), _h(self.core))))
 
@@ -58,8 +83,11 @@ class _Sym:
         return bool(self.bodies) and all(_is_chevron(b) for b in self.bodies)
 
     def deep(self, p, prm):
-        if self.stroke_only or self.arrow_only():
-            return False  # 화살표 안으로 들어간 배관은 연결이지 화살표의 일부가 아니다
+        if self.stroke_only or self.arrow_only() or self.outline or self.rings or self.panel:
+            # 화살표 안으로 들어간 배관은 연결이지 화살표의 일부가 아니다. 장비 외곽 안으로 들어간 선도 장비 안 배관·계기
+            # 탭이다. 구동부 축으로 보면 반대 끝 계기를 장비에 합친다(APR1400 125쪽 증기발생기 수위 전송기).
+            # 담는 외곽 안에서 끝나는 선도 그 안의 배관 끝이다(072쪽 HVAC CHASE 덕트 끝, 012쪽 IRWST 살포기 배관)
+            return False
         if _depth(p, self.core) <= max(prm["deep_min"], prm["deep_ratio"] * min(_w(self.core), _h(self.core))):
             return False
         return self.seed is None  # 검정 견본으로 올린 몸통은 이미 한 기호다. 안으로 들어온 선을 제 일부로 삼지 않는다
@@ -74,16 +102,109 @@ class _Sym:
         return next(iter(ids)) if len(ids) == 1 else None
 
 
-def _cluster_bodies(bodies, prm):
+def _cluster_bodies(bodies, prm, polys=()):
     for b in bodies:
         b["kind_"] = "body"
     # 연결 표시 화살표는 맞닿은 밸브·축소관 몸체와 한 기호로 묶지 않는다(묶이면 화살표도 밸브도 종류를 잃는다)
-    alone = [_is_chevron(b) for b in bodies]
-    # 사전의 검정 견본에 통째로 맞은 몸체(seed)는 이미 한 기호다. 맞닿은 축소관·구동부 몸체와 묶지 않는다
+    # 혼자서 사전 구동부 견본에 맞는 곡선 몸체(pdf_vector._mark_actuator_bodies)도 맞닿은 몸체와 묶지 않는다. 다이어프램 위에
+    # 바로 얹은 솔레노이드 파일럿 밸브와 묶이면 구동부도 파일럿도 사전에 맞지 않아 밸브에 구동부가 붙지 않는다(APR1400 063·046쪽)
+    alone = [_is_chevron(b) or bool(b.get("actuator")) for b in bodies]
+    # 사전의 검정 견본에 통째로 맞은 몸체(seed)는 이미 한 기호다. 맞닿은 축소관·구동부 몸체와 묶지 않는다.
+    # 안전등급 경계 마름모(class_mark, _mark_class_boundaries)도 그 두 삼각형끼리만 묶는다
+    # 장비 외곽(traced)은 상자 귀퉁이가 비어 있다. 상자만 맞닿은 옆 기호(외곽에 바짝 붙인 계기 비석, 둥근 귀퉁이 자리의
+    # 밸브)와 묶지 않고, 가운데가 외곽 도형 안에 든 도형(외곽 위에 겹쳐 그린 머리 등)만 묶는다(APR1400 118·125쪽)
+    def inside_outline(a, b):
+        if a.get("traced") == b.get("traced"):
+            return True
+        ring, other = (a, b) if a.get("traced") else (b, a)
+        return _pt_ring_dist(_center(other["bbox"]), ring.get("fine") or ring["pts"]) == 0.0
+    # 담는 외곽: 짧은 변이 container_min 이상인 곧은 변 닫힌 외곽(방 경계, 공조기 구간, 탱크, 압축기). 그 안에 그린 몸체는
+    # 담긴 것이지 외곽의 일부가 아니다. 묶으면 안의 댐퍼·팬·살포기가 외곽 기호에 먹혀 노드가 없다(APR1400 072·012쪽)
+    # 담는 외곽은 실제로 무엇을 담는다: 안에 든 작은 몸체가 있거나, 선 끝이 안쪽 깊이(deep_min) 이상 들어와 있다. 선이 지나가기만
+    # 하는 큰 밸브 몸체(점선 배관이 꿰뚫는 20pt 상자)는 담는 외곽이 아니다
+    def holds(a, b):
+        return _w(b["bbox"]) * _h(b["bbox"]) <= prm["container_hold_ratio"] * _w(a["bbox"]) * _h(a["bbox"]) and \
+            _pt_ring_dist(_center(b["bbox"]), a["pts"]) == 0.0
+
+    def inner_end(a, p):
+        return _inside(p, a["bbox"]) and _pt_ring_dist(p, a["pts"]) == 0.0 and \
+            min(_seg_dist(p, u, v)[0] for u, v in zip(a["pts"], a["pts"][1:] + a["pts"][:1])) >= prm["deep_min"]
+    for b in bodies:
+        if b.get("closed") and not (b.get("solid") or b.get("traced") or b.get("curved")) and \
+                min(_w(b["bbox"]), _h(b["bbox"])) >= prm["container_min"] and \
+                (any(c is not b and holds(b, c) for c in bodies) or
+                 any(inner_end(b, p["pts"][k]) for p in polys for k in (0, -1))):
+            b["container"] = True
+
+    def held(a, b):
+        return bool(a.get("container")) and holds(a, b)
     groups = _uf_groups(len(bodies), lambda i, j: not (alone[i] or alone[j]) and
                         bodies[i].get("seed") == bodies[j].get("seed") and
-                        _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"])
+                        bodies[i].get("class_mark") == bodies[j].get("class_mark") and
+                        _box_gap(bodies[i]["bbox"], bodies[j]["bbox"]) <= prm["touch_tol"] and
+                        inside_outline(bodies[i], bodies[j]) and
+                        not held(bodies[i], bodies[j]) and not held(bodies[j], bodies[i]) and
+                        not _beside(bodies[i], bodies[j], prm) and not _beside(bodies[j], bodies[i], prm) and
+                        not _stacked(bodies[i], bodies[j], prm))
     return [_Sym([bodies[i] for i in g]) for g in groups]
+
+
+BUBBLE_MIN = 8.0          # 계기 원 지름 하한(pt, pdf_vector.ISA_BUBBLE_MIN과 같다)
+TANGENT_RATIO = 0.85      # 두 원 가운데 거리 / 지름 평균이 이 이상이면 맞닿기만 한 것
+EQUIPMENT_BUBBLE_RATIO = 2.0  # 장비 몸체 짧은 변 / 계기 원 지름 하한
+
+
+def _stacked(a, b, prm):
+    """크기가 같은 둥근 닫힌 도형 둘이 변만 맞대고 위아래·좌우로 나란한가(위아래로 붙여 그린 계기 원·비석, APR1400 097쪽
+    TEW 003 위 TI 003, 105쪽 FT 1022Y 아래 PT 1023D). 맞댄 두 계기는 저마다 제 기호다."""
+    if not (a.get("closed") and b.get("closed") and a.get("curved") and b.get("curved")) or a.get("solid") or b.get("solid"):
+        return False
+    A, B = a["bbox"], b["bbox"]
+    if _is_circle(a, prm) and _is_circle(b, prm) and min(_w(A), _w(B)) >= BUBBLE_MIN and \
+            math.dist(_center(A), _center(B)) >= TANGENT_RATIO * (_w(A) + _w(B)) / 2:
+        # 계기 크기 원 둘이 비스듬히 맞닿기만 한 것(134쪽 LS 011 원과 공기 구동 밸브 번호 원 255, 051쪽 HS 원과 옆 빈 원)도
+        # 저마다 제 기호다. 크게 겹친 두 원(겹쳐 그린 한 기호)은 그대로 묶는다
+        return True
+    if not all(0.75 <= f(A) / f(B) <= 1.0 / 0.75 for f in (_w, _h) if f(B) > 0) or not _w(B) or not _h(B):
+        return False
+    for k in (0, 1):  # k축으로 맞대고 다른 축으로 나란하다
+        o = 1 - k
+        overlap = min(A[k + 2], B[k + 2]) - max(A[k], B[k])
+        along = min(A[o + 2], B[o + 2]) - max(A[o], B[o])
+        if overlap <= prm["touch_tol"] and along >= 0.75 * min(A[o + 2] - A[o], B[o + 2] - B[o]):
+            return True
+    return False
+
+
+def _notched(a):
+    """꼭짓점이 넷보다 많은 곧은 변 외곽(모서리를 따낸 L자 등)."""
+    return len({(round(x, 2), round(y, 2)) for x, y in a["pts"]}) > 4
+
+
+BESIDE_MIN = 6.0  # 담는 외곽이 아닌 외곽 바깥에 붙은 도형을 따로 두는 짧은 변 하한(pt). 046쪽 필터 F 상자 10pt, 계기 비석 18pt
+
+
+def _walled(a, prm):
+    """곧은 변으로 닫은 큰 외곽(짧은 변 container_min 이상). 담는 외곽(container)은 모두 이것이다. 안에 담은 것이 없는
+    장비 외곽(046쪽 압축기: 모서리를 따낸 L자 외곽)도 변 바깥에 붙인 상자·비석을 제 일부로 삼지 않는다."""
+    return bool(a.get("closed")) and not (a.get("solid") or a.get("traced") or a.get("curved")) and \
+        min(_w(a["bbox"]), _h(a["bbox"])) >= prm["container_min"]
+
+
+def _beside(a, b, prm):
+    """b가 큰 외곽 a의 변 바깥에 붙여 그린 작은 상자·계기 비석인가(046쪽 압축기 위 필터 F와 VET 비석). 외곽의 일부가 아니라
+    제 기호다. 둥근 머리(용기 위아래 반구)는 외곽 폭만큼 넓어 외곽과 한 장비로 둔다. 둥근 도형은 외곽 가로·세로의 절반보다
+    좁아야 따로 둔다. 담는 외곽이 아닌 외곽의 도형과 둥근 도형은 짧은 변이 BESIDE_MIN 이상이어야 따로 둔다. 외곽 변에 붙은
+    1pt 점·조각(055쪽 기체 분석기 상자 둘레)은 외곽의 무늬다."""
+    if not _walled(a, prm) or b.get("container") or not b.get("closed") or \
+            b.get("seed") is not None or b.get("class_mark"):
+        return False
+    if (not a.get("container") or b.get("curved")) and min(_w(b["bbox"]), _h(b["bbox"])) < BESIDE_MIN:
+        return False
+    if b.get("curved") and (_w(b["bbox"]) > 0.5 * _w(a["bbox"]) or _h(b["bbox"]) > 0.5 * _h(a["bbox"])):
+        return False
+    return _w(b["bbox"]) * _h(b["bbox"]) <= prm["container_beside_ratio"] * _w(a["bbox"]) * _h(a["bbox"]) and \
+        _pt_ring_dist(_center(b["bbox"]), a["pts"]) > 0.0
 
 
 def _black_fill_groups(fills, prm):
@@ -103,11 +224,16 @@ def _black_fill_groups(fills, prm):
     return out
 
 
-def _cut_through(pts, box):
-    """꺾은선 pts가 상자의 긴 축 방향으로 상자를 끊기지 않고 지나가면 들어가는 변과 나가는 변에서 나눈 두 조각.
-    지나가지 않으면 None. 옆으로 가로지르는 선이나 상자 안에서 끝나는 선은 나누지 않는다."""
-    axis = 0 if _w(box) >= _h(box) else 1
+def _cut_through(pts, box, axis=None, lateral=None):
+    """꺾은선 pts가 상자의 축(axis, 없으면 긴 축) 방향으로 상자를 끊기지 않고 지나가면 들어가는 변과 나가는 변에서
+    나눈 두 조각. 지나가지 않으면 None. 옆으로 가로지르는 선이나 상자 안에서 끝나는 선은 나누지 않는다. lateral을
+    주면 들어가고 나가는 두 점이 모두 상자 가운데 줄에서 그 거리 안이어야 한다."""
+    if axis is None:
+        axis = 0 if _w(box) >= _h(box) else 1
     lo, hi, side_lo, side_hi = box[axis], box[axis + 2], box[1 - axis], box[3 - axis]
+    if lateral is not None:
+        mid = (side_lo + side_hi) / 2
+        side_lo, side_hi = mid - lateral, mid + lateral
     for k, (a, b) in enumerate(_segs(pts)):
         if not (min(a[axis], b[axis]) < lo and max(a[axis], b[axis]) > hi):
             continue
@@ -147,6 +273,42 @@ def _cut_at_boxes(polys, boxes):
     return out
 
 
+FLOW_LONG_RATIO = 1.5  # 몸체 긴 변이 짧은 변의 이 배 이상이면 긴 축을 흐름 축으로 본다(_flow_axis)
+FLOW_LONG_MAX = 3.0    # 긴 변이 짧은 변의 이 배를 넘는 띠(바닥 격자, 건물 경계 화살표)는 배관 부품이 아니다
+END_EDGE_RATIO = 0.3   # 몸체 끝 변: 축에 수직이고 길이가 몸체 옆 폭의 이 비율 이상인 변
+
+
+def _flow_axis(sym, prm):
+    """기호 몸체의 흐름 축(0 = 가로, 1 = 세로). 몸체 양 끝 모두에 그 축과 수직인 변이 있는 축이 하나뿐이면 그 축이다
+    (나비꼴 게이트 밸브는 좌우 끝의 세로 변, 축소관 사다리꼴은 위아래 변). 그렇지 않으면 긴 변이 짧은 변의
+    FLOW_LONG_RATIO배 이상일 때 긴 축이다. 곧은 변이 없는 몸체(원·계기), 정사각형처럼 두 축 모두 끝 변이 있는
+    납작한 몸체, FLOW_LONG_MAX배보다 긴 띠, 삼각형 하나뿐인 몸체(화살촉), 선으로만 그린 기호는 축을 모른다(None)."""
+    straight = [b for b in sym.bodies if not b.get("curved")]
+    c, tol = sym.core, prm["axis_rect_tol"]
+    w, h = _w(c), _h(c)
+    if not straight or sym.stroke_only or sym.arrow_only() or max(w, h) > FLOW_LONG_MAX * min(w, h):
+        return None
+    ended = []
+    for ax in (0, 1):
+        side = c[3 - ax] - c[1 - ax]
+        at = set()
+        for b in straight:
+            pts = b["pts"]
+            for p, q in zip(pts, pts[1:] + pts[:1]):
+                if abs(p[ax] - q[ax]) > tol or abs(p[1 - ax] - q[1 - ax]) < END_EDGE_RATIO * side:
+                    continue
+                for end, v in ((0, c[ax]), (1, c[ax + 2])):
+                    if abs(p[ax] - v) <= tol and abs(q[ax] - v) <= tol:
+                        at.add(end)
+        if at == {0, 1}:
+            ended.append(ax)
+    if len(ended) == 1:
+        return ended[0]
+    if max(w, h) >= FLOW_LONG_RATIO * min(w, h) and not all(_is_triangle(b) for b in straight):
+        return 0 if w >= h else 1
+    return None
+
+
 def _contact_chains(syms, prm):
     """검정 견본으로 올린 몸통(seed)의 배관 방향 끝에 다른 기호가 맞닿아 있으면 두 기호를 잇는 길이 0인 사슬을 만든다.
     밸브에 축소관을 붙여 그리면 둘 사이에 선이 없다. 올린 몸통은 맞닿은 몸체와 한 기호로 묶지 않으므로, 이 사슬이 없으면
@@ -174,17 +336,134 @@ def _contact_chains(syms, prm):
             out.append({"pts": [pt, pt], "ends": [(("sym", v), pt, "pdf_touching_bodies"),
                                                   (("sym", t), pt, "pdf_touching_bodies")],
                         "evidence": sorted({v.evidence()[0], t.evidence()[0]}), "contact": True})
+    # 담는 외곽 변 바깥에 붙여 그린 작은 상자(_beside로 따로 둔 기호)는 그 장비에 맞닿아 이어진다(046쪽 압축기 위 필터 F)
+    for c in syms:
+        for wall in (b for b in c.bodies if b.get("container")):
+            for t in syms:
+                if t is c or not t.bodies or any(b.get("curved") or not _beside(wall, b, prm) for b in t.bodies) or \
+                        _box_gap(t.core, wall["bbox"]) > prm["touch_tol"]:
+                    continue
+                x = min(max(_center(t.core)[0], wall["bbox"][0]), wall["bbox"][2])
+                y = min(max(_center(t.core)[1], wall["bbox"][1]), wall["bbox"][3])
+                out.append({"pts": [(x, y), (x, y)], "ends": [(("sym", c), (x, y), "pdf_touching_bodies"),
+                                                              (("sym", t), (x, y), "pdf_touching_bodies")],
+                            "evidence": sorted({c.evidence()[0], t.evidence()[0]}), "contact": True})
     return out
 
 
-def _nearest_sym(p, syms, tol):
+HOUSING_EDGE_TOL = 1.0     # 공조기 칸: 판과 위아래(세로 공조기면 좌우) 변이 같다고 보는 차(pt)
+HOUSING_MEMBER_RATIO = 0.4  # 공조기 안 기호로 세는 크기: 공조기 폭 방향 길이 ≥ 공조기 폭 × 비율(칸 글자 상자·화살표 제외)
+
+
+def _housing_chains(syms, cells, prm):
+    """공조기(AHU) 안에서 공기가 지나는 차례대로 판·칸·송풍기를 잇는 길이 0인 사슬. 공조기는 여과·코일 판(_panel_sym)과
+    빈 칸, 송풍기 칸을 변을 맞대 한 줄로 그린다(범례 1.7-1 2/4). 칸 사이에는 덕트 선이 없어, 잇지 않으면 공조기로 들어온
+    덕트가 첫 칸에서 끝나고 판끼리 이어지지 않는다(APR1400 072쪽). 판과 폭 방향 두 변이 같고 서로 맞닿은 상자들(판·칸
+    기호·표 칸)이 공조기 하나다. 몸체가 공조기 상자 안에 들고 폭의 HOUSING_MEMBER_RATIO 이상인 기호를 흐름 축을 따라 늘어놓고
+    이웃끼리 잇는다. 판이 없는 칸 줄(표제란 등)은 공조기가 아니다."""
+    tol = HOUSING_EDGE_TOL
+    panels = [s for s in syms if s.panel]
+    boxes = [s.core for s in syms] + [c["bbox"] for c in cells]
+    out, seen = [], set()
+    for p in panels:
+        if id(p) in seen:
+            continue
+        across = 1 if _w(p.core) <= _h(p.core) else 0  # 판의 긴 변 = 공조기 폭 방향, 짧은 변 방향 = 흐름 축
+        along = 1 - across
+        lo, hi = p.core[across], p.core[across + 2]
+        band = [b for b in boxes if abs(b[across] - lo) <= tol and abs(b[across + 2] - hi) <= tol]
+        box = p.core
+        grown = True
+        while grown:
+            grown = False
+            for b in band:
+                if _box_gap(b, box) <= prm["touch_tol"] and not (_inside(b[:2], box) and _inside(b[2:], box)):
+                    box = _union(box, b)
+                    grown = True
+        width = hi - lo
+        members = [s for s in syms if _inside(s.core[:2], box, prm["touch_tol"]) and _inside(s.core[2:], box, prm["touch_tol"])
+                   and s.core[across + 2] - s.core[across] >= HOUSING_MEMBER_RATIO * width]
+        seen.update(id(s) for s in members if s.panel)
+        for s in members:
+            s.housing = len(members) > 1
+        members.sort(key=lambda s: (_center(s.core)[along], s.evidence()[0]))
+        for a, b in zip(members, members[1:]):
+            m = (a.core[along + 2] + b.core[along]) / 2.0
+            c = (lo + hi) / 2.0
+            pt = (m, c) if along == 0 else (c, m)
+            out.append({"pts": [pt, pt], "ends": [(("sym", a), pt, "pdf_touching_bodies"), (("sym", b), pt, "pdf_touching_bodies")],
+                        "evidence": sorted({a.evidence()[0], b.evidence()[0]}), "contact": True})
+    return out
+
+
+def _pt_ring_dist(p, ring):
+    """점과 닫힌 꺾은선(ring) 사이 거리. 안쪽 점은 0."""
+    ring = list(ring)
+    inside = False
+    for a, b in zip(ring, ring[1:] + ring[:1]):
+        if (a[1] > p[1]) != (b[1] > p[1]) and p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]):
+            inside = not inside
+    return 0.0 if inside else min(_seg_dist(p, a, b)[0] for a, b in zip(ring, ring[1:] + ring[:1]))
+
+
+def _closed(ring):
+    return list(ring) + [ring[0]]
+
+
+def _members(s):
+    return [m for m in s.bodies if not m.get("container")] + s.strokes + s.markers + s.dashes
+
+
+def _reach(pts, s):
+    """꺾은선(점 하나도 됨)과 기호 사이 거리. 담는 외곽은 변까지 잰다(안쪽은 빈 자리). 안전등급 경계 마름모도 마름모 변까지
+    잰다(상자 귀퉁이는 비어 있다). 나머지 기호는 상자 거리다."""
+    pts = list(pts) if len(pts) > 1 else [pts[0], pts[0]]
+    if s.class_only:
+        # 097쪽 위 구스넥 벤트: 끝 막대가 마름모 상자 귀퉁이에 들어 마름모에 닿은 것으로 읽혀 마름모에 먹히던 자리
+        return min([_poly_dist(pts, _closed(b["pts"])) for b in s.bodies] +
+                   [_poly_box_dist(pts, m["bbox"]) for m in s.strokes + s.markers + s.dashes])
+    if not s.rings:
+        return _poly_box_dist(pts, s.bbox)
+    return min([_poly_dist(pts, _closed(r)) for r in s.rings] + [_poly_box_dist(pts, m["bbox"]) for m in _members(s)])
+
+
+def _reach_box(box, s):
+    """상자와 기호 사이 거리(_reach와 같은 뜻). 담는 외곽 안에 든 작은 상자는 변에 닿아야 그 기호에 닿는다."""
+    if not s.rings:
+        return _box_gap(box, s.bbox)
+    corners = [(box[0], box[1]), (box[2], box[1]), (box[2], box[3]), (box[0], box[3])]
+    return min([_poly_dist(_closed(corners), _closed(r)) for r in s.rings] +
+               [_box_gap(box, m["bbox"]) for m in _members(s)])
+
+
+def _sym_dist(p, s, prm=None):
+    """점과 기호 사이 거리. 몸체가 원 하나뿐인 기호(밸브 번호·계기 원)는 상자 귀퉁이가 비어 있어 원 모양 그대로 잰다.
+    상자로 재면 밸브 번호 원 귀퉁이 옆에 그린 안전밸브 스프링 빗금이 그 원에 닿은 연결선으로 읽혀 밸브에 들지
+    못한다(APR1400 008쪽 POSRV 파일럿 밸브). prm이 없으면 상자 거리다."""
+    if s.outline:  # 장비 외곽은 둥근 귀퉁이 밖이 비어 있다. 상자로 재면 귀퉁이 옆 기호가 장비에 닿은 것으로 읽힌다
+        return min(_pt_ring_dist(p, b.get("fine") or b["pts"]) for b in s.bodies)
+    if s.rings or s.class_only:
+        return _reach([p], s)
+    if prm is not None and len(s.bodies) == 1 and _is_circle(s.bodies[0], prm):
+        d = _pt_circle_dist(p, s.bodies[0])
+        for m in s.strokes + s.markers + s.dashes:
+            d = min(d, _pt_box_dist(p, m["bbox"]))
+        return d
+    return _pt_box_dist(p, s.bbox)
+
+
+CONTAINER_YIELD = 0.5  # 선 끝에서 담는 외곽과 다른 기호의 거리 차가 이 안이면 다른 기호가 이긴다(pt)
+
+
+def _nearest_sym(p, syms, tol, prm=None):
     best = None
     for s in syms:
         if not s.alive:
             continue
-        d = _pt_box_dist(p, s.bbox)
+        d = _sym_dist(p, s, prm)
         if d <= tol:
-            key = (d, _w(s.bbox) * _h(s.bbox))
+            # 담는 외곽 변에 겹쳐 그린 안의 기호(072쪽 공조기 구간 오른쪽 변에 붙은 팬 출구)가 있으면 선 끝은 그 기호에 닿는다
+            key = (d + (CONTAINER_YIELD if s.rings else 0.0), _w(s.bbox) * _h(s.bbox))
             if best is None or key < best[0]:
                 best = (key, s)
     return best[1] if best else None
@@ -210,6 +489,145 @@ def _end_status(poly, k, polys, syms, markers, prm):
     return None
 
 
+BAR_MID_LO, BAR_MID_HI = 0.25, 0.75  # 막대 길이의 이 비율 구간에 선 끝이 얹히면 막대 가운데에 닿은 것(_lands_mid_bar)
+BAR_ON_TOL = 0.2                       # 선 끝이 막대 위에 있다고 보는 거리(pt)
+BAR_CROSS_SIN = 0.5                    # 선이 막대에 이 사인값(30도) 이상 비스듬히 들어와야 가운데에 닿은 것으로 본다
+
+
+def _lands_mid_bar(q, bar):
+    """선 q의 한 끝이 선분 bar의 가운데 구간에 비스듬히 정확히 얹혔으면 q의 다음 점(배관이 뻗는 쪽), 아니면 None.
+    같은 줄 위에 겹쳐 그린 두 선은 해당하지 않는다."""
+    a, b = bar
+    length = math.hypot(b[0] - a[0], b[1] - a[1])
+    if length == 0:
+        return None
+    for k in (0, -1):
+        e, nxt = q["pts"][k], q["pts"][1 if k == 0 else -2]
+        d, near = _seg_dist(e, a, b)
+        run = math.hypot(nxt[0] - e[0], nxt[1] - e[1])
+        if d > BAR_ON_TOL or run == 0 or \
+                not BAR_MID_LO <= math.hypot(near[0] - a[0], near[1] - a[1]) / length <= BAR_MID_HI:
+            continue
+        if abs((b[0] - a[0]) * (nxt[1] - e[1]) - (b[1] - a[1]) * (nxt[0] - e[0])) / (length * run) >= BAR_CROSS_SIN:
+            return nxt
+    return None
+
+
+def _bar_fed_strokes(polys, prm):
+    """한 번에 그린 열린 선 기호(APR1400 상자형 체크밸브 '|\\|': 세로 막대, 빗변, 세로 막대)를 찾아 기호로 세운다 →
+    (기호 [_Sym], 남은 선). 선의 첫 토막과 끝 토막이 막대이고, 두 막대 가운데에 서로 다른 배관 끝이 바깥에서 하나씩
+    닿으면 배관 사이에 낀 기호다. 막대가 짧으면(길이의 반이 end_tol 이하) 선 끝과 배관 끝이 서로 가까워 그대로 두면
+    배관 조각으로 이어지고(_end_status가 두 끝을 모두 '붙음'으로 본다) 기호가 생기지 않는다."""
+    found, rest = [], []
+    for p in polys:
+        pts = p["pts"]
+        if len(pts) < 3 or p.get("curved") or not \
+                prm["stroke_symbol_min"] <= max(_w(p["bbox"]), _h(p["bbox"])) <= prm["stroke_symbol_max"]:
+            rest.append(p)
+            continue
+        feeders = []
+        near = [q for q in polys if q is not p and _box_gap(q["bbox"], p["bbox"]) <= BAR_ON_TOL]
+        for bar in ((pts[0], pts[1]), (pts[-1], pts[-2])):
+            hits = []
+            for q in near:
+                nxt = _lands_mid_bar(q, bar)
+                if nxt is not None and not _inside(nxt, p["bbox"]):  # 배관은 기호 바깥으로 뻗는다
+                    hits.append(q)
+            feeders.append(hits[0] if len(hits) == 1 else None)
+        if feeders[0] is not None and feeders[1] is not None and feeders[0] is not feeders[1]:
+            found.append(_Sym([dict(p, kind_="poly")], stroke_only=True))
+        else:
+            rest.append(p)
+    return found, rest
+
+
+def _pockets(polys, prm):
+    """배관 옆에 매단 작은 주머니(APR1400 105쪽 주증기 배관 아래 드레인 포트: 짧은 세로선 둘과 둥근 바닥)를 기호로
+    세운다 → (기호 [_Sym], 주머니 입구 [(점, 기호)], 남은 선). 끝끼리 이어진 짧은 선 무리(긴 변 pocket_max 이하)에서
+    다른 선과 닿지 않은 끝이 꼭 둘이고, 그 둘이 같은 배관의 중간에 떨어져 닿으며, 무리가 그 배관 한쪽으로 나와 있으면
+    주머니다. 입구 양쪽 선을 배관 두 가닥으로 읽으면 주머니가 배관과 드레인 선을 잇는 고리가 되어 배관 위 기호가 모두
+    드레인 쪽 기호와 이어진다. 주머니는 기호 하나이고 배관과는 입구 한 곳에서 만난다."""
+    small = [p for p in polys if max(_w(p["bbox"]), _h(p["bbox"])) <= prm["pocket_max"]]
+    tol = prm["end_tol"]
+
+    def ends(p):
+        return (p["pts"][0], p["pts"][-1])
+
+    def touch(a, b):
+        return math.hypot(a[0] - b[0], a[1] - b[1]) <= tol
+    groups = _uf_groups(len(small), lambda i, j: any(touch(a, b) for a in ends(small[i]) for b in ends(small[j])))
+    found, mouths, used = [], [], set()
+    for g in groups:
+        items = [small[i] for i in g]
+        loose = [e for it in items for k, e in enumerate(ends(it))
+                 if not any(touch(e, f) for o in items for kk, f in enumerate(ends(o)) if not (o is it and kk == k))]
+        if len(loose) != 2 or touch(*loose):
+            continue
+        box = items[0]["bbox"]
+        for it in items[1:]:
+            box = _union(box, it["bbox"])
+        if max(_w(box), _h(box)) > prm["pocket_max"]:
+            continue
+        host = None
+        for h in polys:
+            if _box_gap(h["bbox"], box) > tol or any(h is it for it in items):
+                continue
+            hits = []
+            for e in loose:
+                for a, b in _segs(h["pts"]):
+                    d, q = _seg_dist(e, a, b)
+                    if d <= tol and min(math.hypot(q[0] - x[0], q[1] - x[1]) for x in ends(h)) > tol:
+                        hits.append((a, b))
+                        break
+            if len(hits) == 2:
+                host = (h, hits[0])
+                break
+        if host is None:
+            continue
+        (a, b) = host[1]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        sides = [((b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0])) / L
+                 for it in items for q in it["pts"]]
+        if not (min(sides) >= -tol and max(sides) > tol or max(sides) <= tol and min(sides) < -tol):
+            continue
+        sym = _Sym([dict(it, kind_="poly") for it in items], stroke_only=True)
+        sym.pocket = True  # 주머니 벽 두 줄은 오리피스 판이 아니다(_shape_features)
+        found.append(sym)
+        mouths.append((((loose[0][0] + loose[1][0]) / 2, (loose[0][1] + loose[1][1]) / 2), sym))
+        used.update(id(it) for it in items)
+    return found, mouths, [p for p in polys if id(p) not in used]
+
+
+ORIFICE_BOX_RATIO = 1.5  # 오리피스 상자: 두 판 사이 간격 상한 = 판 길이 × 비율(판과 간격이 비슷한 네모꼴)
+
+
+def _orifice_box(a, sep, lines, dots, bodies, crossing, prm):
+    """판 a와 축 방향으로 sep 떨어진 짝 판 사이 칸이 오리피스 상자('|-|' 가운데 짧은 선, APR1400 OR01B 등)인지.
+    칸 안에 판과 나란하고 판보다 짧은 직선 하나만 칸 가운데에 있어야 한다. 점·몸체·가로지르는 선이 있으면 아니다."""
+    if dots or bodies or crossing or len(lines) != 1 or abs(sep) > ORIFICE_BOX_RATIO * a["L"]:
+        return False
+    q = lines[0]
+    if len(q["pts"]) != 2 or q.get("curved"):
+        return False
+    (x0, y0), (x1, y1) = q["pts"]
+    length = math.hypot(x1 - x0, y1 - y0)
+    if not 0 < length < a["L"] or abs((x1 - x0) * a["u"][1] - (y1 - y0) * a["u"][0]) / length > prm["plate_par_tol"]:
+        return False
+    m = ((x0 + x1) / 2 - a["c"][0], (y0 + y1) / 2 - a["c"][1])
+    along = m[0] * -a["u"][1] + m[1] * a["u"][0]  # 배관 축 방향 위치(sep과 같은 부호)
+    side = m[0] * a["u"][0] + m[1] * a["u"][1]
+    return abs(side) <= prm["plate_align_tol"] and 0.25 <= along / sep <= 0.75
+
+
+def _spans_gap(q, a, b, prm):
+    """선 q가 판 a·b 가운데를 잇는 곧은 선인가(두 끝이 두 판 가운데에 하나씩 닿음)."""
+    if len(q["pts"]) != 2:
+        return False
+    tol = prm["plate_touch_tol"]
+    return any(math.dist(e, a["c"]) <= tol and math.dist(f, b["c"]) <= tol
+               for e, f in ((q["pts"][0], q["pts"][1]), (q["pts"][1], q["pts"][0])))
+
+
 def _plate_assemblies(syms, polys, markers, dashes, prm):
     """배관을 가로지르는 짧은 판(범례 1.7-1 1/4 FLANGED CONNECTION '—| |—', 1.7-1 VALVE SYMBOLS의 BUTTERFLY '|\\●|'·
     BALL '|○|'·'|●|') 찾기 → (밸브 기호 [_Sym], 남은 선, 남은 표식, 플랜지 [(판, 판, (점, 점))]).
@@ -219,7 +637,11 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
       먼저 지우면 판에 닿아 있던 배관 끝이 떠 보여 장식선으로 흡수된다.
     - 두 판 사이에 둥근 점 하나와 그 점을 지나는 빗금이 있으면 버터플라이, 빗금 없이 점이나 원 하나만 있으면 볼 밸브다.
       바로 바깥의 플랜지 판까지 한 기호로 묶는다.
-    판 사이에 다른 것(오리피스의 짧은 선, 플러그 밸브의 마름모)이 있으면 건드리지 않는다."""
+    - 두 판 사이 가운데에 판보다 짧은 나란한 선 하나만 있고 두 판 가운데에 바깥에서 배관 끝이 하나씩 닿으면 오리피스
+      상자(_orifice_box, 범례 1.7-1 1/4 RESTRICTION ORIFICE)다. 두 판과 가운데 선을 한 선 기호로 묶는다(판 길이가 짧아
+      선 기호 최소 크기에 못 미친다). 판 가운데 말고 다른 자리(판 끝·상자 귀퉁이)에 다른 선이 닿으면 묶지 않는다
+      (차압 탭선이 달린 유량 측정 상자, 판 끝에 이어지는 엇갈림 끊긴 배관).
+    판 사이에 그 밖의 것(플러그 밸브의 마름모 등)이 있으면 건드리지 않는다."""
     plates = []
     for p in polys:
         if len(p["pts"]) != 2 or p.get("curved"):
@@ -278,10 +700,14 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
 
         def core(q):
             return lo + 0.1 < axial(a, q) < hi - 0.1 and abs(lateral(a, q)) < a["L"] / 2
+        def between(q):  # 축 방향으로 두 판 사이에 들어온 점(선분 가운데 포함)이 있다. 판 바깥에서 판에 닿기만 한 짧은 배관 토막은 아니다
+            mids = [((s[0] + e[0]) / 2, (s[1] + e[1]) / 2) for s, e in _segs(q["pts"])]
+            return any(lo + 0.1 < axial(a, t) < hi - 0.1 for t in list(q["pts"]) + mids)
         lines, crossing = [], []
         for q in others:
             if all(inside(t) for t in q["pts"]):
-                lines.append(q)
+                if between(q):
+                    lines.append(q)
             elif any(core(t) for t in q["pts"]) or any(core(m) for m in
                                                      (((s[0] + e[0]) / 2, (s[1] + e[1]) / 2) for s, e in _segs(q["pts"]))):
                 crossing.append(q)
@@ -291,22 +717,30 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
         return lines, dots, bodies, crossing
 
     def pipe_end(a, away):
-        """판 a 가운데에 바깥(away 쪽, 배관 축 부호)에서 닿는 배관 끝. 하나일 때만 그 (선, 끝 점)."""
+        """판 a 가운데에 바깥(away 쪽, 배관 축 부호)에서 닿는 배관 끝. 하나일 때만 그 (선, 끝 점). 판에 닿은 짧은
+        토막의 반대 끝에서 이어지는 선은 같은 배관이라 따로 세지 않는다(APR1400 016쪽 OR08D 아래 0.5pt 토막).
+        판 길이의 배관 토막도 본다. 플랜지와 장비 노즐 사이 짧은 토막은 옆 노즐 토막과 길이·방향이 같아 판 짝으로
+        잡히지만, 끝이 판 가운데에 수직으로 닿는 선은 판이 아니라 배관이다(APR1400 025쪽 열교환기 노즐)."""
         hits = []
-        for q in others:
+        for q in polys:
+            if q is a["p"]:
+                continue
             for k in (0, -1):
                 e, nxt = q["pts"][k], q["pts"][1 if k == 0 else -2]
                 if math.hypot(e[0] - a["c"][0], e[1] - a["c"][1]) <= prm["plate_touch_tol"]:
                     d = axial(a, nxt)
-                    if (d > 0) == away and abs(lateral(a, nxt)) <= 0.3 * abs(d):
-                        hits.append((q, e))
-        return hits[0] if len(hits) == 1 else None
+                    if d != 0 and (d > 0) == away and abs(lateral(a, nxt)) <= 0.3 * abs(d):
+                        hits.append((q, e, q["pts"][-1 - k]))
+        hits = [h for h in hits if not any(g[0] is not h[0] and math.dist(g[2], h[1]) <= 0.1 for g in hits)]
+        return hits[0][:2] if len(hits) == 1 else None
 
-    def touched(a, allow):
-        """판 a에 (allow 말고) 다른 선이 닿는지. 오리피스 탭선·계기 지시선이 닿은 판은 플랜지로 보지 않는다."""
+    def touched(a, allow, branch_ok=False):
+        """판 a에 (allow 말고) 다른 선이 닿는지. 오리피스 탭선·계기 지시선이 닿은 판은 플랜지로 보지 않는다.
+        branch_ok면 끝이 판 가운데(배관 끝이 닿는 자리)에 닿는 선은 그 자리의 배관 분기로 보고 세지 않는다."""
         seg = a["p"]["pts"]
-        return any(q is not None and q not in allow and _poly_dist(q["pts"], seg) <= tol
-                   for q in others)
+        return any(q is not None and q not in allow and _poly_dist(q["pts"], seg) <= tol and not (
+            branch_ok and any(math.hypot(e[0] - a["c"][0], e[1] - a["c"][1]) <= prm["plate_touch_tol"]
+                              for e in (q["pts"][0], q["pts"][-1]))) for q in others)
 
     def round_dot(m):
         w, h = _w(m["bbox"]), _h(m["bbox"])
@@ -326,6 +760,22 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
         lines, dots, bodies, crossing = gap_items(a, plates[j])
         return None if lines or dots or bodies or crossing else j
 
+    def _between_plates(a, b, sep, lines, dots, bodies, crossing):
+        """판 a·b 사이에 그린 배관 부품(APR1400 025·097쪽 Y형 거름망: '|—|' 가운데 축 선과 아래로 빠진 다리)이면 판 말고
+        부품을 이루는 선 목록, 아니면 None. 두 판 가운데를 잇는 축 선이 있고, 두 판 바깥에서 배관 끝이 하나씩 닿고, 판에는
+        그 밖의 선이 닿지 않아야 한다. 칸 옆으로 조금 삐져나간 선도 칸 안 선에 매달리고 축 방향으로 두 판 사이를 벗어나지
+        않으면 부품의 장식이다. 배관이 판을 끊기지 않고 꿰뚫으면(칸을 가로지르는 선) 보지 않는다."""
+        hanging = [q for q in crossing if q.get("pts") and all(min(sep, 0) - 0.1 <= axial(a, t) <= max(sep, 0) + 0.1
+                                                               for t in q["pts"])
+                   and any(_poly_dist(q["pts"], ln["pts"]) <= tol for ln in lines)]
+        if len(hanging) != len(crossing) or not any(_spans_gap(q, a, b, prm) for q in lines):
+            return None
+        ea, eb = pipe_end(a, sep < 0), pipe_end(b, sep > 0)
+        if ea is None or eb is None or any(touched(t, (ea[0], eb[0]) + tuple(lines + hanging), branch_ok=True)
+                                           for t in (a, b)):
+            return None
+        return lines + hanging
+
     for i in sorted(range(len(plates)), key=lambda i: plates[i]["p"]["id"]):
         if i in used:
             continue
@@ -335,7 +785,15 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
         a, b = plates[i], plates[j]
         lines, dots, bodies, crossing = gap_items(a, b)
         sep = axial(a, b["c"])
-        mid = ((a["c"][0] + b["c"][0]) / 2, (a["c"][1] + b["c"][1]) / 2)
+        part = _between_plates(a, b, sep, lines, dots, bodies, crossing) if lines and not (dots or bodies) else None
+        if part is not None:
+            used.update((i, j))
+            s = _Sym([dict(q, kind_="poly") for q in [a["p"], b["p"]] + part], stroke_only=True)
+            s.between_plates = True
+            valves.append(s)
+            removed_lines.update(id(q) for q in [a["p"], b["p"]] + part)
+            continue
+        mid =((a["c"][0] + b["c"][0]) / 2, (a["c"][1] + b["c"][1]) / 2)
         centred = [m for m in dots if round_dot(m) and math.hypot(*(_center(m["bbox"])[k] - mid[k] for k in (0, 1)))
                    <= prm["plate_touch_tol"]]
         # 구동부 축: 한 끝이 가운데 점에 닿고 판 길이 방향으로 빠져나가는 선. 칸을 가로지르는 선으로 치지 않는다
@@ -381,9 +839,18 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
             removed_lines.update(id(q) for q in lines)
             removed_marks.update(id(m) for m in dots)
             continue
+        ea, eb = pipe_end(a, False), pipe_end(b, True)
+        # 판 가운데 말고 다른 자리에 선이 닿으면(상자 귀퉁이의 차압 탭선, 판 끝에 이어지는 엇갈림 끊긴 배관) 상자로 보지
+        # 않는다. 탭선이 달린 상자는 FE 원과 묶이는 유량 요소이고, 판 끝에 닿은 선은 그 판이 배관 끝인지 흐리게 한다
+        if _orifice_box(a, sep, lines, dots, bodies, crossing, prm) and ea and eb and \
+                not any(touched(t, (ea[0], eb[0], lines[0]), branch_ok=True) for t in (a, b)):
+            used.update((i, j))
+            members = [dict(q, kind_="poly") for q in (a["p"], b["p"], lines[0])]
+            valves.append(_Sym(members, stroke_only=True))
+            removed_lines.update(id(q) for q in (a["p"], b["p"], lines[0]))
+            continue
         if lines or dots or bodies or crossing or sep > prm["flange_gap_max"]:
             continue
-        ea, eb = pipe_end(a, False), pipe_end(b, True)
         if ea is None or eb is None or touched(a, (ea[0],)) or touched(b, (eb[0],)):
             continue
         used.update((i, j))
@@ -392,14 +859,201 @@ def _plate_assemblies(syms, polys, markers, dashes, prm):
             [m for m in markers if id(m) not in removed_marks], flanges)
 
 
+CROSSING_JOIN_MAX = 4.0     # 엇갈림으로 끊은 한 배관의 두 조각 사이 간격을 가로지르는 선에 수직으로 잰 값의 상한(pt)
+CROSSING_JOIN_REACH = 32.0  # 두 조각 끝 사이 거리 상한(pt). 비스듬히 가로지르는 선(약 7도 이상)까지 본다
+CROSSING_JOIN_WIDTH = 1.1   # 두 조각 굵기 비 상한(같은 선)
+CROSSING_JOIN_LATERAL = 0.3  # 두 끝이 한 줄 위: 옆으로 어긋난 거리 상한(pt)
+
+
+def _dash_paths(dashes):
+    """스트로크 점선 조각을 원래 경로 순서대로 이은 꺾은선 목록. 조각 사이 빈칸도 곧게 이어 메운다."""
+    by_src = collections.defaultdict(list)
+    for d in dashes:
+        if "src" in d:
+            by_src[d["src"]].append(d)
+    return [[q for d in sorted(items, key=lambda d: d["seq"]) for q in d["pts"]] for items in by_src.values()]
+
+
+def _join_crossing_gaps(polys, dashes, syms, prm):
+    """엇갈림 표기('LINE NOT CONNECTED': 잇지 않는 선을 끊어 그림)로 끊은 한 배관의 두 조각을 한 선으로 잇는다.
+    두 조각의 마주 보는 끝이 굵기가 같고 한 줄 위에 있으며(바깥 방향이 반대) 간격이 end_tol보다 크고
+    다른 선(실선이나 점선 경로)이 그 빈칸을 가로지르며, 그 선에 수직으로 잰 빈칸 폭(간격 × 사인)이 CROSSING_JOIN_MAX
+    이하이면 한 배관이다. 비스듬히 가로지르는 선일수록 같은 여백을 두려고 빈칸을 길게 끊는다. 두 끝은 다른 선 중간에
+    닿거나 기호를 향해 끝나지 않아야 하고(다른 선 끝만 맞댄 모서리와 기호 상자 옆을 나란히 지나는 끝은 괜찮다), 가로지르는 실선이 조각보다 굵으면 잇지 않는다(가는 곁가지가 굵은 주관 양쪽에서 끝난
+    자리는 분기다, APR1400 025쪽 1" 관이 주관 x 662를 만나는 자리). 잇지 않으면 끝이 뜬 두 조각이 장식선으로 묶여 선 기호(오리피스 등)가 되거나, 비스듬한
+    선 가까이 끝난 두 끝이 그 선의 분기가 된다(APR1400 008쪽: POSRV 배출 상승관이 파일럿 일점쇄선 가로선 자리에서
+    2~4pt, y 263.9 배출관이 7.5도로 기운 입구관 자리에서 19pt 끊긴다) → 이은 선 목록."""
+    def end(p, k):
+        return p["pts"][0] if k == 0 else p["pts"][-1]
+
+    def out_dir(p, k):
+        a, b = (p["pts"][1], p["pts"][0]) if k == 0 else (p["pts"][-2], p["pts"][-1])
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        return None if L == 0 else ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+
+    cell = CROSSING_JOIN_REACH
+    grid = collections.defaultdict(list)
+    for i, p in enumerate(polys):
+        if len(p["pts"]) >= 2 and not p.get("curved"):
+            for k in (0, 1):
+                e = end(p, k)
+                grid[(int(e[0] // cell), int(e[1] // cell))].append((i, k))
+
+    def near_ends(e, r):
+        cx, cy = int(e[0] // cell), int(e[1] // cell)
+        return [(j, kj) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for j, kj in grid.get((cx + dx, cy + dy), ())
+                if math.hypot(end(polys[j], kj)[0] - e[0], end(polys[j], kj)[1] - e[1]) <= r]
+
+    lines = [(i, p.get("width"), p["pts"]) for i, p in enumerate(polys)] + \
+        [(-1, None, pts) for pts in _dash_paths(dashes)]
+    segs = [(o, w, a, b) for o, w, pts in lines for a, b in _segs(pts)]
+
+    def beside_sym(e):
+        return _nearest_sym(e, syms, prm["attach_tol"]) is not None
+
+    def toward_sym(e, u):
+        # 기호에 닿거나 기호를 향해 끝난 끝. 기호 상자 옆을 나란히 지나 끝난 끝은 그 기호와 상관없다(APR1400 008쪽:
+        # MOV 상승관이 TEW 상자 오른쪽 변 2.1pt 옆을 지나 가로관 자리에서 끊긴다)
+        f = (e[0] + u[0] * prm["attach_tol"], e[1] + u[1] * prm["attach_tol"])
+        return any(s.alive and _poly_box_dist([e, f], s.bbox) <= prm["touch_tol"] for s in syms)
+
+    def free(i, k):
+        # 끊어 그린 끝은 다른 선 중간에 닿지 않는다. 판(플랜지·판 밸브)이나 기호 선에 얹힌 끝은 엇갈림이 아니다. 다른 선의
+        # 끝만 맞댄 끝(계기 지시선이 꺾여 들어와 끝난 모서리)은 그대로 끊어 그린 끝으로 본다. 이으면 그 모서리가 분기가
+        # 된다(APR1400 008쪽: TEW 지시선 끝이 엇갈림 자리 바로 위 상승관 끝에 맞닿는다)
+        e, u = end(polys[i], k), out_dir(polys[i], k)
+        near = [(j, kj) for j, kj in near_ends(e, prm["end_tol"]) if j != i]
+        def into_gap(j, kj):
+            # 맞댄 선이 빈칸 쪽으로 뻗으면 빈칸을 메우는 선(겹쳐 그린 배관)이다(APR1400 065쪽 플랜지 자리)
+            v = out_dir(polys[j], kj)
+            return v is None or -(v[0] * u[0] + v[1] * u[1]) >= 0.5
+        mates = {j for j, kj in near if _meets_at_end(e, polys[j]["pts"], end(polys[j], kj)) and not into_gap(j, kj)}
+        return len(mates) == len(near) and not toward_sym(e, u) and \
+            all(o == i or o in mates or _seg_dist(e, a, b)[0] > prm["touch_tol"] for o, _, a, b in segs)
+
+    def inside_sym(e):
+        # 반대 끝이 기호 몸체 깊숙이 든 조각은 기호의 안쪽 선일 수 있다. 이으면 그 선이 다른 기호까지 닿아 두 기호가
+        # 한 기호로 합쳐진다(_group_symbols B, APR1400 023쪽)
+        return any(s.deep(e, prm) for s in syms)
+
+    def crossed(e, f, u, g, width):
+        lo = (min(e[0], f[0]), min(e[1], f[1]))
+        hi = (max(e[0], f[0]), max(e[1], f[1]))
+        for _, w, a, b in segs:
+            if w and w > CROSSING_JOIN_WIDTH * width:
+                continue
+            if max(a[0], b[0]) < lo[0] or min(a[0], b[0]) > hi[0] or max(a[1], b[1]) < lo[1] or min(a[1], b[1]) > hi[1]:
+                continue
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            sin = 0 if L == 0 else abs((b[0] - a[0]) * u[1] - (b[1] - a[1]) * u[0]) / L
+            if sin == 0 or g * sin > CROSSING_JOIN_MAX:
+                continue
+            # 빈칸 ef 안쪽(양 끝 제외)에서 선분 ab(양 끝 포함)와 만나는가. 점선 경로는 조각 끝이 교점에 놓일 수 있다
+            den = (f[0] - e[0]) * (b[1] - a[1]) - (f[1] - e[1]) * (b[0] - a[0])
+            if den == 0:
+                continue
+            s = ((a[0] - e[0]) * (b[1] - a[1]) - (a[1] - e[1]) * (b[0] - a[0])) / den
+            t = ((a[0] - e[0]) * (f[1] - e[1]) - (a[1] - e[1]) * (f[0] - e[0])) / den
+            if 0 < s < 1 and 0 <= t <= 1:
+                return True
+        return False
+
+    cands = []
+    for i, p in enumerate(polys):
+        if len(p["pts"]) < 2 or p.get("curved") or not p.get("width"):
+            continue
+        for k in (0, 1):
+            e, u = end(p, k), out_dir(p, k)
+            if u is None:
+                continue
+            for j, kj in near_ends(e, CROSSING_JOIN_REACH):
+                q = polys[j]
+                if j <= i or q.get("curved") or not q.get("width") or \
+                        max(p["width"], q["width"]) > CROSSING_JOIN_WIDTH * min(p["width"], q["width"]):
+                    continue
+                f, v = end(q, kj), out_dir(q, kj)
+                g = math.hypot(f[0] - e[0], f[1] - e[1])
+                if v is None or g <= prm["end_tol"] or u[0] * v[0] + u[1] * v[1] > -0.99:
+                    continue
+                if abs((f[0] - e[0]) * u[1] - (f[1] - e[1]) * u[0]) > CROSSING_JOIN_LATERAL or \
+                        (f[0] - e[0]) * u[0] + (f[1] - e[1]) * u[1] <= 0:
+                    continue
+                # 빈칸 양쪽 끝이 모두 기호 옆이면 그 기호 자리의 빈칸일 수 있어 잇지 않는다(APR1400 134쪽 LS 013 원 옆)
+                if crossed(e, f, u, g, p["width"]) and free(i, k) and free(j, kj) and \
+                        not (beside_sym(e) and beside_sym(f)) and \
+                        not inside_sym(end(p, 1 - k)) and not inside_sym(end(q, 1 - kj)):
+                    cands.append((g, (i, k), (j, kj)))
+    mate = {}
+    for _, a, b in sorted(cands):
+        if a not in mate and b not in mate:
+            mate[a], mate[b] = b, a
+    if not mate:
+        return polys
+    out = []
+    for run in _end_runs(len(polys), mate):
+        if len(run) == 1:
+            out.append(polys[run[0][0]])
+            continue
+        pts = [q for m, mk in run for q in (polys[m]["pts"] if mk == 0 else polys[m]["pts"][::-1])]
+        out.append(dict(polys[min(m for m, _ in run)], pts=pts, bbox=_bbox_pts(pts)))
+    return out
+
+
+def _grazes(piece, sym, prm):
+    """두 끝이 모두 기호 상자 밖인 점선 경로의 조각이 몸체 안으로 들어가지 않고 몸체 변 바로 옆을 스친다. 몸체에서 떨어진
+    자리(계기 원 줄기 끝이 점선에 닿는 자리, APR1400 048쪽 PI-3107)는 스치는 것이 아니라 줄기가 선에 닿은 것이라 예전처럼 둔다."""
+    ends = piece.get("path_ends") or ()
+    if not ends or any(_inside(e, sym.bbox, prm["touch_tol"]) for e in ends):
+        return False
+    return not _inside(_center(piece["bbox"]), sym.core) and _box_gap(piece["bbox"], sym.core) <= prm["touch_tol"]
+
+
+def _continues_same_pen(p, polys, prm):
+    """곧은 선 p의 한 끝이 같은 굵기로 그은 다른 선의 끝과 만나는가. 그러면 p는 그 선을 이어 그은 선 토막(장비 외곽선·
+    배관)이지, 끝 하나가 떴다고 선 기호가 되지 않는다(APR1400 007쪽 펌프 몸체선: 담는 외곽이 더는 삼키지 않는다).
+    맹판·끝 막대는 배관이 가운데에 닿고 두 끝이 떠 있다. 경계 표시 눈금은 글자 지시선(더 가는 선)이 끝에 닿는다.
+    가로·세로로 그은 선만 본다. 엇갈려 그은 필터 빗금(083쪽)은 칸 귀퉁이에서 끝끼리 만나도 선 토막이 아니고, 끝이 다른 선의
+    몸에만 닿는 것도 이어 그은 것이 아니다."""
+    if len(p["pts"]) != 2 or p.get("curved") or p.get("width") is None or             min(abs(p["pts"][0][0] - p["pts"][1][0]), abs(p["pts"][0][1] - p["pts"][1][1])) > prm["touch_tol"]:
+        return False
+    for e in p["pts"]:
+        for q in polys:
+            if q is p or q.get("width") is None or abs(q["width"] - p["width"]) > SAME_PEN_TOL:
+                continue
+            if any(math.hypot(e[0] - f[0], e[1] - f[1]) <= prm["end_tol"] for f in (q["pts"][0], q["pts"][-1])):
+                return True
+    return False
+
+
+DUCT_PEN_RATIO = 4.0  # 기호 외곽 굵기의 이 배 이상인 선은 기호 안으로 들어가도 구동부 축이 아니다
+SAME_PEN_TOL = 0.005  # 같은 굵기로 본 선 굵기 차(pt). PDF는 같은 펜을 같은 값으로 적는다
+
+
+def _panel_sym(panel):
+    """공조기 판(pdf_vector._panels) → 기호 하나. 외곽과 닫힌 무늬는 몸체, 열린 무늬 선은 장식선이다."""
+    members = [dict(panel["rect"], closed=True, solid=False, kind_="body")]
+    members += [dict(m, kind_="body" if m["closed"] else "poly") for m in panel["members"]]
+    sym = _Sym(members)
+    sym.panel = "coil" if panel.get("coil") else "filter"
+    return sym
+
+
 def _group_symbols(cls, prm):
-    syms = _cluster_bodies(cls["bodies"], prm)
-    valves, polys, markers, flange_pairs = _plate_assemblies(syms, list(cls["polys"]), list(cls["markers"]),
+    syms = _cluster_bodies(cls["bodies"], prm, cls["polys"])
+    polys = _join_crossing_gaps(list(cls["polys"]), cls["dashes"], syms, prm)
+    valves, polys, markers, flange_pairs = _plate_assemblies(syms, polys, list(cls["markers"]),
                                                              cls["dashes"], prm)
-    syms = [s for s in syms if s.alive] + valves
+    fed, polys = _bar_fed_strokes(polys, prm)
+    pockets, cls["mouths"], polys = _pockets(polys, prm)
+    syms = [s for s in syms if s.alive] + valves + fed + pockets + [_panel_sym(p) for p in cls.get("panels", ())]
     for p in polys:
         p["kind_"] = "poly"
     dashes = list(cls["dashes"])
+    # 점선 경로 끝점에 끝을 맞댄 선 끝은 떠 있지 않다. 점선이 그 배관을 이어 그린 것이다(_dashed_continuations)
+    tips = {e for d in dashes for e in d.get("path_ends", ())}
+
+    def dash_tip(e):
+        return any(math.hypot(e[0] - t[0], e[1] - t[1]) <= prm["end_tol"] for t in tips)
     for _ in range(prm["max_iterations"]):
         changed = False
         live = [s for s in syms if s.alive]
@@ -408,13 +1062,14 @@ def _group_symbols(cls, prm):
         for p in polys:
             host = None
             for s in live:
-                if s.alive and not s.arrow_only() and all(_inside(q, s.bbox, s.inner_tol(prm)) for q in p["pts"]):
+                if s.alive and not s.arrow_only() and all(_inside(q, s.bbox, s.inner_tol(prm)) for q in p["pts"]) \
+                        and (not (s.rings or s.class_only) or _reach(p["pts"], s) <= prm["attach_tol"]):
                     if host is None or _w(s.bbox) * _h(s.bbox) < _w(host.bbox) * _h(host.bbox):
                         host = s
             if host is not None:
                 ends = (p["pts"][0], p["pts"][-1])
                 if any(_inside(e, m["bbox"], prm["end_tol"]) for e in ends for m in markers) or \
-                        any(_nearest_sym(e, [t for t in live if t is not host], prm["attach_tol"]) for e in ends):
+                        any(_nearest_sym(e, [t for t in live if t is not host], prm["attach_tol"], prm) for e in ends):
                     host = None
             if host is not None:
                 host.add([p], "strokes")
@@ -427,16 +1082,39 @@ def _group_symbols(cls, prm):
         for p in polys:
             ends = (p["pts"][0], p["pts"][-1])
             host = next((s for s in syms if s.alive and any(s.deep(e, prm) for e in ends)), None)
-            if host is None:
+            pens = [b["pen"] for b in host.bodies if b.get("pen")] if host is not None else []
+            if pens and (p.get("width") or 0) >= DUCT_PEN_RATIO * max(pens):
+                # 기호 외곽보다 몇 배 굵은 선은 구동부 축이 아니라 기호 안에서 시작하는 배관·덕트다(072쪽 AU02A 송풍기 출구
+                # 덕트가 송풍기 그림 안에서 시작해 댐퍼 Y0007A까지 송풍기에 합쳐지던 자리)
+                rest.append(p)
+                continue
+            heads = [m for m in markers + host.markers if _is_triangle(m)] if host is not None and any(
+                not _inside(e, host.bbox, prm["attach_tol"]) for e in ends) else []
+            if host is None or any(host.deep(e, prm) and any(_inside(e, m["bbox"], prm["end_tol"]) for m in heads)
+                                   for e in ends):
+                # 몸체 밖에서 들어와 몸체 안 화살촉에서 끝나는 선은 구동부 축이 아니라 장비로 들어가는 배관이다(APR1400
+                # 033쪽 펌프 PP01A: 밸브에서 온 배관이 펌프 원 안 화살촉까지 그어져 밸브·배관·펌프가 한 기호가 되던 자리).
+                # 두 끝이 다 몸체 안인 짧은 화살표는 기호 안 무늬다(007쪽 전동기 축 옆 화살표)
                 rest.append(p)
                 continue
             reached = [_nearest_sym(e, [s for s in syms if s is not host], prm["attach_tol"]) for e in ends]
             if any(s is not None and s.seed is not None for s in reached):
                 rest.append(p)  # 검정 견본으로 올린 몸통(seed)에 닿은 선은 연결선이다. 그 몸통을 다른 기호에 합치지 않는다
                 continue
+            if any(s is not None and _equipment_bubble(s, host, prm) for s in reached):
+                # 장비 안으로 들어간 선의 반대 끝 계기 원은 구동부가 아니라 그 장비를 재거나 조작하는 계기다(APR1400 051쪽
+                # SAMPLE PUMP 위 HS 원). 구동부는 밸브 몸통만 한 크기라 몸통이 원보다 훨씬 큰 장비에는 해당하지 않는다
+                rest.append(p)
+                continue
+            core = host.core
             host.add([p], "strokes")
             for e in ends:
                 other = _nearest_sym(e, [s for s in syms if s is not host], prm["attach_tol"])
+                if other is not None and _inside(e, core, prm["touch_tol"]) and not _inside(_center(other.bbox), core):
+                    # 끝이 제 몸체 안·변 위에 있는 선(계기 비석 가운데 점선)은 몸체 바깥에 바짝 붙인 옆 비석·장비에 닿은 것이
+                    # 아니다. 닿음 거리 안이어도 합치지 않는다(APR1400 025쪽 나란한 비석 셋, 046쪽 압축기 위 VET 비석).
+                    # 몸체 안에 든 기호에 닿은 끝은 예전처럼 합친다(125쪽 큰 외곽 안 기호)
+                    continue
                 if other is not None:
                     host.merge(other)
             changed = True
@@ -444,11 +1122,30 @@ def _group_symbols(cls, prm):
         # C. 끝이 아무 데도 닿지 않는 선 = 장식(스프링·체크밸브 선 등)
         live = [s for s in syms if s.alive]
         decor = [p for p in polys
-                 if any(_end_status(p, k, polys, live, markers, prm) is None for k in (0, 1))]
+                 if any(_end_status(p, k, polys, live, markers, prm) is None and not dash_tip(p["pts"][-k])
+                        for k in (0, 1))]
         if decor:
             ids = {id(p) for p in decor}
-            groups = _uf_groups(len(decor), lambda i, j: _poly_dist(decor[i]["pts"], decor[j]["pts"])
-                                <= prm["decor_group_tol"])
+            # 장식선들 사이에 놓인 화살촉(체크밸브 사선 끝 삼각형)도 장식선을 잇는 조각이다. 그림에서 읽으면 사선이 화살촉
+            # 앞에서 끊기고 화살촉과 판 사이가 묶음 거리보다 멀어져, 화살촉 없이는 판 하나가 따로 떨어진다. 가까운 장식선들이
+            # 이루는 상자 안에 든 화살촉만 잇는다(두 배관 끝 사이의 검은 마름모처럼 선 밖으로 나온 표식은 잇지 않는다)
+            near = []
+            for m in markers:
+                box = None
+                for p in decor:
+                    if _poly_box_dist(p["pts"], m["bbox"]) <= prm["decor_group_tol"]:
+                        box = p["bbox"] if box is None else _union(box, p["bbox"])
+                if box and all(_inside(c, box, prm["touch_tol"]) for c in (m["bbox"][:2], m["bbox"][2:])):
+                    near.append(m)
+            pieces = decor + near
+
+            def linked(i, j):  # i < j: 장식선끼리, 장식선과 화살촉(화살촉끼리는 잇지 않는다)
+                if i >= len(decor):
+                    return False
+                if j >= len(decor):
+                    return _poly_box_dist(decor[i]["pts"], pieces[j]["bbox"]) <= prm["decor_group_tol"]
+                return _poly_dist(decor[i]["pts"], decor[j]["pts"]) <= prm["decor_group_tol"]
+            groups = [[i for i in g if i < len(decor)] for g in _uf_groups(len(pieces), linked)]
             keep = []
             for g in groups:
                 items = [decor[i] for i in g]
@@ -456,11 +1153,12 @@ def _group_symbols(cls, prm):
                 for it in items[1:]:
                     box = _union(box, it["bbox"])
                 touching = [s for s in live if s.alive and
-                            min(_poly_box_dist(it["pts"], s.bbox) for it in items) <= prm["attach_tol"]]
+                            min(_reach(it["pts"], s) for it in items) <= prm["attach_tol"]]
                 host = None
                 for s in (t for t in touching if not t.arrow_only()):
                     out = max(s.bbox[0] - box[0], box[2] - s.bbox[2], s.bbox[1] - box[1], box[3] - s.bbox[3], 0.0)
-                    if out <= prm["decor_extent_ratio"] * max(_w(s.core), _h(s.core)):
+                    if out <= (s.inner_tol(prm) if s.outline or s.rings
+                               else prm["decor_extent_ratio"] * max(_w(s.core), _h(s.core))):
                         if host is None or _w(s.bbox) * _h(s.bbox) > _w(host.bbox) * _h(host.bbox):
                             host = s
                 if host is not None:
@@ -468,11 +1166,14 @@ def _group_symbols(cls, prm):
                     changed = True
                     continue
                 # 흡수할 기호가 없으면: 기호에 닿는 선은 연결선으로 남기고, 나머지가 적당한 크기면 선 기호로 묶는다
-                free_items = [it for it in items if all(_poly_box_dist(it["pts"], t.bbox) > prm["attach_tol"]
+                free_items = [it for it in items if all(_reach(it["pts"], t) > prm["attach_tol"]
                                                         for t in touching)]
                 fbox = None
                 for it in free_items:
                     fbox = it["bbox"] if fbox is None else _union(fbox, it["bbox"])
+                if len(free_items) == 1 and _continues_same_pen(free_items[0], polys, prm):
+                    keep += items
+                    continue
                 if fbox and prm["stroke_symbol_min"] <= max(_w(fbox), _h(fbox)) <= prm["stroke_symbol_max"]:
                     syms.append(_Sym(free_items, stroke_only=True))
                     keep += [it for it in items if it not in free_items]
@@ -485,14 +1186,25 @@ def _group_symbols(cls, prm):
         for bucket, name in ((markers, "markers"), (dashes, "dashes")):
             rest = []
             for m in bucket:
+                # 스트로크 점선 경로가 한 끝은 기호 상자 안, 다른 끝은 밖이면 그 기호에서 끝나는 점선 배관이다. 그 끝
+                # 조각은 기호의 일부가 아니다. 기호에 넣으면 상자가 조각만큼 자라 옆 조각까지 끌어들이고, 모양 서명에
+                # 점선 조각이 섞여 사전 견본에 맞지 않는다(APR1400 008쪽 POSRV 파일럿 안전밸브). 두 끝이 다 밖인 경로
+                # (기호를 꿰뚫는 점선)의 안쪽 조각은 그대로 기호에 넣어 그 자리에서 사슬을 끊는다(_stroke_chains).
+                # 꿰뚫는다는 것은 조각이 몸체 안을 지난다는 뜻이다. 몸체 옆을 상자 여유 안으로 스쳐 가는 점선은 그 기호와
+                # 상관없이 지나간다(APR1400 008쪽: 303 파일럿 출구 일점쇄선이 V313 몸통 오른쪽 변 0.3pt 옆을 지난다.
+                # 조각을 넣으면 V313이 사전 견본에 맞지 않고 출구선도 V313에서 끊긴다)
                 inside = [s for s in syms if s.alive and
                           _inside((m["bbox"][0], m["bbox"][1]), s.bbox, prm["touch_tol"]) and
-                          _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"])]
+                          _inside((m["bbox"][2], m["bbox"][3]), s.bbox, prm["touch_tol"]) and
+                          len({_inside(e, s.bbox, prm["touch_tol"]) for e in m.get("path_ends", ())}) < 2 and
+                          not _grazes(m, s, prm) and (not s.rings or _reach_box(m["bbox"], s) <= prm["touch_tol"])]
                 # 검정 견본으로 올린 몸통 위의 점(seed)은 그 몸통의 기호로 간다. 그 밖에는 상자에 드는 첫 기호
                 own = [s for s in inside if "seed" in m and any(b.get("seed") == m["seed"] for b in s.bodies)]
                 host = (own or inside or [None])[0]
                 if host is not None:
-                    host.add([m], name)
+                    # 얇은 화살촉(pdf_vector._classify_primitives thin_tip)은 기호 안에서는 예전처럼 점선 조각으로 센다. 표식으로
+                    # 세면 선 기호가 '선과 표식' 체크밸브 규칙에 걸리고 사전 견본 서명의 구성이 바뀐다
+                    host.add([m], "dashes" if m.get("thin_tip") else name)
                     changed = True
                 else:
                     rest.append(m)
@@ -514,16 +1226,48 @@ def _group_symbols(cls, prm):
     return syms, polys, markers, dashes
 
 
+def _bubble_size(s, prm):
+    """s가 계기 원 기호(원 하나, 또는 같은 자리에 겹쳐 그린 네모 + 원: 공유 표시 계기)면 원 지름, 아니면 None.
+    안의 가로줄·글자 칸 같은 선은 몸체 안이나 둘레에 있어야 한다."""
+    circles = [b for b in s.bodies if _is_circle(b, prm)]
+    if len(circles) != 1 or _w(circles[0]["bbox"]) < BUBBLE_MIN:
+        return None
+    d = _w(circles[0]["bbox"])
+    if any(b is not circles[0] and _box_gap(b["bbox"], circles[0]["bbox"]) > 0 or
+           b is not circles[0] and max(_w(b["bbox"]), _h(b["bbox"])) > 1.3 * d for b in s.bodies):
+        return None
+    if any(not _inside(_center(m["bbox"]), s.core, 0.25 * d) for m in s.strokes):
+        return None  # 원 둘레에 바짝 붙인 짧은 표시(080쪽 PDIS 원 왼쪽 꺾쇠)는 괜찮다. 밖으로 뻗은 선이 있으면 계기 원이 아니다
+    return d
+
+
+def _equipment_bubble(s, host, prm):
+    """s가 계기 원 기호이고, host가 그 원보다 훨씬 큰 몸체(장비)이거나 다른 계기 원 기호인가. 어느 쪽이든 둘을 잇는 선은
+    구동부 축이 아니라 계측·신호선이다."""
+    d = _bubble_size(s, prm)
+    if d is None:
+        return False
+    return min(_w(host.core), _h(host.core)) >= EQUIPMENT_BUBBLE_RATIO * d or _bubble_size(host, prm) is not None
+
+
 def _merge_appendages(syms, chains, prm):
     """연결이 하나도 없는 기호가 더 큰 기호 바로 옆(큰 기호 긴 변 × 비율 안)에 있으면 그 기호의 부속(히터 등)으로 합친다."""
     linked = {id(v[1]) for ch in chains for v, _, _ in ch["ends"] if v[0] == "sym"}
     for s in sorted(syms, key=lambda s: _w(s.bbox) * _h(s.bbox)):
-        if id(s) in linked or not s.alive or s.seed is not None:
+        if id(s) in linked or not s.alive or s.seed is not None or s.panel:
             continue  # 검정 견본으로 올린 몸통(seed)은 배관이 닿지 않아도 제 기호다. 옆 기호의 부속으로 합치지 않는다
         best = None
         for t in syms:
-            if t is s or not t.alive or t.seed is not None or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
+            if t is s or not t.alive or t.seed is not None or t.panel or _w(t.bbox) * _h(t.bbox) <= _w(s.bbox) * _h(s.bbox):
                 continue
+            if t.outline or len(s.bodies) == 1 and any(_walled(w, prm) and _beside(w, s.bodies[0], prm) and (
+                    _is_tombstone(s.bodies[0]) or not s.bodies[0].get("curved") and _notched(w)) for w in t.bodies):
+                # 장비 외곽 옆에 따로 그린 계기 비석은 부속이 아니다(APR1400 125쪽 증기발생기 수위 전송기, 046쪽 압축기 VET).
+                # 모서리를 따낸 장비 외곽(046쪽 압축기 L자) 변에 붙인 상자(필터 F)도 제 기호다. 네모 외곽 옆 작은 상자는 예전처럼
+                # 부속으로 합친다(SNP 스캔에서 따로 두면 오검출이 는다)
+                continue
+            if any(_pt_ring_dist(_center(s.bbox), r) == 0.0 for r in t.rings):
+                continue  # 담는 외곽 안에 든 기호는 외곽의 부속이 아니다(072쪽 HVAC CHASE 안 공기 흐름 화살표)
             gap = _box_gap(s.bbox, t.bbox)
             if gap <= prm["appendage_gap_ratio"] * max(_w(t.bbox), _h(t.bbox)) and (best is None or gap < best[0]):
                 best = (gap, t)

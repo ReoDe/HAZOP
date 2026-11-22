@@ -1,0 +1,39 @@
+/* 지식그래프 패널(완료 목록 2 A6). 밝은 바탕, 색은 절제. 토큰은 tokens.css를 쓴다. */
+.kg .kg-b { gap: var(--sp-2); overflow: hidden; }
+.kg-head { display: flex; flex-direction: column; gap: var(--sp-2); flex: none; }
+.kg-search { position: relative; display: flex; align-items: center; gap: 6px; max-width: 520px; color: var(--muted); }
+.kg-search input { flex: 1; height: 30px; }
+.kg-hits { position: absolute; left: 0; right: 0; top: 34px; z-index: 6; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  box-shadow: var(--sh-2); max-height: 320px; overflow: auto; display: flex; flex-direction: column; padding: 4px; }
+.kg-hit { all: unset; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; color: var(--ink); }
+.kg-hit:hover, .kg-hit:focus-visible { background: var(--accent-weak); outline: 0; }
+.kg-chips { flex-wrap: wrap; align-items: center; gap: 6px; }
+.kg-tools { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.kg-explore-pick { height: 26px; border: 1px solid var(--line-input); border-radius: var(--r-sm); background: var(--surface); font: inherit; font-size: var(--fs-sm); color: var(--ink); }
+.kg-explore { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-sm); padding: 4px 8px; border-left: 3px solid #c2410c; background: var(--surface-2); border-radius: var(--r-sm); }
+.kg-explore > button { margin-left: auto; }
+.kg-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--sp-3); }
+.kg-canvas { position: relative; min-height: 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: #fbfbfc; }
+.kg-side { min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); padding: var(--sp-3);
+  display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-md); }
+.kg-side h4 { margin: var(--sp-2) 0 0; font-size: var(--fs-sm); color: var(--muted); font-weight: 700; }
+.kg-dh { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kg-dh b { font-size: var(--fs-lg); overflow-wrap: anywhere; }
+.kg-empty p { margin: var(--sp-1) 0 0; }
+.kg-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px var(--sp-2); margin: 0; font-size: var(--fs-sm); }
+.kg-kv dt { color: var(--muted); }
+.kg-kv dd { margin: 0; overflow-wrap: anywhere; }
+.kg-nb { all: unset; display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 4px 6px; border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-sm); }
+.kg-nb:hover, .kg-nb:focus-visible { background: var(--surface-2); outline: 0; }
+.kg-nb > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kg-judge { display: flex; flex-direction: column; gap: var(--sp-2); }
+.kg-form label { display: flex; flex-direction: column; gap: 2px; }
+.kg-form input { height: 28px; }
+.kg-side details summary { cursor: pointer; color: var(--ink-2); font-size: var(--fs-sm); }
+@media (max-width: 1100px) { .kg-main { grid-template-columns: minmax(0, 1fr) 280px; } }
+/* 도면 구성요소 말풍선의 한 줄(완료 목록 3 B7, kg_bubble.js) */
+.bubble-links { margin-top: 4px; }
+.bubble-links .acts-row { gap: var(--sp-2); }
+.kg-blink { all: unset; cursor: pointer; color: var(--accent, #0a5fc2); text-decoration: underline; text-underline-offset: 2px; }
+.kg-blink:focus-visible { outline: 2px solid var(--accent, #0a5fc2); outline-offset: 1px; }
+.bubble-cells { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 4px; max-height: 160px; overflow: auto; }
