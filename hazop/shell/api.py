@@ -161,6 +161,9 @@ class Engine:
         self._stop = threading.Event()   # 창을 닫거나 화면을 바꾸려고 작업을 멈추라고 할 때
         self._threads = []
         self._analysis = None
+        from hazop.shell import ai_gate
+        self.ai_gate = ai_gate.Gate()    # 일괄 AI 작업(AI 검토·추출 뒤 자동 검토·AI 분석)의 구독 호출 차례
+        self._reviewing = set()          # AI 검토가 돌거나 차례를 기다리는 도면(추출 이름)
 
     # ------------------------------------------------------------ 보내기
     def emit(self, name, data=None):
@@ -300,6 +303,26 @@ class Engine:
             t.join(max(0.0, end - time.monotonic()))
         self._threads = [t for t in self._threads if t.is_alive()]
         return not self.running_jobs()
+
+    def ai_turn(self, label, progress, should_stop=None):
+        """일괄 AI 작업이 구독 호출 차례를 잡는다(with 문). 앞 작업이 있으면 기다리며 progress로 '앞 작업을 기다리는 중'을 알린다.
+        기다리는 동안 멈추라고 하면(should_stop, 없으면 엔진 멈춤) JobStopped."""
+        return self.ai_gate.turn(label, should_stop or self.stop_requested, lambda: JobStopped("중지했습니다"),
+                                 on_wait=lambda ahead: progress("앞 작업(%s)을 기다리는 중" % ahead, 0, None))
+
+    def reserve_review(self, names, partial=False):
+        """AI 검토를 돌릴 도면을 잡는다 -> 잡은 이름 목록. 이미 AI 검토가 돌거나 기다리는 도면이 있으면 partial이 아니면 하나도 잡지 않고
+        [], partial이면 빈 도면만 잡는다. 끝나면 release_review로 놓는다."""
+        with self._lock:
+            free = [n for n in dict.fromkeys(names) if n not in self._reviewing]
+            if len(free) < len(set(names)) and not partial:
+                return []
+            self._reviewing.update(free)
+            return free
+
+    def release_review(self, names):
+        with self._lock:
+            self._reviewing.difference_update(names)
 
     def _job_ended(self):
         if not self.running_jobs():

@@ -9,7 +9,8 @@
   쓰는 중인 다른 쓰기를 건드리지 않게 만든 지 10분이 지난 것만 지운다. 쓰는 쪽이 하나뿐인 파일은 remove_temps로
   나이와 관계없이 지울 수 있다. expect를 주면 바꾸기 직전에 지문을 다시 보고 다르면 Conflict다.
   Windows에서는 os.replace 뒤 대상 파일의 접근 권한이 폴더에서 물려받은 값이 된다(임시 파일을 새로 만들기 때문).
-  지문 확인과 교체 사이의 틈은 남는다. 그 틈에 다른 프로세스가 끼어드는 것은 단일 실행 잠금(app.startup)이 막는다.
+  지문 확인과 교체는 파일별 잠금(_path_lock) 안에서 한다. 한 프로세스 안의 두 스레드가 같은 판을 읽고 둘 다 확인을 통과해 한쪽을 잃지 않게,
+  Windows에서 같은 파일을 동시에 바꾸다 접근 거부가 나지 않게 하려는 것이다. 다른 프로세스가 끼어드는 것은 단일 실행 잠금(app.startup)이 막는다.
 - 백업은 이미 있는 백업 파일을 덮어쓰지 않는다.
 """
 
@@ -19,6 +20,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -28,6 +30,14 @@ ANY = object()
 STALE_TEMP_SECONDS = 600
 BACKUP_TRIES = 1000
 _log = logging.getLogger(__name__)
+_LOCKS = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _path_lock(path):
+    key = os.path.normcase(os.path.abspath(path))
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(key, threading.Lock())
 
 
 class Conflict(ValueError):
@@ -101,9 +111,10 @@ def write_bytes(path, data, expect=ANY):
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
-        if expect is not ANY and fingerprint(path) != expect:
-            raise Conflict("읽은 뒤 저장 파일이 바뀜: %s" % path)
-        os.replace(tmp, path)
+        with _path_lock(path):
+            if expect is not ANY and fingerprint(path) != expect:
+                raise Conflict("읽은 뒤 저장 파일이 바뀜: %s" % path)
+            os.replace(tmp, path)
     finally:
         try:
             os.remove(tmp)

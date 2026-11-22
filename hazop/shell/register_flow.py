@@ -12,7 +12,7 @@ from hazop import paths
 from hazop.app import data
 from hazop.extract import ai_review
 from hazop.register import registry
-from hazop.shell import ai_image_flow
+from hazop.shell import ai_image_flow, api
 
 LOG = logging.getLogger("hazop.shell.register_flow")
 
@@ -50,6 +50,10 @@ def review_if_wanted(engine, pages, progress):
     if ai is None or not status.get("can_start"):
         return {"ran": False, "candidates": 0, "skipped": "no_connection"}
     cap = int(engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP)
+    held = engine.reserve_review([name for name, _ex in pages], partial=True)   # 수동 AI 검토가 돌거나 기다리는 도면은 건너뛴다
+    pages = [(name, ex) for name, ex in pages if name in held]
+    if not pages:
+        return {"ran": False, "candidates": 0, "skipped": "busy"}
     try:
         client, reason = ai_image_flow.subscription_client(engine)   # 분석 연결이 API 키여도 자동 AI 검토는 구독으로만 돈다. 구독을 못 쓰면 건너뛴다
         if reason:
@@ -57,10 +61,15 @@ def review_if_wanted(engine, pages, progress):
         pics = ai_image_flow.enabled(engine, auto=True)               # 안내를 본 적 없는 사용자의 도면 조각은 보내지 않는다: 설정이 명시적으로 켜졌을 때만
         est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, pics)   # 사람이 고친 자리를 뺀 호출 수(실제 부르기 전 예상)
         progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, None)
-        done, _images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
-                                                lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), engine.stop_requested, auto=True)
+        with engine.ai_turn("추출 뒤 AI 검토", progress):          # 다른 일괄 AI 작업이 돌면 끝날 때까지 기다린다
+            done, _images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
+                                                    lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), engine.stop_requested, auto=True)
+    except api.JobStopped:
+        return {"ran": False, "candidates": 0, "skipped": "stopped"}   # 차례를 기다리다 멈춤. 등록·추출은 완료로 둔다
     except Exception as exc:  # noqa: BLE001 - AI 검토 실패는 등록·추출을 되돌리지 않는다
         LOG.exception("AI 검토 오류")
         return {"ran": False, "candidates": 0, "skipped": "error: %s" % type(exc).__name__}
+    finally:
+        engine.release_review(held)
     return {"ran": True, "candidates": sum(count for _name, count, _stats in done), "skipped": None,
             "calls": sum(stats.get("calls", 0) for _name, _count, stats in done), "estimate": est["calls"], "capped": est["capped"]}

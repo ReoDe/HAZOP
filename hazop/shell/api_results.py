@@ -690,13 +690,17 @@ def _run(engine, a):
             engine.changed("results.run", None)
             progress(text, done, total)
 
+        stop = lambda: run.stop or engine.stop_requested()   # noqa: E731
         try:
-            summary_ = analysis_run.run(client, ns, pg, units, intent_of, tick, lambda: run.stop or engine.stop_requested(),
-                                        on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)), test=test)
+            # 다른 일괄 AI 작업(AI 검토·추출 뒤 자동 검토)이 돌면 끝날 때까지 기다린다(구독 호출은 한 번에 하나). 분석 안의 호출은 차례대로다
+            with engine.ai_turn("AI 분석 실행", lambda text, done, total: tick(text, done, len(units)), stop):
+                summary_ = analysis_run.run(client, ns, pg, units, intent_of, tick, stop,
+                                            on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)), test=test)
         finally:
             run.running = False
             if this_run:
                 conn.set_run_override(None)
+            engine.changed("results.run", None)         # 차례를 기다리다 멈춰도 화면의 '도는 중'이 풀리게
         summary_ = dict(summary_, method=via, method_name=(plan or {}).get("method_name"), this_run=this_run, project_id=engine.project_id(),
                         resume=analysis_run.resume_record(ns, summary_.get("rest"), via, engine.project_id()))
         run.last = summary_

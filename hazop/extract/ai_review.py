@@ -23,6 +23,7 @@ import hashlib
 import json
 import math
 import random
+import time
 
 from hazop import paths, store_io
 from hazop.extract import ai_connect, corrections, rules
@@ -501,19 +502,49 @@ def refuse_reason(client):
     return None
 
 
+# 일시 오류는 그 묶음을 기다렸다가 다시 묻는다: error_kind → 다시 묻기 전 기다릴 초(차례대로, 길이가 다시 묻는 횟수 상한).
+# 다시 묻기도 호출 하나로 세어 도면당·실행당 상한(run의 limit)을 넘지 않는다. 같은 오류가 STREAK_LIMIT번 이어지면 지금처럼 멈춘다.
+# 시간 초과는 한 번에 600초까지 쓰므로 한 번만 다시 묻는다. 한도·초과 사용 같은 멈춤 종류는 다시 묻지 않는다(providers.ERROR_KINDS).
+RETRY_DELAYS = {"rate_limited": (30, 90), "transient": (5, 20), "timeout": (5,)}
+_RETRY = "_retry"      # stats 안에 실행 동안만 두는 (limit, should_stop). run이 돌려주기 전에 뺀다
+
+
+def _wait(seconds, should_stop):
+    """seconds초 기다린다. 그 사이 멈추라고 하면 바로 False."""
+    end = time.monotonic() + seconds
+    while True:
+        if should_stop and should_stop():
+            return False
+        left = end - time.monotonic()
+        if left <= 0:
+            return True
+        time.sleep(min(0.2, left))
+
+
 def _send(client, request, stats, kinds):
-    """호출 하나. stats의 호출·오류 수와 kinds(오류 종류 목록)를 그 자리에서 고친다. → 완료한 응답 또는 None."""
-    res = _call(client, request)
-    stats["calls"] += 1
-    stats["legacy_key_hits"] += bool(res.get("legacy_key"))
-    kind = res.get("error_kind")
-    if kind is None and res.get("status") != "completed":
-        kind = providers.api_error_kind(res)[0] or "other"
-    kinds.append(kind)
-    if kind:
-        stats["errors"] += 1
-        stats["error_kinds"].append(kind)
-    return res if res.get("status") == "completed" else None
+    """호출 하나(일시 오류면 RETRY_DELAYS대로 다시 묻는다). stats의 호출·오류 수와 kinds(오류 종류 목록, 시도마다 하나)를
+    그 자리에서 고친다. → 완료한 응답 또는 None."""
+    limit, should_stop = stats.get(_RETRY) or (None, None)
+    attempt = 0
+    while True:
+        res = _call(client, request)
+        stats["calls"] += 1
+        stats["legacy_key_hits"] += bool(res.get("legacy_key"))
+        kind = res.get("error_kind")
+        if kind is None and res.get("status") != "completed":
+            kind = providers.api_error_kind(res)[0] or "other"
+        kinds.append(kind)
+        if kind:
+            stats["errors"] += 1
+            stats["error_kinds"].append(kind)
+        delays = RETRY_DELAYS.get(kind) or ()
+        if limit is None or attempt >= len(delays) or stats["calls"] >= limit or providers.halts(kinds):
+            return res if res.get("status") == "completed" else None
+        if not _wait(delays[attempt], should_stop):
+            stats["stopped"] = True
+            return None
+        attempt += 1
+        stats["retries"] = stats.get("retries", 0) + 1
 
 
 def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
@@ -628,7 +659,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
              "halted": False, "stopped": False, "left": 0, "error_kinds": [], "refused": refuse_reason(client),
              "excluded": 0, "kind_items": 0, NOT_SYMBOL: 0, UNKNOWN: 0, "wide_calls": 0, "wide_changed": 0,
              "wide_dropped": 0, "no_image": 0, "legacy_key_hits": 0, "recheck_items": 0, "recheck_calls": 0,
-             "recheck_asked": 0, "recheck_no_kind": 0, "recheck_rules": {},
+             "recheck_asked": 0, "recheck_no_kind": 0, "recheck_rules": {}, "retries": 0,
              "legend_source": getattr(images, "legend_source", None),
              "legend_boards": len(getattr(images, "legend", None) or ())}
     if stats["refused"]:
@@ -644,6 +675,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         stats["no_image"] = len(items) - len(croppable)
         items = croppable
     limit = cap if budget is None else max(0, min(cap, budget))
+    stats[_RETRY] = (limit, should_stop)
     batch = batch or (IMAGE_BATCH if images else DEFAULT_BATCH)
     answer_kinds = set(images.kinds) if images else None
     connect_items, reserve = [], 0
@@ -685,6 +717,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         from hazop.extract import ai_split
         cands += ai_split.run(ex, client, images, stats, kinds, limit, should_stop, exclude)
         stats["halted"] = providers.halts(kinds)
+    stats.pop(_RETRY, None)
     return {"candidates": _dedupe(cands), "stats": stats}
 
 

@@ -330,8 +330,9 @@ def run_review(engine, graph_ids, cap, progress):
     est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, ai_image_flow.enabled(engine))
     progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, est["calls"] or None)
     to_gid = {v: k for k, v in names.items()}
-    done, images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
-                                           lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), engine.stop_requested)
+    with engine.ai_turn("AI 검토", progress):                    # 다른 일괄 AI 작업이 돌면 끝날 때까지 기다린다(구독 호출은 한 번에 하나)
+        done, images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
+                                               lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), engine.stop_requested)
     used = images.used if images is not None else {}
     failed = list(images.failed) if images is not None else []
     engine.changed("aireview", None)
@@ -339,6 +340,9 @@ def run_review(engine, graph_ids, cap, progress):
                           "halted": bool(st.get("halted")), "images": n in used, "legend_source": used.get(n)} for n, count, st in done],
             "calls": sum(st.get("calls", 0) for _n, _c, st in done), "estimate": est["calls"], "capped": est["capped"],
             "image_failed": failed}
+
+
+BUSY_TEXT = "이 도면은 AI 검토가 이미 돌고 있거나 차례를 기다리고 있습니다. 끝난 뒤 다시 실행하세요."
 
 
 def _unwrap(out):
@@ -373,7 +377,20 @@ def _h_run(engine, a):
         engine.settings[ai_image_flow.KEY] = ai_image_flow.enabled(engine)
         engine.save_settings()
         engine.changed("state")
-    job = engine.start_job("AI 검토", lambda progress: run_review(engine, gids, cap, progress), kind="ai_review")
+    held = engine.reserve_review([names[g] for g in gids])
+    if not held:
+        raise api.CommandError("busy", BUSY_TEXT)
+
+    def work(progress):
+        try:
+            return run_review(engine, gids, cap, progress)
+        finally:
+            engine.release_review(held)
+    try:
+        job = engine.start_job("AI 검토", work, kind="ai_review")
+    except Exception:
+        engine.release_review(held)
+        raise
     return {"job": job}
 
 
