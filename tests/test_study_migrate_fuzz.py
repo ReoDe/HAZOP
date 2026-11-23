@@ -73,10 +73,6 @@ LIMIT = "표지가 같은 다른 기호(알려진 한계)"
 LIMIT_PIPE = "같은 두 끝 사이 겉모습이 같은 상자 없는 배관(알려진 한계, 위 한계 수에 듦)"
 LIMIT_OLD = "시트 자료 칸이 없던 옛 집합의 참조가 같은 이름의 다른 자료 기호로 이어짐(설계의 남은 위험, 위 한계 수에 듦)"
 LIMIT_SOURCE = "같은 source id·같은 종류로 돌아온 다른 기호(알려진 한계, 위 한계 수에 듦)"
-# 나누기를 되돌리기 전 백업 집합에서 곧바로, 같은 나눈 id를 종류만 바꿔 다시 나눈 판으로 옮기면 source 참조로 잇는다(묘비를 거치면
-# 종류가 달라 되찾지 않음). 퍼즈는 다른 기호로 보지만 엔진은 연산 id를 정체로 본다. 2026-11-24 결정 대기로 올림
-# (tests/test_split_numbering.ResplitWithAnotherKindTest)
-LIMIT_RESPLIT = "같은 나눈 id로 종류만 바꿔 다시 나눈 조각에 그 전 판 집합이 바로 이어짐(결정 대기, 위 한계 수에 듦)"
 RULE = "R-1"
 SET_HOLDERS = tuple(p for p, s in idmap.FIELDS[idmap.SET] if s == idmap.MEMBERS)
 DOC_KINDS = (idmap.IE, idmap.FMEA, idmap.LATENT)
@@ -109,7 +105,6 @@ def to_a_form(ns, g):
 # ---------------------------------------------------------------- 합성 도면
 
 SUBST = {}   # 같은 파일 id·같은 종류로 돌아오게 만든 기호들의 uid -> 묶음 열쇠(LIMIT_SOURCE 생성). 사슬(시드)마다 비운다
-RESPLIT = {}   # 같은 나눈 id로 종류만 바꿔 다시 나눈 조각 uid -> 옛 조각 uid(LIMIT_RESPLIT). 사슬마다 비운다
 
 
 def same_file_id(a, b):
@@ -180,8 +175,9 @@ def split_or_unsplit(r, w):
     """사람의 나누기 연산(U1)과 그 되돌림. 순번 도면(벡터 PDF·스캔)에서 덩어리 기호 하나를 기호 2~3개로 나눈다. 나눈 기호는
     연산마다 id가 `<머리>-split-<op>`로 고정이고(hazop.extract.ids), 덩어리는 없어지거나 몸체만 남아 상자가 바뀐다. 배관 끝은
     나눈 기호로 옮겨 붙는다. 되돌리면 나눈 기호가 모두 빠지고 덩어리가 처음 모습으로 돌아오며 배관 끝도 덩어리로 돌아간다.
-    되돌린 것을 다시 하면(redo) 같은 연산이라 같은 나눈 기호(같은 id·uid·종류·태그)가 돌아온다. 다시 할 때 조각 하나를 다른
-    종류로 고쳐 나누면(redo_other) 같은 나눈 id의 다른 기호(새 uid)다. 새로 나누면 새 연산이라 새 id다. 일어난 일은
+    되돌린 것을 다시 하면(redo) 같은 연산이라 같은 나눈 기호(같은 id·uid·종류·태그)가 돌아온다. 다시 할 때 조각 하나의 종류만
+    달라져도(redo_other, 분류 규칙 변경·set_kind) 연산의 개체가 고정이라 같은 조각(같은 uid)이다. op_id는 다시 쓰지 않아
+    (corrections.issued_op_ids) 같은 나눈 id는 같은 조각이다. 새로 나누면 새 연산이라 새 id다. 일어난 일은
     w["split_events"]에 적는다(판 문자열에는 들지 않음)."""
     if w["fmt"] not in ("pdf_vector", "raster_png"):
         return
@@ -257,12 +253,9 @@ def redo_split(r, w):
     pieces = copy.deepcopy(rec["pieces"])
     w["deleted"] = [d for d in w.get("deleted") or [] if d["uid"] not in {x["uid"] for x in pieces}]
     other = r.random() < 0.4
-    if other:  # 같은 연산 id로 다시 나누되 조각 하나를 다른 종류로: 같은 나눈 id의 다른 기호
+    if other:  # 같은 연산 id로 다시 나누되 조각 하나의 종류만 다름: 연산의 개체가 고정이라 같은 조각(같은 uid)이다
         k = r.randrange(len(pieces))
-        w["next"] += 1
-        RESPLIT["%s:s%d" % (pfx(w), w["next"])] = pieces[k]["uid"]
-        pieces[k] = dict(pieces[k], uid="%s:s%d" % (pfx(w), w["next"]),
-                         kind=r.choice(sorted(set(KINDS) - {pieces[k]["kind"]})))
+        pieces[k] = dict(pieces[k], kind=r.choice(sorted(set(KINDS) - {pieces[k]["kind"]})))
     blob = next(s for s in w["syms"] if s["uid"] == rec["blob"]["uid"])
     body = [dict(blob, bbox=list(rec["body"]))] if rec["body"] is not None else []
     w["syms"] = [s for s in w["syms"] if s is not blob] + body + copy.deepcopy(pieces)
@@ -779,9 +772,6 @@ class Track:
                              | {self.tomb_truth[t] for t in lost or () if self.tomb_truth.get(t)}, "taint": False})
 
     def judge_limit(self, u_new, allowed, truth_new):
-        if RESPLIT.get(u_new) in allowed:
-            self.j.stats[LIMIT_RESPLIT] += 1
-            return True
         if any(same_file_id(u_new, a) for a in allowed):
             self.j.stats[LIMIT_SOURCE] += 1   # 같은 파일 id·같은 종류로 돌아온 다른 기호(되돌아온 판에서 원래 기호가 다시 나오는 것 포함)
             return True
@@ -1085,7 +1075,6 @@ def run(seeds, judge, after_step=None):
     for seed in seeds:
         r = random.Random(seed)
         SUBST.clear()
-        RESPLIT.clear()
         project_mode = r.random() < 0.3
         first, steps = plan_chain(r, project_mode)
         stage = "만들기"
