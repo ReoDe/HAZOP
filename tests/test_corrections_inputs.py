@@ -129,6 +129,34 @@ class InputOpsTest(unittest.TestCase):
                 if by1[m]["source_object_id"] in ("pdf-p0-sym-0002", "pdf-p0-sym-0003"):
                     self.assertEqual(by2[renamed.get(m, m)]["bbox"], by1[m]["bbox"])
 
+    def test_split_symbol_id_is_fixed_and_undoing_split_tombstones_its_members(self):
+        ops = self.split_ops()
+        self.save(ops)
+        g2 = build.build_graph(corrections.resolve(NAME, allow_extract=True)["corrected"])
+        made = {"pdf-p0-split-%s" % o["op_id"] for o in ops}
+        basis = {n["source_object_id"]: n["id_basis"] for n in g2["nodes"] if n.get("node_type") == "drawing_object"}
+        self.assertEqual({basis[m] for m in made}, {"source"}, "나눈 기호 id는 연산에 묶여 고정(hazop.extract.ids)")
+        self.assertEqual(basis["pdf-p0-sym-0002"], "sequence")
+        ns = sn.confirm(sn.propose(g2, at=AT), g2, "김검토", at=AT)
+        sn.save(ns)
+        on_split = {n["entity_id"] for n in g2["nodes"] if n["source_object_id"] in made}
+        held = [m for seg in ns["nodes"] for m in seg["members"] if m in on_split]
+        self.assertTrue(held, "구간이 나눈 기호를 구성요소로 가짐")
+        self.save([])
+        g3 = build.build_graph(corrections.resolve(NAME, allow_extract=True)["corrected"])
+        moved = sn.load(g3)
+        alive = {n["entity_id"] for n in g3["nodes"]}
+        old_of = {n["entity_id"]: n["source_object_id"] for n in g2["nodes"]}
+        new_of = {n["entity_id"]: n["source_object_id"] for n in g3["nodes"]}
+        lost = [t for seg in moved["nodes"] for t in seg.get("lost") or ()]
+        self.assertEqual(len(lost), len(held), "되돌린 나누기의 기호는 묘비로 남음")
+        self.assertTrue(all(t.startswith("lost:") for t in lost))
+        for seg_a, seg_b in zip(ns["nodes"], moved["nodes"]):
+            kept = [old_of[m] for m in seg_a["members"] if m not in on_split]
+            self.assertEqual(sorted(new_of[m] for m in seg_b["members"]), sorted(kept),
+                             "나머지 구성요소는 같은 기호로 이어지고 나눈 기호 자리를 덩어리가 받지 않음")
+            self.assertTrue(set(seg_b["members"]) <= alive)
+
     def test_r3_edit_on_split_symbol_records_what_it_relies_on(self):
         ops = self.split_ops()
         self.save(ops)

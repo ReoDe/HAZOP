@@ -114,8 +114,59 @@ def make_project(r):
     return {"sheets": {"A": a, "B": b}}
 
 
+def _repoint(pipes, mapping):
+    for p in pipes:
+        ends = []
+        for k, e in enumerate(p["ends"]):
+            to = mapping.get(e, e)
+            to = to[min(k, len(to) - 1)] if isinstance(to, list) else to
+            if to not in ends:
+                ends.append(to)
+        p["ends"] = ends
+
+
+def split_or_unsplit(r, w):
+    """사람의 나누기 연산(U1)과 그 되돌림. 순번 도면(벡터 PDF·스캔)에서 덩어리 기호 하나를 기호 2~3개로 나눈다. 나눈 기호는
+    연산마다 id가 `<머리>-split-<op>`로 고정이고(hazop.extract.ids), 덩어리는 없어지거나 몸체만 남아 상자가 바뀐다. 배관 끝은
+    나눈 기호로 옮겨 붙는다. 되돌리면 나눈 기호가 모두 빠지고 덩어리가 처음 모습으로 돌아오며 배관 끝도 덩어리로 돌아간다.
+    다시 나누면 새 연산이라 새 id다. 일어난 일은 w["split_events"]에 적는다(판 문자열에는 들지 않음)."""
+    if w["fmt"] not in ("pdf_vector", "raster_png"):
+        return
+    events = w.setdefault("split_events", [])
+    done = w.setdefault("split_blobs", [])
+    if done and r.random() < 0.4:
+        rec = done.pop(r.randrange(len(done)))
+        pieces = [s["uid"] for s in w["syms"] if s.get("split_group") == rec["group"]]
+        blob = rec["blob"]
+        w["syms"] = [s for s in w["syms"] if s.get("split_group") != rec["group"] and s["uid"] != blob["uid"]]
+        w["syms"].append(copy.deepcopy(blob))
+        _repoint(w["pipes"], {u: blob["uid"] for u in pieces})
+        events.append("unsplit")
+        return
+    cand = [s for s in w["syms"] if s["kind"] != "continuation" and not s.get("fixed") and not s.get("split")
+            and s["uid"] not in {d["blob"]["uid"] for d in done}]
+    if not cand or r.random() >= 0.3:
+        return
+    blob = r.choice(cand)
+    w["next"] += 1
+    group = "g%d" % w["next"]
+    pieces = []
+    for _ in range(r.randint(2, 3)):
+        w["next"] += 1
+        pieces.append({"uid": "%s:s%d" % (w["sheet"], w["next"]), "kind": r.choice(KINDS), "tag": r.choice(TAGS),
+                       "bbox": place(r), "nobox": False, "fixed": False, "split": "op%d" % w["next"],
+                       "split_group": group})
+    keep = r.random() < 0.5
+    done.append({"group": group, "blob": copy.deepcopy(blob)})
+    w["syms"] = [s for s in w["syms"] if s is not blob] + ([dict(blob, bbox=place(r))] if keep else []) + pieces
+    _repoint(w["pipes"], {blob["uid"]: [pieces[0]["uid"], pieces[-1]["uid"]]})
+    events.append("split")
+
+
 def mutate(r, w):
     w = copy.deepcopy(w)
+    w["split_events"] = []
+    split_or_unsplit(r, w)
     out = []
     for s in w["syms"]:
         x = r.random()
@@ -132,7 +183,8 @@ def mutate(r, w):
     for d in list(w.get("deleted") or []):
         if r.random() < 0.15:  # 지운 자리에 다른 기호(새 uid)
             w["next"] += 1
-            out.append(dict(d, uid="%s:s%d" % (w["sheet"], w["next"]), tag=None))
+            out.append(dict({k: v for k, v in d.items() if k not in ("split", "split_group")},
+                            uid="%s:s%d" % (w["sheet"], w["next"]), tag=None))
     for d in list(w.get("deleted") or []):
         if r.random() < 0.4 and d["uid"] not in {s["uid"] for s in out}:  # 같은 기호가 돌아옴
             out.append(copy.deepcopy(d))
@@ -209,9 +261,11 @@ def soid_of(fmt, s, k, what):
         if what == "junction" or s["fixed"]:
             return "Item-" + s["uid"].split(":")[1], False
         return "Seg_1__item_%d" % k, True
+    head = "img" if fmt == "raster_png" else "pdf-p0"
+    if s.get("split"):
+        return "%s-split-%s" % (head, s["split"]), False
     if s.get("fixed"):
         return "manual-c-" + s["uid"].split(":")[1], False
-    head = "img" if fmt == "raster_png" else "pdf-p0"
     return "%s-%s-%04d" % (head, what, k), False
 
 
@@ -259,6 +313,8 @@ def next_world(r, world, kind):
         return {"mutate": mutate, "reorder": reorder, "recategorize": lambda r, w: recategorize(w)}.get(
             kind, lambda r, w: restamp(w))(r, world)
     out = copy.deepcopy(world)
+    for s in out["sheets"].values():
+        s.pop("split_events", None)
     names = sorted(out["sheets"])
     pick = names if kind == "mutate" and r.random() < 0.3 else [r.choice(names)]  # 보통은 한 도면만 다시 추출
     for name in pick:
@@ -733,6 +789,10 @@ def run(seeds, judge):
             res = make_results(r, ns, g, stale)
             judge.stats["집합 꼴 " + form] += 1
             judge.stats["사슬 " + ("프로젝트 그래프" if project_mode else "도면 " + first["fmt"])] += 1
+            for kind, w in steps:
+                sheets = w["sheets"].values() if "sheets" in w else [w]
+                for e in [e for s in sheets for e in s.get("split_events") or ()] if kind == "mutate" else ():
+                    judge.stats["나누기 연산 " + e] += 1
             track.adopt_set(ns, truth)
             live_slots = {}
             track.adopt_results(live_slots, res, truth)
@@ -921,7 +981,8 @@ class MigrateFuzzTest(unittest.TestCase):
                   "되돌아온 판에서 새로 단 참조", "결과가 이번 판 이전을 건너뜀", "구간을 새로 제안", "옛 꼴 이력 줄",
                   "결과 줄 번호 없음", "집합을 백업으로 되돌림", "문서가 이번 판 이전을 건너뜀",
                   "되돌아온 판에서 새로 단 문서 참조", "표지 없는 옛 문서 옮김", "표지 없는 옛 문서 묘비(증명 못 함)",
-                  "그래프 판으로 표지를 찍은 문서", "옛 표지 아래 새 판 쓰기를 거절함"):
+                  "그래프 판으로 표지를 찍은 문서", "옛 표지 아래 새 판 쓰기를 거절함", "나누기 연산 split",
+                  "나누기 연산 unsplit"):
             self.assertGreater(s[k], SEEDS // 20, k)
         for form in ("new", "a", "b"):
             self.assertGreater(s["집합 꼴 " + form], SEEDS // 10)
