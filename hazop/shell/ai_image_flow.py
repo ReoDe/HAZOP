@@ -63,8 +63,8 @@ def _source(ex):
 
 
 def estimate_input():
-    """예상 호출 수를 셀 때 쓰는 그림 입력(쪽 그림을 그리지 않는다). 실행이 쓰는 값(wide·recheck·split)과 같다."""
-    return ai_images.ImageInput(None, wide=True, recheck=True, split=True)
+    """예상 호출 수를 셀 때 쓰는 그림 입력(쪽 그림을 그리지 않는다). 실행이 쓰는 기본값(wide·recheck)과 같다."""
+    return ai_images.ImageInput(None, wide=True, recheck=True)
 
 
 def estimate_pages(pages, cap, run_cap, with_images):
@@ -156,8 +156,7 @@ class Factory:
         if src is None:
             return None
         try:
-            img = ai_images.image_input_for(src[0], src[1], drawings=self.drawings(), cache_dir=paths.folder("cache", "ai-legend"),
-                                           split=True)
+            img = ai_images.image_input_for(src[0], src[1], drawings=self.drawings(), cache_dir=paths.folder("cache", "ai-legend"))
         except Exception:  # noqa: BLE001 - 그림을 만들지 못해도 그 도면은 글 입력으로 돌린다(호출 수는 그림 입력 예상으로 자른다)
             LOG.exception("그림 입력을 만들지 못함: %s", name)
             self.failed.append(name)

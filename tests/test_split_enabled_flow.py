@@ -4,6 +4,7 @@
 → 검토 목록(api_aireview.candidates) → api_aireview.accept → 짓기 작업(api_inputs) → 판 이전.
 도면은 tests.test_corrections_inputs의 합성 1쪽 PDF(맞닿은 수동 밸브 셋이 한 덩어리). 덩어리가 60pt라 나누기 대상 하한(긴 변 100pt)만
 시험에서 낮춘다. 실제 구독 호출은 없다.
+앱은 아직 split을 묻지 않는다(엔진 결함이 고쳐질 때까지 꺼 둠, 2026-11-24). 이 시험은 그림 입력에 split=True를 직접 실어 켠 길을 미리 돌린다.
 """
 
 import json
@@ -20,10 +21,10 @@ from tests.test_shell_aireview import FakeAi  # noqa: E402
 
 from hazop import paths  # noqa: E402
 from hazop.app import data, project_ctx  # noqa: E402
-from hazop.extract import ai_review, ai_split, corrections  # noqa: E402
+from hazop.extract import ai_images, ai_review, ai_split, corrections  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
 from hazop.register import registry  # noqa: E402
-from hazop.shell import api, api_aireview, api_inputs, api_nodes, sheet_refresh  # noqa: E402
+from hazop.shell import ai_image_flow, api, api_aireview, api_inputs, api_nodes, sheet_refresh  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 
 OTHERS = ["pdf-p0-sym-0002", "pdf-p0-sym-0003"]
@@ -85,7 +86,12 @@ class SplitEnabledFlow(Base):
                             for b in self.boxes]}
 
     def run_review(self):
-        with mock.patch.object(ai_split, "LONG_MIN", 50.0):
+        real = ai_images.image_input_for
+
+        def with_split(*a, **k):
+            return real(*a, **dict(k, split=True))
+        with mock.patch.object(ai_split, "LONG_MIN", 50.0), mock.patch.object(ai_images, "image_input_for", with_split), \
+                mock.patch.object(ai_image_flow, "estimate_input", lambda: ai_images.ImageInput(None, wide=True, recheck=True, split=True)):
             return api_aireview.run_review(self.eng, [self.gid], ai_review.DEFAULT_CAP, lambda *a: None)
 
     def rows(self):
