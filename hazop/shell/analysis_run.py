@@ -122,8 +122,11 @@ def contexts(units, ns, pg, intent_of):
 
 def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, test=False):
     """units를 차례로 부르고 호출마다 저장한다 -> {"calls", "ok_calls", "failed_calls", "cells", "reason", "limit", "usage", "rest", ...}.
-    reason: done · stopped(멈추라고 함) · halted(구독 한도·초과 사용 등으로 남은 호출을 멈춤) · stale(분석 중에 검토구간이 새 도면 판으로 옮겨짐).
+    reason: done · stopped(멈추라고 함) · halted(구독 한도·초과 사용 등으로 남은 호출을 멈춤) · stale(분석 중에 검토구간이 새 도면 판으로 옮겨짐)
+    · save_failed(받은 답을 결과 파일에 저장하지 못함: 저장 오류이거나 충돌이 이어짐).
     stale이면 그 호출의 답을 결과 파일에 합치지 않고(옛 판 참조가 옮긴 참조를 덮지 않게) unsaved 경로의 파일에 따로 남기고 멈춘다. 그 칸은 rest에 든다.
+    save_failed도 같다: 받은 답을 unsaved에 '저장 실패' 사유로 남기고 그 단위의 칸을 rest에 넣어 멈춘다(구독 한도를 쓴 답을 잃지 않게).
+    unsaved에 남기기마저 실패하면 그 오류를 올린다(작업 실패). 남긴 답을 되살리는 길은 아직 없다(이어서 실행이 그 칸을 다시 묻는다).
     progress(text, done, total)는 호출 사이에 부른다.
     rest: 이어서 실행할 칸 [[node_id, deviation_id]](실패한 단위의 칸 + 부르지 않은 단위의 칸, 순서 유지·중복 없음).
     test: 고정 응답(시험) 실행. 결과를 시험 파일에 저장한다."""
@@ -132,7 +135,7 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
     project = ns.get("project_id")
     kinds, ok_calls, ok_cells, limit, halted, last_error = [], 0, 0, None, None, None
     done = 0
-    stopped = moved = False
+    stopped = moved = save_failed = False
     rest, unsaved = [], []
     for unit in units:
         if should_stop():
@@ -156,7 +159,16 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
         else:
             last_error = ur.get("error")
             rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
-        saved = _merge_and_save(ns, project, ur, test=test)
+        try:
+            saved = _merge_and_save(ns, project, ur, test=test)
+        except OSError:
+            LOG.exception("결과 파일에 저장하지 못함: %s", ur.get("unit_id"))
+            saved = None
+        if saved is None:            # 저장 오류이거나 충돌이 이어짐: 받은 답을 따로 남기고 멈춘다
+            unsaved.append(_keep_unsaved(ns, project, ur, test, why=SAVE_FAILED_WHY))
+            rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
+            save_failed = True
+            break
         if on_saved is not None and saved is not None and not test:
             on_saved(ur, saved[0], saved[1])         # 반영한 문서와 새 지문: 화면에 바뀐 칸만 알리려고(시험 파일은 화면 결과가 아니다)
         if providers.halts(kinds):
@@ -167,7 +179,8 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
     seen = set()
     rest = [c for c in rest if not (tuple(c) in seen or seen.add(tuple(c)))]
     doc, _fp = (res.load_test_fp(ns) if test else res.load_fp(ns))
-    reason = "stale" if moved else "halted" if halted is not None else ("stopped" if stopped else "done")
+    reason = ("stale" if moved else "save_failed" if save_failed else "halted" if halted is not None
+              else "stopped" if stopped else "done")
     return {"calls": done, "planned": len(units), "ok_calls": ok_calls, "failed_calls": done - ok_calls, "cells": ok_cells, "reason": reason,
             "limit": limit, "error_kind": (halted or {}).get("error_kind"), "error": (halted or {}).get("error") or last_error,
             "conn_state": (halted or {}).get("conn_state"), "usage": ai_cells.usage_total(doc) if doc else None, "rest": rest, "test": bool(test),
@@ -183,7 +196,11 @@ def _set_moved(ns):
     return (now or {}).get("graph_version") != ns.get("graph_version")
 
 
-def _keep_unsaved(ns, project, ur, test):
+STALE_WHY = "분석 중에 검토구간이 새 도면 판으로 옮겨져 이 답을 결과에 합치지 않았다(옛 판 참조)"
+SAVE_FAILED_WHY = "결과 파일에 저장하지 못해(저장 오류이거나 다른 쪽 저장과 계속 겹침) 이 답을 결과에 넣지 못했다"
+
+
+def _keep_unsaved(ns, project, ur, test, why=STALE_WHY):
     """합치지 못한 호출의 답을 결과 폴더의 unsaved/ 아래에 그대로 남긴다(받은 답을 잃지 않게. 사람이 보거나 이어서 실행으로 다시 받는다). → 쓴 경로."""
     import os
     from hazop import paths, store_io
@@ -191,8 +208,8 @@ def _keep_unsaved(ns, project, ur, test):
     name = paths.safe_name("%s-%s-%s" % (ns["graph_id"], ur.get("unit_id") or "unit", stamp().replace(":", "")))
     path = os.path.join(folder, name + ".json")
     store_io.write_json(path, dict(ur, kind="hazop_unsaved_analysis", test=bool(test), set_graph_version=ns.get("graph_version"),
-                                   why="분석 중에 검토구간이 새 도면 판으로 옮겨져 이 답을 결과에 합치지 않았다(옛 판 참조)"))
-    LOG.warning("분석 중 도면 변경 반영으로 결과에 합치지 않은 답을 남김: %s", path)
+                                   why=why))
+    LOG.warning("결과에 합치지 않은 답을 남김(%s): %s", why, path)
     return path
 
 
