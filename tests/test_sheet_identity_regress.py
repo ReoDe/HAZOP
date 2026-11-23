@@ -1,19 +1,31 @@
 """시트 정체 퍼즈(tests.test_sheet_identity_fuzz)가 e33f2de에서 찾은 결함의 고정 재현 시험. 퍼즈 시드에 기대지 않는 정해진 순서다.
 
 E1 붙박은 in_use 자리가 낡은 채 남아, 번호를 쓰던 파일이 있는데도 앞서 붙박였던 파일이 번호로 돌아오면 그 번호의 주인이 말없이 뒤집힌다.
+   변형(시드 207): 낡은 자리의 주인이 아닌 셋째 파일이 그 번호를 받아도, 먼저 등록한 자료라는 차례로 쓰던 파일에게서 가져간다.
 E2 정착이 붙박은 옛 자리(legacy)의 주인 파일을 고르기로 고르면 자리가 chosen으로 바뀌어 옛 이름 붙박기가 풀린다. 다음 추출에서 그 파일은 임시 이름으로
    옮겨 가고 그 이름을 같은 번호의 다른 파일이 이어받으며, 그 사이 표제란 가드는 옛 이름 대신 임시 이름으로 셈해 옮길 구간을 0개로 알린다.
+E4 (퍼즈가 시드 111·115·183에서 찾음) 문서(초기사건·FMEA·잠재 후보 판단)의 판 이전 기록 `ref_migrations[].lost`에 잃었던 참조의 옛 값('graph-<번호>#…')이 글로
+   남는데, 번호 확정 가드가 이를 지금 참조로 세어 그 번호를 다른 도면에 확정하지 못하게 막는다. 참조는 이미 새 이름으로 되찾아졌고 그 기록은 사람이 지울 수 없어
+   그 번호가 영영 막힌다(막다른 길). 읽을 때만 옮겨 파일 원문에 남은 옛 이름도 같은 꼴로 막는다(시드 111·115·183).
+E5 (퍼즈가 시드 232에서 찾음) 먼저 등록하고 번호를 받았지만 아직 추출하지 않은 파일 x가 나중에 추출되면, 그 사이 같은 번호로 등록·추출해 쓰이던 파일 y에게서 그 번호의 주인을
+   말없이 가져간다(고르는 차례 4 '먼저 등록한 자료'가 이김, 자리를 붙박지 않음). 등록 단조(새 자료를 넣어도 있던 시트의 주인이 안 바뀜)가 어긋나고, y의 구간은 묘비가 된다.
 실행: python -m unittest tests.test_sheet_identity_regress
 """
 
 import unittest
+import json
+import os
 from unittest import mock
 
 from tests.test_sheet_gid_paths import NUMBER, SheetCase, legacy_name
 from tests.test_titleblock import BY, P
 
+from hazop import paths
 from hazop.app import project_ctx
 from hazop.graph import sources
+from hazop.register import registry
+from hazop.ie import model, store as ie_store
+from hazop.study import migrate, nodes
 
 
 class SeatRegressTest(SheetCase):
@@ -28,6 +40,16 @@ class SeatRegressTest(SheetCase):
         self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-555"})["ok"])
         self.assertEqual(self.owner("graph-SNP-M-555"), b, "a가 번호로 돌아왔다고 쓰던 b에게서 말없이 넘어옴")
         self.assertEqual([(c["in_use_material"]) for c in sources.conflicts(P)], [b])
+
+    def test_e1_variant_a_third_file_does_not_take_the_number_through_a_stale_seat(self):
+        c = self.add("SNP-M-301", "drawio")
+        a, b = self.add("SNP-M-101", "drawio"), self.add("SNP-M-102", "drawio")
+        for mid, number in ((a, "SNP-M-555"), (b, "SNP-M-555"), (a, "SNP-M-101")):
+            self.assertTrue(self.confirm(mid, {"drawing_number": number})["ok"], number)
+        self.assertEqual(self.owner("graph-SNP-M-555"), b, "시험 전제: a가 떠나 b가 쓰는 번호, a의 낡은 자리가 남음")
+        self.assertTrue(self.confirm(c, {"drawing_number": "SNP-M-555"})["ok"])
+        self.assertEqual(self.owner("graph-SNP-M-555"), b, "먼저 등록한 c가 낡은 자리를 틈타 쓰던 b에게서 번호를 가져감")
+        self.assertEqual([x["in_use_material"] for x in sources.conflicts(P)], [b])
 
     def legacy_pair(self):
         """이 단위 전 앱: 번호 없는 drawio a(쪽 이름 graph-SNP-M-101)와 같은 번호 101을 확정한 PDF b가 한 이름을 나눠 쓴다. 정착하면 a가 옛 자리 주인이다."""
@@ -54,7 +76,6 @@ class SeatRegressTest(SheetCase):
         dry = self.confirm(a, {"drawing_number": "SNP-M-102"}, dry=True)
         self.assertTrue(dry["ok"], dry)
         self.assertEqual(dry["carries"], {"구간": 1}, "가드가 a의 옛 이름 대신 임시 이름으로 셈해 옮길 구간을 놓침")
-
     def test_e2_choosing_a_format_after_the_legacy_owner_keeps_its_name(self):
         a, b = self.legacy_pair()
         sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
@@ -62,6 +83,90 @@ class SeatRegressTest(SheetCase):
         self.reextract(a)
         self.assertEqual(self.sheet(a)["graph_id"], "graph-SNP-M-101", "형식을 고르며 고른 파일을 내려놓자 옛 이름 붙박기도 풀림")
         self.assertEqual(self.owner("graph-SNP-M-101"), b)
+
+
+    def test_e5_guard_the_owner_confirming_its_own_name_keeps_it_while_its_graph_is_set_aside(self):
+        """시드 14·16·29: 확정 길은 그 쪽 앞 그래프를 비켜 둔 뒤 다시 추출한다. 그 사이 디스크로는 같은 번호를 원하는 b가 주인으로 보이지만
+        추출이 그것을 붙박으면 이름을 쓰던 a가 자리를 잃는다."""
+        a, b = self.legacy_pair()
+        self.assertEqual(self.owner("graph-SNP-M-101"), a, "시험 전제: 옛 자리 주인 a가 이름을 씀")
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+        self.assertEqual(self.owner("graph-SNP-M-101"), a, "같은 이름의 번호를 확정한 a가 비켜 둔 사이 b에게 붙박혀 이름을 잃음")
+
+class DocLogRegressTest(SheetCase):
+    def test_e4_a_past_loss_in_a_documents_move_log_does_not_block_the_number(self):
+        a = self.add("SNP-M-101", "pdf")
+        self.make_nodes(a)
+        pg = project_ctx.project_graph(P)
+        ns = nodes.load(pg)
+        ref = ns["graph_member_refs"][ns["nodes"][0]["members"][0]]
+        doc = model.empty(P)
+        doc["counters"]["H"] = 1
+        doc["headings"]["H-01"] = {"name": "h", "targets": [ref], "status": "live", "origin": "human"}
+        doc["ref_versions"] = {ns["graph_id"]: {"graph_version": ns["graph_version"], "step": len(migrate.lines(ns))}}
+        doc["ref_migrations"] = [{"at": "2026-11-23T00:00:00Z", "from": "pv-a", "to": "pv-b", "graph_id": ns["graph_id"], "step": 1, "refs_lost": 1,
+                                  "lost": {"lost:project-P1:pv-b:t-0": "graph-SNP-M-555#pdf-p0-conn-0018"}}]
+        os.makedirs(os.path.dirname(ie_store.store_path(P)), exist_ok=True)
+        with open(ie_store.store_path(P), "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, ensure_ascii=False)
+        b = self.add("SNP-M-102", "pdf")
+        out = self.confirm(b, {"drawing_number": "SNP-M-555"}, dry=True)
+        self.assertTrue(out["ok"], "이미 되찾은 참조의 옛 값이 판 이전 기록에 글로 남았을 뿐인데 그 번호를 막음: %s" % (out.get("refused") or [{}])[0].get("reason"))
+
+    def test_e4_an_old_name_left_in_a_documents_file_does_not_block_the_number(self):
+        """판 이전을 문서 파일에 쓰지 못해(write_after 실패) 원문에 a의 옛 이름 101이 남았지만 읽는 길은 이미 555로 옮겨 본다. 그 뒤 101을 받은 b가
+        번호를 바꿀 때 가드는 그 옛 이름을 b의 기록으로 세지 않는다."""
+        a = self.add("SNP-M-101", "pdf")
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+        self.make_nodes(a)
+        pg = project_ctx.project_graph(P)
+        ns = nodes.load(pg)
+        ref = ns["graph_member_refs"][ns["nodes"][0]["members"][0]]
+        self.assertTrue(ref.startswith("graph-SNP-M-101#"), ref)
+        doc = model.empty(P)
+        doc["counters"]["H"] = 1
+        doc["headings"]["H-01"] = {"name": "h", "targets": [ref], "status": "live", "origin": "human"}
+        doc["ref_versions"] = {ns["graph_id"]: {"graph_version": ns["graph_version"], "step": len(migrate.lines(ns))}}
+        raw = json.dumps(doc, ensure_ascii=False)
+        os.makedirs(os.path.dirname(ie_store.store_path(P)), exist_ok=True)
+        with open(ie_store.store_path(P), "w", encoding="utf-8") as fh:
+            fh.write(raw)
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-555"})["ok"])
+        nodes.load(project_ctx.project_graph(P))
+        with open(ie_store.store_path(P), "w", encoding="utf-8") as fh:
+            fh.write(raw)
+        seen = json.dumps(ie_store.load(P), ensure_ascii=False)
+        self.assertNotIn("graph-SNP-M-101#", seen, "시험 전제: 읽는 길은 옛 이름을 새 이름으로 옮겨 봄")
+        self.assertIn("graph-SNP-M-555#", seen)
+        b = self.add("SNP-M-102", "pdf")
+        self.assertTrue(self.confirm(b, {"drawing_number": "SNP-M-101"})["ok"], "시험 전제: 비어 있던 번호 101을 b가 받음")
+        with open(ie_store.store_path(P), "w", encoding="utf-8") as fh:
+            fh.write(raw)
+        out = self.confirm(b, {"drawing_number": "SNP-M-103"}, dry=True)
+        self.assertTrue(out["ok"], (out.get("refused") or [{}])[0].get("reason"))
+        self.assertEqual(out["carries"], {}, "읽는 길이 이미 a의 555로 옮긴 원문의 옛 이름을 b의 기록으로 셈(증명이 없으면 막음)")
+
+
+class RegistrationOrderRegressTest(SheetCase):
+    def test_e5_extracting_a_file_registered_earlier_does_not_take_the_number_from_the_file_in_use(self):
+        x = self.register_only("SNP-M-102", "drawio", "in-x")
+        y = self.register(self.copy_in("SNP-M-101", "drawio", "in-y"), dict(NUMBER))
+        _pg, before = self.make_nodes(y)
+        members = before["nodes"][0]["members"]
+        self.assertEqual(self.owner_of("graph-SNP-M-101"), y, "시험 전제: 추출한 y가 쓰는 번호")
+        self.reextract(x)
+        self.assertEqual(self.owner_of("graph-SNP-M-101"), y, "먼저 등록했을 뿐인 x가 추출되자 쓰던 y에게서 번호를 가져감")
+        _pg, n = self.node()
+        self.assertEqual((n["members"], n.get("lost") or []), (members, []))
+
+    def register_only(self, drawing, ext, folder):
+        """번호 SNP-M-101과 함께 등록만 하고 추출은 하지 않는다."""
+        res = registry.register(self.copy_in(drawing, ext, folder), P, "P&ID", paths.store_root(), dict(NUMBER), BY)
+        self.assertEqual(res["outcome"], "registered", res.get("notes"))
+        return res["record"]["material_id"]
+
+    def owner_of(self, gid):
+        return next((s["material_id"] for s in project_ctx.project_graph(P)["sheets"] if s["graph_id"] == gid), None)
 
 
 if __name__ == "__main__":

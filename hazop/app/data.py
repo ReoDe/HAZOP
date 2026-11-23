@@ -304,6 +304,7 @@ def _extract_and_graph(registration_path, progress=None, ctx=None):
         warnings = []
         result, out_dir = script_module("extract_dexpi").run_one(original, paths.output_root("extract"),
                                                                  registration=record, warnings=warnings)
+        _keep_owners(record, [out_dir])
         graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
         return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir,
                          "warnings": warnings}, record["project_id"])
@@ -311,9 +312,32 @@ def _extract_and_graph(registration_path, progress=None, ctx=None):
     warnings = []
     result, out_dir = ex.run_one(original, paths.output_root("extract"), svg="auto", page=0, registration=record,
                                  registered_svgs=reg_svg, warnings=warnings)
+    _keep_owners(record, [out_dir])
     graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
     return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir,
                      "warnings": warnings}, record["project_id"])
+
+
+def _keep_owners(record, out_dirs):
+    """새로 지을 그래프가 받을 시트 이름을 지금 다른 자료가 쓰고 있으면 그 자료를 주인으로 붙박는다(sources.keep_owner). 먼저 등록했을 뿐
+    늦게 추출된 자료가 '먼저 등록한 자료' 차례로 쓰이던 자료에게서 이름을 말없이 가져가지 않고 고르기 줄에 오른다(등록 단조).
+    그래프를 쓰기 전에 부른다. 붙박을 것이 없으면 자리 표를 쓰지 않는다.
+    표제란 확정 길(prepared_for_reextract 안)은 하지 않는다: 그 길은 이 자료의 앞 그래프를 비켜 둔 뒤라 디스크로는 지금 주인을 알 수 없고
+    (이 자료가 주인이어도 다른 자료가 주인으로 보임), 새 이름을 다른 파일이 쓰면 가드가 비키기 전에 이미 붙박았다(titleblock._apply의 keep)."""
+    from hazop.app import project_ctx
+    from hazop.graph import sheets
+    pid, mid = record.get("project_id"), record.get("material_id")
+    if not mid or getattr(_PREPARED, "on", False) or not graph_sources.load_seats(pid)[1]:
+        return
+    names = project_ctx.graph_names(pid)
+    for out_dir in out_dirs:
+        gid = graph_sources.sheet_name(pid, read_json(os.path.join(out_dir, "extraction.json")))
+        owner = sheets.from_out_name(names.get(gid) or "")
+        if owner and owner[0] != mid:
+            try:
+                graph_sources.keep_owner(pid, gid, "extract")
+            except store_io.Conflict:
+                graph_sources.keep_owner(pid, gid, "extract")
 
 
 def _extract_scan_pages(record, original, ex, bg, progress=None):
@@ -332,6 +356,7 @@ def _extract_scan_pages(record, original, ex, bg, progress=None):
             os.remove(stale)
     if not done:
         raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
+    _keep_owners(record, [out_dir for _page, _result, out_dir in done])
     pages = []
     for page, result, out_dir in done:
         graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
@@ -356,6 +381,7 @@ def _extract_pdf_pages(record, original, ex, bg):
             os.remove(stale)
     if not done:
         raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
+    _keep_owners(record, [out_dir for _page, _result, out_dir in done])
     pages = []
     for page, result, out_dir in done:
         graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))

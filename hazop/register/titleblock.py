@@ -218,7 +218,8 @@ def _number_refs(project_id, graph_id):
     return {k: v for k, v in out.items() if v}
 
 
-PAST_KEYS = ("batches", "history", "log", "drawings")   # 지난 일의 기록: 되돌리기 묶음, 이력, 판 이전 줄의 도면 목록
+# 지난 일의 기록: 되돌리기 묶음, 이력, 판 이전 줄의 도면 목록, 문서의 판 표지와 옮긴 기록(ref_versions·ref_migrations, 잃은 참조의 옛 값이 글로 남음)
+PAST_KEYS = ("batches", "history", "log", "drawings", "ref_versions", "ref_migrations")
 
 
 def _links(project_id, graph_id):
@@ -308,6 +309,7 @@ def _split_refs(project_id, graph_id, stale=None):
         if n:
             have = out.get(name, (0, unit))
             out[name] = (have[0] + n, have[1])
+    followed = _followed_docs(project_id)
     for name, files, rule in _places(project_id):
         for f in files:
             try:
@@ -315,7 +317,9 @@ def _split_refs(project_id, graph_id, stale=None):
                     add(block if rule == BLOCK else carry, name, _csv_refs(f, graph_id), "곳")
                     continue
                 with open(f, encoding="utf-8") as fh:
-                    rows = _json_refs(fh.read(), graph_id, links, known if rule == CARRY else None)
+                    text = fh.read()
+                rows = _json_refs(_as_read(text, followed.get(os.path.normcase(os.path.abspath(f))), project_id), graph_id, links,
+                                  known if rule == CARRY else None)
             except (OSError, UnicodeDecodeError, ValueError):
                 continue
             for place, n, unit in rows:
@@ -327,6 +331,26 @@ def _split_refs(project_id, graph_id, stale=None):
     for name, n in _number_refs(project_id, graph_id).items():
         add(block, name, n, "곳")
     return carry, block
+
+
+def _followed_docs(project_id):
+    """{파일 경로(normcase): 종류} 판 이전을 읽을 때 메모리에서 따라가는 프로젝트 문서(초기사건·FMEA·잠재 후보 판단, hazop.study.follow)."""
+    from hazop.study import follow
+    return {os.path.normcase(os.path.abspath(path)): kind for kind, path, _problems in follow._docs(project_id)}
+
+
+def _as_read(text, kind, project_id):
+    """그 문서를 읽는 길이 보는 글: 판 이전을 따르는 문서(kind)는 원문이 아니라 따라간 값(follow.catch_up)으로 센다. 파일에 아직 옛 이름이
+    남았어도 읽는 길은 이미 새 이름으로 옮겨 보이므로 그 옛 이름은 지금 참조가 아니다. 따라가지 못하면 원문 그대로 센다(더 막는 쪽)."""
+    if kind is None:
+        return text
+    from hazop.study import follow
+    try:
+        doc = json.loads(text)
+        return json.dumps(follow.catch_up(doc, kind, project_id)[0], ensure_ascii=False) if isinstance(doc, dict) else text
+    except Exception:  # noqa: BLE001 - 따라가지 못한 문서는 원문으로 센다(가드가 덜 막는 쪽으로 틀리지 않게)
+        LOG.warning("가드가 문서를 따라가지 못해 원문으로 셈: %s", kind, exc_info=True)
+        return text
 
 
 def _references(project_id, graph_id):
