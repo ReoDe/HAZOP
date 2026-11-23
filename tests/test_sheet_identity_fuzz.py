@@ -593,12 +593,13 @@ class World:
 
     @staticmethod
     def twin_tombs(ns, nid, mid):
-        """E6: 그 구간의 묘비 가운데 같은 자료·같은 파일 id의 다른 묘비(다른 이름에서 잃은 같은 기호)와 다투는 것이 있는가."""
+        """E6: 그 구간의 묘비가 모두 같은 자료·같은 파일 id의 다른 묘비(다른 이름에서 잃은 같은 기호)와 다투는가. 하나라도 짝 없는 묘비가 있으면 E6이 아니다."""
         tombs = (ns or {}).get("tombstones") or {}
         node = next((n for n in (ns or {}).get("nodes") or () if n["node_id"] == nid), {})
         live = collections.Counter(r["ref"].partition("#")[2] for r in tombs.values()
                                    if isinstance(r, dict) and r.get("found") is None and r.get("material") == mid and r.get("ref"))
-        return any(live[(tombs.get(t) or {}).get("ref", "").partition("#")[2]] > 1 for t in node.get("lost") or ())
+        lost = node.get("lost") or ()
+        return bool(lost) and all(live[(tombs.get(t) or {}).get("ref", "").partition("#")[2]] > 1 for t in lost)
 
     # ---------------------------------------------------------------- 관측 판정
     @staticmethod

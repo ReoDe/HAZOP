@@ -14,7 +14,7 @@ E5 (퍼즈가 시드 232에서 찾음) 먼저 등록하고 번호를 받았지�
 되찾기(R3 검토가 찾음) 다른 파일을 골랐다가 옛 자리 주인 a를 다시 추출하거나 제목만 확정하면 a가 임시 이름으로 옮겨 가 고르기 줄에서 사라지고,
    다시 고를 길이 없어 a의 묘비가 영구히 남는다. 고르기는 이제 붙박기를 풀지 않는다.
 E6 (알려진 결함, 고치지 않음: hazop/study/idmap.compute) 같은 기호(같은 자료·쪽·파일 id)가 두 이름에서 묘비가 되면(옛 이름에서 한 번, 그 쪽이 잠시 보이던
-   임시 이름에서 한 번) 다시 고를 때 두 묘비가 한 구성요소를 다퉈 둘 다 되찾지 못한다. expectedFailure 시험 둘이 그 재현이고, 고치면 '뜻밖의 통과'로 알린다.
+   임시 이름에서 한 번) 다시 고를 때 두 묘비가 한 구성요소를 다퉈 둘 다 되찾지 못한다. expectedFailure 시험 셋이 그 재현이고, 고치면 '뜻밖의 통과'로 알린다.
 실행: python -m unittest tests.test_sheet_identity_regress
 """
 
@@ -249,7 +249,27 @@ class SeatRegressTest(SheetCase):
         self.assertEqual(nodes.load(pg)["graph_version"], pg["graph_version"], "시험 전제: 구간 저장본이 지금 판과 같음")
         out = tb.unconfirm(P, a, ["drawing_number"], BY, ver=self.row(a)["ver"], dry=True)
         self.assertFalse(out["ok"], "시험 전제: 옛 이름을 b의 번호가 쓰므로 막음")
-        self.assertNotIn("도면 변경 반영하기", out["refused"][0]["reason"], "이미 맞는 판을 반영하라는 막다른 글")
+        reason = out["refused"][0]["reason"]
+        self.assertNotIn("도면 변경 반영하기", reason, "이미 맞는 판을 반영하라는 막다른 글")
+        self.assertNotIn("확정해도", reason, "번호 취소인데 확정하는 글")
+        for todo in ("번호를 그대로 두거나", "그 파일의 번호를 먼저 바꾸거나", "다시 취소하세요"):
+            self.assertIn(todo, reason)
+
+    @unittest.expectedFailure
+    def test_e6_choosing_back_after_numbering_and_unnumbering_the_pinned_file_restores_its_segment(self):
+        """붙박힌 a를 따로 보려고 다른 번호를 확정했다가 취소하고 a를 다시 고른다. a가 그 번호로 잠시 보였던 탓에 같은 기호의 묘비가 두 이름에 생겨
+        E6으로 구성요소 6개가 묘비로 남는다."""
+        a, b = self.legacy_pair()
+        _pg, before = self.make_nodes(a)
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=b)
+        self.node()
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-102"})["ok"])
+        self.node()
+        self.assertTrue(tb.unconfirm(P, a, ["drawing_number"], BY, ver=self.row(a)["ver"])["ok"])
+        self.node()
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
+        _pg, n = self.node()
+        self.assertEqual((n["members"], n.get("lost") or []), (before["nodes"][0]["members"], []), "다시 고른 a의 구성요소가 묘비로 남음")
 
 
 class DocLogRegressTest(SheetCase):

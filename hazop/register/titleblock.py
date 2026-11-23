@@ -561,6 +561,9 @@ NO_PROOF = "구간 저장본이 지금 판에 맞춰지지 않아 같은 파일�
 NO_SET = "검토구간 저장본이 없어 이 기록을 새 이름으로 옮길 길이 없습니다. 그 기록을 정리하거나 검토구간을 먼저 저장한 뒤 다시 확정하세요."
 NOT_OWNER = ("도면 번호 %s는 이미 다른 파일(%s)이 써서, 확정해도 이 파일은 그 번호의 고르기 후보로만 오르고 도면 목록에 쓰이지 않으므로 "
              "기록을 옮길 곳이 없습니다. 다른 번호를 쓰거나, 그 파일의 번호를 먼저 바꾸거나, 그 기록을 정리한 뒤 다시 확정하세요.")
+NOT_OWNER_UNCONFIRM = ("번호를 취소하면 이 도면이 돌아갈 이름(%s)을 이미 다른 파일(%s)이 써서, 취소해도 이 파일은 그 이름의 고르기 후보로만 오르고 "
+                       "도면 목록에 쓰이지 않으므로 기록을 옮길 곳이 없습니다. 번호를 그대로 두거나, 그 파일의 번호를 먼저 바꾸거나, 그 기록을 정리한 뒤 "
+                       "다시 취소하세요.")
 
 
 SHARED_NUMBER = ("도면 번호 %s는 이미 다른 파일(%s)이 씁니다. 번호를 확정하면 도면 목록에서 어느 파일을 쓸지 고를 수 있고, 고르기 전에는 "
@@ -608,7 +611,8 @@ def _guard_number(project_id, record, sheets, new_number, store_root, names=True
             if _owns(project_id, old, sheet):
                 stale = {}
                 carry, block = _split_refs(project_id, old, stale)
-                proof = None if not carry else NOT_OWNER % (shown_number or _shown(new), _owner_file(project_id, new)) if not takes \
+                not_owner = (NOT_OWNER if new_number else NOT_OWNER_UNCONFIRM) % (shown_number or _shown(new), _owner_file(project_id, new))
+                proof = None if not carry else not_owner if not takes \
                     else NO_SET if pairs is None else NO_PROOF if pairs.get(old) != new else None
                 refs = dict(block, **(carry if proof else {}))
                 if refs:
