@@ -25,7 +25,6 @@
 """
 
 import collections
-import contextlib
 import hashlib
 import io
 import json
@@ -40,6 +39,7 @@ from hazop.kg.docextract import TAG_RE
 from .. import drawio, rules, symbols
 
 # 나눈 모듈(F1-0). 옮긴 이름을 예전 경로(pdf_vector.이름)로도 쓸 수 있게 모두 다시 내보낸다
+from .pdf_vector_common import Stopped, _checkpoint, stoppable  # noqa: F401  (멈춤 장치, corrections가 씀)
 from .pdf_vector_common import (
     _num, _bbox_pts, _union, _expand, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist,
     _seg_cross, _poly_box_dist, _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _is_half_disc, _issue,
@@ -443,29 +443,6 @@ _CACHE_MAX = 8
 _cache = collections.OrderedDict()
 _cache_lock = threading.Lock()
 _shapes_cache = collections.OrderedDict()   # (sha256, 쪽, 읽기 판) -> object_shapes 값
-_stop = threading.local()
-
-
-class Stopped(Exception):
-    """멈춤 신호(stoppable의 should_stop이 참)로 분석·추출을 그만둠. 그때까지의 결과는 캐시에 넣지 않는다."""
-
-
-@contextlib.contextmanager
-def stoppable(should_stop):
-    """이 스레드의 분석·추출이 단계 사이마다 should_stop()을 보고, 참이면 Stopped를 낸다. 결과는 바꾸지 않는다
-    (멈추지 않으면 확인만 하고 지나간다). 기준 추출 짓기(corrections.ensure_base)가 낡은 짓기를 중간에 버릴 때 쓴다."""
-    prev = getattr(_stop, "fn", None)
-    _stop.fn = should_stop
-    try:
-        yield
-    finally:
-        _stop.fn = prev
-
-
-def _checkpoint():
-    fn = getattr(_stop, "fn", None)
-    if fn is not None and fn():
-        raise Stopped()
 
 
 def analyze_bytes(data, page=0, params=None, splits=None):

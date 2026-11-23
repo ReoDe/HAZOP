@@ -4,9 +4,37 @@
 미확인·차단 기록 한 줄(_issue). pdf_vector.py에서 그대로 옮겼다(F1-0). 예전 이름은 pdf_vector에서도 쓸 수 있다.
 """
 
+import contextlib
 import math
+import threading
 
 # ---------------------------------------------------------------- 기하 보조
+
+
+_stop = threading.local()
+
+
+class Stopped(Exception):
+    """멈춤 신호(stoppable의 should_stop이 참)로 분석·추출을 그만둠. 그때까지의 결과는 캐시에 넣지 않는다."""
+
+
+@contextlib.contextmanager
+def stoppable(should_stop):
+    """이 스레드의 분석·추출이 단계 사이마다 should_stop()을 보고, 참이면 Stopped를 낸다. 결과는 바꾸지 않는다
+    (멈추지 않으면 확인만 하고 지나간다). 기준 추출 짓기(corrections.ensure_base)가 낡은 짓기를 중간에 버릴 때 쓴다."""
+    prev = getattr(_stop, "fn", None)
+    _stop.fn = should_stop
+    try:
+        yield
+    finally:
+        _stop.fn = prev
+
+
+def _checkpoint():
+    fn = getattr(_stop, "fn", None)
+    if fn is not None and fn():
+        raise Stopped()
+
 
 def _num(v):
     v = float(v)

@@ -8,6 +8,7 @@ pdf_vector.py에서 그대로 옮겼다(F1-0). 예전 이름은 pdf_vector에서
 import collections
 import math
 
+from .pdf_vector_common import _checkpoint
 from .pdf_vector_common import (
     _union, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist, _poly_box_dist,
     _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _pt_circle_dist, _bbox_pts,
@@ -1040,11 +1041,16 @@ def _panel_sym(panel):
 
 def _group_symbols(cls, prm):
     syms = _cluster_bodies(cls["bodies"], prm, cls["polys"])
+    _checkpoint()
     polys = _join_crossing_gaps(list(cls["polys"]), cls["dashes"], syms, prm)
+    _checkpoint()
     valves, polys, markers, flange_pairs = _plate_assemblies(syms, polys, list(cls["markers"]),
                                                              cls["dashes"], prm)
+    _checkpoint()
     fed, polys = _bar_fed_strokes(polys, prm)
+    _checkpoint()
     pockets, cls["mouths"], polys = _pockets(polys, prm)
+    _checkpoint()
     syms = [s for s in syms if s.alive] + valves + fed + pockets + [_panel_sym(p) for p in cls.get("panels", ())]
     for p in polys:
         p["kind_"] = "poly"
@@ -1056,10 +1062,12 @@ def _group_symbols(cls, prm):
         return any(math.hypot(e[0] - t[0], e[1] - t[1]) <= prm["end_tol"] for t in tips)
     for _ in range(prm["max_iterations"]):
         changed = False
+        _checkpoint()
         live = [s for s in syms if s.alive]
         # A. 기호 bbox(여유 포함) 안에 통째로 들어가는 선. 끝이 화살촉이나 다른 기호에 닿는 선은 연결선이라 제외
         rest = []
         for p in polys:
+            _checkpoint()
             host = None
             for s in live:
                 if s.alive and not s.arrow_only() and all(_inside(q, s.bbox, s.inner_tol(prm)) for q in p["pts"]) \
@@ -1080,6 +1088,7 @@ def _group_symbols(cls, prm):
         # B. 끝이 몸체 깊숙이 들어간 선(구동부 축 등): 그 기호의 일부, 반대 끝이 닿은 기호와 합친다
         rest = []
         for p in polys:
+            _checkpoint()
             ends = (p["pts"][0], p["pts"][-1])
             host = next((s for s in syms if s.alive and any(s.deep(e, prm) for e in ends)), None)
             pens = [b["pen"] for b in host.bodies if b.get("pen")] if host is not None else []
