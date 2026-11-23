@@ -225,7 +225,7 @@ def migrate_study(pg):
     row = next((h.get("detail") or {} for h in reversed(got.get("history") or []) if isinstance(h, dict) and h.get("op") == "migrate_version"), {})
     info = idmap.needs_check(got)
     return {"changed": True, "matched": int(row.get("matched") or 0), "new_lost": len(row.get("lost") or {}), "tombstones": info["tombstones"],
-            "lost_members": info["lost_members"], "first_node": next(iter(info["lost_members"]), None)}
+            "lost_members": info["lost_members"], "first_node": next(iter(info["lost_members"]), None), "graph_version": got.get("graph_version")}
 
 
 def catch_up_study(project_id):

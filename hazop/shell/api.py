@@ -165,6 +165,7 @@ class Engine:
         self.ai_gate = ai_gate.Gate()    # 일괄 AI 작업(AI 검토·추출 뒤 자동 검토·AI 분석)의 구독 호출 차례
         self._reviewing = set()          # AI 검토가 돌거나 차례를 기다리는 도면(추출 이름)
         self._catching = set()           # 검토구간 판 이전을 기다리는 프로젝트
+        self._study_lock = threading.Lock()   # 판 이전과 ⑤ AI 분석 시작을 가른다(분석이 도는 동안 판 이전을 하지 않고, 판 이전 중에는 분석을 시작하지 않는다)
         from hazop.app import data
         data.set_graph_listener(self._on_graph_changed)   # 그래프 판이 바뀐 길(다시 추출·다시 짓기)이 끝나면 판 이전을 이어서 한다
 
@@ -178,9 +179,13 @@ class Engine:
         return bool(self.ai_gate.waiting()) or bool(self.analysis.running)
 
     def auto_catch_up(self, project_id):
-        """그래프 판이 바뀐 뒤 검토구간 판 이전을 이어서 한다. AI 작업이 도는 중이면 끝난 뒤에(다른 스레드에서). → 지금 끝냈으면 True."""
+        """그래프 판이 바뀐 뒤 검토구간 판 이전을 이어서 한다. AI 작업이 도는 중이면 끝날 때까지 다른 스레드에서 기다린다(시간 제한으로 밀고
+        들어가지 않는다: 옛 집합을 쥔 분석이 저장하면 옮긴 참조가 덮인다). 기다리는 사이 프로젝트가 바뀌거나 창을 닫으면 그만둔다(다시 열 때 맞춘다).
+        → 지금 끝냈으면 True."""
         if not self._ai_busy():
-            return self._catch_up_now(project_id)
+            done = self._catch_up_now(project_id)
+            if done is not None:
+                return done
         with self._lock:
             if project_id in self._catching:
                 return False
@@ -189,26 +194,33 @@ class Engine:
         def later():
             import time
             try:
-                end = time.monotonic() + 3600
-                while self._ai_busy() and not self.stop_requested() and time.monotonic() < end:
+                while not self.stop_requested() and self.project_id() == project_id:
+                    if not self._ai_busy() and self._catch_up_now(project_id) is not None:
+                        return
                     time.sleep(0.3)
-                if not self.stop_requested():
-                    self._catch_up_now(project_id)
             finally:
                 with self._lock:
                     self._catching.discard(project_id)
-        threading.Thread(target=later, name="auto-catch-up", daemon=True).start()
+        t = threading.Thread(target=later, name="auto-catch-up", daemon=True)
+        with self._lock:
+            self._threads.append(t)          # 창을 닫을 때 wait_jobs가 이 판 이전도 기다린다(집합만 쓰고 결과는 아직인 채 닫지 않게)
+        t.start()
         return False
 
     def _catch_up_now(self, project_id):
+        """판 이전 한 번. → True(옮겼음) · False(할 것이 없거나 실패: 막음과 '도면 변경 반영하기' 단추가 안전망) · None(분석이 돌아 지금은 못 함)."""
         from hazop.app import data
-        res = data.catch_up_study(project_id)
+        with self._study_lock:
+            if self.analysis.running:
+                return None
+            res = data.catch_up_study(project_id)
         if not res or res.get("error") or not res.get("changed"):
-            return False                 # 할 것이 없거나 실패(막음과 판 이전 지금 하기 단추가 안전망으로 남는다)
+            return False
         for topic in ("nodes", "results", "ie", "kg"):
             self.changed(topic)
-        if res.get("new_lost"):          # 잃은 것이 조용히 지나가지 않게: 알림 하나와 그 자리로 가는 단추가 열 구간
-            self.emit("study.lost", {"sections": len(res["lost_members"]), "members": sum(res["lost_members"].values()), "first_node": res.get("first_node")})
+        if res.get("new_lost") and project_id == self.project_id():      # 지금 보는 프로젝트의 것만 알린다(그 자리로 단추가 다른 프로젝트로 가지 않게)
+            self.emit("study.lost", {"project_id": project_id, "graph_version": res.get("graph_version"), "sections": len(res["lost_members"]),
+                                     "members": sum(res["lost_members"].values()), "first_node": res.get("first_node")})
         return True
 
     def catch_up_on_open(self):

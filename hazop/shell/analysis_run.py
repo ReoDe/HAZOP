@@ -122,7 +122,9 @@ def contexts(units, ns, pg, intent_of):
 
 def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, test=False):
     """units를 차례로 부르고 호출마다 저장한다 -> {"calls", "ok_calls", "failed_calls", "cells", "reason", "limit", "usage", "rest", ...}.
-    reason: done · stopped(멈추라고 함) · halted(구독 한도·초과 사용 등으로 남은 호출을 멈춤). progress(text, done, total)는 호출 사이에 부른다.
+    reason: done · stopped(멈추라고 함) · halted(구독 한도·초과 사용 등으로 남은 호출을 멈춤) · stale(분석 중에 검토구간이 새 도면 판으로 옮겨짐).
+    stale이면 그 호출의 답을 결과 파일에 합치지 않고(옛 판 참조가 옮긴 참조를 덮지 않게) unsaved 경로의 파일에 따로 남기고 멈춘다. 그 칸은 rest에 든다.
+    progress(text, done, total)는 호출 사이에 부른다.
     rest: 이어서 실행할 칸 [[node_id, deviation_id]](실패한 단위의 칸 + 부르지 않은 단위의 칸, 순서 유지·중복 없음).
     test: 고정 응답(시험) 실행. 결과를 시험 파일에 저장한다."""
     devs = res.load_deviations()
@@ -130,8 +132,8 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
     project = ns.get("project_id")
     kinds, ok_calls, ok_cells, limit, halted, last_error = [], 0, 0, None, None, None
     done = 0
-    stopped = False
-    rest = []
+    stopped = moved = False
+    rest, unsaved = [], []
     for unit in units:
         if should_stop():
             stopped = True
@@ -139,6 +141,11 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
         progress("%s 분석 중" % unit["node_id"], done, len(units))
         ur = ai_cells.run_unit(client, unit, ctxs[unit["node_id"]], devs, stamp())
         done += 1
+        if _set_moved(ns):           # 분석 중에 검토구간이 새 도면 판으로 옮겨졌다: 옛 판으로 만든 답을 합치지 않는다
+            unsaved.append(_keep_unsaved(ns, project, ur, test))
+            rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
+            moved = True
+            break
         kinds.append(ur.get("error_kind"))
         if ur.get("limit"):
             limit = ur["limit"]
@@ -160,10 +167,33 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
     seen = set()
     rest = [c for c in rest if not (tuple(c) in seen or seen.add(tuple(c)))]
     doc, _fp = (res.load_test_fp(ns) if test else res.load_fp(ns))
-    reason = "halted" if halted is not None else ("stopped" if stopped else "done")
+    reason = "stale" if moved else "halted" if halted is not None else ("stopped" if stopped else "done")
     return {"calls": done, "planned": len(units), "ok_calls": ok_calls, "failed_calls": done - ok_calls, "cells": ok_cells, "reason": reason,
             "limit": limit, "error_kind": (halted or {}).get("error_kind"), "error": (halted or {}).get("error") or last_error,
-            "conn_state": (halted or {}).get("conn_state"), "usage": ai_cells.usage_total(doc) if doc else None, "rest": rest, "test": bool(test)}
+            "conn_state": (halted or {}).get("conn_state"), "usage": ai_cells.usage_total(doc) if doc else None, "rest": rest, "test": bool(test),
+            "unsaved": unsaved}
+
+
+def _set_moved(ns):
+    """분석을 시작할 때 쥔 검토구간 집합(ns)의 그래프 판과 지금 파일의 판이 다른가(그 사이 판 이전이 끝났나). 읽지 못하면 다른 것으로 본다."""
+    try:
+        now = nodes.read_as_is({"project_id": ns.get("project_id"), "graph_id": ns["graph_id"]})
+    except (OSError, ValueError):
+        return True
+    return (now or {}).get("graph_version") != ns.get("graph_version")
+
+
+def _keep_unsaved(ns, project, ur, test):
+    """합치지 못한 호출의 답을 결과 폴더의 unsaved/ 아래에 그대로 남긴다(받은 답을 잃지 않게. 사람이 보거나 이어서 실행으로 다시 받는다). → 쓴 경로."""
+    import os
+    from hazop import paths, store_io
+    folder = os.path.join(os.path.dirname(res.store_path(project, ns["graph_id"])), "unsaved")
+    name = paths.safe_name("%s-%s-%s" % (ns["graph_id"], ur.get("unit_id") or "unit", stamp().replace(":", "")))
+    path = os.path.join(folder, name + ".json")
+    store_io.write_json(path, dict(ur, kind="hazop_unsaved_analysis", test=bool(test), set_graph_version=ns.get("graph_version"),
+                                   why="분석 중에 검토구간이 새 도면 판으로 옮겨져 이 답을 결과에 합치지 않았다(옛 판 참조)"))
+    LOG.warning("분석 중 도면 변경 반영으로 결과에 합치지 않은 답을 남김: %s", path)
+    return path
 
 
 def _merge_and_save(ns, project, ur, attempts=3, test=False):

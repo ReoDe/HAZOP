@@ -689,7 +689,14 @@ def _run(engine, a):
     if this_run:
         conn.set_run_override(via)                 # 연결 칩에 '이번 실행만'(끝나면 되돌림)
     run = engine.analysis
-    run.running, run.stop, run.done, run.total, run.text, run.last = True, False, 0, len(units), "AI 연결을 확인하는 중", None
+    with engine._study_lock:             # 판 이전과 엇갈리지 않게: 계획에 쓴 집합이 지금 파일과 같고 지금 그래프와도 같은 판일 때만 '도는 중'을 세운다
+        now = nodes.read_as_is(pg)
+        if not now or now.get("graph_version") != ns.get("graph_version") or (now.get("set_rev") or 0) != (ns.get("set_rev") or 0):
+            raise api.CommandError("stale", "분석을 준비하는 사이 검토구간이 바뀌어 시작하지 않았습니다. 다시 눌러 주세요.")
+        _need_current(_pg(engine), now)
+        if run.running:
+            raise api.CommandError("busy", "분석이 이미 돌고 있습니다.")
+        run.running, run.stop, run.done, run.total, run.text, run.last = True, False, 0, len(units), "AI 연결을 확인하는 중", None
     engine.changed("results.run", None)
     review_holder = {}
 

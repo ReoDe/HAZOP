@@ -476,9 +476,15 @@ def _catch_up(eng, a):
         info = idmap.needs_check(ns)
         return {"changed": False, "matched": 0, "tombstones": info["tombstones"], "lost_members": info["lost_members"]}
     from hazop.app import data
-    try:
-        out = data.migrate_study(pg)
-    except (OSError, ValueError, store_io.Conflict) as exc:
+    with eng._study_lock:
+        if eng.analysis.running:
+            raise api.CommandError("busy", "AI 분석이 도는 중이라 도면 변경을 반영하지 않았습니다. 분석이 끝나면 다시 눌러 주세요.")
+        try:
+            out = data.migrate_study(pg)
+        except (OSError, ValueError, store_io.Conflict) as exc:
+            out = exc
+    if isinstance(out, Exception):
+        exc = out
         raise api.CommandError("failed", "도면 변경을 반영하지 못했습니다(%s). 저장된 구간은 그대로입니다. 다시 눌러 주세요." % str(exc)[:120])
     for topic in ("nodes", "results", "ie", "kg"):
         eng.changed(topic)
