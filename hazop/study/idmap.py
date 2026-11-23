@@ -49,6 +49,7 @@ import collections
 import copy
 import hashlib
 import json
+import math
 import re
 
 from hazop.extract import ids
@@ -208,6 +209,53 @@ def valid_mark(m):
 
 def _same_mark(a, b):
     return a[:4] == b[:4] and all(abs(x - y) <= MARK_TOL for x, y in zip(a[4:], b[4:]))
+
+
+_CELL = 2 * MARK_TOL  # 허용치의 두 배 칸: 허용치 안의 두 좌표는 칸 번호가 많아야 하나 다르다
+
+
+def _cell(v):
+    if isinstance(v, int) and abs(v) > 2 ** 52:  # float로 나누면 반올림되어 칸이 어긋날 수 있는 큰 정수
+        return None
+    try:
+        return math.floor(v / _CELL)
+    except (OverflowError, ValueError):  # 무한·NaN
+        return None
+
+
+def _look_key(m):
+    """표시 앞 넷(종류·도면·기호 종류·태그)의 묶음 열쇠. 모두 글자나 None이면 그대로 묶고, 아니면 json(전수 비교 때의 열쇠)."""
+    head = m[:4]
+    return tuple(head) if all(v is None or isinstance(v, str) for v in head) else json.dumps(head)
+
+
+class _MarkIndex:
+    """[(표시, entity_id)]에서 같은 표시(_same_mark)인 것을 넣은 차례대로 찾는다. 겉모습으로 묶고 그 안을 왼쪽 위 꼭짓점의
+    격자 칸으로 나눈다. 격자로 나눌 수 없는 좌표는 따로 두고 늘 같이 비교한다(전수 비교와 같은 답)."""
+
+    def __init__(self, rows):
+        self.cells, self.odd, self.looks = {}, {}, {}
+        for i, (m, e) in enumerate(rows):
+            look, row = _look_key(m), (i, m, e)
+            self.looks.setdefault(look, []).append(row)
+            x, y = _cell(m[4]), _cell(m[5])
+            if x is None or y is None:
+                self.odd.setdefault(look, []).append(row)
+            else:
+                self.cells.setdefault((look, x, y), []).append(row)
+
+    def hits(self, mark):
+        look = _look_key(mark)
+        x, y = _cell(mark[4]), _cell(mark[5])
+        if x is None or y is None:
+            rows = self.looks.get(look, ())
+        else:
+            rows = list(self.odd.get(look, ()))
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    rows += self.cells.get((look, x + dx, y + dy), ())
+            rows.sort(key=lambda r: r[0])
+        return [e for _i, m, e in rows if _same_mark(mark, m)]
 
 
 def bases(graph):
@@ -508,14 +556,8 @@ def compute(node_set, graph, at=None):
     for e, r in new_ref.items():
         if r is not None:
             by_ref.setdefault(r, []).append(e)
-    by_look = {}  # 표시 앞 넷(종류·도면·기호 종류·태그) → [(표시, entity_id)]
-    for e, n in by_id.items():
-        m = mark_of(n, new_basis[e])
-        if m is not None:
-            by_look.setdefault(json.dumps(m[:4]), []).append((m, e))
-
-    def mark_hits(mark):
-        return [e for m, e in by_look.get(json.dumps(mark[:4]), ()) if _same_mark(mark, m)]
+    marks_now = _MarkIndex([(m, e) for e, m in ((e, mark_of(n, new_basis[e])) for e, n in by_id.items()) if m is not None])
+    mark_hits = marks_now.hits
 
     def old_basis_of(m):
         if old_basis is not None:
