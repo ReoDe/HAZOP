@@ -131,7 +131,9 @@ export function NodesPanel({ onClose }) {
   const error = N.useNodes((s) => s.error);
   const needArchive = N.useNodes((s) => s.needArchive);
   const selection = N.useNodes((s) => s.selection);
+  const confirmAsk = N.useNodes((s) => s.confirmAsk);
   const sheet = useStore((s) => s.sheet);
+  const drafts = list.nodes.filter((n) => n.state === "applied").length;
   const drawings = useStore((s) => s.drawings.drawings);
   const shown = scope === "sheet" && sheet ? list.nodes.filter((n) => n.sheets.some((x) => x.graph_id === sheet)) : list.nodes;
   const focused = list.nodes.find((n) => n.node_id === focus);
@@ -153,7 +155,13 @@ export function NodesPanel({ onClose }) {
       <div class="acts-row"><div class="seg-toggle" role="group" aria-label="목록 범위">
         <button type="button" class=${scope === "sheet" ? "on" : ""} aria-pressed=${scope === "sheet" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "sheet" })}>이 도면</button>
         <button type="button" class=${scope === "all" ? "on" : ""} aria-pressed=${scope === "all" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "all" })}>전체</button></div>
-        ${checked.length >= 2 ? html`<${Btn} sm=${true} icon="plus" label="체크한 구간 합치기" disabled=${busy} onClick=${N.mergeChecked}>${checked.length}개 합치기<//>` : null}</div>
+        ${checked.length >= 2 ? html`<${Btn} sm=${true} icon="plus" label="체크한 구간 합치기" disabled=${busy} onClick=${N.mergeChecked}>${checked.length}개 합치기<//>` : null}
+        ${drafts ? html`<${Btn} sm=${true} kind="primary" icon="check" label="확정하지 않은 구간 모두 확정" disabled=${busy || !!confirmAsk} onClick=${N.askConfirmAll}>모두 확정 (${N.draftIds().length})<//>` : null}</div>
+      ${confirmAsk ? html`<div class="card confirm-all" role="dialog" aria-label="여러 구간 확정"><b>${confirmAsk.length}개 구간을 확정할까요?</b>
+        <ul class="tight">${confirmAsk.slice(0, 12).map((id) => { const n = list.nodes.find((x) => x.node_id === id); return html`<li key=${id}>${id} ${n ? n.name : ""}</li>`; })}
+          ${confirmAsk.length > 12 ? html`<li class="muted">그 밖에 ${confirmAsk.length - 12}개</li>` : null}</ul>
+        <div class="acts-row"><${Btn} sm=${true} kind="primary" label="이 구간들 확정" disabled=${busy} onClick=${() => N.confirmMany(confirmAsk)}>확정<//>
+          <${Btn} sm=${true} label="확정하지 않기" onClick=${N.cancelConfirmAll}>취소<//></div></div>` : null}
       ${shown.length === 0 ? html`<${Notice}>${list.nodes.length ? "이 도면에는 구간이 없습니다. '전체'로 바꾸면 다른 도면의 구간이 보입니다." : "구간이 없습니다. 도면에서 구성요소를 네모로 끌어 고르고 '구간 만들기'를 누르거나, 채팅에 '대표 구간 3개 만들어 줘'라고 하세요."}<//>`
         : html`<div class="list" role="list">${shown.map((n) => html`<${Row} key=${n.node_id} n=${n} list=${list.nodes} drawings=${drawings} on=${n.node_id === focus} checked=${checked.includes(n.node_id)} />`)}</div>`}
       ${focused ? html`<${Detail} n=${focused} d=${detail} list=${list.nodes} drawings=${drawings} selection=${selection} busy=${busy} needArchive=${needArchive} />` : null}

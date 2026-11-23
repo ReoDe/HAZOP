@@ -616,9 +616,22 @@ def _plan(engine, a):
     return pg, ns, doc, units
 
 
+def _left_out(pg, scope):
+    """확정하지 않아 이번 실행에서 빠지는 구간 [{node_id, name}](전체 실행일 때만). 실행 확인 카드가 말없이 빼지 않게 이름을 보인다(HZ-DSN-06 U9)."""
+    if scope != "all":
+        return []
+    from hazop.study import nodes
+    try:
+        full, _legacy = _node_set(pg)
+    except Exception:  # noqa: BLE001 - 안내 한 줄: 못 읽으면 비운다
+        return []
+    return [{"node_id": n["node_id"], "name": n.get("name") or n["node_id"]} for n in full.get("nodes") or [] if nodes.node_state(n) == "applied"]
+
+
 def _run_plan(engine, a):
     from hazop.shell import analysis_run
     _pg_, _ns, _doc, units = _plan(engine, a)
+    left_out = _left_out(_pg_, a["scope"])
     ai = engine.ai
     status = ai.status() if ai is not None else {}
     terms = bool(getattr(ai, "terms_acked", lambda: True)()) if ai is not None else True
@@ -630,7 +643,7 @@ def _run_plan(engine, a):
     else:                    # 연결 설정이 없는 엔진(시험의 가짜 AI): 옛 상태 읽기
         can, label, guide = bool(status.get("can_start")), status.get("label") or "", status.get("guide") or ""
     return dict(s, conn=conn, can_start=can and bool(units), state=label, guide=guide,
-                needs_terms=not terms, running=_run_state(engine)["running"], method=a.get("method"),
+                needs_terms=not terms, running=_run_state(engine)["running"], method=a.get("method"), left_out=left_out,
                 scope_fp=analysis_run.scope_fp(units, conn),     # 확인한 범위(칸·구간·호출 수·비용·모델)의 지문. 시작할 때 그대로 보낸다
                 empty_text=None if units else {"node": "분석할 구간의 행을 고르세요(확정한 구간만 분석합니다).",
                                               "failed": "다시 실행할 실패 칸이 없습니다.", "cell": "분석할 칸이 없습니다.",

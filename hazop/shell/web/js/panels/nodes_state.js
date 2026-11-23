@@ -20,6 +20,7 @@ export const nodes = createStore({
   scope: "sheet",           // 목록 범위: "sheet"(이 도면) | "all"
   showOutside: true,        // 구간 밖 구성요소를 흐리게
   checked: [],              // 합치기용으로 체크한 구간
+  confirmAsk: null,         // '모두 확정' 확인 중인 구간 ID 목록
   busy: false,
   error: null,              // 마지막 거절 사유(엔진 문장)
   needArchive: null,        // 지우기가 칸 판정 때문에 거절됨 → 보관 선택지를 보임
@@ -152,7 +153,7 @@ export async function submitCard() {
   editCard({ busy: true, error: null });
   try {
     const r = await cmd("nodes.create", { project_id: list.project_id, sheet, ids: selection, name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev });
-    nodes.set({ card: null, selection: [], truncated: false, mode: "pan" });
+    nodes.set({ card: null, selection: [], truncated: false });      // 고르기 모드는 그대로: 다음 구간을 바로 끌어 고른다(HZ-DSN-06 U9, Esc·이동 단추로 끈다)
     await refresh();
     if (r.node_ids && r.node_ids[0]) focusNode(r.node_ids[0]);
     return r;
@@ -190,6 +191,46 @@ export async function run(name, args, targetIds) {
 export const rename = (id, name) => run("rename", { node_id: id, name }, [id]);
 export const setIntent = (id, text) => run("set_intent", { node_id: id, text }, [id]);
 export const confirm = (ids) => run("confirm", { node_ids: ids }, ids);
+
+/** 확정하지 않은 구간(적용됨) ID. 체크한 것이 있으면 그 가운데서만. */
+export function draftIds() {
+  const { list, checked } = nodes.get();
+  const drafts = list.nodes.filter((n) => n.state === "applied").map((n) => n.node_id);
+  const picked = drafts.filter((id) => checked.includes(id));
+  return picked.length ? picked : drafts;
+}
+
+/** '모두 확정' 확인 카드를 연다(목록을 먼저 보인다). */
+export function askConfirmAll() { const ids = draftIds(); nodes.set({ confirmAsk: ids.length ? ids : null }); return ids.length; }
+export function cancelConfirmAll() { nodes.set({ confirmAsk: null }); }
+
+/** 여러 구간을 한 번에 확정한다(지금 있는 nodes.confirm 명령에 node_ids를 모두 실어 한 번). 엔진이 한 묶음 전체를 거절하면(한 구간이 막힘)
+ *  하나씩 다시 보내 되는 것은 확정하고, 안 된 구간과 까닭을 알린다. → {ok: [ID], failed: [{node_id, reason}]}. */
+export async function confirmMany(ids) {
+  ids = (ids || []).slice();
+  nodes.set({ confirmAsk: null });
+  if (!ids.length) return { ok: [], failed: [] };
+  nodes.set({ busy: true, error: null });
+  if (reading) { try { await reading; } catch (e) { /* 가진 판으로 보낸다 */ } }
+  const send = (some) => { const { list } = nodes.get(); return cmd("nodes.confirm", { project_id: list.project_id, set_rev: list.set_rev, node_ids: some, targets: targetsOf(list.nodes, some) }); };
+  let ok = [], failed = [];
+  try {
+    await send(ids);
+    ok = ids;
+  } catch (e) {
+    for (const id of ids) {
+      await refresh();
+      try { await send([id]); ok.push(id); } catch (err) { failed.push({ node_id: id, reason: errorText(err) }); }
+    }
+  }
+  nodes.set({ busy: false });
+  await refresh();
+  const text = failed.length ? ok.length + "개를 확정했습니다. " + failed.length + "개는 확정하지 못했습니다: " + failed.slice(0, 3).map((f) => f.node_id + " " + f.reason).join(" · ")
+    : ok.length + "개 구간을 확정했습니다.";
+  shell.set({ toast: { text, kind: failed.length ? "err" : "info" } });
+  if (failed.length) nodes.set({ error: text });
+  return { ok, failed };
+}
 export const unconfirm = (ids) => run("unconfirm", { node_ids: ids }, ids);
 export const lock = (ids) => run("lock", { node_ids: ids }, ids);
 export const unlock = (ids, reason) => run("unlock", { node_ids: ids, reason }, ids);

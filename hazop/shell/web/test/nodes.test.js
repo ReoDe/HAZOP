@@ -74,6 +74,34 @@ async function setup() {
 const lastCmd = () => sent[sent.length - 1];
 
 export const tests = [
+  { name: "구간 만들기(U9): 만든 뒤에도 고르기 모드가 그대로다", async run(assert) {
+    await setup();
+    N.setMode("pick");
+    N.setSelection(["n1", "n2"]);
+    N.nodes.set({ card: { name: "새 구간", intent: "", busy: false, error: null, suggest: null } });
+    const r = await N.submitCard();
+    assert(r, "만들기 답");
+    assert.equal(N.nodes.get().mode, "pick", "다음 구간을 바로 끌어 고른다");
+    assert.equal(N.nodes.get().selection, [], "고른 것은 비운다");
+  } },
+  { name: "모두 확정(U9): 목록을 먼저 보이고, 한 번에 보내 막히면 하나씩 다시 보내 안 된 것과 까닭을 알린다", async run(assert) {
+    await setup();
+    const n = N.askConfirmAll();
+    assert.equal(N.nodes.get().confirmAsk, ["S1", "S2"], "확정하지 않은 구간만(S3는 이미 확정)");
+    assert.equal(n, 2);
+    engine.reply = (name, args) => {
+      if (name !== "nodes.confirm") return { ok: true, data: {} };
+      if (args.node_ids.length > 1 || args.node_ids[0] === "S2") return { ok: false, error: { code: "failed", message: "겹치는 구간이 확정되어 있습니다" } };
+      return { ok: true, data: { set_rev: 5, node_ids: args.node_ids } };
+    };
+    const r = await N.confirmMany(N.nodes.get().confirmAsk);
+    assert.equal(r.ok, ["S1"]);
+    assert.equal(r.failed.map((f) => f.node_id), ["S2"]);
+    assert(N.nodes.get().error && N.nodes.get().error.includes("S2") && N.nodes.get().error.includes("겹치는"), N.nodes.get().error);
+    assert.equal(N.nodes.get().confirmAsk, null, "확인 카드는 닫힌다");
+    const sentConfirm = sent.filter((m) => m.name === "nodes.confirm").map((m) => m.args.node_ids);
+    assert.equal(sentConfirm, [["S1", "S2"], ["S1"], ["S2"]], "한 번에, 그다음 하나씩(지금 있는 nodes.confirm만 씀)");
+  } },
   { name: "구간 계산: 상태 칩(AI 적용됨·적용됨·확정·잠금)과 수정 가능 여부", run(assert) {
     assert.equal(L.stateChip({ state: "applied", origin: "ai" }).label, "AI 적용됨");
     assert.equal(L.stateChip({ state: "applied", origin: "user" }).label, "적용됨");

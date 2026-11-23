@@ -485,6 +485,28 @@ class ScopeAndVersionTest(Base):
         self.assertEqual((r["ok"], r["error"]["code"]), (False, "stale"), r)
 
 
+class LeftOutTest(Base):
+    """HZ-DSN-06 U9: 분석 실행 확인 카드가 확정하지 않아 빠지는 구간을 말없이 빼지 않는다(기준값 측정: '44칸'과 '0/88칸'이 맞지 않았다)."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine.ai = FakeAi()
+
+    def test_unconfirmed_nodes_are_named_in_the_plan(self):
+        from hazop.study import nodes as study_nodes
+        before = self.call("results.run_plan", {"scope": "all"})["data"]
+        self.assertEqual(before["left_out"], [], "모두 확정이면 빠지는 것 없음")
+        ns = sn.load(self.g)
+        n = ns["nodes"][1]
+        n["state"] = "applied"
+        sn.save(ns)
+        self.assertEqual(study_nodes.node_state(sn.load(self.g)["nodes"][1]), "applied", "시험 전제: 확정 안 함")
+        after = self.call("results.run_plan", {"scope": "all"})["data"]
+        self.assertEqual([x["node_id"] for x in after["left_out"]], [n["node_id"]])
+        self.assertLess(after["calls"], before["calls"], "빠진 구간은 호출에 들지 않는다(설계 그대로)")
+        one = self.call("results.run_plan", {"scope": "node", "node_id": ns["nodes"][0]["node_id"]})["data"]
+        self.assertEqual(one["left_out"], [], "구간 하나만 돌릴 때는 다른 구간을 빠졌다고 하지 않는다")
+
 class RunTest(Base):
     def setUp(self):
         super().setUp()

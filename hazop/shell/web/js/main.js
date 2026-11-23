@@ -31,6 +31,7 @@ setGo("panel:drawings#sources", () => {      // 같은 번호 자리의 파일·
   store.set({ panel: "drawings" });
   [80, 400, 1200].forEach((ms) => setTimeout(() => { const el = document.querySelector(".src-card"); if (el) el.scrollIntoView({ block: "start" }); }, ms));
 });
+setGo("confirm:nodes.confirm", async () => { store.set({ panel: "nodes" }); const N = await import("./panels/nodes_state.js"); await N.refresh(); N.askConfirmAll(); });      // 확정 안 한 구간 목록을 보인 확인 카드(한 번에 확정)
 setGo("panel:nodes#pick", async () => { store.set({ panel: null }); const N = await import("./panels/nodes_state.js"); N.setMode("pick"); });
 setGo("queue:lost", () => openQueue("lost"));
 setGo("queue:ai", (t) => openQueue("ai", t));
