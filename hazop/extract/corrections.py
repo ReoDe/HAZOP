@@ -69,7 +69,8 @@ def save(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY):
     return save_fp(name, ops, by, drawing_number, at, expect)[0]
 
 
-SAVE_ACTIONS = ("save", "edit", "undo", "redo")      # log 한 줄의 action. 새 화면은 연산 하나마다 edit, 되돌리기·다시 하기를 따로 적는다
+# log 한 줄의 action. 새 화면은 연산 하나마다 edit, 되돌리기·다시 하기를 따로 적는다. AI 후보 수락·되돌리기는 ai_accept·ai_revert
+SAVE_ACTIONS = ("save", "edit", "undo", "redo", "ai_accept", "ai_revert")
 
 
 def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, action="save", note=None):
@@ -849,7 +850,7 @@ def input_value(extraction, objects, **extra):
     with open(where[0], "rb") as fh:
         sha = hashlib.sha256(fh.read()).hexdigest()
     return dict({"pdf": {"sha256": sha, "page": where[1], "reader": pdf_vector.reader_version()},
-                 "objects": list(objects), "shapes": {o: shapes[o] for o in objects}}, **extra)
+                 "objects": list(objects), "shapes": {o: list(shapes[o]) for o in objects}}, **extra)
 
 
 SHAPE_TOL = 0.2  # pt. 모양으로 다시 찾을 때 상자 허용 차

@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -79,7 +80,8 @@ class SplitAcceptTest(unittest.TestCase):
         corrected = corrections.resolve(NAME, allow_extract=True)["corrected"]
         new = [n for n in corrected["nodes"]
                if tuple(sorted((n.get("evidence") or {}).get("pdf_objects") or ())) == tuple(GROUPS[0])]
-        ends = {e.get("node_local_id") for r in corrected["relations"] for e in r.get("endpoints") or []}
+        ends = {e.get("node_local_id") for r in corrected["relations"] + corrected["unresolved_connectors"]
+                for e in r.get("endpoints") or []}  # 왼쪽 배관은 바깥 끝이 열려 있어 미해결 커넥터다
         self.assertEqual(len(new), 1, "나눈 개체가 새 기호 하나가 된다")
         self.assertEqual(new[0]["kind"], "manual_valve")
         self.assertIn(new[0]["local_id"], ends, "왼쪽 배관 끝이 덩어리에서 새 기호로 옮겨진다")
@@ -121,6 +123,84 @@ class SplitAcceptTest(unittest.TestCase):
         self.revert(self.cands[:1])
         self.accept(self.cands[:1])
         self.assertEqual(self.ops(), first, "다시 수락하면 지운 연산을 그대로 되살린다(나눈 기호 id가 같다)")
+
+    def test_second_acceptance_after_the_lump_was_rebuilt_still_splits(self):
+        self.accept(self.cands[:1])
+        self.assertEqual(corrections.ensure_base(NAME), "ready")
+        self.accept(self.cands[1:2])
+        got = corrections.resolve(NAME, allow_extract=True)
+        self.assertEqual(got["inputs"]["applied"], [o["op_id"] for o in self.ops()], "덩어리 번호가 바뀐 뒤 수락도 나눈다")
+        self.assertEqual(len(got["inputs"]["applied"]), 2)
+
+    def test_split_overlapping_an_earlier_split_is_refused(self):
+        self.accept(self.cands[:1])
+        doc = ai_review.load_doc(NAME)
+        blob = next(n for n in self.original["nodes"] if n["source_object_id"] == BLOB)
+        twin = self.candidate(blob, GROUPS[0] + GROUPS[1][:1], pdf_vector.member_shapes(self.pdf, 0))
+        doc["candidates"].append(twin)
+        ai_review.save_doc(doc)
+        failed = ai_review.accept(ai_review.load_doc(NAME), [twin["cand_id"]], self.original, NAME, by=BY, at=AT)
+        self.assertEqual([c for c, _ in failed], [twin["cand_id"]])
+        self.assertIn("이미 나눈 부분과 겹침", failed[0][1])
+        self.assertEqual(len(self.ops()), 1)
+
+    def test_lump_closes_only_when_every_split_candidate_is_decided(self):
+        self.accept(self.cands[:2])
+        self.assertNotIn(BLOB, ai_review.decided_targets(NAME))
+        ai_review.reject(ai_review.load_doc(NAME), self.cands[2:], by=BY, at=AT)
+        self.assertIn(BLOB, ai_review.decided_targets(NAME))
+
+    def test_remaining_candidates_go_stale_and_a_new_answer_replaces_them(self):
+        self.accept(self.cands[:1])
+        doc = ai_review.load_doc(NAME)
+        self.assertEqual(ai_review.stale_candidates(doc), set(self.cands[1:]))
+        lump = dict(next(n for n in self.original["nodes"] if n["source_object_id"] == BLOB), source_object_id="pdf-p0-sym-0004")
+        members = pdf_vector.member_shapes(self.pdf, 0)
+        again = [self.candidate(lump, GROUPS[0], members), self.candidate(lump, GROUPS[1] + GROUPS[2], members)]
+        ai_review.merge_run(doc, {"candidates": again, "stats": {}})
+        kept = [(c["cand_id"], c["status"]) for c in doc["candidates"]]
+        self.assertEqual(kept, [(self.cands[0], "accepted"), (again[1]["cand_id"], "proposed")],
+                         "정한 묶음은 다시 넣지 않고, 새 답과 겹치는 오래된 제안은 뺀다")
+
+    def test_revert_preview_names_the_edit_that_goes_with_it_and_log_says_what_happened(self):
+        self.accept(self.cands[:1])
+        ops = self.ops()
+        base = corrections.resolve(NAME, allow_extract=True)["base"]
+        tag = corrections.make_op(base, "set_tag", "pdf-p0-split-" + ops[0]["op_id"], {"tag": "V-101"}, BY, at=AT,
+                                  existing_ops=ops, name=NAME)
+        corrections.save(NAME, ops + [tag], BY, at=AT)
+        doc = ai_review.load_doc(NAME)
+        self.assertEqual(ai_review.revert_preview(doc, self.cands[:1], NAME),
+                         {"ops": [ops[0]["op_id"]],
+                          "dependents": [{"op_id": tag["op_id"], "op": "set_tag", "target": tag["target"], "candidate": None}]})
+        self.assertEqual(self.revert(self.cands[:1]), [ops[0]["op_id"], tag["op_id"]])
+        self.assertEqual([e["action"] for e in corrections.load(NAME)["log"]], ["ai_accept", "save", "ai_revert"])
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 필요")
+class ObjectShapesCacheTest(unittest.TestCase):
+    def test_page_is_read_once_and_analysis_fills_the_shapes(self):
+        tmp = tempfile.mkdtemp()
+        try:
+            pdf = os.path.join(tmp, "syn.pdf")
+            with open(pdf, "wb") as fh:
+                fh.write(page(extra_line=True))
+            with pdf_vector._cache_lock:
+                pdf_vector._cache.clear()
+                pdf_vector._shapes_cache.clear()
+            reads = []
+            real = pdf_vector.load_page
+            with unittest.mock.patch.object(pdf_vector, "load_page", lambda *a: reads.append(1) or real(*a)):
+                first = pdf_vector.object_shapes(pdf, 0)
+                self.assertEqual(pdf_vector.object_shapes(pdf, 0), first)
+                self.assertEqual(len(reads), 1, "같은 쪽은 한 번만 읽는다")
+                with pdf_vector._cache_lock:
+                    pdf_vector._shapes_cache.clear()
+                pdf_vector.member_shapes(pdf, 0)
+                self.assertEqual(pdf_vector.object_shapes(pdf, 0), first)
+                self.assertEqual(len(reads), 2, "분석이 읽은 쪽의 모양을 함께 둔다")
+        finally:
+            shutil.rmtree(tmp)
 
 
 if __name__ == "__main__":

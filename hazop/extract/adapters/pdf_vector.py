@@ -441,6 +441,7 @@ def load_page(path, page=0):
 _CACHE_MAX = 8
 _cache = collections.OrderedDict()
 _cache_lock = threading.Lock()
+_shapes_cache = collections.OrderedDict()   # (sha256, 쪽, 읽기 판) -> object_shapes 값
 
 
 def analyze_bytes(data, page=0, params=None, splits=None):
@@ -461,6 +462,7 @@ def analyze_bytes(data, page=0, params=None, splits=None):
         # 나눔이 다른 기호의 번호를 밀지 않게, 나눔 없는 분석의 기호 순서를 번호의 기준으로 넘긴다(build_extraction)
         base_symbols = analyze_bytes(data, page, params)[4]["symbols"]
     page_count, width, height, words, prims = load_page(io.BytesIO(data), page)
+    _remember_shapes(sha, page, prims)
     analysis = analyze(width, height, words, prims, params, splits)
     if splits:
         analysis["numbering"] = [tuple(s.evidence()) for s in base_symbols]
@@ -3558,10 +3560,7 @@ def reader_version():
     return "pdfplumber-%s" % pdfplumber.__version__
 
 
-def object_shapes(path, page=0):
-    """쪽의 pdf 개체 전부(기호·틀·표 칸·점선 경로 포함) {id: [x0, y0, x1, y1, 점 수, 닫힘]}. 좌표는 0.1pt 반올림.
-    닫힘은 닫힌 경로이거나 첫 점과 끝 점이 같은 4점 넘는 꼴이다. 사람 연산이 가리킨 개체를 다시 찾을 때 쓴다."""
-    prims = load_page(path, page)[4]
+def _shapes_of(prims):
     out = {}
     for i, pr in enumerate(prims):
         for k, (pts, closed, ext, curved) in enumerate(pr["subpaths"]):
@@ -3571,6 +3570,32 @@ def object_shapes(path, page=0):
             shut = bool(closed and len(pts) >= 3) or (len(pts) > 4 and tuple(pts[0]) == tuple(pts[-1]))
             out["pdf-path-%04d" % i + ("" if k == 0 else "-%d" % k)] = [round(v, 1) for v in b] + [len(pts), shut]
     return out
+
+
+def _remember_shapes(sha, page, prims):
+    key, shapes = (sha, page, reader_version()), _shapes_of(prims)
+    with _cache_lock:
+        _shapes_cache[key] = shapes
+        _shapes_cache.move_to_end(key)
+        while len(_shapes_cache) > _CACHE_MAX:
+            _shapes_cache.popitem(last=False)
+
+
+def object_shapes(path, page=0):
+    """쪽의 pdf 개체 전부(기호·틀·표 칸·점선 경로 포함) {id: [x0, y0, x1, y1, 점 수, 닫힘]}. 좌표는 0.1pt 반올림.
+    닫힘은 닫힌 경로이거나 첫 점과 끝 점이 같은 4점 넘는 꼴이다. 사람 연산이 가리킨 개체를 다시 찾을 때 쓴다.
+    (파일 sha256, 쪽, 읽기 판) 열쇠로 프로세스 안에 둔다(분석이 쪽을 읽을 때도 채운다). 돌려준 값은 함께 쓰므로 고치지 않는다."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    key = (hashlib.sha256(data).hexdigest(), page, reader_version())
+    with _cache_lock:
+        hit = _shapes_cache.get(key)
+        if hit is not None:
+            _shapes_cache.move_to_end(key)
+            return hit
+    _remember_shapes(key[0], page, load_page(io.BytesIO(data), page)[4])
+    with _cache_lock:
+        return _shapes_cache[key]
 
 
 def member_shapes(path, page=0, params=None):
