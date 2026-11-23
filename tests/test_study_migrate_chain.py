@@ -259,6 +259,13 @@ class LinkRuleTest(WorkRoot):
         g2 = graph("v2", [self.PP, self.VV, self.WW], [("L9", ["q", "w"])])
         self.assertEqual(moved_uids(g1, g2, ["L1"]), {"L1": None})
 
+    def test_pipe_redrawn_between_the_same_ends_is_linked(self):
+        """상자 없는 배관 L1(p–q)을 지우고 같은 두 끝에 겉모습이 같은 L9를 그으면 도면에서 둘을 가를 정보가 없어 잇는다
+        (같은 두 기기를 잇는 배관이라 ⑤·⑥ 참조의 뜻이 바뀌지 않음). 퍼즈 시드 584(M3 생성기)는 이 경우다."""
+        g1 = graph("v1", [self.PP, self.VV, self.WW], [("L1", ["p", "q"]), ("L2", ["q", "w"])])
+        g2 = graph("v2", [self.PP, self.VV, self.WW], [("L2", ["q", "w"]), ("L9", ["p", "q"])])
+        self.assertEqual(moved_uids(g1, g2, ["L1", "L2"]), {"L1": "L9", "L2": "L2"})
+
     def test_renumbered_pipes_follow_their_ends(self):
         g1 = graph("v1", [self.PP, self.VV, self.WW], [("L1", ["p", "q"]), ("L2", ["q", "w"])])
         g2 = graph("v2", [self.WW, self.VV, self.PP], [("L2", ["q", "w"]), ("L1", ["p", "q"])])

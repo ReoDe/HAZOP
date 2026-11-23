@@ -10,8 +10,9 @@
 ⑤ 결과는 판 이전마다 따라가는 것, 몇 판 이전을 건너뛰고 늦게 따라오는 것(집합 저장 뒤 결과 저장 실패), 되돌아온 판에서
 새로 단 참조를 함께 본다. 사슬 가운데 집합을 앞 판 백업으로 되돌리거나(결과는 그대로), 이력 줄을 옛 꼴(kept_*·step 없음)로
 바꾸거나, 결과의 줄 번호를 지우기도 한다.
-알려진 한계는 종류·태그·상자가 같은 기호(표시가 같아 가릴 수 없음)뿐이다. 상자 없는 구성요소가 겉모습이 같은 다른
-것으로 이어지거나 둘이 하나로 모이면 위반이다.
+알려진 한계는 종류·태그·상자가 같은 기호(표시가 같아 가릴 수 없음)와, 상자 없는 배관 하나를 지우고 같은 두 끝 사이에
+겉모습(종류·태그)이 같은 배관을 새로 그은 것(도면에서 가를 정보가 없음, 시드 584)뿐이다. 상자 없는 구성요소가 겉모습이
+같아도 끝이 다른 것으로 이어지거나 둘이 하나로 모이면 위반이다.
 
 불변식(위반 이름의 첫 글자)
 ① 옛 구성요소·참조는 이어지거나 묘비가 된다. 조용히 사라지지 않고, 자리·참조 수가 줄지 않는다. 묘비 id 하나는 기호 하나다.
@@ -56,6 +57,7 @@ KINDS = ["manual_valve", "manual_valve", "manual_valve", "pump", "tank", "check_
 TAGS = [None, None, None, "V-1", "V-2", "P-1", "V-1"]
 FORMATS = ["pdf_vector", "pdf_vector", "raster_png", "drawio", "dexpi"]
 LIMIT = "표지가 같은 다른 기호(알려진 한계)"
+LIMIT_PIPE = "같은 두 끝 사이 겉모습이 같은 상자 없는 배관(알려진 한계, 위 한계 수에 듦)"
 RULE = "R-1"
 SET_HOLDERS = tuple(p for p, s in idmap.FIELDS[idmap.SET] if s == idmap.MEMBERS)
 
@@ -273,12 +275,14 @@ def same_look(a, b):
 
 
 def twin_look(a, b):
-    """알려진 한계: 종류·태그·상자가 같은 기호(표시가 같아 가릴 수 없음). 상자 없는 것은 한계가 아니다. 도면 연결 구간은
-    두 끝의 겉모습이 모두 같을 때(끝 기호가 한계로 이어지면 그 구간도 따라감)."""
+    """알려진 한계: 종류·태그·상자가 같은 기호(표시가 같아 가릴 수 없음). 상자 없는 것은 끝(진짜 정체)까지 같은 배관만
+    한계다(겉모습 뒤에 끝을 붙인 look). 도면 연결 구간은 두 끝의 겉모습이 모두 같을 때(끝 기호가 한계로 이어지면 그 구간도 따라감)."""
     if a is None or b is None:
         return False
     if a[0] == "xlink" or b[0] == "xlink":
         return a == b
+    if a[3] is None and b[3] is None:
+        return len(a) == len(b) == 5 and a == b
     return a[3] is not None and b[3] is not None and same_look(a, b)
 
 
@@ -305,6 +309,13 @@ class Truth:
         self.exp = {expect.expectation_id(RULE, r): u for r, u in self.ref.items()}
         self.rel = {e["entity_id"]: "r:%s:%s" % (e["kind"], "+".join(sorted(self.eid.get(x, "?") for x in e["nodes"])))
                     for e in g["edges"]}
+        pipe_ends = collections.defaultdict(set)
+        for e in g["edges"]:
+            if e.get("kind") == "has_endpoint" and len(e.get("nodes") or []) >= 2:
+                pipe_ends[e["nodes"][0]].update(self.eid.get(x, "?") for x in e["nodes"][1:])
+        for n in g["nodes"]:  # 상자 없는 배관은 겉모습 뒤에 끝(진짜 정체)을 붙인다(twin_look)
+            if "_uid" in n and n.get("bbox") is None and n["entity_id"] in pipe_ends:
+                self.look[n["_uid"]] += ("+".join(sorted(pipe_ends[n["entity_id"]])),)
 
     def resolve(self, space, v):
         if space == idmap.REF:
@@ -435,7 +446,10 @@ class Track:
                 self.looks[u].append(lk)
 
     def looked_like(self, uids, look):
-        return any(twin_look(x, look) for u in uids for x in self.looks.get(u, ()))
+        hit = any(twin_look(x, look) for u in uids for x in self.looks.get(u, ()))
+        if hit and look is not None and look[0] != "xlink" and look[3] is None:
+            self.j.stats[LIMIT_PIPE] += 1
+        return hit
 
     # -- 집합
 
