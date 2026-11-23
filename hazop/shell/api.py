@@ -230,8 +230,31 @@ class Engine:
         return True
 
     def catch_up_on_open(self):
-        """앱을 열었을 때(프로젝트를 정했을 때) 이미 낡은 프로젝트를 같은 길로 한 번 맞춘다. → 판 이전을 했으면 True."""
+        """앱을 열었을 때(프로젝트를 정했을 때) 시트 자리를 한 번 정착하고(settle_on_open), 이미 낡은 프로젝트를 같은 길로 맞춘다. → 판 이전을 했으면 True."""
+        self.settle_on_open()
         return self.auto_catch_up(self.project_id())
+
+    def settle_on_open(self):
+        """시트 정체 정착(hazop.app.data.settle_sheets)을 프로젝트를 열 때 한 번 한다. 정착 전 프로젝트는 이 단위 전 이름 규칙에 가려진 도면(첫 PDF,
+        여러 쪽의 앞쪽)이 다음 추출 때까지 보이지 않았다. 읽는 길은 그대로 쓰지 않는다: 이 명시적인 '열 때 한 번'만 판 이전과 같은 잠금 안에서 쓴다.
+        정착은 멱등이라 이미 했으면 아무것도 쓰지 않는다. 추출·AI 작업·분석이 도는 중이면 하지 않는다(추출 맨 앞이 정착한다).
+        → 정착 결과(changed·state·renamed·skipped) 또는 None(하지 않음·실패, 실패는 기록만 하고 옛 파일 그대로)."""
+        from hazop.app import data
+        pid = self.project_id()
+        if self.running_jobs() or self._ai_busy():
+            return None
+        with self._study_lock:
+            if self.analysis.running:
+                return None
+            try:
+                res = data.settle_sheets(pid)
+            except Exception:  # noqa: BLE001 - 열 때 한 번의 덤: 실패해도 앱은 열리고 다음 추출이 다시 한다
+                LOG.exception("열 때 시트 정착 실패: %s", pid)
+                return None
+        if res and res.get("changed"):
+            for topic in ("drawings", "sources", "aireview", "nodes", "kg"):
+                self.changed(topic)
+        return res
 
     # ------------------------------------------------------------ 보내기
     def emit(self, name, data=None):
