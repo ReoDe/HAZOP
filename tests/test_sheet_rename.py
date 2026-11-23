@@ -145,6 +145,19 @@ class RenameTest(RenameCase):
             self.assertEqual((sorted(got[before["node_id"]]["members"]), got[before["node_id"]].get("lost") or []), (want, []))
         self.assertEqual(self.last_line()["sheets"], {"graph-SNP-M-101": "graph-SNP-M-102", "graph-SNP-M-102": "graph-SNP-M-101"})
 
+    def test_a_new_file_in_the_place_of_a_vanished_sheet_is_not_a_pair(self):
+        """이름만 보면 사라진 시트와 새로 들어온 시트가 1:1로 보여도, 자료가 다르면 짝이 아니다(다른 파일 기호로 잇지 않음)."""
+        self.numbered("SNP-M-102", "drawio")
+        a = self.add("SNP-M-101", "pdf")
+        before, old = self.made(a)
+        data.set_graph_listener(None)
+        folder = os.path.join(paths.output_root("graph"), self.sheet(a)["name"])
+        os.replace(os.path.join(folder, "graph.json"), os.path.join(folder, "graph.superseded.json"))
+        self.numbered("SNP-M-201", "drawio")
+        _pg, n = self.node()
+        self.assertEqual(self.last_line()["sheets"], {})
+        self.assertEqual((n["members"], len(n.get("lost") or [])), ([], len(before["members"])))
+
     def test_r16_old_snapshot_without_materials_has_no_proof(self):
         """판 사진에 시트 자료가 없는 옛 집합은 짝을 증명하지 못해 전처럼 묘비다(가드가 막는 경우를 엔진도 지킨다)."""
         a = self.add("SNP-M-101", "pdf")
