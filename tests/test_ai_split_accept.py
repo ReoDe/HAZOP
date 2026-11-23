@@ -259,6 +259,45 @@ class SplitAcceptTest(unittest.TestCase):
         self.assertFalse(os.path.exists(corrections.base_path(NAME)), "더 새 판이 들어오면 지은 것을 버린다")
         self.assertEqual(corrections.ensure_base(NAME), "ready")
 
+    def stop_at(self, k):
+        """k번째 확인에서 멈추라고 하는 should_stop과 그 확인 수."""
+        calls = []
+        return (lambda: calls.append(1) or len(calls) >= k), calls
+
+    def folder(self):
+        return sorted(os.listdir(os.path.dirname(corrections.base_path(NAME))))
+
+    def test_build_stopped_inside_the_analysis_leaves_no_file_and_the_same_result_later(self):
+        self.accept(self.cands[:1])
+        stop, calls = self.stop_at(6)
+        self.assertEqual(corrections.ensure_base(NAME, should_stop=stop), "pending")
+        self.assertEqual(len(calls), 6, "분석 단계 사이에서 멈춘다(짓기를 끝까지 돌지 않음)")
+        self.assertEqual(self.folder(), ["extraction.json"], "멈춘 짓기는 반쯤 쓴 파일을 남기지 않는다")
+        self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "pending")
+        self.assertEqual(corrections.ensure_base(NAME), "ready")
+        with open(corrections.base_path(NAME), "rb") as fh:
+            after_stop = fh.read()
+        os.remove(corrections.base_path(NAME))
+        with pdf_vector._cache_lock:
+            pdf_vector._cache.clear()
+        corrections.ensure_base(NAME)
+        with open(corrections.base_path(NAME), "rb") as fh:
+            self.assertEqual(fh.read(), after_stop, "멈춘 뒤 다시 지은 결과가 멈추지 않고 지은 것과 같다")
+
+    def test_build_stopped_on_top_of_an_older_file_stays_partial(self):
+        self.accept(self.cands[:1])
+        corrections.ensure_base(NAME)
+        with open(corrections.base_path(NAME), "rb") as fh:
+            older = fh.read()
+        self.accept(self.cands[1:2])
+        stop, calls = self.stop_at(4)
+        self.assertEqual(corrections.ensure_base(NAME, should_stop=stop), "pending")
+        with open(corrections.base_path(NAME), "rb") as fh:
+            self.assertEqual(fh.read(), older, "앞서 지은 기준 추출은 그대로")
+        self.assertEqual(self.folder(), ["extraction.inputs.json", "extraction.json"])
+        st = corrections.resolve(NAME)["inputs"]
+        self.assertEqual((st["state"], st["waiting"]), ("partial", [self.ops()[1]["op_id"]]))
+
     def test_failed_split_gets_a_reason_code_for_the_queue(self):
         ops = []
         for g in (GROUPS[0], GROUPS[0][1:] + GROUPS[1][:1]):

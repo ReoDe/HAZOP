@@ -25,6 +25,7 @@
 """
 
 import collections
+import contextlib
 import hashlib
 import io
 import json
@@ -442,6 +443,29 @@ _CACHE_MAX = 8
 _cache = collections.OrderedDict()
 _cache_lock = threading.Lock()
 _shapes_cache = collections.OrderedDict()   # (sha256, 쪽, 읽기 판) -> object_shapes 값
+_stop = threading.local()
+
+
+class Stopped(Exception):
+    """멈춤 신호(stoppable의 should_stop이 참)로 분석·추출을 그만둠. 그때까지의 결과는 캐시에 넣지 않는다."""
+
+
+@contextlib.contextmanager
+def stoppable(should_stop):
+    """이 스레드의 분석·추출이 단계 사이마다 should_stop()을 보고, 참이면 Stopped를 낸다. 결과는 바꾸지 않는다
+    (멈추지 않으면 확인만 하고 지나간다). 기준 추출 짓기(corrections.ensure_base)가 낡은 짓기를 중간에 버릴 때 쓴다."""
+    prev = getattr(_stop, "fn", None)
+    _stop.fn = should_stop
+    try:
+        yield
+    finally:
+        _stop.fn = prev
+
+
+def _checkpoint():
+    fn = getattr(_stop, "fn", None)
+    if fn is not None and fn():
+        raise Stopped()
 
 
 def analyze_bytes(data, page=0, params=None, splits=None):
@@ -461,6 +485,7 @@ def analyze_bytes(data, page=0, params=None, splits=None):
     if splits:
         # 나눔이 다른 기호의 번호를 밀지 않게, 나눔 없는 분석의 기호 순서를 번호의 기준으로 넘긴다(build_extraction)
         base_symbols = analyze_bytes(data, page, params)[4]["symbols"]
+    _checkpoint()
     page_count, width, height, words, prims = load_page(io.BytesIO(data), page)
     _remember_shapes(sha, page, prims)
     analysis = analyze(width, height, words, prims, params, splits)
@@ -3410,18 +3435,25 @@ def analyze(width, height, words, prims, params=None, splits=None):
     주면 기호 묶기 뒤에 그 노드를 묶음마다 새 기호로 나누고(_carve_splits) 배관 사슬을 다시 만든다. 없으면 결과가 그대로다."""
     prm = dict(PARAMS)
     prm.update(params or {})
+    _checkpoint()
     cls = _classify_primitives(width, height, prims, prm)
+    _checkpoint()
     _promote_black_symbols(cls, prm)
     _mark_actuator_bodies(cls, prm)
+    _checkpoint()
     blocks = _text_blocks(words, prm)
     for p in cls["panels"]:  # 범례 1.7-1 2/4: 코일 판은 HC(가열)·CC(냉각) 글자를 단다. 글자 없는 무늬 판은 여과 판
         p["coil"] = any(_inside(_center(b["bbox"]), p["rect"]["bbox"]) and PANEL_COIL_WORDS & set(b["text"].upper().split())
                         for b in blocks)
     _mark_class_boundaries(cls, blocks, prm)
     _boundary_marks(cls, prm)
+    _checkpoint()
     ticks, marked = _line_ticks(cls["polys"], prm, cls["bodies"])
+    _checkpoint()
     syms, polys, markers, dashes = _group_symbols(cls, prm)
+    _checkpoint()
     syms, polys = _sparger_rows(syms, polys, prm)
+    _checkpoint()
     if splits:
         syms, polys, markers, dashes = _carve_splits(syms, polys, markers, dashes, splits)
     # 빗금은 기호 묶기가 끝난 뒤에 남은 선에서만 뺀다. 기호 장식선으로 흡수된 빗금은 그대로 두어 기호 모양과 번호가
@@ -3430,12 +3462,15 @@ def analyze(width, height, words, prims, params=None, splits=None):
     cls["ticks"] = [p for p in polys if p["id"] in ticks]
     polys = [p for p in polys if p["id"] not in ticks]
     tees, chains = _build_solid(syms, polys, markers, prm, cls["bridges"], cls["mouths"])
+    _checkpoint()
     pipe_dashes = _pipe_dash_paths(cls["dash_paths"], dashes, polys, chains, prm)
+    _checkpoint()
     if pipe_dashes:
         drawn = {p["id"] for p in pipe_dashes}
         dashes = [d for d in dashes if d.get("src") not in drawn]
         tees, chains = _build_solid(syms, polys + pipe_dashes, markers, prm,
                                     cls["bridges"] + _dash_gap_bridges(pipe_dashes, prm), cls["mouths"])
+        _checkpoint()
         for ch in chains:
             ch["pipe_dash_objects"] = [e for e in ch["evidence"] if e in drawn]
             if ch["pipe_dash_objects"] and len(ch["pipe_dash_objects"]) == len(ch["evidence"]):
@@ -3448,6 +3483,7 @@ def analyze(width, height, words, prims, params=None, splits=None):
                 for a, b in _segs(ch["pts"])):
             ch["pneumatic"] = True
     chains += _contact_chains(syms, prm) + _housing_chains(syms, cls["cells"], prm)
+    _checkpoint()
     dots = _line_dots(dashes, polys, prm)  # 실선 위 점(매설 배관 무늬)은 점선 조각이 아니다
     cls["dots"] = [d for d in dashes if d["id"] in dots]
     # 점선도 검정 견본으로 올린 몸통(seed) 밑을 끊기지 않고 지나갈 수 있다. 몸통 안의 조각을 빼면 사슬이 거기서 끊겨
@@ -3456,11 +3492,13 @@ def analyze(width, height, words, prims, params=None, splits=None):
     chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots
                                    and not any(_inside(_center(d["bbox"]), c) for c in cores)], markers, prm)
     chains = _dashed_continuations(chains, prm)
+    _checkpoint()
     vents, chains = _vent_ends(chains, markers, polys, prm)
     syms += vents
     stubs, chains, tees = _stub_ends(tees, chains)
     syms += stubs
     syms = _merge_appendages(syms, chains, prm)
+    _checkpoint()
     for ch in chains:  # 흐름 방향: 사슬 위·끝에 남은 화살촉(pdf_vector_flow)
         if not ch.get("dashed") or ch.get("continues_pipe"):
             ch["flow"] = _chain_flow(ch, markers, prm)
@@ -3615,6 +3653,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
     """중간 결과 → extraction dict(drawio.extract와 같은 최상위·노드·관계 키)."""
     prm = analysis["params"]
     syms, tees, chains, blocks = analysis["symbols"], analysis["tees"], analysis["chains"], list(analysis["blocks"])
+    _checkpoint()
     cls = analysis["classified"]
     blockers, unknowns = [], []
     if not words_or_paths(analysis):

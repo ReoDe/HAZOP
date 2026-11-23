@@ -1171,7 +1171,9 @@ def _find_base(name, original, inputs):
 def ensure_base(name, original=None, *, should_stop=None):
     """기준 추출 파일을 지금 수정 기록에 맞게 만든다(잠금 없이 작업에서 부른다. 큰 쪽은 수십 초). 상태 문자열을 돌려준다.
     입력 연산 전부를 한 번에 짓는다. 다 만든 뒤 수정 기록이 그새 바뀌었으면 세 번까지 따라잡는다.
-    should_stop()이 참이면(더 새 판으로 다시 지을 차례) 지은 것을 쓰지 않고 pending을 돌려준다."""
+    should_stop()이 참이면(더 새 판으로 다시 지을 차례) 지은 것을 쓰지 않고 pending을 돌려준다. 분석·추출 단계 사이마다
+    보므로(pdf_vector.stoppable) 짓는 도중에도 멈춘다. 앞서 지은 기준 추출 파일은 그대로 남는다."""
+    from hazop.extract.adapters import pdf_vector
     stop = should_stop or (lambda: False)
     if original is None:
         with open(os.path.join(paths.output_root("extract"), name, "extraction.json"), encoding="utf-8") as fh:
@@ -1185,7 +1187,11 @@ def ensure_base(name, original=None, *, should_stop=None):
         key = inputs_key(original, inputs)
         if _read_base(name, key) is not None:
             return "ready"
-        base, status = build_base(original, inputs)
+        try:
+            with pdf_vector.stoppable(stop):
+                base, status = build_base(original, inputs)
+        except pdf_vector.Stopped:
+            return "pending"
         if stop():
             return "pending"
         _write_base(name, original, inputs, base, status)
