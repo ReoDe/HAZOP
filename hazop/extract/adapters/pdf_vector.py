@@ -1226,6 +1226,7 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     pieces = [{"pts": list(p["pts"]), "id": p["id"], "width": p.get("width"), "dash": bool(p.get("dash")),
                "hop": bool(p.get("curved")) and _poly_length(p) <= prm["hop_arc_max"]} for p in polys]
     pieces, att = _cut_through_bodies(pieces, syms, prm)
+    _checkpoint()
     ends = []  # (piece index, k, point)
     for i, pc in enumerate(pieces):
         ends += [(i, k, pt) for k, pt in ((0, pc["pts"][0]), (1, pc["pts"][-1])) if (i, k) not in att]
@@ -1303,10 +1304,12 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
             free.append((i, k, pt))
     # 엇갈림 끊김(도면 관례: 한쪽 선을 다른 선 앞뒤에서 끊어 그림)은 분기가 아니라 그 선을 건너 이어지는 배관이다
     over = _crossing_strokes(pieces, att, prm)
+    _checkpoint()
     for ik in over:
         del att[ik]
     free += [(i, k, pt) for (i, k), (_, pt) in over.items()]
     crossed, gap_bridges = _crossing_gaps(pieces, free, prm)
+    _checkpoint()
     crossed |= set(over)
     gap_bridges += [(pt, over[mate][1]) for ik, (mate, pt) in over.items() if ik < mate]
     bridges = list(bridges) + gap_bridges
@@ -1331,6 +1334,7 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     # 선 끝이 다른 선 중간에 닿으면 그 선을 나눈다(분기)
     splits = {}
     for i, k, pt in free:
+        _checkpoint()
         if (i, k) in crossed or at_hop(i, pt):
             continue
         for j, pc in enumerate(pieces):
@@ -1382,6 +1386,7 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
                         or same_marker(pend[a][2], pend[b][2]) or bridged(pend[a][2], pend[b][2]))
     vertex = {}
     tees = []
+    _checkpoint()
     for g in groups:
         members = [pend[a] for a in g]
         cx = sum(m[2][0] for m in members) / len(members)
@@ -1413,8 +1418,10 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
             incident.setdefault(v, []).append((i, k))
     used = set()
     chains = []
+    _checkpoint()
     order = sorted(range(len(pieces)), key=lambda i: pieces[i]["id"])
     for start in order:
+        _checkpoint()
         if start in used:
             continue
         # 사슬의 한쪽 끝을 찾을 때까지 거슬러 간다
@@ -3897,6 +3904,7 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
          and is_wave_mark(s.bodies + s.strokes + s.markers + s.dashes)], blocks, prm["label_gap_max"])
     class_marks = {}
     numbers = _sym_numbers(syms, analysis.get("numbering"))
+    _checkpoint()
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
         name = getattr(s, "name", None)
