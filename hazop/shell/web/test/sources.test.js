@@ -1,7 +1,9 @@
 // 같은 도면 자리의 원본 고르기 카드(web/js/panels/drawings_sources.js, 시트 정체 U4): 파일 줄은 파일로 고르고, 바꾸기 전에 다시 확인할 구간 수를 보인다.
 import { html, render } from "../js/ui/html.js";
 import { deliver } from "../js/bridge.js";
-import { SourceConflicts, choicesOf, previewText } from "../js/panels/drawings_sources.js";
+import { SourceConflicts, choicesCount, choicesOf, displacedOf, previewText } from "../js/panels/drawings_sources.js";
+import { store } from "../js/store.js";
+import { DrawingsPanel } from "../js/panels/drawings.js";
 
 const tick = async () => { await new Promise((r) => setTimeout(r, 30)); for (let i = 0; i < 400; i++) await Promise.resolve(); };
 const FILE_ROW = { kind: "file", reason: "same_number_other_file", text: "같은 번호 SNP-M-101의 다른 PDF 파일이 있습니다", display: "SNP-M-101",
@@ -86,7 +88,7 @@ export const tests = [
     const host = document.createElement("div"); document.body.appendChild(host);
     render(html`<${SourceConflicts} />`, host);
     await tick(); await tick();
-    assert(!host.textContent.includes("바로 되돌아옵니다") && host.textContent.includes("다시 고르세요"), "되돌아온다고 약속하지 않는다");
+    assert(host.textContent.includes("다시 고르면 되돌아옵니다") && !host.textContent.includes("바로 되돌아옵니다"), "되찾기 길(5b5d21d) 뒤 문구");
     [...host.querySelectorAll("button")].find((b) => b.textContent.includes("b.pdf")).click(); await tick();
     const go = [...host.querySelectorAll(".src-ask button")].find((b) => b.textContent.includes("바꾸기"));
     assert(go.disabled, "영향을 모르면 확인 칸을 체크하기 전에는 못 바꾼다");
@@ -94,6 +96,29 @@ export const tests = [
     box.checked = true; box.dispatchEvent(new Event("change", { bubbles: true })); await tick();
     [...host.querySelectorAll(".src-ask button")].find((b) => b.textContent.includes("바꾸기")).click(); await tick();
     assert.equal(sent[0], ["sources.choose", { drawing_number: "graph-SNP-M-101", material_id: "m-b" }]);
+    host.remove();
+  } },
+  { name: "밀린 파일 표시: 도면 줄에 '원본 2개', 등록 자료 줄에 '쓰이지 않음'(그래프 칩 대신), 카드에 쓰이지 않는 파일 이름", async run(assert) {
+    const info = { conflicts: [FILE_ROW] };
+    assert.equal(choicesCount(info), { "graph-SNP-M-101": 2 });
+    assert.equal(Object.keys(displacedOf(info)), ["m-b"]);
+    assert(displacedOf(info)["m-b"].includes("a.pdf에 밀려"), displacedOf(info)["m-b"]);
+    window.hazopBridge = { send() {}, setHandler() {} };
+    window.fetch = async (u) => (String(u) === "/api/sources" ? { ok: true, status: 200, json: async () => info } : { ok: false, status: 404, json: async () => ({}) });
+    store.set({ jobs: {}, drawings: { drawings: [{ graph_id: "graph-SNP-M-101", display: "SNP-M-101", drawing_number: "SNP-M-101", unknowns: 0 }],
+      documents: [{ material_id: "m-a", name: "a.pdf", version: 1, type: "P&ID", status: "registered", graphed: true },
+        { material_id: "m-b", name: "b.pdf", version: 1, type: "P&ID", status: "registered", graphed: true }], project_id: "P", rev: "r" } });
+    const host = document.createElement("div"); document.body.appendChild(host);
+    render(html`<${DrawingsPanel} onOpen=${() => {}} onClose=${() => {}} />`, host);
+    await tick(); await tick();
+    const chip = [...host.querySelectorAll(".drow button")].find((b) => b.textContent.includes("원본 2개"));
+    assert(chip, "도면 줄 칩: " + host.querySelector(".drow").textContent);
+    const rows = [...host.querySelectorAll(".row")].filter((r) => /^[ab]\.pdf/.test(r.querySelector(".main b") ? r.querySelector(".main b").textContent : ""));
+    const b = rows.find((r) => r.textContent.startsWith("b.pdf")), a = rows.find((r) => r.textContent.startsWith("a.pdf"));
+    assert(b && b.textContent.includes("쓰이지 않음") && !b.textContent.includes("그래프"), "밀린 파일: " + (b && b.textContent));
+    assert(a && a.textContent.includes("그래프") && !a.textContent.includes("쓰이지 않음"), "쓰는 파일: " + (a && a.textContent));
+    assert(host.querySelector("#src-card").textContent.includes("쓰이지 않음: b.pdf"));
+    store.set({ sources: null, drawings: { drawings: [], documents: [], project_id: null, rev: null } });
     host.remove();
   } },
 ];

@@ -5,7 +5,7 @@ import { useEffect, useState } from "../../vendor/hooks.module.js";
 import { cmd, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice, Switch } from "../ui/parts.js";
-import { SourceConflicts } from "./drawings_sources.js";
+import { SourceConflicts, choicesCount, displacedOf } from "./drawings_sources.js";
 import { focusSheet as openTitleblock } from "./titleblock.js";
 import { DrawingExclude, DrawingExcludedChip } from "./nodes_screen.js";
 import { ReviewChip, summaryText as reviewSummary, useReview } from "../review/review.js";      // 도면별 AI 검토 상태·시작(HZ-DSN-06 §3.7)      // 범례·기호표 도면을 분석에서 빼고 다시 넣는 부품(구간 쪽)
@@ -97,6 +97,9 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const ended = all.filter(([, j]) => j.state !== "running");
   const failedJobs = ended.filter(([, j]) => j.state === "failed");
   const est = useAiEstimate(!!app.ai_review, app.ai_review_cap);
+  const sources = useStore((s) => s.sources);          // 원본 고르기 카드가 읽어 둔 값(같은 번호의 다른 원본)
+  const many = choicesCount(sources), idle = displacedOf(sources);
+  const toCard = () => { const el = document.getElementById("src-card"); if (el) el.scrollIntoView({ block: "nearest" }); };
 
   const pick = () => cmd("register.pick").catch(toastError);
   const setReview = (patch) => cmd("extract.set_ai_review", patch).then((r) => store.set((s) => ({
@@ -121,6 +124,8 @@ export function DrawingsPanel({ onOpen, onClose }) {
             <div class="thumb" aria-hidden="true"></div>
             <div class="main"><b>${d.display}</b><span>${d.title || "표제란 확인 전"}</span></div>
             <${NumberChip} d=${d} />
+            ${many[d.graph_id] ? html`<${Btn} sm=${true} kind="ghost" label=${d.display + " 원본 " + many[d.graph_id] + "개, 고르기 카드로 가기"}
+              title="같은 도면 자리에 원본이 둘 이상 있습니다. 분석에 쓸 원본은 아래 원본 고르기 카드에서 고릅니다." onClick=${toCard}>원본 ${many[d.graph_id]}개<//>` : null}
             ${d.unknowns ? html`<${Chip} kind="warn" title="추출에서 읽지 못한 항목">미확인 ${d.unknowns}<//>` : html`<${Chip} kind="ok" icon="check">읽음<//>`}
             <${ReviewChip} gid=${d.graph_id} />
             <${DrawingExcludedChip} graphId=${d.graph_id} />
@@ -139,6 +144,8 @@ export function DrawingsPanel({ onOpen, onClose }) {
       <${DexpiExport} />
       ${data.documents.length ? html`<div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">등록 자료 ${data.documents.length}건</div><div class="list">
         ${data.documents.map((d) => html`<div class="row" key=${d.material_id + ":" + d.version}><div class="main"><b>${d.name || d.material_id}</b><span>버전 ${d.version} · ${d.type}</span></div>
-          <${Chip} kind=${d.status === "registered" ? "ok" : "warn"}>${d.status === "registered" ? "등록됨" : d.status}<//>${d.graphed ? html`<${Chip} kind="accent">그래프<//>` : null}</div>`)}</div></div>` : null}
+          <${Chip} kind=${d.status === "registered" ? "ok" : "warn"}>${d.status === "registered" ? "등록됨" : d.status}<//>${idle[d.material_id]
+            ? html`<${Chip} kind="warn" title=${idle[d.material_id]}>쓰이지 않음<//>`
+            : d.graphed ? html`<${Chip} kind="accent">그래프<//>` : null}</div>`)}</div></div>` : null}
     </div></section>`;
 }

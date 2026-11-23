@@ -26,7 +26,10 @@ export function previewText(c, x) {
 /** 엔진이 구간 파일을 읽지 못해 수를 셀 수 없음(검토 ⑥ 나: 0으로 '다시 확인할 것이 없다'고 안심시키지 않는다). */
 export const unknownImpact = (c, x) => !(x && x.using) && (!!c.nodes_unknown || (!!x && x.recheck === null));
 
-const fileChoice = (c, x, withFormat) => ({ key: x.material_id, kind: "file",
+/** 이 줄에서 지금 쓰지 않는 파일 이름(밀린 파일). */
+const idle = (c) => (c.candidates || []).filter((x) => !x.in_use && x.file).map((x) => x.file);
+
+const fileChoice =(c, x, withFormat) => ({ key: x.material_id, kind: "file",
   label: (x.file || "파일") + (withFormat ? " (" + fmt(x.format) + ")" : "") + (x.modified ? " · " + x.modified : ""),
   args: { drawing_number: c.graph_id, material_id: x.material_id }, using: !!x.in_use, recheck: x.recheck });
 
@@ -46,8 +49,28 @@ export function choicesOf(c) {
   return out;
 }
 
+/** 같은 번호의 다른 원본에 밀려 지금 분석에 쓰지 않는 파일: {material_id: 알림 글}. 도면 패널의 등록 자료 줄이 쓴다(밀린 파일은 도면 목록에 없다). */
+export function displacedOf(info) {
+  const out = {};
+  for (const c of (info && info.conflicts) || []) {
+    const using = c.in_use_file || fmt(c.in_use_format);
+    for (const x of c.candidates || []) {
+      if (!x.in_use && x.material_id) out[x.material_id] = "같은 번호 " + c.display + "의 " + using + "에 밀려 지금 분석에 쓰지 않습니다. 도면 패널의 원본 고르기 카드에서 바꿀 수 있습니다.";
+    }
+  }
+  return out;
+}
+
+/** 원본이 둘 이상인 도면: {graph_id: 원본 수}. 도면 줄의 칩이 쓴다. */
+export function choicesCount(info) {
+  const out = {};
+  for (const c of (info && info.conflicts) || []) out[c.graph_id] = (c.candidates || []).length || (c.formats || []).length;
+  return out;
+}
+
 export function SourceConflicts() {
-  const [info, setInfo] = useState(null);
+  const [info, setInfoRaw] = useState(null);
+  const setInfo = (v) => { setInfoRaw(v); store.set({ sources: v }); };      // 도면 줄·등록 자료 줄의 '원본 n개'·'쓰이지 않음' 표시가 같은 값을 본다
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(null);      // {c, x}: 갈아타기 확인 중
@@ -71,15 +94,16 @@ export function SourceConflicts() {
     setBusy(false);
   }
   if (!info || !info.conflicts.length) return null;
-  return html`<div class="card src-card" aria-label="같은 도면 자리의 원본 고르기"><h3>같은 도면 자리에 원본이 둘 이상 있습니다</h3>
-    <div class="muted small">분석에 쓸 원본을 고르세요. 고르기 전에는 먼저 쓰던 것을 씁니다. 다른 원본의 읽은 결과와 수정 기록은 지우지 않고 그대로 둡니다. 원래 원본으로 돌아가려면 그 원본을 다시 고르세요.</div>
+  return html`<div class="card src-card" id="src-card" aria-label="같은 도면 자리의 원본 고르기"><h3>같은 도면 자리에 원본이 둘 이상 있습니다</h3>
+    <div class="muted small">분석에 쓸 원본을 고르세요. 고르기 전에는 먼저 쓰던 것을 씁니다. 다른 원본의 읽은 결과와 수정 기록은 지우지 않고 그대로 둡니다. 원래 원본을 다시 고르면 되돌아옵니다.</div>
     <div class="list" role="list" aria-label="고를 원본이 있는 도면">${info.conflicts.map((c) => {
       const choices = choicesOf(c);
       const picked = !!(c.chosen_material || c.chosen);       // 사람이 형식이나 파일을 고름
       return html`<div class="row src-row" role="listitem" key=${c.graph_id}>
         <div class="main"><b>${c.display}</b>
           ${c.text ? html`<span>${c.text}</span>` : null}
-          ${choices.length ? html`<span>지금 쓰는 것: ${c.kind === "file" ? (c.in_use_file || "먼저 있던 파일") : (c.in_use_file ? c.in_use_file + " (" + fmt(c.in_use_format) + ")" : fmt(c.in_use_format))}${picked ? " (사람이 고름)" : " (먼저 있던 것)"}</span>` : null}</div>
+          ${choices.length ? html`<span>지금 쓰는 것: ${c.kind === "file" ? (c.in_use_file || "먼저 있던 파일") : (c.in_use_file ? c.in_use_file + " (" + fmt(c.in_use_format) + ")" : fmt(c.in_use_format))}${picked ? " (사람이 고름)" : " (먼저 있던 것)"}</span>` : null}
+          ${idle(c).length ? html`<span class="muted">쓰이지 않음: ${idle(c).join(", ")}</span>` : null}</div>
         <div class="acts">${choices.map((x) => (x.using && picked
           ? html`<${Chip} kind="ok" icon="check" key=${x.key}>${x.label} 쓰는 중<//>`
           : html`<${Btn} sm=${true} key=${x.key} label=${c.display + ": " + x.label + " 쓰기"} disabled=${busy}
