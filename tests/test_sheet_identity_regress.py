@@ -9,6 +9,8 @@ E4 (퍼즈가 시드 111·115·183에서 찾음) 문서(초기사건·FMEA·잠�
    그 번호가 영영 막힌다(막다른 길). 읽을 때만 옮겨 파일 원문에 남은 옛 이름도 같은 꼴로 막는다(시드 111·115·183).
 E5 (퍼즈가 시드 232에서 찾음) 먼저 등록하고 번호를 받았지만 아직 추출하지 않은 파일 x가 나중에 추출되면, 그 사이 같은 번호로 등록·추출해 쓰이던 파일 y에게서 그 번호의 주인을
    말없이 가져간다(고르는 차례 4 '먼저 등록한 자료'가 이김, 자리를 붙박지 않음). 등록 단조(새 자료를 넣어도 있던 시트의 주인이 안 바뀜)가 어긋나고, y의 구간은 묘비가 된다.
+고르기 가드(퍼즈가 시드 155·214·246에서 찾음) 다른 파일을 골라 옛 이름 붙박기가 풀린 파일은 다시 추출하기 전까지 옛 이름으로 보이는데, 표제란 가드는 규칙이
+   셈한 임시 이름으로 센다. 그래서 옮길 구간을 0개로 알리고 허락한 뒤 구간을 묘비로 만들거나(214·246), 이름이 그대로인 확정을 자기 구간 때문에 거절한다(155).
 실행: python -m unittest tests.test_sheet_identity_regress
 """
 
@@ -23,7 +25,7 @@ from tests.test_titleblock import BY, P
 from hazop import paths
 from hazop.app import project_ctx
 from hazop.graph import sources
-from hazop.register import registry
+from hazop.register import registry, titleblock as tb
 from hazop.ie import model, store as ie_store
 from hazop.study import migrate, nodes
 
@@ -80,6 +82,45 @@ class SeatRegressTest(SheetCase):
         dry = self.confirm(a, {"drawing_number": "SNP-M-102"}, dry=True)
         self.assertTrue(dry["ok"], dry)
         self.assertEqual(dry["carries"], {"구간": 1}, "가드가 a의 옛 이름 대신 임시 이름으로 셈해 옮길 구간을 놓침")
+
+    def unpinned_owner(self):
+        """옛 자리 주인 a를 두고 b를 고르면 a의 옛 이름 붙박기가 풀린다. a는 다시 추출하기 전까지 디스크의 graph.json으로 옛 이름을 지닌다."""
+        a, b = self.legacy_pair()
+        self.make_nodes(a)
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=b)
+        self.assertNotIn("pin", sources.load_seats(P)[0]["graph-SNP-M-101"], "시험 전제: b를 고르자 a의 붙박기가 풀림")
+        return a, b
+
+    def test_choose_guard_counts_the_segment_on_the_name_the_sheet_uses_now(self):
+        """시드 214·246: 붙박기가 풀린 a를 다시 고르면 a는 옛 이름 그대로 보이는데, 가드는 규칙이 셈한 임시 이름으로 세어 옮길 구간을 0개로 알리고
+        허락한 뒤 그 구간을 묘비로 만든다."""
+        a, _b = self.unpinned_owner()
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
+        self.assertEqual(self.owner("graph-SNP-M-101"), a, "시험 전제: 다시 고른 a가 옛 이름으로 보임")
+        _pg, before = self.node()
+        dry = self.confirm(a, {"drawing_number": "SNP-M-102"}, dry=True)
+        self.assertTrue(dry["ok"], dry)
+        self.assertEqual(dry["carries"], {"구간": 1}, "가드가 a가 지금 쓰는 이름 대신 임시 이름으로 셈해 옮길 구간을 놓침")
+        self.assertEqual([r["from"] for r in dry["renames"]], ["graph-SNP-M-101"])
+        out = self.confirm(a, {"drawing_number": "SNP-M-102"})
+        self.assertEqual((out["ok"], out["carries"]), (True, {"구간": 1}), out)
+        _pg, n = self.node()
+        self.assertEqual((len(n["members"]), n.get("lost") or []), (len(before["members"]), []), "허락한 번호 바꿈이 구간 구성요소를 묘비로 만듦")
+
+    def test_choose_guard_confirming_the_name_the_sheet_uses_now_is_not_refused(self):
+        """시드 155: 붙박기가 풀린 a가 옛 이름(번호 101과 같은 이름)으로 보이는 채 번호 101을 확정하면 이름은 그대로인데, 가드는 a를 임시 이름에서
+        101로 옮기는 것으로 셈해 a 자신의 구간을 '새 번호의 도면을 가리키는 기록'으로 세어 거절한다."""
+        a, b = self.legacy_pair()
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=b)
+        left = tb.unconfirm(P, b, ["drawing_number"], BY, ver=self.row(b)["ver"])
+        self.assertTrue(left["ok"], "시험 전제: b가 번호를 떠남: %s" % left.get("refused"))
+        self.assertEqual(self.owner("graph-SNP-M-101"), a, "시험 전제: 붙박기가 풀린 a가 옛 이름으로 보임")
+        self.assertEqual(self.sheet(a)["graph_id"], "graph-SNP-M-101", "표제란 줄이 a가 지금 쓰는 이름 대신 임시 이름을 보임")
+        self.make_nodes(a)
+        out = self.confirm(a, {"drawing_number": "SNP-M-101"}, dry=True)
+        self.assertTrue(out["ok"], "막을 것이 없는데 거절: %s" % (out.get("refused") or [{}])[0].get("reason"))
+        self.assertEqual((out["carries"], out["renames"]), ({}, []))
+
     def test_e2_choosing_a_format_after_the_legacy_owner_keeps_its_name(self):
         a, b = self.legacy_pair()
         sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
