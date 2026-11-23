@@ -21,7 +21,7 @@ from hazop import paths, store_io
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 from hazop.graph.project import _norm as drawing_key  # 프로젝트 그래프가 같은 도면으로 보는 규칙(공백 무시·대문자)
 from hazop.store_io import ANY, Conflict, fingerprint, now_utc  # noqa: F401  이 모듈 이름으로도 쓴다
-from hazop.study import segment
+from hazop.study import idmap, segment
 
 SCHEMA_VERSION = "0.3"
 PRE_TOMB_SCHEMA_VERSION = "0.2"  # 판 이전 묘비(tombstones·nodes[].lost) 전. 읽을 때 0.3으로 바꾼다(hazop.study.migrate)
@@ -398,9 +398,7 @@ def merge(node_set, node_ids, at=None):
         for key in ("absorbed", "parts"):
             if any(key in n for n in picked):
                 keep[key] = [p for n in picked for p in n.get(key, [])]
-    lost = sorted({t for n in picked for t in n.get("lost") or []})  # 판 이전에서 잃은 구성요소의 묘비도 함께 둔다
-    if lost:
-        keep["lost"] = lost
+    carry_tombs(keep, picked)
     keep.update({
         "name": "%s 외 %d" % (keep["name"], len(picked) - 1),
         "name_by": "user",
@@ -614,8 +612,74 @@ def _screen_note(node):
 
 
 def _lost_note(node):
-    """없애는 구간이 판 이전에서 잃은 구성요소의 묘비 id({"lost": [...]}, 없으면 빈 dict). 묘비 기록(tombstones)은 집합에 남는다."""
-    return {"lost": list(node["lost"])} if node.get("lost") else {}
+    """없애는 구간이 판 이전에서 잃은 구성요소의 묘비 id와 사람이 버린 묘비 id({"lost": [...], "discarded": [...]}, 없는 것은
+    뺌). 묘비 기록(tombstones)은 집합에 남는다."""
+    return {k: list(node[k]) for k in ("lost", "discarded") if node.get(k)}
+
+
+def carry_tombs(keep, picked):
+    """병합으로 남는 구간 keep에 picked 구간들의 lost·discarded 묘비를 모은다(keep를 고침). 한쪽에서 버리고 다른 쪽에 열린
+    같은 묘비는 열린 쪽(lost)으로 둔다."""
+    lost = sorted({t for n in picked for t in n.get("lost") or []})
+    gone = sorted({t for n in picked for t in n.get("discarded") or []} - set(lost))
+    for key, v in (("lost", lost), ("discarded", gone)):
+        if v:
+            keep[key] = v
+        else:
+            keep.pop(key, None)
+
+
+def lost_items(node_set, node_id):
+    """구간의 찾지 못한 구성요소(열린 lost 묘비) [{"key", "name", "ref", "lost_from", "lost_at"}]. key는 묘비 id의 해시라
+    화면이 묘비 id를 보지 않고 discard_lost 명령(node_commands "discard_lost"의 keys)에 넘긴다."""
+    node = _find(node_set, node_id)
+    tombs = node_set.get("tombstones") or {}
+    out = []
+    for t in node.get("lost") or []:
+        rec = tombs.get(t) if isinstance(tombs.get(t), dict) else {}
+        out.append({"key": idmap.tomb_handle(t), "name": idmap.tomb_name(rec), "ref": rec.get("ref"),
+                    "lost_from": rec.get("lost_from"), "lost_at": rec.get("lost_at")})
+    return out
+
+
+def discard_lost(node_set, node_id, tombs=None, by=None, at=None):
+    """구간 하나의 찾지 못한 구성요소(lost 묘비)를 사람이 확인하고 버린다(규격 §2.6). tombs는 묘비 id 목록, None이면 남은 것
+    전부. 버린 묘비는 lost에서 discarded로 옮기고 묘비 기록(tombstones)은 그대로 둔다. 분석 입력이 아니라 rev는 그대로이고,
+    묶음(batches) 하나로 남아 되돌릴 수 있다. 이력에 discard_lost {node_id, by, tombs[{tomb, entity_id, ref, name}], left}.
+    확정·잠금 구간, 없는 구간, 이 구간의 lost에도 discarded에도 없는 묘비, 빈 목록, 빈 이름은 ValueError. 버릴 것이 남지
+    않았으면(이미 버린 것만 고름, 전부를 골랐는데 남은 것이 없음) 받은 집합 그대로."""
+    by = (by or "").strip()
+    if not by:
+        raise ValueError("버리는 사람 이름 필요")
+    node = _find(node_set, node_id)
+    have, done = list(node.get("lost") or []), set(node.get("discarded") or [])
+    if tombs is None:
+        picked = have
+    else:
+        picked = list(dict.fromkeys(tombs))
+        if not picked:
+            raise ValueError("버릴 묘비를 고르지 않음")
+        bad = [t for t in picked if t not in have and t not in done]
+        if bad:
+            other = sorted({n["node_id"] for n in node_set["nodes"] for t in bad if t in (n.get("lost") or [])})
+            where = "다른 구간(%s)의 묘비" % ", ".join(other) if other else "없는 묘비"
+            raise ValueError("%s에 없는 묘비 %d개: %s" % (node_id, len(bad), where))
+        picked = [t for t in picked if t in have]
+    if not picked:
+        return node_set
+    out = _begin(node_set, [node_id])
+    n = _find(out, node_id)
+    left = [t for t in have if t not in picked]
+    n["discarded"] = sorted(done | set(picked))
+    if left:
+        n["lost"] = left
+    else:
+        n.pop("lost", None)
+    recs = out.get("tombstones") or {}
+    detail = {"node_id": node_id, "by": by, "left": len(left),
+              "tombs": [{"tomb": t, "entity_id": (recs.get(t) or {}).get("entity_id"), "ref": (recs.get(t) or {}).get("ref"),
+                         "name": idmap.tomb_name(recs.get(t))} for t in picked]}
+    return _log(out, "discard_lost", detail, at, before=node_set)
 
 
 def remove_empty(node_set, node_id, at=None):
@@ -950,6 +1014,7 @@ def _snapshot_ok(doc):
             and (tombs is None or (isinstance(tombs, dict)
                                    and all(idmap.is_tomb(k) and tomb_ok(r) for k, r in tombs.items())))
             and all(_ids_ok(n.get("lost", [])) and all(idmap.is_tomb(t) for t in n.get("lost", []))
+                    and _ids_ok(n.get("discarded", [])) and all(idmap.is_tomb(t) for t in n.get("discarded", []))
                     and isinstance(n.get("lost_members", []), list) for n in doc["nodes"]))
 
 

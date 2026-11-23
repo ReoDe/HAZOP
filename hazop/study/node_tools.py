@@ -522,9 +522,7 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
                 continue
             keep = picked[0]
             keep["members"] = sorted({m for n in picked for m in n["members"]})
-            lost = sorted({t for n in picked for t in n.get("lost") or []})  # 판 이전에서 잃은 구성요소의 묘비도 함께 둔다
-            if lost:
-                keep["lost"] = lost
+            nodes.carry_tombs(keep, picked)  # 판 이전에서 잃은 구성요소의 묘비와 사람이 버린 묘비도 함께 둔다
             keep["name_by"] = keep.get("name_by") or origin
             for n in picked[1:]:
                 if out_res is not None:

@@ -590,7 +590,7 @@ class Track:
                 else:
                     self.j.note("② 구간에 없던 기호가 members에 들어옴", (self.seed, where, e, u, sorted(row["allowed"])))
         tombs = set()
-        for t in h.get("lost") or []:
+        for t in (h.get("lost") or []) + (h.get("discarded") or []):  # 사람이 버린 묘비도 사라진 것이 아님
             if not idmap.is_tomb(t) or t in truth_new.eid:
                 self.j.note("③ lost에 살아 있는 id", (self.seed, where, t))
             tombs.add(self.tomb_truth.get(t))
@@ -773,7 +773,8 @@ def same(a, b):
     return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
-def run(seeds, judge):
+def run(seeds, judge, after_step=None):
+    """after_step(seed, i, ns2, track, truth2) -> ns2: 판 이전마다 되돌리기 점검 전에 집합을 더 고치는 갈고리(test_study_discard_fuzz)."""
     for seed in seeds:
         r = random.Random(seed)
         project_mode = r.random() < 0.3
@@ -889,6 +890,9 @@ def run(seeds, judge):
                                 rec["history"].append({"at": "c01a"})
                         else:
                             d["history"].append({"at": "c01a", "op": "edit"})
+                if after_step is not None:
+                    stage = "갈고리 %d" % i
+                    ns2 = after_step(seed, i, ns2, track, truth2)
                 stage = "되돌리기 %d" % i
                 undo_check(track, ns2, truth2)
                 track.see(truth2)

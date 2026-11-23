@@ -14,7 +14,8 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
   id(entity-·relation-·xlink-·<graph_id>/·graph-·project-)와 꼴이 겹치지 않는다. 묘비는 지우지 않고, 표시가 맞는 구성요소가
   하나뿐으로 다시 나오면 되찾는다(found). 되찾기는 기록의 지문이 묘비 id와 맞는 것만 한다(기록에 없는 묘비 id는 풀지 않음).
 - 구간(members를 가진 사전)은 members에 지금 판의 살아 있는 id만 두고 잃은 것은 lost(묘비 id)에 둔다. 실행 취소 기록의
-  before·after와 조각 기록도 같은 규칙이라 되돌려도 묘비는 묘비다.
+  before·after와 조각 기록도 같은 규칙이라 되돌려도 묘비는 묘비다. 사람이 확인하고 버린 묘비는 lost에서 discarded로
+  옮긴다(hazop.study.nodes.discard_lost). 지금 구간 어디에도 lost로 남지 않고 버려진 묘비(discarded_tombs)는 되찾지 않는다.
 - 등록되지 않은 자리에서 옛 판 id를 만나면 report["unregistered"]에 경로를 적는다(시험에서는 비어 있어야 한다).
 - 경로의 `[]`는 목록의 항목, `{}`는 ID를 열쇠로 쓰는 사전의 값이다. 경로가 `{}`로 끝나면 그 사전의 열쇠를 옮긴다(키 다시
   짓기). 옮긴 열쇠가 다른 항목의 열쇠와 겹치면 뒤 항목은 묘비 열쇠로 둔다(어느 쪽이 맞는지 모르므로 덮지 않음). 값이 자기
@@ -34,6 +35,7 @@ TOMB_PREFIX = "lost:"
 EXP_SEP = "|exp:"
 LEGACY_LOST = "~lost"  # cff108c~49033f1 판이 찾지 못한 참조 끝에 붙인 글자. upgrade가 묘비로 바꾼다
 LOST_LABEL = "대상 없음(다시 추출 뒤 찾지 못함, 확인 필요)"
+DISCARDED_LABEL = "대상 없음(다시 추출 뒤 찾지 못해 사람이 버림)"
 
 MARK_TOL = 1.0  # pt. 같은 기호를 다시 읽으면 상자가 그대로다
 MARK_LEN = 8
@@ -95,11 +97,37 @@ def is_tomb(x):
     return isinstance(x, str) and x.startswith(TOMB_PREFIX)
 
 
-def label(x, names=None):
-    """사람이 읽는 이름. 묘비(잠재 후보 묘비 포함)면 LOST_LABEL, names {id: 이름}에 있으면 그 이름, 아니면 x 그대로."""
+def label(x, names=None, discarded=()):
+    """사람이 읽는 이름. 묘비(잠재 후보 묘비 포함)면 LOST_LABEL, 그 가운데 discarded(discarded_tombs)에 든 것은
+    DISCARDED_LABEL, names {id: 이름}에 있으면 그 이름, 아니면 x 그대로."""
     if is_tomb(x):
-        return LOST_LABEL
+        return DISCARDED_LABEL if x.partition(EXP_SEP)[0] in discarded else LOST_LABEL
     return (names or {}).get(x, x)
+
+
+def tomb_name(rec):
+    """묘비 기록이 가리키던 기호의 이름. 잃기 전 판의 표시(종류·태그), source 구성요소면 잃기 전 참조, 아니면 '이름 없는
+    구성요소'. 판 이전 뒤 집합의 판 사진은 새 판이라 옛 id로 찾지 않는다(describe는 판 이전 전에만 맞음)."""
+    rec = rec if isinstance(rec, dict) else {}
+    mk = rec.get("mark")
+    if valid_mark(mk) and mk[2]:
+        return " ".join(x for x in (mk[2], mk[3]) if x)
+    if rec.get("ref") and rec.get("basis") != ids.SEQUENCE:
+        return rec["ref"]
+    return "이름 없는 구성요소"
+
+
+def tomb_handle(tomb):
+    """화면에 내는 묘비 손잡이 'L-<해시 12자>'. 묘비 id(lost:…)는 화면에 날것으로 나가지 않는다."""
+    return "L-" + hashlib.sha256(tomb.encode("utf-8")).hexdigest()[:12]
+
+
+def discarded_tombs(node_set):
+    """사람이 버렸고 지금 구간 어디에도 lost로 남지 않은 묘비 id 집합. 되찾지 않고 '되찾지 못한 묘비' 수에서 빠진다.
+    겹친 구간 하나에서만 버린 묘비는 다른 구간의 lost에 남아 있으면 아직 열린 묘비다."""
+    rows = [n for n in (node_set or {}).get("nodes") or [] if isinstance(n, dict)]
+    gone = {t for n in rows for t in n.get("discarded") or [] if is_tomb(t)}
+    return gone - {t for n in rows for t in n.get("lost") or []}
 
 
 def describe(node_set, entity_id):
@@ -269,6 +297,7 @@ def compute(node_set, graph, at=None):
     old_marks = {k: v for k, v in (node_set.get("graph_member_marks") or {}).items() if valid_mark(v)}
     old_basis = node_set.get("graph_member_basis")
     tombs = node_set.get("tombstones") or {}
+    gone = discarded_tombs(node_set)
     new_basis = bases(graph)
     by_id = {n["entity_id"]: n for n in graph.get("nodes", [])}
     new_ref = {e: ref_of(n, gid) for e, n in by_id.items()}
@@ -324,7 +353,7 @@ def compute(node_set, graph, at=None):
     claims = {}
     for t, rec in sorted(tombs.items()):
         if (not isinstance(rec, dict) or rec.get("found") is not None or not valid_mark(rec.get("mark"))
-                or not _recorded_as(t, rec, gid)):
+                or t in gone or not _recorded_as(t, rec, gid)):
             continue
         mk = rec["mark"]
         hits = [e for e in mark_hits(mk) if e not in taken and e not in contested]
@@ -768,27 +797,37 @@ def legacy_marks(graph):
 
 def needs_check(node_set, results=None):
     """'참조 확인 필요' 요약(화면이 띄울 근거). {"needs_check": bool, "lost_members": {node_id: 묘비 수},
-    "lost_refs": {node_id: 묘비가 된 ⑤ 대상 참조(원인·영향·보호수단·잠재 후보) 수}, "tombstones": 되찾지 못한 묘비 수,
+    "lost_refs": {node_id: 묘비가 된 ⑤ 대상 참조(원인·영향·보호수단·잠재 후보) 수}, "tombstones": 되찾지 못한 묘비 수(사람이
+    버린 것은 빼고), "discarded": {node_id: 사람이 버린 묘비 수}, "discarded_refs": {node_id: lost_refs 가운데 사람이 버린 묘비를
+    가리키는 수. ⑤ 항목의 대상은 사람이 고칠 몫이라 lost_refs에서 빼지 않는다},
     "unverified": 표시 없이 참조만 믿고 이은 옛 판 이전(cff108c 전 이력 줄)이 결과에 끼었는가, "unregistered": 등록되지 않은 자리 경로,
     "unproven": 이어진 것을 증명하지 못해 순번 참조를 묘비로 한 까닭들, "refs_unnamed": 새 판 구성요소에 안정 참조가 없어 묘비가 된 참조 수}."""
     ns = node_set or {}
     lost_members = {n["node_id"]: len(n["lost"]) for n in ns.get("nodes") or [] if isinstance(n, dict) and n.get("lost")}
-    lost_refs = {}
+    discarded = {n["node_id"]: len(n["discarded"]) for n in ns.get("nodes") or [] if isinstance(n, dict) and n.get("discarded")}
+    gone = discarded_tombs(ns)
+    lost_refs, discarded_refs = {}, {}
     for cell in (results or {}).get("cells") or []:
-        k = 0
+        hits = []
         for path, space in FIELDS[RESULTS]:  # 대상 참조만 센다(근거 경로는 AI가 남긴 기록이라 세지 않음)
             if space not in (REF, EXP) or not path.startswith("cells[].entries[]") or ".history[]" in path:
                 continue
-            k += sum(1 for h, key in walk({"cells": [cell]}, path) if is_tomb(h[key]))
+            hits += [h[key] for h, key in walk({"cells": [cell]}, path) if is_tomb(h[key])]
+        nid = cell.get("node_id")
+        if hits:
+            lost_refs[nid] = lost_refs.get(nid, 0) + len(hits)
+        k = sum(1 for x in hits if x.partition(EXP_SEP)[0] in gone)
         if k:
-            lost_refs[cell.get("node_id")] = lost_refs.get(cell.get("node_id"), 0) + k
+            discarded_refs[nid] = discarded_refs.get(nid, 0) + k
     rows = [h.get("detail") or {} for h in ns.get("history") or [] if isinstance(h, dict) and h.get("op") == "migrate_version"]
     rows += [m for m in (results or {}).get("version_migrations") or [] if isinstance(m, dict)]
     unverified = any(r.get("check") == "ref" or r.get("refs_unverified") is True for r in rows)  # refs_unverified: 49033f1 판 줄
     unregistered = sorted({p for r in rows for p in r.get("unregistered") or []})
     unproven = sorted({r["unproven"] for r in rows if isinstance(r.get("unproven"), str)})
     unnamed = sum(r["refs_unnamed"] for r in rows if type(r.get("refs_unnamed")) is int)
-    open_tombs = sum(1 for r in (ns.get("tombstones") or {}).values() if isinstance(r, dict) and r.get("found") is None)
+    open_tombs = sum(1 for t, r in (ns.get("tombstones") or {}).items()
+                     if isinstance(r, dict) and r.get("found") is None and t not in gone)
     return {"needs_check": bool(lost_members or lost_refs or unverified or unregistered or unproven or unnamed),
             "lost_members": lost_members, "lost_refs": lost_refs, "tombstones": open_tombs,
+            "discarded": discarded, "discarded_refs": discarded_refs,
             "unverified": unverified, "unregistered": unregistered, "unproven": unproven, "refs_unnamed": unnamed}
