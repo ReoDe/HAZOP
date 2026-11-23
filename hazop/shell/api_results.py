@@ -16,6 +16,7 @@ from hazop.analysis.risk import FREQUENCIES, SEVERITIES
 from hazop.study import follow, idmap, nodes
 from hazop.study import result_commands
 from hazop.study import results as res
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_results")
 INT_MAX = 10 ** 9
@@ -186,7 +187,7 @@ def summary(engine):
         doc, fp = _load(ns)
     except (OSError, ValueError) as exc:
         return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
-                    reason="분석 결과 파일을 읽을 수 없습니다(%s)." % str(exc)[:120])
+                    reason="분석 결과 파일을 읽을 수 없습니다(%s)." % errtext.why(exc, 120))
     from hazop.shell import api_nodes
     info = api_nodes._span_info(ns, pg)
     check = idmap.needs_check(ns, doc)
@@ -541,7 +542,7 @@ def _export_excel(engine, a):
         path, rows = study_xlsx.export(path, doc, scope_set(ns), pg, doc["deviations"], scope=scope, node_ids=node_ids,
                                        reviewer=engine.reviewer() or "", intents=inputs["intents"], now=now, expectations=inputs["expectations"])
     except (OSError, ValueError) as exc:
-        raise _api().CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % str(exc)[:200])
+        raise _api().CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % errtext.why(exc, 200))
     return {"path": os.path.basename(path), "rows": rows, "cancelled": False}
 
 
@@ -625,7 +626,21 @@ def _left_out(pg, scope):
         full, _legacy = _node_set(pg)
     except Exception:  # noqa: BLE001 - 안내 한 줄: 못 읽으면 비운다
         return []
-    return [{"node_id": n["node_id"], "name": n.get("name") or n["node_id"]} for n in full.get("nodes") or [] if nodes.node_state(n) == "applied"]
+    # lost: 도면이 바뀌어 찾지 못한 구성요소가 남은 구간(판 이전이 확정을 푼 구간이 대개 이것). 화면이 '그냥 초안'과 갈라 말한다
+    return [{"node_id": n["node_id"], "name": n.get("name") or n["node_id"], "lost": len(n.get("lost") or [])}
+            for n in full.get("nodes") or [] if nodes.node_state(n) == "applied"]
+
+
+def _locked_out(pg, scope):
+    """분석을 마치고 잠가 이번 전체 실행에서 다시 묻지 않는 구간 수(전체 실행일 때만). 카드가 말없이 빼지 않게 수를 보인다."""
+    if scope != "all":
+        return 0
+    from hazop.study import nodes
+    try:
+        full, _legacy = _node_set(pg)
+    except Exception:  # noqa: BLE001 - 안내 한 줄: 못 읽으면 0
+        return 0
+    return sum(1 for n in full.get("nodes") or [] if nodes.node_state(n) == "locked")
 
 
 def _run_plan(engine, a):
@@ -644,6 +659,7 @@ def _run_plan(engine, a):
         can, label, guide = bool(status.get("can_start")), status.get("label") or "", status.get("guide") or ""
     return dict(s, conn=conn, can_start=can and bool(units), state=label, guide=guide,
                 needs_terms=not terms, running=_run_state(engine)["running"], method=a.get("method"), left_out=left_out,
+                locked_out=_locked_out(_pg_, a["scope"]),
                 scope_fp=analysis_run.scope_fp(units, conn),     # 확인한 범위(칸·구간·호출 수·비용·모델)의 지문. 시작할 때 그대로 보낸다
                 empty_text=None if units else {"node": "분석할 구간의 행을 고르세요(확정한 구간만 분석합니다).",
                                               "failed": "다시 실행할 실패 칸이 없습니다.", "cell": "분석할 칸이 없습니다.",
@@ -707,7 +723,7 @@ def _run(engine, a):
     try:
         client = conn.make_client(via) if plan is not None and hasattr(conn, "make_client") else ai.make_client()
     except ValueError as exc:
-        raise api.CommandError("failed", str(exc)[:200])
+        raise api.CommandError("failed", errtext.why(exc, 200))
     this_run = bool(plan and plan.get("this_run")) and hasattr(conn, "set_run_override")
     test = bool(plan and plan.get("test"))
     if this_run:

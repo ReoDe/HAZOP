@@ -74,6 +74,12 @@ function RunState({ run }) {
   return html`<${Notice} kind=${l.reason === "stopped" ? "info" : "ok"} icon="circle-check">AI 분석${l.reason === "stopped" ? "을 멈췄습니다" : "이 끝났습니다"}${l.method_name ? "(" + l.method_name + (l.this_run ? ", 이번 실행만" : "") + ")" : ""}: 호출 ${l.calls}회, ${l.cells}칸 반영${l.failed_calls ? ", 실패 " + l.failed_calls + "회" : ""}.${test}${resume}<//>`;
 }
 
+/** 빠지는 구간 가운데 도면이 바뀌어 찾지 못한 구성요소가 남은 것(판 이전이 확정을 푼 구간): 그냥 초안과 갈라 말한다. */
+function leftLost(left) {
+  const n = left.filter((x) => x.lost > 0).length;
+  return n ? ". 그 가운데 " + n + "개는 도면이 바뀌어 찾지 못한 구성요소가 있어 확정이 풀렸습니다(구간에서 다시 확인한 뒤 확정하세요)" : "";
+}
+
 function PlanCard() {
   const p = R.useResults((s) => s.plan);
   if (!p) return null;
@@ -82,8 +88,8 @@ function PlanCard() {
     <h3>AI 분석 실행</h3>
     ${p.empty_text ? html`<p>${p.empty_text}</p>` : html`<p>${p.cells}칸을 ${p.calls}번 호출해 분석합니다(약 ${Math.max(1, Math.round(p.seconds / 60))}분).</p>
       ${p.conn ? html`<div class=${"small" + (p.conn.paid ? " conn-paid" : "")} aria-label="쓸 연결">${p.conn.method_name} · ${p.conn.model_name} · ${p.conn.cost_text}</div>` : null}
-      <div class="muted small">사람이 쓴 항목은 바꾸지 않고, 잠긴 구간과 적용됨 구간은 건너뜁니다. 연결: ${p.state || "확인 안 함"}</div>`}
-    ${p.left_out && p.left_out.length ? html`<${Notice} kind="warn" icon="alert-triangle">확정하지 않은 구간 ${p.left_out.length}개는 빠집니다: ${p.left_out.slice(0, 5).map((n) => n.node_id).join(", ")}${p.left_out.length > 5 ? " 외 " + (p.left_out.length - 5) + "개" : ""}
+      <div class="muted small">사람이 쓴 항목은 바꾸지 않습니다.${p.locked_out ? " 분석을 마치고 잠근 구간 " + p.locked_out + "개는 다시 분석하지 않습니다." : ""} 연결: ${p.state || "확인 안 함"}</div>`}
+    ${p.left_out && p.left_out.length ? html`<${Notice} kind="warn" icon="alert-triangle">확정하지 않은 구간 ${p.left_out.length}개는 빠집니다: ${p.left_out.slice(0, 5).map((n) => n.node_id).join(", ")}${p.left_out.length > 5 ? " 외 " + (p.left_out.length - 5) + "개" : ""}${leftLost(p.left_out)}
       <div class="acts-row"><${Btn} sm=${true} label="빠지는 구간 보기" onClick=${() => { R.closePlan(); store.set({ panel: "nodes" }); import("./nodes_state.js").then((N) => { if (N.nodes.get().focus !== p.left_out[0].node_id) N.focusNode(p.left_out[0].node_id); }); }}>구간 보기<//></div><//>` : null}
     ${!p.can_start && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.guide || "AI 연결을 쓸 수 없습니다."}<//>` : null}
     ${p.needs_terms && p.can_start ? html`<${Notice} kind="info">처음 실행입니다. 구독 사용 안내를 확인한 것으로 기록합니다.<//>` : null}

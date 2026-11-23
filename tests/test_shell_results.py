@@ -507,6 +507,22 @@ class LeftOutTest(Base):
         one = self.call("results.run_plan", {"scope": "node", "node_id": ns["nodes"][0]["node_id"]})["data"]
         self.assertEqual(one["left_out"], [], "구간 하나만 돌릴 때는 다른 구간을 빠졌다고 하지 않는다")
 
+    def test_released_and_locked_nodes_are_told_apart(self):
+        """6차 ⑤: 판 이전으로 확정이 풀린 구간(찾지 못한 구성요소가 남음)은 그냥 초안과 갈라 알리고, 잠가서 건너뛰는 구간은 수를 보인다."""
+        ns = sn.load(self.g)
+        ns["nodes"][1]["state"] = "applied"
+        ns["nodes"][1]["lost"] = ["lost:project-P:pv-1:t-1"]
+        sn.save(ns)
+        with mock.patch.object(sn, "load", lambda *a, **k: ns), mock.patch.object(sn, "read_as_is", lambda *a, **k: ns):
+            got = self.call("results.run_plan", {"scope": "all"})["data"]
+        self.assertEqual([(x["node_id"], x["lost"]) for x in got["left_out"]], [(ns["nodes"][1]["node_id"], 1)])
+        self.assertEqual(got["locked_out"], 0)
+        ns2 = sn.load(self.g)
+        ns2["nodes"][0]["state"] = "locked"
+        with mock.patch.object(sn, "load", lambda *a, **k: ns2), mock.patch.object(sn, "read_as_is", lambda *a, **k: ns2):
+            got = self.call("results.run_plan", {"scope": "all"})["data"]
+        self.assertEqual(got["locked_out"], 1, "잠가서 건너뛰는 구간 수")
+
 class RunTest(Base):
     def setUp(self):
         super().setUp()
