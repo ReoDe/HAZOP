@@ -108,7 +108,17 @@ def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, ac
             "removed_ops": removed, **(note or {})}],
     }
     path = store_path(name)
+    _stamp_old_graph(name)
     return path, store_io.write_json(path, doc, expect=fp)
+
+
+def _stamp_old_graph(name):
+    """기준 판을 남기기 전에 지은 그래프면 이 고침을 쓰기 전에 그 판을 찍는다(hazop.app.data.stamp_base_version). 무슨 일이 있어도 저장을 막지 않는다."""
+    try:
+        from hazop.app import data
+        data.stamp_base_version(name)
+    except Exception:  # noqa: BLE001 - 찍기는 덤이다
+        pass
 
 
 PROVENANCE = ("by", "at", "accepted_by", "accepted_at")   # 연산의 누가·언제. 같은 op_id를 되살릴 때 지금 값으로 바꿔도 같은 연산이다

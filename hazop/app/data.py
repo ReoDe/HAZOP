@@ -253,6 +253,57 @@ def catch_up_study(project_id):
         _CATCHING.on = False
 
 
+_STAMPED = set()                  # 기준 판을 찍었지만 검토구간 판 사진은 아직 채우지 않은 도면 이름(다시 짓기 직전에 채운다)
+_STAMPED_LOCK = threading.Lock()
+
+
+def stamp_base_version(name):
+    """기준 판(base_version)을 남기기 전에 지은 도면 그래프 name에 그 판을 한 번 찍는다(scripts/build_graph.render_one이 새 그래프에 적는 것과 같은 값).
+    사람 고침을 저장하기 직전(corrections.save_fp)에 부른다: 저장 뒤에는 기록에 새 고침이 들어 디스크 그래프와 판이 맞지 않는다.
+    디스크 판(graph_version)이 지금 기록·추출로 다시 계산한 판과 같을 때만 찍는다(기준 추출을 새로 짓지 않음). 다르거나 낡은 그래프 표시가 있으면
+    그대로 둔다. 143쪽 프로젝트 전부를 열 때 하면 6초쯤이라 쪽마다 처음 고칠 때 한다. 검토구간 판 사진 채우기(2~3초)는 화면이 기다리는 저장 답에
+    넣지 않고 다시 짓기 직전(fill_stamped_base)에 한다. 실패해도 저장을 막지 않는다(그 쪽은 전처럼 첫 고침에 표시로 잇는다). → 찍었으면 True."""
+    try:
+        from hazop.shell import sheet_refresh
+        path = os.path.join(paths.safe_join(paths.output_root("graph"), paths.safe_name(name)), "graph.json")
+        raw, fp = store_io.read_bytes(path)
+        if raw is None or sheet_refresh.graph_stale(name):
+            return False
+        graph = json.loads(raw.decode("utf-8"))
+        if graph.get("base_version"):
+            return False
+        resolved = corrections.resolve(name, allow_extract=False)
+        if graph_build._graph_version(resolved["corrected"]) != graph.get("graph_version"):
+            return False
+        graph["base_version"] = graph_build.base_version(resolved["base"])
+        store_io.write_bytes(path, (json.dumps(graph, ensure_ascii=False, indent=2) + "\n").encode("utf-8"), expect=fp)
+    except Exception:  # noqa: BLE001 - 찍기는 덤이다: 고침 저장을 막지 않는다
+        LOG.warning("옛 그래프에 기준 판을 찍지 못함(%s)", name, exc_info=True)
+        return False
+    with _STAMPED_LOCK:
+        _STAMPED.add(name)
+    return True
+
+
+def fill_stamped_base(name, project_id):
+    """stamp_base_version이 찍은 도면 name을 다시 짓기 직전(scripts/build_graph.build_one, 그래프를 덮어쓰기 전)에 프로젝트 검토구간 집합을
+    지금(찍은) 그래프로 한 번 읽어 판 사진 칸을 채운다. 그래야 다시 지은 뒤 판 이전이 그 쪽의 순번 구성요소를 참조로 잇는다. 판이 같은 집합만
+    채우고 묘비는 만들지도 되찾지도 않는다(migrate.with_refs). 찍지 않았으면 아무것도 안 한다 → 채우려고 읽었으면 True."""
+    with _STAMPED_LOCK:
+        if name not in _STAMPED:
+            return False
+        _STAMPED.discard(name)
+    if not project_id or not _has_study_sets(project_id):
+        return False
+    try:
+        with migrate.filling_new_fields():      # 이 칸이 아예 없는 옛 집합도 채운다(prepare_reextract와 같음)
+            study_nodes.load(graph_project.load(project_id))
+        return True
+    except Exception:  # noqa: BLE001 - 채우기는 덤이다: 다시 짓기를 막지 않는다(그 쪽은 전처럼 첫 고침에 표시로 잇는다)
+        LOG.warning("기준 판을 찍은 뒤 검토구간 판 사진을 채우지 못함(%s)", project_id, exc_info=True)
+        return False
+
+
 _SETTLE_LOCK = threading.Lock()
 
 

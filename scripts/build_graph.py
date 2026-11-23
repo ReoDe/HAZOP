@@ -22,15 +22,18 @@ DEFAULT_EXTRACT = paths.output_root("extract")  # <작업 루트>/출력 (hazop/
 DEFAULT_OUT = paths.output_root("graph")
 
 
-def _prepare_study_marks(extraction, out_root):
+def _prepare_study_marks(extraction, out_root, name):
     """그래프 파일을 덮어쓰기 전에, 표지가 없는 옛 검토구간 집합을 지금(옛) 그래프로 한 번 읽어 표지를 채운다. 사람 수정(노드 더하기·지우기)이나 다시
-    추출로 entity 순번이 밀리기 전이어야 한다. 그래프를 앱 작업 루트가 아닌 곳에 만드는 호출(시험·샘플 만들기)은 건드리지 않고, 앱이 없어도 건너뛴다."""
+    추출로 entity 순번이 밀리기 전이어야 한다. 도면 name에 고침 저장 직전 기준 판을 찍었으면 찍은 그래프로 판 사진을 채운다(data.fill_stamped_base).
+    그래프를 앱 작업 루트가 아닌 곳에 만드는 호출(시험·샘플 만들기)은 건드리지 않고, 앱이 없어도 건너뛴다."""
     try:
         from hazop.app import data
         if getattr(data._PREPARED, "on", False) or os.path.normcase(os.path.abspath(out_root)) != os.path.normcase(os.path.abspath(paths.output_root("graph"))):
             return
         from hazop.graph import project
-        data.prepare_reextract(project.project_id_of(extraction))      # project_id가 없는 추출은 샘플 프로젝트(project_id_of가 정한다)
+        pid = project.project_id_of(extraction)      # project_id가 없는 추출은 샘플 프로젝트(project_id_of가 정한다)
+        if not data.fill_stamped_base(name, pid):    # 고침 저장 직전에 기준 판을 찍은 옛 그래프면 집합 판 사진을 먼저 채운다
+            data.prepare_reextract(pid)
     except Exception:  # noqa: BLE001 - 표지 채우기는 덤이다: 그래프 만들기를 막지 않는다
         pass
 
@@ -83,7 +86,7 @@ def render_one(extraction_path, seats=None, out_root=None, extraction=None, allo
 def build_one(extraction_path, out_root, seats=None, allow_extract=False):
     with open(extraction_path, encoding="utf-8") as fh:
         extraction = json.load(fh)
-    _prepare_study_marks(extraction, out_root)
+    _prepare_study_marks(extraction, out_root, os.path.basename(os.path.dirname(extraction_path)))
     graph, files = render_one(extraction_path, seats=seats, out_root=out_root, extraction=extraction,
                               allow_extract=allow_extract)
     # 추출 결과 폴더 이름을 그대로 쓴다(--samples: 도면번호, 등록 경로: <자료 ID>-r<버전>). 뷰어도 같은 이름으로 그래프를 찾는다.

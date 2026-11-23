@@ -28,6 +28,7 @@ from hazop import paths, store_io  # noqa: E402
 from hazop.app import data, project_ctx  # noqa: E402
 from hazop.extract import confirmation, corrections, rules  # noqa: E402
 from hazop.graph import build  # noqa: E402
+from hazop.graph import project as graph_project  # noqa: E402
 from hazop.kg.schema import REGISTRY  # noqa: E402
 from hazop.shell import api, api_corrections as AC, api_nodes  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
@@ -231,7 +232,7 @@ class OldGraph(Sheet):
         return os.path.join(paths.output_root("graph"), self.name, "graph.json")
 
     def set_path(self):
-        return sn.store_path(self.pg()["project_id"], self.pg()["graph_id"])
+        return sn.store_path(P, graph_project.project_graph_id(P))   # project_ctx를 거치지 않는다(낡은 그래프를 다시 짓는다)
 
     def bytes_of(self, path):
         with open(path, "rb") as fh:
@@ -275,9 +276,10 @@ class FirstEditOnOldGraph(OldGraph):
         self.assertTrue(data.stamp_base_version(self.name))
         stamped = self.disk_base()
         self.assertTrue(stamped)
-        self.assertIn(self.gid, sn.read_as_is(self.pg()).get("graph_member_bases") or {}, "집합 판 사진도 기준 판을 가진다")
         data.script_module("build_graph").build_one(data.extraction_path(self.name), paths.output_root("graph"))
         self.assertEqual(self.disk_base(), stamped, "같은 입력으로 다시 지은 그래프의 기준 판과 같다")
+        with open(self.set_path(), encoding="utf-8") as fh:
+            self.assertEqual((json.load(fh).get("graph_member_bases") or {}).get(self.gid), stamped, "다시 짓기 직전 집합 판 사진도 찍은 판을 가진다")
 
     def test_second_run_changes_nothing(self):
         self.fixed_app()
