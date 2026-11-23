@@ -184,6 +184,8 @@ export const unconfirm = (ids) => run("unconfirm", { node_ids: ids }, ids);
 export const lock = (ids) => run("lock", { node_ids: ids }, ids);
 export const unlock = (ids, reason) => run("unlock", { node_ids: ids, reason }, ids);
 export const undo = (batchId) => run("undo", { batch_id: batchId });
+/** 찾지 못한 구성요소를 사람이 확인하고 버린다(keys는 상세의 lost_items key). 되돌리기 묶음으로 남는다. */
+export const discardLost = (id, keys) => run("discard_lost", { node_id: id, keys }, [id]);
 
 export async function mergeChecked() {
   const ids = nodes.get().checked.slice();

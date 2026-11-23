@@ -241,6 +241,42 @@ export const tests = [
     assert.equal([lastCmd().name, lastCmd().args.archive], ["nodes.remove", true]);
     host.remove();
   } },
+  { name: "구간 패널: 찾지 못한 구성요소를 골라 버리고, 확정 구간이면 단추 대신 까닭을 보인다", async run(assert) {
+    await setup();
+    N.nodes.set({ scope: "all" });
+    const plain = window.fetch;
+    window.fetch = async (url) => {
+      const r = await plain(url);
+      if (!String(url).startsWith("/api/nodes/node/")) return r;
+      const d = await r.json();
+      return { ok: true, status: 200, json: async () => Object.assign(d, { lost_items: [{ key: "k1", name: "수동 밸브 RC-V001", lost_at: "2026-11-20T01:02:03Z" }, { key: "k2", name: "이름 없는 구성요소", lost_at: null }], discarded: 0 }) };
+    };
+    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    await tick();
+    host.querySelectorAll(".nrow-b")[0].click();         // S1 적용됨
+    await tick();
+    const list = host.querySelector(".lost-items");
+    assert(list && list.textContent.includes("찾지 못한 구성요소 2개") && list.textContent.includes("RC-V001"), "목록");
+    assert(!list.textContent.includes("k1") && !list.textContent.includes("lost:"), "key·묘비 id는 보이지 않는다");
+    const by = (label) => [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label);
+    assert(by("S1 찾지 못한 구성요소 고른 것 버리기").disabled, "고르기 전에는 꺼짐");
+    list.querySelector("input[type=checkbox]").click();
+    await tick();
+    by("S1 찾지 못한 구성요소 고른 1개 버리기").click();
+    await tick();
+    assert.equal([lastCmd().name, JSON.stringify(lastCmd().args.keys), lastCmd().args.node_id], ["nodes.discard_lost", '["k1"]', "S1"]);
+    assert(lastCmd().args.targets && lastCmd().args.targets[0].node_id === "S1", "판 검사용 대상");
+    by("S1 찾지 못한 구성요소 모두 버리기").click();
+    await tick();
+    assert.equal(JSON.stringify(lastCmd().args.keys), '["k1","k2"]');
+    host.querySelectorAll(".nrow-b")[2].click();         // S3 확정
+    await tick();
+    const held = host.querySelector(".lost-items");
+    assert(held.textContent.includes("확정을 해제한 뒤에 버릴 수 있습니다"), "확정 구간 까닭");
+    assert(!by("S3 찾지 못한 구성요소 모두 버리기"), "확정 구간에는 버리기 단추가 없다");
+    window.fetch = plain;
+    host.remove();
+  } },
   { name: "구간 패널: 최근 묶음 되돌리기와 나머지도 나누기(채팅)", async run(assert) {
     await setup();
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);

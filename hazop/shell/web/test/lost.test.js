@@ -1,5 +1,5 @@
 // 확인 필요 알림 글(찾지 못한 구성요소·다시 확인할 곳): 엔진이 센 값으로만 만들고 묘비 id를 글에 쓰지 않는다.
-import { catchUpText, checkText, confirmedLostText, demotedNoticeText, lostNoticeText, lostText } from "../js/panels/nodes_logic.js";
+import { catchUpText, checkText, confirmedLostText, demotedNoticeText, discardLabel, lostNoticeText, lostText } from "../js/panels/nodes_logic.js";
 import { store } from "../js/store.js";
 import { addNotice, clearNotice, demotedNotice, dismissNotice, lostNotice } from "../js/notices.js";
 
@@ -76,5 +76,10 @@ export const tests = [
     assert.equal(n.id, "demoted");
     assert.equal(n.action.label, "그 자리로");
     assert.equal(demotedNotice({ demoted: [] }), null);
+  } },
+  { name: "버리기 단추 글: 고른 수, 전부면 '모두', 고른 것이 없으면 기본 글", run(assert) {
+    assert.equal(discardLabel(0, 3), "고른 것 버리기");
+    assert.equal(discardLabel(2, 3), "고른 2개 버리기");
+    assert.equal(discardLabel(3, 3), "모두 버리기(3개)");
   } },
 ];

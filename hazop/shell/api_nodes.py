@@ -251,9 +251,11 @@ def detail(engine, node_id):
     history = [{"batch_id": b["batch_id"], "origin": b.get("origin"), "kind": b.get("kind"), "at": b.get("at"),
                 "undone": bool(b.get("undone")), "ops": sorted({o["op"] for o in b["ops"] if o["node_id"] == node_id})}
                for b in ns.get("batches") or [] if any(o["node_id"] == node_id for o in b.get("ops") or [])]
+    lost_items = [{"key": x["key"], "name": x["name"], "lost_at": x.get("lost_at")} for x in nodes.lost_items(ns, node_id)]
     return dict(row, set_rev=ns.get("set_rev") or 0, majors=majors[:MAJORS_SHOWN], majors_total=len(majors),
                 boundary=[majors[0], majors[-1]] if len(majors) >= 2 else majors[:1], kinds=dict(kinds.most_common(8)),
-                members=members, members_total=len(node["members"]), history=history)
+                members=members, members_total=len(node["members"]), history=history,
+                lost_items=lost_items, discarded=(idmap.needs_check(ns).get("discarded") or {}).get(node_id, 0))
 
 
 def suggest(engine, sheet, ids):
@@ -356,12 +358,17 @@ def _error(out, ns, targets, name):
         return _api().CommandError("stale", STALE_TEXT)
     if codes & {"unreadable", "read_only"}:
         return _api().CommandError("failed", text)
-    if codes & {"bad_actor", "unknown_command"}:
-        return _api().CommandError("bad_args", text)
+    if codes & {"bad_actor", "unknown_command", "bad_args"}:
+        return _api().CommandError("bad_args", DISCARD_BAD if name == "discard_lost" else text)
     held = [t["node_id"] for t in targets if nodes.node_state(node_tools._node(ns, t["node_id"]) or {}) != "applied"]
-    if name in EDIT_COMMANDS and held:
-        return _api().CommandError("locked", text)
-    return _api().CommandError("failed", text)
+    if name in EDIT_COMMANDS + ("discard_lost",) and held:
+        return _api().CommandError("locked", DISCARD_HELD if name == "discard_lost" else text)
+    return _api().CommandError("failed", DISCARD_GONE if name == "discard_lost" else text)
+
+
+DISCARD_HELD = "확정했거나 잠근 구간입니다. 확정을 해제한 뒤에 찾지 못한 구성요소를 버릴 수 있습니다."
+DISCARD_GONE = "고른 구성요소를 이 구간의 찾지 못한 목록에서 찾지 못했습니다. 목록을 다시 읽었으니 다시 골라 주세요."
+DISCARD_BAD = "버릴 구성요소를 다시 골라 주세요."
 
 
 def _check_project(eng, a):
@@ -548,6 +555,9 @@ def register(commands):
     add("lock", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "분석을 마치고 구간을 잠근다")
     add("unlock", dict(node_ids=nids, reason=(v_str(1, 500), True)), lambda pg, a: ({"node_ids": a["node_ids"], "reason": a["reason"]}, 0),
         "잠금을 푼다(이유를 적어야 함)")
+    add("discard_lost", dict(node_id=nid, keys=(v_list(v_str(1, 100), 500), False)),
+        lambda pg, a: (dict({"node_id": a["node_id"]}, **({"keys": a["keys"]} if a.get("keys") is not None else {})), 0),
+        "다시 추출 뒤 찾지 못한 구성요소를 사람이 확인하고 버린다(keys는 상세의 lost_items key, 없으면 그 구간의 남은 것 전부). 되돌리기 묶음으로 남는다")
     add("undo", dict(batch_id=(v_str(2, 20), True)), lambda pg, a: ({"batch_id": a["batch_id"]}, 0), "묶음을 되돌린다", needs_target=False)
     put("exclude_drawing", {"project_id": proj, "graph_id": (v_str(1, 200), True), "excluded": (v_bool(), True),
                             "reason": (v_str(0, 500), False), "ver": (v_str(1, 100), True), "confirm": (v_str(0, 2000), False)},

@@ -37,6 +37,12 @@ export function demotedNoticeText(ids) {
   return "도면이 바뀌어 확정했던 구간 " + shown + "의 확정을 풀었습니다. 구성요소를 확인하고 다시 확정해 주세요.";
 }
 
+/** 찾지 못한 구성요소 버리기 단추 글: 고른 수(전부면 '모두'). */
+export function discardLabel(picked, total) {
+  if (!picked) return "고른 것 버리기";
+  return picked === total ? "모두 버리기(" + total + "개)" : "고른 " + picked + "개 버리기";
+}
+
 /** 구간 하나의 확인 필요 글: '찾지 못한 구성요소 n개 · 참조 확인 필요 m건'(없는 것은 뺀다). 묘비 id는 쓰지 않는다. */
 export function lostText(lost, lostRefs) {
   return [lost ? "찾지 못한 구성요소 " + lost + "개" : null, lostRefs ? "다시 확인할 곳 " + lostRefs + "건" : null].filter(Boolean).join(" · ");
