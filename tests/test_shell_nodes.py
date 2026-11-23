@@ -206,6 +206,8 @@ class CommandTest(Env):
         self.assertEqual(s["nodes"][1]["overlaps"], [{"node_id": "S1", "shared": 2}])
         d = api_nodes.detail(self.engine, "S1")
         self.assertEqual(sum(1 for m in d["members"] if m["shared"] == ["S2"]), 2)
+        # 실제 창 3차 D: 칩의 마우스 올림·접근성 이름에 쓸 한글 종류 이름(영문 종류 코드 대신)
+        self.assertTrue(all(m.get("kind_label") and "_" not in m["kind_label"] for m in d["members"]), [m.get("kind_label") for m in d["members"]][:5])
 
     def test_chat_made_nodes_show_with_origin_batch_and_user_can_undo(self):
         pg = self.pg

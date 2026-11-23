@@ -56,7 +56,7 @@ def facts(engine):
         f["sheet_choose"] = len(open_)
         f["sheet_choose_first"] = open_[0]["graph_id"] if open_ else None
         f["sheet_skipped"] = sum(1 for c in cf if c.get("reason") == "settle_rebuild_failed")
-        f["sheet_skipped_text"] = next((c.get("text") for c in cf if c.get("reason") == "settle_rebuild_failed"), None)
+        f["sheet_skipped_text"] = next((api_drawings.conflict_text(c, c.get("drawing_number") or "") for c in cf if c.get("reason") == "settle_rebuild_failed"), None)
     lb = _safe(lambda: api_drawings.labels(engine), "도면 이름")
     if lb is not None:
         f["number_held"] = sum(1 for r in lb.values() if r.get("number_state") == "held")

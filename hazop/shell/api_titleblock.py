@@ -26,11 +26,29 @@ def _api():
 def summary(engine):
     pid = engine.project_id()
     rows = tb.view(pid)
+    _name_sheets(engine, rows)
     order = {"unconfirmed": 0, "partial": 1, "confirmed": 2}
     rows.sort(key=lambda r: (order.get(r["state"], 3), r.get("name") or ""))
     return {"project_id": pid, "reviewer": engine.reviewer(), "rows": rows,
             "fields": [{"id": f, "label": label} for f, label in tb.FIELDS],
             "totals": {"materials": len(rows), "confirmed": sum(1 for r in rows if r["state"] == "confirmed")}}
+
+
+def _name_sheets(engine, rows):
+    """각 쪽에 사람용 도면 이름(display)을 붙인다(접근성 이름·단추 글에 그래프·폴더 이름을 싣지 않는다, 실제 창 3차 D)."""
+    from hazop.shell import api_drawings
+    try:
+        lb = api_drawings.labels(engine)
+    except Exception:  # noqa: BLE001 - 이름 한 칸: 못 읽으면 파일 이름으로
+        lb = None
+    for r in rows:
+        many = len(r.get("sheets") or []) > 1
+        for s in r.get("sheets") or []:
+            fallback = (r.get("name") or "도면") + (" · %d쪽" % ((s.get("page") or 0) + 1) if many else "")
+            try:
+                s["display"] = api_drawings.display(engine, s["graph_id"], lb) if s.get("graph_id") and lb is not None else fallback
+            except Exception:  # noqa: BLE001
+                s["display"] = fallback
 
 
 def read(engine, parts, query):

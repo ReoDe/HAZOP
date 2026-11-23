@@ -56,7 +56,7 @@ function installStubs() {
     const body = (data) => ({ ok: true, status: 200, json: async () => data });
     if (u === "/api/nodes") return body(engine.list);
     if (u.startsWith("/api/nodes/sheet/")) return body(engine.sheet);
-    if (u.startsWith("/api/nodes/node/")) return body({ node_id: u.split("/").pop(), members: [{ sheet: "graph-A", id: "n1", tag: "RC-RV01", kind: "reactor_vessel", shared: [] }], members_total: 6,
+    if (u.startsWith("/api/nodes/node/")) return body({ node_id: u.split("/").pop(), members: [{ sheet: "graph-A", id: "n1", tag: "RC-RV01", kind: "reactor_vessel", kind_label: "원자로 용기", shared: [] }, { sheet: "graph-A", id: "n2", tag: null, kind: "manual_valve", kind_label: "수동 밸브", shared: [] }], members_total: 6,
       boundary: ["RC-RV01", "RC-SG01"], majors: ["RC-RV01", "RC-SG01"], majors_total: 2, history: [{ batch_id: "B1", origin: "user", ops: ["add"], undone: false }] });
     return { ok: false, status: 404, json: async () => ({}) };
   };
@@ -628,4 +628,17 @@ tests.push({ name: "구간 연결: 프로젝트가 바뀌면 앞 프로젝트의
   store.set({ drawings: Object.assign({}, store.get().drawings, { project_id: "P" }) });
   engine.list = Object.assign({}, engine.list, { project_id: "P" });
   await tick();
+} });
+
+tests.push({ name: "구간 상세(실제 창 3차 D): 구성요소 칩의 글·마우스 올림·접근성 이름에 종류 코드·그래프 이름이 없다", async run(assert) {
+  await setup();
+  const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+  N.focusNode("S1");
+  await tick(); await tick();
+  const chips = [...host.querySelectorAll(".memlist .chip")];
+  assert(chips.length >= 2, "칩이 그려짐: " + chips.length);
+  const said = chips.flatMap((c) => [c.textContent, c.getAttribute("title") || "", c.getAttribute("aria-label") || ""]);
+  for (const t of said) assert(!/graph-|_[a-z]|SCN__/.test(t), "내부 말: " + t);
+  assert(said.some((t) => t.includes("원자로 용기 · SNP-M-101")), JSON.stringify(said));
+  host.remove();
 } });

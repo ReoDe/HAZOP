@@ -183,7 +183,7 @@ function Row({ row, onOpen, open, noReviewer }) {
       <${Chip}>${FORMAT[row.format] || row.format}<//><${Chip} kind=${kind}>${label}<//></summary>
     <div class="tb-body">
       ${row.sheets.length ? html`<div class="acts-row">${row.sheets.map((s) => html`<${Btn} key=${s.name} sm=${true} icon="files"
-        label=${"도면 보기 " + (s.graph_id || s.name)} disabled=${!s.graph_id} onClick=${() => onOpen && onOpen(s.graph_id)}>도면 보기${row.sheets.length > 1 ? " " + (s.page + 1) + "쪽" : ""}<//>`)}</div>`
+        label=${"도면 보기 " + (s.display || row.name || "")} disabled=${!s.graph_id} onClick=${() => onOpen && onOpen(s.graph_id)}>도면 보기${row.sheets.length > 1 ? " " + (s.page + 1) + "쪽" : ""}<//>`)}</div>`
         : html`<div class="muted small">아직 추출하지 않았습니다. 확정해 두면 추출할 때 이 값을 씁니다.</div>`}
       ${row.needs_reextract ? html`<${Notice} kind="warn" icon="refresh">확정은 저장했지만 도면을 다시 읽지 못했습니다. 지금 보이는 도면은 앞 값으로 읽은 것입니다.
         <${Btn} sm=${true} label="도면 다시 읽기" disabled=${busy || noReviewer} onClick=${() => rereadRow(row)}>다시 읽기<//><//>` : null}

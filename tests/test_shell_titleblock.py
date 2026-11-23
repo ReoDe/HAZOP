@@ -68,6 +68,7 @@ class ReadTest(Base):
         self.assertEqual((dwg["field"], dwg["value"], dwg["candidate"]), ("drawing_number", None, "SNP-M-101"))
         self.assertIn("표제란", dwg["evidence"]["text"])
         self.assertEqual(r["sheets"][0]["graph_id"], "graph-%s-p0" % self.mid)   # 번호 확정 전 이름(hazop.graph.sheets)
+        self.assertNotRegex(r["sheets"][0].get("display") or "graph-", r"graph-|SCN__|material-", "'도면 보기' 단추 이름은 사람용 도면 이름(실제 창 3차 D)")
         self.assertIsNone(self.read("material-000000000000"))
 
 

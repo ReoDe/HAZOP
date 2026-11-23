@@ -27,6 +27,15 @@ INT_MAX = 10 ** 9
 
 # ---------------------------------------------------------------- 엔진 접근
 
+
+def _kind_label(kind):
+    """구성요소 종류의 한글 이름(종류 사전). 없으면 '구성요소'(화면에 영문 종류 코드를 싣지 않는다, 실제 창 3차 D)."""
+    from hazop.shell import sheet_items
+    try:
+        return sheet_items.kind_label(kind) or "구성요소"
+    except Exception:  # noqa: BLE001 - 이름 한 칸: 사전을 못 읽으면 일반 말
+        return "구성요소"
+
 def _api():
     from hazop.shell import api
     return api
@@ -246,7 +255,7 @@ def detail(engine, node_id):
     for m in node["members"][:MEMBERS_SHOWN]:
         d, hit = info.get(m) or {}, fwd.get(m)
         if hit:
-            members.append({"sheet": hit[0], "id": hit[1], "tag": d.get("tag"), "kind": d.get("kind"), "category": d.get("category"),
+            members.append({"sheet": hit[0], "id": hit[1], "tag": d.get("tag"), "kind": d.get("kind"), "kind_label": _kind_label(d.get("kind")), "category": d.get("category"),
                             "shared": [o for o in owners.get(m, ()) if o != node_id]})
     history = [{"batch_id": b["batch_id"], "origin": b.get("origin"), "kind": b.get("kind"), "at": b.get("at"),
                 "undone": bool(b.get("undone")), "ops": sorted({o["op"] for o in b["ops"] if o["node_id"] == node_id})}

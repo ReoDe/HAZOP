@@ -117,6 +117,33 @@ def read(engine, parts, query):
     return None
 
 
+FORMAT_WORD = {"drawio": "drawio 파일", "pdf_vector": "PDF 파일", "dexpi": "DEXPI 파일"}
+
+
+def _format_word(fmt):
+    return FORMAT_WORD.get(fmt or "", "형식을 모르는 파일")
+
+
+def conflict_text(c, shown):
+    """원본 고르기 줄의 사람용 글(실제 창 3차 D). 엔진 글(hazop.graph.sources.REASONS)은 형식 코드·폴더 이름을 실어 화면에 그대로 쓰지 않는다.
+    c는 sources.conflicts 한 줄, shown은 사람용 도면 이름(display)."""
+    using = c.get("in_use_file") or _format_word(c.get("in_use_format"))
+    if c.get("in_use_file") and c.get("in_use_format"):
+        using = "%s(%s)" % (c["in_use_file"], _format_word(c["in_use_format"]))
+    reason = c.get("reason")
+    if reason == "same_number_other_format":
+        kinds = "와 ".join(_format_word(f) for f in c.get("formats") or [])
+        return "같은 도면 번호 %s의 원본이 %s로 함께 있습니다. 사람이 고르기 전에는 %s을(를) 씁니다." % (shown, kinds, using)
+    if reason == "same_number_other_file":
+        return "같은 도면 번호 %s의 다른 파일이 들어왔습니다. 쓸 파일을 고르세요. 사람이 고르기 전에는 %s을(를) 씁니다." % (shown, using)
+    if reason == "same_name_before_settle":
+        return "번호가 없는 도면 %d장이 한 자리를 나눠 써서 %s만 보입니다. 다음 추출 때 도면마다 따로 들어옵니다." % (len(c.get("candidates") or []), using)
+    if reason == "settle_rebuild_failed":
+        stuck = [x.get("file") for x in c.get("candidates") or [] if not x.get("in_use") and x.get("file")]
+        return "가려졌던 도면 %s을(를) 다시 읽지 못해 %s만 보입니다. 그 도면을 다시 추출하면 따로 들어옵니다." % ("·".join(stuck) or "한 장", using)
+    return c.get("text")
+
+
 def source_conflicts(engine):
     """같은 시트 자리에 고를 원본이 둘 이상인 것(hazop.graph.sources.conflicts). 읽기만 하고 파일을 쓰지 않는다.
     -> {"conflicts": [{"kind": format|file, "reason", "text", "display", "drawing_number", "graph_id", "formats", "in_use_format",
@@ -130,7 +157,8 @@ def source_conflicts(engine):
     held = _nodes_on(engine, [c["graph_id"] for c in found]) if found else {}
     lb = labels(engine) if found else {}
     for c in found:
-        rows.append({"kind": c.get("kind") or "format", "reason": c.get("reason"), "text": c.get("text"), "display": display(engine, c["graph_id"], lb),
+        shown = display(engine, c["graph_id"], lb)
+        rows.append({"kind": c.get("kind") or "format", "reason": c.get("reason"), "text": conflict_text(c, shown), "display": shown,
                      "drawing_number": c["drawing_number"], "graph_id": c["graph_id"], "formats": list(c["formats"]),
                      "in_use_format": c.get("in_use_format"), "in_use_material": c.get("in_use_material"), "in_use_file": c.get("in_use_file"),
                      "chosen": c.get("chosen"), "chosen_material": c.get("chosen_material"), "nodes_on_sheet": held.get(c["graph_id"], 0),

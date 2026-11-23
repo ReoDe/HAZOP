@@ -164,6 +164,12 @@ class FormatVersusFileTest(MixedRowTest):
     """검토 확인 항목: 형식 고르기(chosen)와 파일 고르기(seats)가 서로 다른 원본을 가리키면 파일이 이긴다(설계 §3 차례 2).
     형식을 다시 고르면 앞서 고른 파일을 내려놓고 그 형식을 쓴다."""
 
+    def test_the_card_text_has_no_format_codes_or_folder_names(self):
+        """실제 창 3차 D: 카드 글 "…원본이 drawio·pdf_vector 형식으로 함께 있습니다…"(형식 코드), 번호 전 폴더 이름."""
+        row = self.conflict_row()
+        self.assertIn("PDF 파일", row["text"])
+        self.assertNotRegex(row["text"], r"pdf_vector|graph-|SCN__|material-")
+
     def test_file_choice_wins_over_format_and_format_choice_drops_it(self):
         row = self.conflict_row()
         gid = row["graph_id"]
