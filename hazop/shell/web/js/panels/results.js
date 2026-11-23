@@ -84,7 +84,7 @@ function PlanCard() {
       ${p.conn ? html`<div class=${"small" + (p.conn.paid ? " conn-paid" : "")} aria-label="쓸 연결">${p.conn.method_name} · ${p.conn.model_name} · ${p.conn.cost_text}</div>` : null}
       <div class="muted small">사람이 쓴 항목은 바꾸지 않고, 잠긴 구간과 적용됨 구간은 건너뜁니다. 연결: ${p.state || "확인 안 함"}</div>`}
     ${p.left_out && p.left_out.length ? html`<${Notice} kind="warn" icon="alert-triangle">확정하지 않은 구간 ${p.left_out.length}개는 빠집니다: ${p.left_out.slice(0, 5).map((n) => n.node_id).join(", ")}${p.left_out.length > 5 ? " 외 " + (p.left_out.length - 5) + "개" : ""}
-      <div class="acts-row"><${Btn} sm=${true} label="빠지는 구간 보기" onClick=${() => { R.closePlan(); store.set({ panel: "nodes" }); import("./nodes_state.js").then((N) => N.focusNode(p.left_out[0].node_id)); }}>구간 보기<//></div><//>` : null}
+      <div class="acts-row"><${Btn} sm=${true} label="빠지는 구간 보기" onClick=${() => { R.closePlan(); store.set({ panel: "nodes" }); import("./nodes_state.js").then((N) => { if (N.nodes.get().focus !== p.left_out[0].node_id) N.focusNode(p.left_out[0].node_id); }); }}>구간 보기<//></div><//>` : null}
     ${!p.can_start && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.guide || "AI 연결을 쓸 수 없습니다."}<//>` : null}
     ${p.needs_terms && p.can_start ? html`<${Notice} kind="info">처음 실행입니다. 구독 사용 안내를 확인한 것으로 기록합니다.<//>` : null}
     ${paid && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.conn.confirm_text}
