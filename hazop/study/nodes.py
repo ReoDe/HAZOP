@@ -1033,6 +1033,7 @@ def _snapshot_ok(doc):
             and _ids_map_ok(doc.get("graph_member_ends"), idmap.valid_ends)
             and _ids_map_ok(doc.get("graph_member_looks"), idmap.valid_look)
             and _ids_map_ok(doc.get("graph_member_sheets"), lambda x: isinstance(x, str))
+            and _ids_map_ok(doc.get("graph_member_bases"), lambda x: isinstance(x, str))
             and (doc.get("tomb_seq") is None or (type(doc["tomb_seq"]) is int and doc["tomb_seq"] >= 0))
             and (tombs is None or (isinstance(tombs, dict)
                                    and all(idmap.is_tomb(k) and tomb_ok(r) for k, r in tombs.items())))

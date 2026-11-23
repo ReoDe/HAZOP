@@ -86,6 +86,11 @@ def _graph_version(extraction):
     return "v-" + hashlib.sha256((BUILDER_VERSION + "|" + canon).encode("utf-8")).hexdigest()[:12]
 
 
+def base_version(extraction):
+    """순번 id를 매긴 입력(기준 추출, hazop.extract.corrections.resolve의 base)의 판. 같으면 덧바르는 사람 고침만 달라 같은 순번 id가 같은 기호다."""
+    return "b-" + _graph_version(extraction)[2:]
+
+
 def build_graph(extraction, extraction_file=None, graph_id=None):
     """extraction dict -> graph dict. graph_id: 시트 이름(없으면 sheets.natural)."""
     import networkx as nx

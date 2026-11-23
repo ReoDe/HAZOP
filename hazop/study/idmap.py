@@ -6,6 +6,10 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
   표시가 같은 것이 둘 이상일 때 고르는 데만 쓴다. 표시가 같은 다른 기호(태그 없는 같은 종류가 같은 상자)는 구별하지 못한다.
   상자가 없는 순번 구성요소 가운데 끝(has_endpoint)이 있는 것(배관 구간, 도면 연결 구간 xlink)은 겉모습(종류·도면·기호
   종류·태그)과 끝 구성요소들이 정체다. 끝이 모두 이어지고 그 끝들을 가진 같은 겉모습의 새 구성요소가 하나뿐이면 잇는다.
+  단, 순번을 매긴 입력(기준 추출)이 같은 시트에서는 순번 id가 그대로 같은 기호라 source처럼 참조로 잇는다. 판 사진에 시트별 기준 추출 판
+  (graph_member_bases {시트 graph_id: base_version})을 남기고, 옛 사진과 새 그래프의 판이 같은 시트만 그렇게 한다. 태그·종류·배관 번호·
+  경로·끝처럼 덧바르는 사람 고침은 표시나 겉모습을 바꾸어도 구성요소를 잃지 않는다. 그 칸이 없는 옛 사진, 나누기처럼 기준 추출을 바꾸는
+  입력 연산, 다시 추출은 전처럼 표시로 잇는다. entity_id로는 잇지 않는다(지우기가 뒤 순번을 당긴다).
 - 판 이전은 대응표(compute) 하나를 먼저 다 계산하고, 등록부(FIELDS)의 모든 id 필드에 같은 함수(apply)로 적용한다.
   옛 판의 모든 구성요소는 새 구성요소 하나나 묘비 하나로 간다(전함수). 새 구성요소 하나로 모이는 옛 구성요소는 모두 묘비다.
 - 묘비 id는 `lost:<graph_id>:<잃은 판>:t-<지문>`. 지문(tomb_key)은 graph_id·잃기 전 판·잃은 판·옛 entity_id·옛 참조·표시의
@@ -96,7 +100,7 @@ FIELDS = {
 # 일부러 옮기지 않는 자리: 지난 일의 기록(history·version_migrations), 판 이전 끝에 새로 만드는 판 사진, 묘비 기록
 IGNORED = {
     SET: ("history", "graph_member_refs", "graph_member_marks", "graph_member_basis", "graph_member_ends",
-          "graph_member_looks", "graph_member_sheets", "member_digest", "tombstones", "tomb_seq", "legacy.member_digest", "legacy.member_refs"),
+          "graph_member_looks", "graph_member_sheets", "graph_member_bases", "member_digest", "tombstones", "tomb_seq", "legacy.member_digest", "legacy.member_refs"),
     RESULTS: ("version_migrations", "cells[].entries[].history", "archived_cells[].cell.entries[].history",
               "legacy", "carried_from", "study_nodes_ref"),
     IE: MARKER_FIELDS, FMEA: MARKER_FIELDS, LATENT: MARKER_FIELDS,
@@ -242,6 +246,14 @@ def valid_ends(v):
             and isinstance(v[4], list) and all(isinstance(x, str) for x in v[4]))
 
 
+def sheet_bases(graph):
+    """{시트 graph_id: 순번 id를 매긴 기준 추출의 판}(scripts/build_graph.render_one). 판을 모르는 시트(이 칸 전에 지은 그래프)는 뺀다."""
+    if graph.get("sheets") is not None:
+        return {s["graph_id"]: s["base_version"] for s in graph["sheets"] if s.get("base_version")}
+    b = graph.get("base_version")
+    return {graph["graph_id"]: b} if b and graph.get("graph_id") else {}
+
+
 def sheet_materials(graph):
     """{시트 graph_id: material_id}. 프로젝트 그래프는 sheets[], 도면 그래프는 머리 source. 자료를 모르는 시트는 뺀다."""
     if graph.get("sheets") is not None:
@@ -318,10 +330,11 @@ def snapshot(graph):
     return {"graph_member_refs": dict(sorted(refs.items())), "graph_member_marks": dict(sorted(marks.items())),
             "graph_member_basis": dict(sorted(basis.items())), "graph_member_ends": dict(sorted(linked.items())),
             "graph_member_looks": dict(sorted(looks.items())),
-            "graph_member_sheets": dict(sorted(sheet_materials(graph).items()))}
+            "graph_member_sheets": dict(sorted(sheet_materials(graph).items())),
+            "graph_member_bases": dict(sorted(sheet_bases(graph).items()))}
 
 
-OPTIONAL_SNAPSHOT = ("graph_member_looks", "graph_member_sheets")  # 나중에 들인 칸: 없는 옛 사진은 그 칸을 보지 않는다
+OPTIONAL_SNAPSHOT = ("graph_member_looks", "graph_member_sheets", "graph_member_bases")  # 나중에 들인 칸: 없는 옛 사진은 그 칸을 보지 않는다
 
 
 def has_snapshot(node_set, graph, strict=False):
@@ -412,6 +425,10 @@ def compute(node_set, graph, at=None):
     moved = {s for s, mid in seen_sheets.items() if mid and now_sheets.get(s) not in (None, mid)}
     # 옛 사진에 그 시트의 자료가 없으면(이 칸 전에 저장) 그 이름을 다른 자료도 원하는 시트에서는 자료가 바뀌었는지 알 수 없다: 파일 id를 믿지 않는다
     moved |= {s["graph_id"] for s in graph.get("sheets") or () if s.get("contested") and not seen_sheets.get(s["graph_id"])}
+    now_bases = sheet_bases(graph)
+    # 기준 추출이 같은 시트: 덧바르는 사람 고침만 달라 같은 순번 id가 같은 기호다(지우기·더하기는 entity 순번만 밀고 source_object_id는 두며, 더한 것은 manual-)
+    same_base = {pairs.get(s, s) for s, b in (node_set.get("graph_member_bases") or {}).items()
+                 if isinstance(b, str) and now_bases.get(pairs.get(s, s)) == b} - moved
     sheets_of = {}
     page_of = {x["graph_id"]: x.get("page_index") for x in graph.get("sheets") or ()}
     for s, mid in now_sheets.items():
@@ -467,6 +484,8 @@ def compute(node_set, graph, at=None):
             pass  # 판 사진에 없는 떠돌이 id: 무엇이었는지 모른다
         elif old_basis_of(m) == ids.SOURCE:
             hits = [] if drawing_of(r) in moved else by_ref.get(r) or []   # 다른 파일의 같은 id는 같은 기호가 아니다
+        elif drawing_of(r) in same_base:
+            hits = [e for e in by_ref.get(r) or () if new_basis[e] == ids.SEQUENCE]
         elif m in old_marks:
             # 순번 구성요소는 표시로 잇는다. 표시가 없으면(상자 없음, A꼴, B꼴의 스캔·지은 id) 끝으로 잇거나(_link_by_ends) 묘비다.
             # 구간 지문(md3)이 같아도 위치는 지문에 없어서, 같은 종류·태그의 다른 자리 기호로 이을 수 있다(퍼즈로 확인)
@@ -492,6 +511,8 @@ def compute(node_set, graph, at=None):
                 table["new_tombs"][t]["material"] = material_of(m)
     table["eid"].update(link)
     taken = set(link.values())
+    # 기준 추출이 같은 시트에서 참조로 이은 기호: 같은 참조로 잃은 묘비(고친 코드 전에 사람 고침으로 잃음)도 그 기호다
+    same_ref = {e: seen_refs[m] for m, e in link.items() if drawing_of(seen_refs.get(m)) in same_base}
     claims = {}
     for t, rec in sorted(tombs.items()):
         if not isinstance(rec, dict) or rec.get("found") is not None or t in gone or not _recorded_as(t, rec, gid):
@@ -513,7 +534,8 @@ def compute(node_set, graph, at=None):
             continue
         # 자료로 옮겨 찾은 묘비(옛 이름이 사라졌거나 다른 파일이 받음): 그 기호는 새 이름 판 사진의 같은 기호가 이미 잡고 있으므로 잡힘을 보지 않는다
         followed_file = sheet != pairs.get(was, was)
-        hits = [e for e in hits if (followed_file or e not in taken) and e not in contested]
+        hits = [e for e in hits if (followed_file or e not in taken or same_ref.get(e) == _renamed_ref(rec.get("ref"), pairs))
+                and e not in contested]
         if len(hits) == 1:
             claims.setdefault(hits[0], []).append(t)
     for e, ts in claims.items():

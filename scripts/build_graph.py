@@ -61,9 +61,12 @@ def render_one(extraction_path, seats=None, out_root=None, extraction=None, allo
             extraction = json.load(fh)
     folder = os.path.basename(os.path.dirname(extraction_path))
     # ② 사람 수정 기록을 매번 다시 적용한다(다시 추출해도 수정 유지, extraction.json은 원본 그대로)
-    extraction = corrections.resolve(folder, extraction, allow_extract=allow_extract)["corrected"]
+    resolved = corrections.resolve(folder, extraction, allow_extract=allow_extract)
+    extraction = resolved["corrected"]
     gid = _sheet_name(extraction, out_root or "", seats) if (seats is not None or out_root) else None
     graph = build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path, paths.work_root()), graph_id=gid)
+    # 판 이전이 순번 구성요소를 참조로 이을 근거(hazop.study.idmap). graph_version 입력이 아니다
+    graph["base_version"] = build.base_version(resolved["base"])
     files = {
         "graph.json": (json.dumps(graph, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
         "structure_report.md": build.render_report(graph).encode("utf-8"),
