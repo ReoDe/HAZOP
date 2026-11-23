@@ -61,9 +61,9 @@ function LostItems({ n, d, busy }) {
   return html`<details class="field lost-items" open><summary>찾지 못한 구성요소 ${items.length}개</summary>
     <div class="muted small">다시 추출한 도면에서 같은 자리를 찾지 못한 구성요소입니다. 도면에서 실제로 없어진 것을 확인했으면 버리세요. 버린 것은 되돌리기 묶음으로 되살릴 수 있습니다.</div>
     <ul class="lost-list" aria-label="찾지 못한 구성요소">${items.map((x) => html`<li key=${x.key}><label>
-      <input type="checkbox" disabled=${held || busy} checked=${picked.includes(x.key)} onChange=${() => toggle(x.key)} /> ${x.name}${x.lost_at ? html` <span class="muted small">· ${when(x.lost_at)}</span>` : null}</label></li>`)}</ul>
+      ${items.length > 1 ? html`<input type="checkbox" disabled=${held || busy} checked=${picked.includes(x.key)} onChange=${() => toggle(x.key)} />` : null} ${x.name}</label></li>`)}</ul>
     ${held ? html`<div class="muted small">확정한 구간입니다. 확정을 해제한 뒤에 버릴 수 있습니다.</div>`
-      : html`<div class="acts-row"><${Btn} sm=${true} label=${n.node_id + " 찾지 못한 구성요소 " + discardLabel(keys.length, items.length)} disabled=${busy || !keys.length} onClick=${() => go(keys)}>${discardLabel(keys.length, items.length)}<//>
+      : html`<div class="acts-row">${items.length > 1 ? html`<${Btn} sm=${true} label=${n.node_id + " 찾지 못한 구성요소 " + discardLabel(keys.length, items.length)} disabled=${busy || !keys.length} onClick=${() => go(keys)}>${discardLabel(keys.length, items.length)}<//>` : null}
         <${Btn} sm=${true} kind="ghost" label=${n.node_id + " 찾지 못한 구성요소 모두 버리기"} disabled=${busy} onClick=${() => go(items.map((x) => x.key))}>${discardLabel(items.length, items.length)}<//></div>`}
     ${d.discarded ? html`<div class="muted small">이미 버린 것 ${d.discarded}개</div>` : null}</details>`;
 }
@@ -82,6 +82,13 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
       <span class="muted nd-r">판 ${n.rev}</span></div>
     ${n.confirmed ? html`<div class="muted small">확정: ${n.confirmed.by} · ${when(n.confirmed.at)}</div>` : null}
     ${n.locked ? html`<div class="muted small">잠금: ${n.locked.by} · ${when(n.locked.at)}</div>` : null}
+    <div class="acts-row nd-acts">
+      ${n.state === "applied" ? html`<${Btn} kind="primary" icon="check" label=${n.node_id + " 확정"} disabled=${busy} onClick=${() => N.confirm([n.node_id])}>확정 <kbd>Ctrl+Enter</kbd><//>` : null}
+      ${n.state === "confirmed" ? html`<${Btn} label=${n.node_id + " 확정 해제"} disabled=${busy} onClick=${() => N.unconfirm([n.node_id])}>확정 해제<//>
+        <${Btn} icon="lock" label=${n.node_id + " 잠금"} disabled=${busy} onClick=${() => N.lock([n.node_id])}>분석 마침 · 잠금<//>` : null}
+      ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 풀기"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 풀기<//>` : null}
+      ${edit && selection.length ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
+      ${edit ? html`<${Btn} kind="ghost" icon="trash" label=${n.node_id + " 지우기"} disabled=${busy} onClick=${() => N.removeNode(n.node_id, false)}>지우기<//>` : null}</div>
     <${Editable} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} aiDraft=${n.name_by === "ai" && n.state === "applied"} />
     <${Editable} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} aiDraft=${!!(di && di.by === "ai" && n.state === "applied")} />
     ${d && d.boundary && d.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${d.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
@@ -93,13 +100,6 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
     <${LostItems} key=${n.node_id} n=${n} d=${d} busy=${busy} />
     ${d && d.members.length ? html`<details class="field"><summary>구성요소 ${d.members_total}개${d.members_total > d.members.length ? " (앞 " + d.members.length + "개)" : ""}</summary>
       <div class="memlist">${d.members.map((m, i) => html`<button type="button" class="chip id" key=${i} title=${(m.kind || "") + " · " + m.sheet} onClick=${() => { if (m.sheet === store.get().sheet) N.zoomToIds([m.id]); }}>${m.tag || m.kind || m.id}</button>`)}</div></details>` : null}
-    <div class="acts-row">
-      ${n.state === "applied" ? html`<${Btn} kind="primary" icon="check" label=${n.node_id + " 확정"} disabled=${busy} onClick=${() => N.confirm([n.node_id])}>확정 <kbd>Ctrl+Enter</kbd><//>` : null}
-      ${n.state === "confirmed" ? html`<${Btn} label=${n.node_id + " 확정 해제"} disabled=${busy} onClick=${() => N.unconfirm([n.node_id])}>확정 해제<//>
-        <${Btn} icon="lock" label=${n.node_id + " 잠금"} disabled=${busy} onClick=${() => N.lock([n.node_id])}>분석 마침 · 잠금<//>` : null}
-      ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 풀기"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 풀기<//>` : null}
-      ${edit && selection.length ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
-      ${edit ? html`<${Btn} kind="ghost" icon="trash" label=${n.node_id + " 지우기"} disabled=${busy} onClick=${() => N.removeNode(n.node_id, false)}>지우기<//>` : null}</div>
     ${unlocking && n.state === "locked" ? html`<div class="field"><label for="unlock-reason">잠금을 푸는 이유(필수)</label>
       <input id="unlock-reason" class="textbox" value=${reason} onInput=${(e) => setReason(e.target.value)} />
       <div class="acts-row"><${Btn} kind="primary" sm=${true} disabled=${busy || !reason.trim()} label="잠금 풀기 실행" onClick=${async () => { const r = await N.unlock([n.node_id], reason.trim()); if (r) { setUnlocking(false); setReason(""); } }}>풀기<//></div></div>` : null}

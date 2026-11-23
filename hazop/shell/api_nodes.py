@@ -251,11 +251,19 @@ def detail(engine, node_id):
     history = [{"batch_id": b["batch_id"], "origin": b.get("origin"), "kind": b.get("kind"), "at": b.get("at"),
                 "undone": bool(b.get("undone")), "ops": sorted({o["op"] for o in b["ops"] if o["node_id"] == node_id})}
                for b in ns.get("batches") or [] if any(o["node_id"] == node_id for o in b.get("ops") or [])]
-    lost_items = [{"key": x["key"], "name": x["name"], "lost_at": x.get("lost_at")} for x in nodes.lost_items(ns, node_id)]
+    lost_items = [{"key": x["key"], "name": lost_name(x["name"], x.get("ref"))} for x in nodes.lost_items(ns, node_id)]
     return dict(row, set_rev=ns.get("set_rev") or 0, majors=majors[:MAJORS_SHOWN], majors_total=len(majors),
                 boundary=[majors[0], majors[-1]] if len(majors) >= 2 else majors[:1], kinds=dict(kinds.most_common(8)),
                 members=members, members_total=len(node["members"]), history=history,
                 lost_items=lost_items, discarded=(idmap.needs_check(ns).get("discarded") or {}).get(node_id, 0))
+
+
+def lost_name(name, ref):
+    """찾지 못한 구성요소의 화면 이름. 표시(종류·태그)가 없어 안정 참조('graph-SNP-M-102#n16')가 이름으로 온 것은 내부 ID라 보이지 않고
+    도면 번호로 바꾼다(실제 창 확인 2026-11-23). 판 이름(lost_at)도 화면에 내지 않는다."""
+    if ref and name == ref and "#" in ref:
+        return "%s 도면의 구성요소(이름 모름)" % ref.split("#", 1)[0].replace("graph-", "", 1)
+    return name
 
 
 def suggest(engine, sheet, ids):

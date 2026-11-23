@@ -55,6 +55,14 @@ class DetailTest(Base):
         for x in d["lost_items"]:
             self.assertTrue(x["key"] and x["name"])
         self.assertEqual(d["discarded"], 0)
+        for x in d["lost_items"]:
+            self.assertNotIn("#", x["name"], "안정 참조(graph-…#n16) 같은 내부 ID를 이름으로 쓰지 않는다")
+            self.assertNotIn("lost_at", x, "판 이름(pv-…)은 화면에 내지 않는다")
+
+    def test_a_reference_name_becomes_the_drawing_number(self):
+        from hazop.shell import api_nodes
+        self.assertEqual(api_nodes.lost_name("graph-SNP-M-102#n16", "graph-SNP-M-102#n16"), "SNP-M-102 도면의 구성요소(이름 모름)")
+        self.assertEqual(api_nodes.lost_name("밸브 RC-V010", "graph-SNP-M-102#n16"), "밸브 RC-V010")
 
 
 class DiscardTest(Base):

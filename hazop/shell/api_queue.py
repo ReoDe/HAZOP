@@ -44,7 +44,7 @@ def _ver(parts):
 # ---------------------------------------------------------------- AI 후보
 def _kind_text(kind):
     from hazop.shell.sheet_items import kind_label
-    return kind_label(kind) or kind or ""
+    return kind_label(kind) or ("목록에 없는 종류" if kind else "")
 
 
 def _value_text(field, value):
@@ -117,8 +117,8 @@ def _lost_items(engine):
             gid = mk[1] if idmap.valid_mark(mk) and mk[1] in names else idmap.drawing_of(rec.get("ref"))
             key = idmap.tomb_handle(t)
             items.append({"qid": "lost|%s|%s" % (nid, key), "kind": "lost", "node_id": nid, "node_name": node.get("name") or nid,
-                          "key": key, "label": idmap.tomb_name(rec), "graph_id": gid if gid in names else None,
-                          "sheet": names.get(gid) if gid in names else None, "where": [{"node": nid}], "lost_at": rec.get("lost_at"),
+                          "key": key, "label": api_nodes.lost_name(idmap.tomb_name(rec), rec.get("ref")), "graph_id": gid if gid in names else None,
+                          "sheet": names.get(gid) if gid in names else None, "where": [{"node": nid}],
                           "target": target, "held": target["state"] != "applied", "cands": [], "state": "open"})
     return items, set_rev, ["rev=%s" % set_rev]
 
