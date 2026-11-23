@@ -17,6 +17,7 @@ sys.path.insert(0, REPO_ROOT)
 from hazop import paths  # noqa: E402
 from hazop.extract import ai_review, ai_split, corrections  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
+from tests import test_screen_words  # noqa: E402
 from tests.test_corrections_inputs import BLOB, GROUPS, HAS_PDFPLUMBER, page  # noqa: E402
 
 NAME = "SYN-1"
@@ -161,6 +162,81 @@ class SplitAcceptTest(unittest.TestCase):
         kept = [(c["cand_id"], c["status"]) for c in doc["candidates"]]
         self.assertEqual(kept, [(self.cands[0], "accepted"), (again[1]["cand_id"], "proposed")],
                          "정한 묶음은 다시 넣지 않고, 새 답과 겹치는 오래된 제안은 뺀다")
+
+    def tag_split(self):
+        """수락 하나를 짓고 나눈 기호에 태그를 단 기록. → (split 연산, 태그 연산)."""
+        self.accept(self.cands[:1])
+        ops = self.ops()
+        base = corrections.resolve(NAME, allow_extract=True)["base"]
+        tag = corrections.make_op(base, "set_tag", "pdf-p0-split-" + ops[0]["op_id"], {"tag": "V-101"}, BY, at=AT,
+                                  existing_ops=ops, name=NAME)
+        corrections.save(NAME, ops + [tag], BY, at=AT)
+        return ops[0], tag
+
+    def test_built_split_stays_on_screen_while_a_later_acceptance_waits(self):
+        self.accept(self.cands[:1])
+        self.assertEqual(corrections.ensure_base(NAME), "ready")
+        self.accept(self.cands[1:2])
+        first, second = self.ops()
+        got = corrections.resolve(NAME)
+        st = got["inputs"]
+        self.assertEqual((st["state"], st["applied"], st["waiting"]), ("partial", [first["op_id"]], [second["op_id"]]))
+        self.assertIn("pdf-p0-split-" + first["op_id"], {n["source_object_id"] for n in got["corrected"]["nodes"]},
+                      "앞서 지은 나눔은 버리지 않는다")
+        shapes = pdf_vector.object_shapes(self.pdf, 0)
+        x0, y0 = min(shapes[p][0] for p in GROUPS[1]), min(shapes[p][1] for p in GROUPS[1])
+        x1, y1 = max(shapes[p][2] for p in GROUPS[1]), max(shapes[p][3] for p in GROUPS[1])
+        self.assertEqual(corrections.pending_inputs(NAME), [
+            {"op_id": second["op_id"], "op": "split", "target": BLOB, "kind": "manual_valve",
+             "bbox": [x0, y0, round(x1 - x0, 1), round(y1 - y0, 1)], "objects": 2, "candidate": self.cands[1],
+             "by": BY, "at": AT}])
+        self.assertEqual([(i["op_id"], i["state"], i["code"], i["candidate"]) for i in corrections.input_items(got)],
+                         [(second["op_id"], "waiting", "waiting", self.cands[1])])
+
+    def test_edit_on_a_waiting_split_is_waiting_not_failed(self):
+        split, tag = self.tag_split()
+        os.remove(corrections.base_path(NAME))
+        got = corrections.resolve(NAME)
+        st, c = got["inputs"], got["corrected"]["corrections"]
+        self.assertEqual((st["state"], st["waiting"], st["waiting_on"]), ("pending", [split["op_id"]], {tag["op_id"]: [split["op_id"]]}))
+        self.assertEqual(c["not_applicable"], [], "대기 중 나눔에 기댄 고침은 적용 불가로 내지 않는다")
+        self.assertEqual(c["waiting_on"], [{"op_id": tag["op_id"], "inputs": [split["op_id"]]}])
+        items = corrections.input_items(got)
+        self.assertEqual([(i["op_id"], i["state"], i["code"], i["inputs"]) for i in items],
+                         [(split["op_id"], "waiting", "waiting", []), (tag["op_id"], "waiting", "waiting_on", [split["op_id"]])])
+        for i in items:
+            self.assertFalse([w for w in test_screen_words.BANNED + ("op", "pdf", "기준 추출") if w in i["text"]], i["text"])
+
+    def test_reverted_split_does_not_come_back_from_an_older_file(self):
+        self.accept(self.cands[:2])
+        self.assertEqual(corrections.ensure_base(NAME), "ready")
+        self.revert(self.cands[1:2])
+        got = corrections.resolve(NAME)
+        self.assertEqual(got["inputs"]["state"], "pending", "지운 나눔이 든 파일은 쓰지 않는다")
+        self.assertFalse([n for n in got["corrected"]["nodes"] if "-split-" in n["source_object_id"]])
+
+    def test_ready_output_keeps_its_old_shape(self):
+        self.accept(self.cands[:1])
+        corrected = corrections.resolve(NAME, allow_extract=True)["corrected"]
+        self.assertEqual(set(corrected["corrections"]["inputs"]), {"state", "applied", "not_applicable"})
+        self.assertNotIn("waiting_on", corrected["corrections"])
+
+    def test_stopped_build_writes_nothing(self):
+        self.accept(self.cands[:1])
+        calls = []
+        self.assertEqual(corrections.ensure_base(NAME, should_stop=lambda: calls.append(1) or len(calls) > 1), "pending")
+        self.assertFalse(os.path.exists(corrections.base_path(NAME)), "더 새 판이 들어오면 지은 것을 버린다")
+        self.assertEqual(corrections.ensure_base(NAME), "ready")
+
+    def test_failed_split_gets_a_reason_code_for_the_queue(self):
+        ops = []
+        for g in (GROUPS[0], GROUPS[0][1:] + GROUPS[1][:1]):
+            ops.append(corrections.make_op(self.original, "split", BLOB, corrections.input_value(self.original, g),
+                                           BY, at=AT, existing_ops=ops, name=NAME))
+        corrections.save(NAME, ops, BY, at=AT)
+        items = corrections.input_items(corrections.resolve(NAME, allow_extract=True))
+        self.assertEqual([(i["op_id"], i["state"], i["code"]) for i in items], [(ops[1]["op_id"], "not_applicable", "overlap")])
+        self.assertEqual(items[0]["text"], "다른 나누기와 같은 부분을 골라 나누지 않았습니다.")
 
     def test_revert_preview_names_the_edit_that_goes_with_it_and_log_says_what_happened(self):
         self.accept(self.cands[:1])

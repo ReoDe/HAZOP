@@ -847,8 +847,7 @@ def input_value(extraction, objects, **extra):
     missing = [o for o in objects if o not in shapes]
     if missing:
         raise ValueError("쪽에 없는 pdf 개체: %s" % ", ".join(missing[:5]))
-    with open(where[0], "rb") as fh:
-        sha = hashlib.sha256(fh.read()).hexdigest()
+    sha = file_sha256(where[0])
     return dict({"pdf": {"sha256": sha, "page": where[1], "reader": pdf_vector.reader_version()},
                  "objects": list(objects), "shapes": {o: list(shapes[o]) for o in objects}}, **extra)
 
@@ -883,9 +882,28 @@ def _locate(op, shapes, sha, reader):
     return found, moved
 
 
+_SHA_CACHE = {}
+
+
+def file_sha256(path):
+    """파일 내용의 sha256. (경로, 수정 시각, 크기)가 같으면 다시 읽지 않는다(큰 PDF를 수락마다 읽지 않게)."""
+    st = os.stat(path)
+    key = (os.path.normcase(os.path.abspath(path)), st.st_mtime_ns, st.st_size)
+    if key not in _SHA_CACHE:
+        with open(path, "rb") as fh:
+            _SHA_CACHE[key] = hashlib.sha256(fh.read()).hexdigest()
+    return _SHA_CACHE[key]
+
+
 def _library_version():
-    """기호 사전 판: 사전 JSON 파일 내용의 해시(사전이 바뀌면 같은 입력이라도 다시 추출한다)."""
-    root = paths.folder("symbols")
+    """기호 사전 판: 사전 JSON 파일 내용의 해시(사전이 바뀌면 같은 입력이라도 다시 추출한다). 프로세스에서 한 번 계산한다.
+    추출이 쓰는 사전도 프로세스마다 한 번 읽으므로(pdf_vector.symbol_library) 뜻이 같다. 매번 파일 수십 개를 열면 다른
+    스레드가 기준 추출을 짓는 동안 수락 한 번이 GIL을 기다려 초 단위로 늘었다."""
+    return _library_digest(paths.folder("symbols"))
+
+
+@functools.lru_cache(maxsize=None)
+def _library_digest(root):
     h = hashlib.sha256()
     for dirpath, dirs, files in sorted(os.walk(root)):
         dirs.sort()
@@ -990,24 +1008,39 @@ def _pdf_now(original):
     where, why = pdf_source(original)
     if where is None:
         return None, why
-    with open(where[0], "rb") as fh:
-        sha = hashlib.sha256(fh.read()).hexdigest()
-    return (where[0], where[1], sha, pdf_vector.reader_version()), None
+    return (where[0], where[1], file_sha256(where[0]), pdf_vector.reader_version()), None
 
 
-def inputs_key(original, inputs):
-    """기준 추출의 열쇠: 원본 추출(sha256·쪽·설정·실행 id)·지금 원본 PDF 파일의 sha256·읽기 엔진 판·규칙 판·추출 코드
-    지문·기호 사전 판·입력 연산(op_id·종류·값·대상). 기준 추출 파일에 함께 둔 입력 상태(개체 다시 찾기 결과)도 이 열쇠에만
-    기대므로, 열쇠가 맞으면 다시 찾지 않고 그대로 쓴다."""
+def _env(original):
+    """기준 추출이 입력 연산 말고 기대는 것: 원본 추출(sha256·쪽·설정·실행 id)·지금 원본 PDF 파일의 sha256·읽기 엔진 판·
+    규칙 판·추출 코드 지문·기호 사전 판."""
     from hazop.extract.adapters import pdf_vector
     src, run = original.get("source") or {}, original.get("run") or {}
     now, _ = _pdf_now(original)
-    canon = json.dumps([src.get("sha256"), (run.get("settings") or {}).get("page_index"), _params(original),
-                        original.get("extraction_run_id"), now and now[2], now and now[3],
-                        pdf_vector.RULES_VERSION, code_fingerprint(), _library_version(),
-                        [[o.get("op_id"), o.get("op"), o.get("target"), o.get("value")] for o in inputs]],
-                       sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    return "in-" + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:24]
+    return [src.get("sha256"), (run.get("settings") or {}).get("page_index"), _params(original),
+            original.get("extraction_run_id"), now and now[2], now and now[3],
+            pdf_vector.RULES_VERSION, code_fingerprint(), _library_version()]
+
+
+def _sig(op):
+    """입력 연산이 기준 추출에 주는 몫(op_id·종류·대상·값). 같으면 같은 기준 추출이다."""
+    return [op.get("op_id"), op.get("op"), op.get("target"), op.get("value")]
+
+
+def _hash(prefix, value):
+    canon = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return prefix + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:24]
+
+
+def inputs_key(original, inputs, env=None):
+    """기준 추출의 열쇠: _env와 입력 연산(_sig). 기준 추출 파일에 함께 둔 입력 상태(개체 다시 찾기 결과)도 이 열쇠에만
+    기대므로, 열쇠가 맞으면 다시 찾지 않고 그대로 쓴다."""
+    return _hash("in-", (env or _env(original)) + [[_sig(o) for o in inputs]])
+
+
+def base_env_key(original, env=None):
+    """inputs_key에서 입력 연산을 뺀 몫. 기준 추출 파일에 적어 두고, 입력이 늘었을 때 앞서 지은 파일을 쓸 수 있는지(partial) 본다."""
+    return _hash("env-", env or _env(original))
 
 
 BASE_KIND = "hazop_input_extraction"
@@ -1097,63 +1130,195 @@ def build_base(original, inputs):
     return doc, status
 
 
-def _read_base(name, key):
+def _read_base_file(name):
     try:
         with open(base_path(name), encoding="utf-8") as fh:
             doc = json.load(fh)
     except (OSError, ValueError):
         return None
-    return doc if isinstance(doc, dict) and doc.get("kind") == BASE_KIND and doc.get("key") == key else None
+    return doc if isinstance(doc, dict) and doc.get("kind") == BASE_KIND else None
 
 
-def ensure_base(name, original=None):
-    """기준 추출 파일을 지금 수정 기록에 맞게 만든다(작업에서 부른다. 큰 쪽은 수십 초). 상태 문자열을 돌려준다.
-    다 만든 뒤 수정 기록이 그새 바뀌었으면 한 번 더 만든다."""
+def _read_base(name, key):
+    doc = _read_base_file(name)
+    return doc if doc is not None and doc.get("key") == key else None
+
+
+def _write_base(name, original, inputs, base, status, env=None):
+    env = env or _env(original)
+    store_io.write_json(base_path(name), {"kind": BASE_KIND, "key": inputs_key(original, inputs, env),
+                                          "env": base_env_key(original, env), "built": [_sig(o) for o in inputs],
+                                          "inputs": status, "extraction": base})
+
+
+def _find_base(name, original, inputs):
+    """(쓸 기준 추출 파일 또는 None, 그 파일에 든 입력 op_id 집합, 열쇠). 열쇠가 같으면 그 파일. 아니면 같은 환경(base_env_key)에서
+    지금 입력의 일부만으로 지은 파일이면 그것(partial: 뒤에 수락한 것만 아직 안 들었다). 지운 입력이 든 파일은 쓰지 않는다."""
+    env = _env(original)
+    key = inputs_key(original, inputs, env)
+    doc = _read_base_file(name)
+    if doc is None:
+        return None, set(), key
+    if doc.get("key") == key:
+        return doc, {o.get("op_id") for o in inputs}, key
+    now = [_sig(o) for o in inputs]
+    built = doc.get("built")
+    if doc.get("env") == base_env_key(original, env) and isinstance(built, list) and built and all(b in now for b in built):
+        return doc, {b[0] for b in built}, key
+    return None, set(), key
+
+
+def ensure_base(name, original=None, *, should_stop=None):
+    """기준 추출 파일을 지금 수정 기록에 맞게 만든다(잠금 없이 작업에서 부른다. 큰 쪽은 수십 초). 상태 문자열을 돌려준다.
+    입력 연산 전부를 한 번에 짓는다. 다 만든 뒤 수정 기록이 그새 바뀌었으면 세 번까지 따라잡는다.
+    should_stop()이 참이면(더 새 판으로 다시 지을 차례) 지은 것을 쓰지 않고 pending을 돌려준다."""
+    stop = should_stop or (lambda: False)
+    if original is None:
+        with open(os.path.join(paths.output_root("extract"), name, "extraction.json"), encoding="utf-8") as fh:
+            original = json.load(fh)
     for _ in range(3):
-        doc = load(name)
-        if original is None:
-            with open(os.path.join(paths.output_root("extract"), name, "extraction.json"), encoding="utf-8") as fh:
-                original = json.load(fh)
-        inputs = [o for o in (doc or {}).get("ops") or [] if is_input(o)]
+        if stop():
+            return "pending"
+        inputs = [o for o in (load(name) or {}).get("ops") or [] if is_input(o)]
         if not inputs:
             return "none"
         key = inputs_key(original, inputs)
         if _read_base(name, key) is not None:
             return "ready"
         base, status = build_base(original, inputs)
-        store_io.write_json(base_path(name), {"kind": BASE_KIND, "key": key, "inputs": status, "extraction": base})
+        if stop():
+            return "pending"
+        _write_base(name, original, inputs, base, status)
         again = [o for o in (load(name) or {}).get("ops") or [] if is_input(o)]
         if inputs_key(original, again) == key:
             return "ready"
     return "pending"
 
 
+def _waiting_on(ops, waiting, skipped):
+    """적용 불가로 나온 덮는 연산 가운데 대기 중 입력 연산에 기댄 것 {op_id: [입력 op_id]}(corrections.dependents, 이어서)."""
+    out = {}
+    for w in waiting:
+        for d in dependents(ops, w):
+            if d in skipped:
+                out.setdefault(d, []).append(w)
+    return out
+
+
 def resolve(name, original=None, ops=None, *, allow_extract=False):
-    """수정 기록을 적용한 결과 {"original", "base", "corrected", "ops", "inputs": {"key", "state", "applied",
-    "not_applicable", "retargeted"}}. state: none(입력 연산 없음, base = 원본), ready(기준 추출 사용), pending(기준 추출이
-    아직 없거나 낡음. 원본 위에 나머지 연산만 적용하고 입력 연산은 '다시 읽기 대기'). allow_extract면 그 자리에서 만든다.
-    ops를 주면 저장된 기록 대신 쓴다(작업 중 연산)."""
+    """수정 기록을 적용한 결과 {"original", "base", "corrected", "ops", "inputs"}.
+    inputs: {"key", "state", "applied", "not_applicable", "retargeted", "waiting", "waiting_on"}.
+    - state none: 입력 연산 없음, base = 원본. ready: 기준 추출 사용. partial: 앞서 지은 기준 추출(지금 입력의 일부)을 쓰고
+      나머지 입력은 대기. pending: 쓸 기준 추출이 없어 원본 위에 덮는 연산만 적용하고 입력 연산은 모두 대기.
+    - waiting: 아직 기준 추출에 들지 않은 입력 연산 op_id(기록 차례). applied·not_applicable·retargeted는 든 입력의 결과다.
+    - waiting_on: 대기 중 입력에 기댄 덮는 연산 {op_id: [입력 op_id]}. 이것들은 corrected의 not_applicable에서 빼고
+      corrections.waiting_on에 적는다(적용 불가가 아니라 대기다).
+    allow_extract면 쓸 파일이 없거나 일부만 든 파일일 때 그 자리에서 짓는다. ops를 주면 저장된 기록 대신 쓴다(작업 중 연산)."""
     if original is None:
         with open(os.path.join(paths.output_root("extract"), name, "extraction.json"), encoding="utf-8") as fh:
             original = json.load(fh)
     if ops is None:
         ops = ((load(name) or {}).get("ops") or [])
     inputs = [o for o in ops if is_input(o)]
-    state = {"key": None, "state": "none", "applied": [], "not_applicable": [], "retargeted": []}
+    state = {"key": None, "state": "none", "applied": [], "not_applicable": [], "retargeted": [], "waiting": [],
+             "waiting_on": {}}
     base = original
     if inputs:
-        key = inputs_key(original, inputs)
-        found = _read_base(name, key)
-        if found is None and allow_extract:
-            built, status = build_base(original, inputs)
-            store_io.write_json(base_path(name), {"kind": BASE_KIND, "key": key, "inputs": status, "extraction": built})
-            found = {"inputs": status, "extraction": built}
+        found, built, key = _find_base(name, original, inputs)
+        if allow_extract and len(built) < len(inputs):
+            extraction, status = build_base(original, inputs)
+            _write_base(name, original, inputs, extraction, status)
+            found, built = {"inputs": status, "extraction": extraction}, {o.get("op_id") for o in inputs}
+        state["key"] = key
+        state["waiting"] = [o.get("op_id") for o in inputs if o.get("op_id") not in built]
         if found is None:
-            state.update(key=key, state="pending")
+            state["state"] = "pending"
         else:
             base = found["extraction"]
-            state.update(found["inputs"], key=key, state="ready")
+            state.update({k: found["inputs"][k] for k in ("applied", "not_applicable", "retargeted")},
+                         state="partial" if state["waiting"] else "ready")
     corrected = apply(base, ops)
     if inputs:
-        corrected.setdefault("corrections", {})["inputs"] = {k: state[k] for k in ("state", "applied", "not_applicable")}
+        c = corrected.setdefault("corrections", {})
+        skipped = {x["op_id"] for x in c.get("not_applicable") or []}
+        state["waiting_on"] = _waiting_on(ops, state["waiting"], skipped)
+        if state["waiting_on"]:
+            c["not_applicable"] = [x for x in c["not_applicable"] if x["op_id"] not in state["waiting_on"]]
+            c["waiting_on"] = [{"op_id": k, "inputs": v} for k, v in state["waiting_on"].items()]
+        c["inputs"] = {k: state[k] for k in ("state", "applied", "not_applicable")}
+        if state["waiting"]:
+            c["inputs"]["waiting"] = state["waiting"]
     return {"original": original, "base": base, "corrected": corrected, "ops": ops, "inputs": state}
+
+
+def pending_inputs(name, original=None, ops=None):
+    """대기 중 입력 연산의 자리(화면이 덩어리 안에 흐린 상자로 덧그림). 연산 값의 개체 모양만으로 계산하고 PDF를 읽지 않는다.
+    → [{"op_id", "op", "target", "kind", "bbox": [x, y, 너비, 높이](source_locations와 같은 꼴), "objects", "candidate", "by", "at"}]."""
+    if original is None:
+        with open(os.path.join(paths.output_root("extract"), name, "extraction.json"), encoding="utf-8") as fh:
+            original = json.load(fh)
+    if ops is None:
+        ops = ((load(name) or {}).get("ops") or [])
+    inputs = [o for o in ops if is_input(o)]
+    if not inputs:
+        return []
+    _, built, _ = _find_base(name, original, inputs)
+    out = []
+    for o in inputs:
+        if o.get("op_id") in built:
+            continue
+        boxes = list(((o.get("value") or {}).get("shapes") or {}).values())
+        x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+        x1, y1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+        out.append({"op_id": o.get("op_id"), "op": o.get("op"), "target": o.get("target"), "kind": o["value"].get("kind"),
+                    "bbox": [x0, y0, round(x1 - x0, 1), round(y1 - y0, 1)], "objects": len(boxes),
+                    "candidate": o.get("ai_candidate"), "by": o.get("by"), "at": o.get("at")})
+    return out
+
+
+# 입력 연산 사유 → 검토 대기열 항목의 (코드, 사람용 글). 왼쪽은 build_base·resolve가 쓰는 사유의 머리다(같은 모듈이 만든 글).
+INPUT_REASONS = (
+    ("나눈 개체가 기호가 되지 못함", "not_symbol", "고른 부분이 기호 하나로 읽히지 않아 나누지 못했습니다."),
+    ("나눌 개체 ", "partly", "고른 부분 가운데 일부를 떼어 내지 못해 나누지 않았습니다."),
+    ("나누기 ", "overlap", "다른 나누기와 같은 부분을 골라 나누지 않았습니다."),
+    ("도면이 바뀌어 나눌 개체를 찾지 못함", "objects_lost", "도면 파일이 바뀌어 고른 부분을 찾지 못했습니다."),
+    ("도면이 바뀌어 배관 개체를 찾지 못함", "objects_lost", "도면 파일이 바뀌어 고른 선을 찾지 못했습니다."),
+    ("도면이 바뀌어", "objects_ambiguous", "도면 파일이 바뀌어 고른 부분이 어디인지 하나로 정하지 못했습니다."),
+    (PDF_CHANGED, "pdf_changed", "도면 파일이 읽은 뒤 바뀌었습니다. 도면을 다시 읽어야 나누기를 반영합니다."),
+    ("원본 PDF 없음", "no_pdf", "원본 도면 파일이 없어 나누기를 반영하지 못했습니다."),
+    ("벡터 PDF 도면만", "no_pdf", "이 도면 파일로는 나누기를 할 수 없습니다."),
+    ("형식 오류", "format", "저장된 나누기 내용이 올바르지 않아 반영하지 못했습니다."),
+    (PIPE_PENDING, "pipe_pending", "배관 지정은 아직 도면 다시 읽기에 넣지 않습니다."),
+)
+WAITING_TEXT = {"waiting": "아직 도면에 반영하기 전인 나누기입니다. 다시 읽기가 끝나면 반영됩니다.",
+                "waiting_on": "반영하기 전인 나누기에 기댄 고침입니다. 나누기가 반영되면 함께 적용됩니다."}
+OTHER_TEXT = "나누기를 반영하지 못했습니다."
+
+
+def input_reason(reason):
+    """입력 연산의 적용 불가 사유 글 → (코드, 사람용 글)."""
+    for head, code, text in INPUT_REASONS:
+        if reason.startswith(head):
+            return code, text
+    return "other", OTHER_TEXT
+
+
+def input_items(resolved):
+    """resolve 결과 → 검토 대기열 항목 [{"op_id", "op", "target", "candidate", "state": "waiting"|"not_applicable",
+    "code", "text", "inputs"}]. 대기 중 입력(waiting), 대기 중 입력에 기댄 고침(waiting_on, state도 waiting),
+    든 입력 가운데 적용 불가(사유 코드와 글). inputs는 waiting_on 항목이 기댄 입력 op_id. 기록 차례."""
+    st, by_id = resolved["inputs"], {o.get("op_id"): o for o in resolved["ops"]}
+    na = {x["op_id"]: x["reason"] for x in st["not_applicable"]}
+    out = []
+    for oid, o in by_id.items():
+        if oid in st["waiting"]:
+            row = ("waiting", "waiting", WAITING_TEXT["waiting"], [])
+        elif oid in st["waiting_on"]:
+            row = ("waiting", "waiting_on", WAITING_TEXT["waiting_on"], st["waiting_on"][oid])
+        elif oid in na:
+            row = ("not_applicable",) + input_reason(na[oid]) + ([],)
+        else:
+            continue
+        out.append({"op_id": oid, "op": o.get("op"), "target": o.get("target"), "candidate": o.get("ai_candidate"),
+                    "state": row[0], "code": row[1], "text": row[2], "inputs": row[3]})
+    return out

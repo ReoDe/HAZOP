@@ -396,7 +396,9 @@ class InputOpsTest(unittest.TestCase):
                 corrections.ensure_base(NAME)
         with open(corrections.base_path(NAME), "rb") as fh:
             self.assertEqual(fh.read(), base, "기준 추출 파일은 쓰다 실패해도 앞 판 그대로")
-        self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "pending", "앞 판 기준 추출은 열쇠가 달라 쓰지 않음")
+        st = corrections.resolve(NAME)["inputs"]
+        self.assertEqual((st["state"], st["waiting"]), ("partial", [o["op_id"] for o in ops[1:]]),
+                         "앞 판 기준 추출은 들어 있는 나눔만 쓰고 나머지는 대기로 낸다")
         corrections.save(NAME, ops[:1], "김고침", at=AT)
         self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "ready", "되돌리면 같은 열쇠의 기준 추출을 다시 씀")
 
