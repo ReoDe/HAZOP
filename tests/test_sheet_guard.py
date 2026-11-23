@@ -228,6 +228,33 @@ class GuardOwnerTest(GuardCase):
         out = self.confirm(a, {"drawing_number": "SNP-M-101"})
         self.assertTrue(out["ok"], out)
 
+    def _undo_after_rename(self, a, new_number, then=None):
+        _pg, before = self.make_nodes(a)
+        old = self.sheet(a)["graph_id"]
+        batch = self.remove_node()
+        self.assertTrue(self.confirm(a, {"drawing_number": new_number})["ok"])
+        if then:
+            then()
+        self.nodes_cmd("undo", {"batch_id": batch})
+        pg, n = self.node()
+        ids = {x["entity_id"] for x in pg["nodes"]}
+        want = sorted(m.replace(old + "/", "graph-%s/" % new_number, 1) for m in before["nodes"][0]["members"])
+        self.assertEqual((sorted(n["members"]), n.get("lost") or []), (want, []), "되돌린 구간이 새 이름의 같은 기호로 돌아옴")
+        self.assertTrue(set(want) <= ids)
+
+    def test_undoing_a_removal_after_the_number_changed_comes_back_on_the_new_name(self):
+        """R6. 번호를 바꾼 뒤 그 앞의 구간 지우기를 되돌리면, 판 이전이 되돌리기 묶음도 같은 자료의 새 이름으로 옮겨 두었으므로 구성원이 새 이름으로 돌아온다
+        (U2에서는 찾지 못한 구성요소로 보였다)."""
+        self._undo_after_rename(self.add("SNP-M-101", "pdf"), "SNP-M-101")
+
+    def test_undo_after_the_old_number_went_to_another_file_follows_its_own_file(self):
+        """R7. 옛 번호를 다른 파일이 받은 뒤 되돌려도(같은 graph_id, entity id도 겹침) 그 파일의 기호로 잇지 않고 제 파일의 새 번호로 돌아온다."""
+        def other_takes_the_old_number():
+            b = self.add("SNP-M-102", "drawio")
+            self.assertTrue(self.confirm(b, {"drawing_number": "SNP-M-101"})["ok"])
+            self.assertIn("graph-SNP-M-101", self.gids())
+        self._undo_after_rename(self.numbered("SNP-M-101", "drawio"), "SNP-M-555", other_takes_the_old_number)
+
     def test_left_out_second_drawing_can_be_numbered(self):
         """이 단위 전에 두 PDF가 한 이름(graph-drawing)을 나눠 쓴 저장본에서(옛 규칙은 가장 새 것을 써서 둘째 B가 주인, 첫 도면 A가 가려짐),
         가려진 도면은 번호를 확정해 따로 들어온다. 주인 B도 번호를 확정하면 그 이름의 구간이 B를 따라간다(U5, 앞서는 막힘)."""
