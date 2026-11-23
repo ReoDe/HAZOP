@@ -74,12 +74,20 @@ DOC_KINDS = (idmap.IE, idmap.FMEA, idmap.LATENT)
 
 
 def to_b_form(ns, g):
-    """49033f1 판이 썼을 꼴: 표시는 순번 정규식에 걸린 것만, id 근거 없음, 묘비 대신 lost_members."""
+    """49033f1 판이 썼을 꼴: 표시는 순번 정규식에 걸린 것만, id 근거 없음, 묘비 대신 lost_members(나중에 들인 칸도 없음)."""
     out = copy.deepcopy(ns)
-    for k in ("graph_member_basis", "graph_member_ends", "tombstones", "tomb_seq"):
+    for k in ("graph_member_basis", "graph_member_ends", "tombstones", "tomb_seq") + idmap.OPTIONAL_SNAPSHOT:
         out.pop(k, None)
     out["schema_version"] = "0.2"
     out["graph_member_marks"] = idmap.legacy_marks(g)
+    return out
+
+
+def to_c_form(ns):
+    """f945ff2 전에 저장한 0.3 집합: 나중에 들인 판 사진 칸(source 겉모습·시트 자료)이 없다. 실제로 가장 흔한 옛 꼴."""
+    out = copy.deepcopy(ns)
+    for k in idmap.OPTIONAL_SNAPSHOT:
+        out.pop(k, None)
     return out
 
 
@@ -495,6 +503,8 @@ def make_set(r, g, form=None, at="c00"):
     form = form or r.choice(["new", "new", "a", "b", "b"])
     if form == "a":
         ns = to_a_form(ns, g)
+    elif form == "new" and len(ns["nodes"]) % 3 == 0:   # 난수 흐름을 바꾸지 않고 새 꼴의 셋에 하나쯤을 옛 0.3 꼴로
+        ns = to_c_form(ns)
     elif form == "b":
         ns = to_b_form(ns, g)
         for n in ns["nodes"]:

@@ -197,7 +197,7 @@ class NumberChangeTest(Base):
         ids = {x["entity_id"] for x in project_ctx.project_graph(P)["nodes"]}
         self.assertEqual([m for m in members if m not in ids], [], "구간 구성원이 하나도 끊기지 않음")
         undo = tb.unconfirm(P, mid, ["drawing_number"], BY, ver=self.row(mid)["ver"])
-        self.assertTrue(undo["ok"], "번호 취소로 그래프 ID가 그대로면(쪽 이름 SNP-M-101) 막지 않음")
+        self.assertFalse(undo["ok"], "번호를 취소하면 graph-<자료>-p0으로 이름이 바뀌어 구간이 끊기므로 막음(hazop.graph.sheets)")
         os.remove(nodes.store_path(P, pg["graph_id"]))   # 사람이 구간을 정리한 뒤
         moved = self.confirm(mid, {"drawing_number": "SNP-M-999"})
         self.assertTrue(moved["ok"], moved)
@@ -269,14 +269,15 @@ class InterrogateFindingsTest(Base):
         self.assertEqual(sorted(project.pick_graphs(P)), ["graph-SNP-M-555"], "앞 그래프는 비켜 둠")
         self.assertTrue(os.path.isfile(os.path.join(paths.output_root("graph"), old, tb.SUPERSEDED)))
 
-    def test_number_that_collides_through_a_page_name_case_or_file_key_is_refused(self):
+    def test_number_that_collides_through_case_or_file_key_is_refused(self):
+        """번호 확정 전 시트는 graph-<자료>-p<쪽>이라 쪽 이름으로는 겹치지 않는다(hazop.graph.sheets). 확정한 번호와 같거나 글자만 다른 번호는 막는다."""
         a = self.add("SNP-M-101")
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         b = self.add("SNP-M-102", extract=False)
         for number in ("SNP-M-101", "snp-m-101", "SNP-M-101_"):
             with self.subTest(number):
                 out = self.confirm(b, {"drawing_number": number})
                 self.assertEqual(out["refused"][0]["code"], "conflict", out)
-        self.confirm(a, {"drawing_number": "SNP-M-101"})
         pdf = self.add("SNP-M-101", "pdf", extract=False)
         self.assertEqual(self.confirm(pdf, {"drawing_number": "snp-m-101"})["refused"][0]["code"], "conflict",
                          "형식이 달라도 글자만 다르면 같은 파일을 쓰므로 막음")

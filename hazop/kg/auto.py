@@ -134,20 +134,13 @@ def _scan_graphs(root):
 
 
 def project_graphs(project_id, graph_root):
-    """(graph 목록, notes). 같은 graph_id는 graph.json 수정 시각이 가장 늦은 것 하나."""
+    """(graph 목록, notes). 같은 graph_id를 여러 그래프가 원하면 프로젝트 그래프(hazop.graph.project)와 같은 규칙으로 고른다
+    (hazop.graph.sources.pick, notes는 그 고르기 사유)."""
     from hazop.graph import sources
-    cands, seen, notes = [], {}, []
-    for path, g in _scan_graphs(graph_root):
-        if g.get("project_id") != project_id:
-            continue
-        gid = g.get("graph_id")
-        if gid in seen:
-            notes.append("같은 도면 ID %s의 그래프가 여럿 — 가장 최근 추출만 씀" % gid)
-        seen[gid] = True
-        cands.append({"gid": gid, "key": (os.path.getmtime(path), path), "graph": g,
-                      "name": os.path.basename(os.path.dirname(path))})
-    chosen, more = sources.pick(project_id, cands, graph_root=graph_root)  # 형식이 섞인 같은 번호는 먼저 있던 형식(또는 사람이 고른 형식)
-    return [chosen[k]["graph"] for k in sorted(chosen, key=str)], sorted(set(notes) | set(more))
+    cands = [{"gid": g.get("graph_id"), "key": (os.path.getmtime(path), path), "graph": g, "name": os.path.basename(os.path.dirname(path))}
+             for path, g in _scan_graphs(graph_root) if g.get("project_id") == project_id]
+    chosen, notes = sources.pick(project_id, cands, graph_root=graph_root)
+    return [chosen[k]["graph"] for k in sorted(chosen, key=str)], notes
 
 
 def project_documents(project_id, doc_root):

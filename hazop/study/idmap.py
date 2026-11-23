@@ -19,6 +19,9 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
 - 구간(members를 가진 사전)은 members에 지금 판의 살아 있는 id만 두고 잃은 것은 lost(묘비 id)에 둔다. 실행 취소 기록의
   before·after와 조각 기록도 같은 규칙이라 되돌려도 묘비는 묘비다. 사람이 확인하고 버린 묘비는 lost에서 discarded로
   옮긴다(hazop.study.nodes.discard_lost). 지금 구간 어디에도 lost로 남지 않고 버려진 묘비(discarded_tombs)는 되찾지 않는다.
+- 시트의 자료가 바뀌면(같은 도면 번호의 다른 파일로 갈아탐, hazop.graph.sources) 파일 id가 같아도 같은 기호라는 증거가 아니다. 판 사진에
+  시트별 자료(graph_member_sheets {시트 graph_id: material_id})를 남기고, 옛 사진과 새 그래프의 자료가 다른 시트의 source 구성요소는
+  참조로 잇지 않는다(표시로 증명하지 못하면 묘비). 그 칸이 없는 옛 사진은 전처럼 참조로 잇는다.
 - 등록되지 않은 자리에서 옛 판 id를 만나면 report["unregistered"]에 경로를 적는다(시험에서는 비어 있어야 한다).
 - 경로의 `[]`는 목록의 항목, `{}`는 ID를 열쇠로 쓰는 사전의 값이다. 경로가 `{}`로 끝나면 그 사전의 열쇠를 옮긴다(키 다시
   짓기). 옮긴 열쇠가 다른 항목의 열쇠와 겹치면 뒤 항목은 묘비 열쇠로 둔다(어느 쪽이 맞는지 모르므로 덮지 않음). 값이 자기
@@ -87,7 +90,7 @@ FIELDS = {
 # 일부러 옮기지 않는 자리: 지난 일의 기록(history·version_migrations), 판 이전 끝에 새로 만드는 판 사진, 묘비 기록
 IGNORED = {
     SET: ("history", "graph_member_refs", "graph_member_marks", "graph_member_basis", "graph_member_ends",
-          "graph_member_looks", "member_digest", "tombstones", "tomb_seq", "legacy.member_digest", "legacy.member_refs"),
+          "graph_member_looks", "graph_member_sheets", "member_digest", "tombstones", "tomb_seq", "legacy.member_digest", "legacy.member_refs"),
     RESULTS: ("version_migrations", "cells[].entries[].history", "archived_cells[].cell.entries[].history",
               "legacy", "carried_from", "study_nodes_ref"),
     IE: MARKER_FIELDS, FMEA: MARKER_FIELDS, LATENT: MARKER_FIELDS,
@@ -233,6 +236,14 @@ def valid_ends(v):
             and isinstance(v[4], list) and all(isinstance(x, str) for x in v[4]))
 
 
+def sheet_materials(graph):
+    """{시트 graph_id: material_id}. 프로젝트 그래프는 sheets[], 도면 그래프는 머리 source. 자료를 모르는 시트는 뺀다."""
+    if graph.get("sheets") is not None:
+        return {s["graph_id"]: s["material_id"] for s in graph["sheets"] if s.get("material_id")}
+    mid = (graph.get("source") or {}).get("material_id")
+    return {graph["graph_id"]: mid} if mid and graph.get("graph_id") else {}
+
+
 def snapshot(graph):
     """집합이 가리키는 판의 사진: 그래프 전체 구성요소의 참조·id 근거와, 상자가 있는 순번 구성요소의 표시, 상자가 없고 끝이
     있는 순번 구성요소의 겉모습과 끝(graph_member_ends {id: [node_type, 도면, kind, tag, [끝 id]]}), source 구성요소의
@@ -253,13 +264,19 @@ def snapshot(graph):
             looks[e] = look_of(n)
     return {"graph_member_refs": dict(sorted(refs.items())), "graph_member_marks": dict(sorted(marks.items())),
             "graph_member_basis": dict(sorted(basis.items())), "graph_member_ends": dict(sorted(linked.items())),
-            "graph_member_looks": dict(sorted(looks.items()))}
+            "graph_member_looks": dict(sorted(looks.items())),
+            "graph_member_sheets": dict(sorted(sheet_materials(graph).items()))}
 
 
-def has_snapshot(node_set, graph):
-    """집합의 판 사진이 이 그래프의 것과 같은가."""
+OPTIONAL_SNAPSHOT = ("graph_member_looks", "graph_member_sheets")  # 나중에 들인 칸: 없는 옛 사진은 그 칸을 보지 않는다
+
+
+def has_snapshot(node_set, graph, strict=False):
+    """집합의 판 사진이 이 그래프의 것과 같은가. 나중에 들인 칸(OPTIONAL_SNAPSHOT)이 없는 옛 사진은 그 칸을 보지 않는다(같은 판을
+    열기만 해서는 집합을 다시 쓰지 않게). strict면 그 칸도 본다: 다시 추출 직전 표지 채우기(hazop.app.data.prepare_reextract)가
+    쓴다. 그 밖에는 다음에 집합을 쓸 때(확정·판 이전 등) 채워진다."""
     snap = snapshot(graph)
-    return all(node_set.get(k) == v for k, v in snap.items())
+    return all(node_set.get(k) == v for k, v in snap.items() if strict or k not in OPTIONAL_SNAPSHOT or k in node_set)
 
 
 def _sha8(text):
@@ -271,9 +288,16 @@ def tomb_id(graph_id, version, key):
 
 
 def tomb_key(graph_id, frm, to, entity_id, ref, mark, look=None):
-    row = [graph_id, frm, to, entity_id, ref, mark] + ([look] if look is not None else [])  # 겉모습 없는 옛 묘비 id는 그대로
+    """묘비 지문. look은 f945ff2 판이 지은 묘비 id를 알아볼 때만 넘긴다. 새 묘비는 겉모습을 지문에 넣지 않는다: 겉모습이 없는 옛 사진
+    (백업에서 되돌린 집합)으로 다시 셈해도 같은 잃은 기호가 같은 id가 되어 집합과 ⑤ 결과가 한 묘비를 든다. 겉모습은 look_key로 지킨다."""
+    row = [graph_id, frm, to, entity_id, ref, mark] + ([look] if look is not None else [])
     canon = json.dumps(row, ensure_ascii=False, separators=(",", ":"))
     return "t-" + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:12]
+
+
+def look_key(tomb, look):
+    """묘비 기록의 겉모습이 그 묘비를 지을 때의 것인지 보는 지문(고쳐 쓴 겉모습으로 되찾지 않게)."""
+    return "k-" + _sha8(json.dumps([tomb, look], ensure_ascii=False, separators=(",", ":")))
 
 
 def _recorded_as(t, rec, graph_id):
@@ -281,9 +305,12 @@ def _recorded_as(t, rec, graph_id):
     if rec.get("lost_at") is None:
         key = json.dumps([rec.get("entity_id"), rec.get("ref"), rec.get("lost_from")], sort_keys=True)
         return t == tomb_id(graph_id, "legacy", "b-" + _sha8(key))
-    return t == tomb_id(graph_id, rec["lost_at"], tomb_key(graph_id, rec.get("lost_from"), rec["lost_at"],
-                                                            rec.get("entity_id"), rec.get("ref"), rec.get("mark"),
-                                                            rec.get("look")))
+    args = (graph_id, rec.get("lost_from"), rec["lost_at"], rec.get("entity_id"), rec.get("ref"), rec.get("mark"))
+    if rec.get("look") is not None and t == tomb_id(graph_id, rec["lost_at"], tomb_key(*args, look=rec["look"])):
+        return True                     # f945ff2 판이 겉모습을 지문에 넣어 지은 묘비
+    if t != tomb_id(graph_id, rec["lost_at"], tomb_key(*args)):
+        return False
+    return rec.get("look") is None or rec.get("look_key") == look_key(t, rec["look"])
 
 
 # ---------------------------------------------------------------- 대응표
@@ -321,6 +348,9 @@ def compute(node_set, graph, at=None):
     tombs = node_set.get("tombstones") or {}
     gone = discarded_tombs(node_set)
     new_basis = bases(graph)
+    now_sheets = sheet_materials(graph)
+    old_sheets = node_set.get("graph_member_sheets") or {}
+    moved = {s for s, mid in old_sheets.items() if mid and now_sheets.get(s) not in (None, mid)}
     by_id = {n["entity_id"]: n for n in graph.get("nodes", [])}
     new_ref = {e: ref_of(n, gid) for e, n in by_id.items()}
     by_ref = {}
@@ -352,7 +382,7 @@ def compute(node_set, graph, at=None):
         if m not in old_refs:
             pass  # 판 사진에 없는 떠돌이 id: 무엇이었는지 모른다
         elif old_basis_of(m) == ids.SOURCE:
-            hits = by_ref.get(r) or []
+            hits = [] if drawing_of(r) in moved else by_ref.get(r) or []   # 다른 파일의 같은 id는 같은 기호가 아니다
         elif m in old_marks:
             # 순번 구성요소는 표시로 잇는다. 표시가 없으면(상자 없음, A꼴, B꼴의 스캔·지은 id) 끝으로 잇거나(_link_by_ends) 묘비다.
             # 구간 지문(md3)이 같아도 위치는 지문에 없어서, 같은 종류·태그의 다른 자리 기호로 이을 수 있다(퍼즈로 확인)
@@ -366,13 +396,15 @@ def compute(node_set, graph, at=None):
     for m in sorted(domain - set(link)):
         mk = old_marks.get(m)
         lk = old_looks.get(m) if m in old_refs and old_basis_of(m) == ids.SOURCE else None
-        t = tomb_id(gid, to, tomb_key(gid, frm, to, m, old_refs.get(m), mk, lk))
+        t = tomb_id(gid, to, tomb_key(gid, frm, to, m, old_refs.get(m), mk))
         table["eid"][m] = t
         if t not in tombs:  # 같은 id면 같은 기호라 앞 기록을 그대로 둔다
             table["new_tombs"][t] = {"entity_id": m, "ref": old_refs.get(m), "mark": mk, "basis": (old_basis or {}).get(m),
                                      "lost_from": frm, "lost_at": to, "at": at, "legacy_key": None, "found": None}
             if lk is not None:
-                table["new_tombs"][t]["look"] = lk
+                table["new_tombs"][t].update(look=lk, look_key=look_key(t, lk))
+                if old_sheets.get(drawing_of(old_refs.get(m))):   # 잃을 때의 시트 자료(다른 파일로 바뀐 뒤 같은 id로 되찾지 않게)
+                    table["new_tombs"][t]["material"] = old_sheets[drawing_of(old_refs.get(m))]
     table["eid"].update(link)
     taken = set(link.values())
     claims = {}
@@ -382,6 +414,10 @@ def compute(node_set, graph, at=None):
         if valid_mark(rec.get("mark")):
             hits = mark_hits(rec["mark"])
         elif rec.get("basis") == ids.SOURCE and rec.get("ref") and valid_look(rec.get("look")):
+            sheet = drawing_of(rec["ref"])
+            lost_in = rec.get("material")       # 잃을 때의 시트 자료. 없는 옛 묘비는 이번에 자료가 바뀌었는지만 본다
+            if (sheet in moved) if lost_in is None else now_sheets.get(sheet, lost_in) != lost_in:
+                continue                        # 시트 자료가 다르면 같은 파일 id·같은 겉모습도 같은 기호가 아니다
             hits = [e for e in by_ref.get(rec["ref"]) or ()
                     if new_basis[e] == ids.SOURCE and _same_look(rec["look"], look_of(by_id[e]))]
         else:

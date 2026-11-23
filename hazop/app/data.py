@@ -19,10 +19,13 @@ from hazop.analysis import ai as ai_mod
 from hazop.extract import corrections
 from hazop.extract.adapters import raster_scan
 from hazop.graph import build as graph_build
+from hazop.graph import project as graph_project
+from hazop.graph import sources as graph_sources
 from hazop.kg import auto, docextract
 from hazop.kg import build as kg_build
 from hazop.kg.context import omission_texts
 from hazop.register import registry
+from hazop.study import idmap, migrate
 from hazop.study import nodes as study_nodes
 from hazop.study import results as study_results
 from hazop.viewer import build as viewer_build
@@ -116,7 +119,8 @@ _MARKED = {}                       # 표지를 이미 가진 검토구간 파일
 
 
 def _needs_marks(folder):
-    """folder의 검토구간 파일 가운데 위치 표지(graph_member_marks)가 없는 것(0.1·0.2 또는 표지 없는 0.3)이 있는가."""
+    """folder의 검토구간 파일 가운데 위치 표지(graph_member_marks)나 나중에 들인 판 사진 칸(idmap.OPTIONAL_SNAPSHOT: source 겉모습·시트 자료)이
+    없는 것(0.1·0.2 또는 그 칸 없는 0.3)이 있는가."""
     if not os.path.isdir(folder):
         return False
     need = False
@@ -134,7 +138,8 @@ def _needs_marks(folder):
             continue
         if not isinstance(doc, dict) or doc.get("kind") != study_nodes.KIND:
             continue
-        if doc.get("schema_version") != study_nodes.SCHEMA_VERSION or "graph_member_marks" not in doc:
+        if doc.get("schema_version") != study_nodes.SCHEMA_VERSION or any(
+                k not in doc for k in ("graph_member_marks",) + idmap.OPTIONAL_SNAPSHOT):
             need = True
         else:
             _MARKED[path] = (st.st_mtime_ns, st.st_size)
@@ -157,7 +162,8 @@ def prepare_reextract(project_id, graph_fn=None):
         if graph_fn is None:
             from hazop.graph import project as graph_project
             graph_fn = graph_project.load    # 디스크의 그래프 그대로(낡은 그래프 다시 만들기를 먼저 돌리는 project_ctx를 거치지 않는다: 그것이 덮어쓴 뒤의 그래프로 읽게 된다)
-        study_nodes.load(graph_fn(project_id))
+        with migrate.filling_new_fields():      # 열기만으로는 채우지 않는 칸도 여기서는 채운다(다시 추출이 순번을 밀기 전에)
+            study_nodes.load(graph_fn(project_id))
         return True
     except Exception:  # noqa: BLE001 - 표지 채우기는 덤이다: 실패해도 다시 추출은 그대로 한다
         LOG.warning("다시 추출 전에 검토구간 표지를 채우지 못함(%s)", project_id, exc_info=True)
@@ -245,11 +251,27 @@ def catch_up_study(project_id):
         _CATCHING.on = False
 
 
+_SETTLE_LOCK = threading.Lock()
+
+
+def settle_sheets(project_id):
+    """그 프로젝트의 시트 자리를 정착한다(hazop.graph.sources.settle, 작업 루트에서만, 멱등). 추출·그래프 짓기 같은 명시적인 차례가
+    맨 앞에서 부른다. 읽는 길(프로젝트 그래프·도면 이름·고르기 줄)에서는 부르지 않는다. 다른 곳에서 먼저 정착해 자리 표가 바뀌었으면
+    한 번 더 읽어 끝낸다. 실패하면 예외를 그대로 올리고 파일은 옛 상태 그대로다. -> settle 결과 또는 None(프로젝트 없음)."""
+    if not project_id:
+        return None
+    bg = script_module("build_graph")
+    with _SETTLE_LOCK:
+        try:
+            return graph_sources.settle(project_id, lambda path, seats: bg.render_one(path, seats=seats))
+        except store_io.Conflict:
+            return graph_sources.settle(project_id, lambda path, seats: bg.render_one(path, seats=seats))
+
+
 def extract_and_graph(registration_path, progress=None):
     """등록정보 → 추출 → 그래프 → 지식그래프(아래 _extract_and_graph). 끝나면 그래프 판이 바뀌었다고 알려 앱이 검토구간 판 이전을 이어서 하게 한다(실패하면 알리지 않음)."""
     ctx = {}
     out = _extract_and_graph(registration_path, progress, ctx)
-    from hazop.graph import project as graph_project
     notify_graph_changed(graph_project.project_id_of({"project_id": ctx.get("project")}))
     return out
 
@@ -266,6 +288,7 @@ def _extract_and_graph(registration_path, progress=None, ctx=None):
     record, original = registry.load_for_extraction(registration_path)
     if ctx is not None:
         ctx["project"] = record.get("project_id")
+    settle_sheets(record.get("project_id"))             # 추출 결과를 쓰기 전에 지금 시트 이름을 자리 표에 붙박는다
     if not getattr(_PREPARED, "on", False):
         prepare_reextract(record.get("project_id"))     # 추출 결과를 덮어쓰기 전에 검토구간 표지를 채운다
     if raster_scan.is_scan_record(record, original):  # 스캔 PDF·PNG·JPG(HZ-PLN-23 §8): 쪽마다 20초 안팎이라 progress로 알린다
@@ -509,8 +532,8 @@ def viewer_html_for(name, ops=None):
     if ops is None:
         graph = viewer_build.load_graph(paths.output_root("graph"), name)
     else:
-        graph = graph_build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path(name),
-                                                                                   paths.work_root()))
+        graph = graph_build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path(name), paths.work_root()),
+                                        graph_id=graph_sources.sheet_name(graph_project.project_id_of(extraction), extraction))
     al = extraction["coordinate_system"].get("svg_alignment") or {}
     info = {"html": None, "extraction": extraction, "corrected": extraction, "original": original, "graph": graph,
             "svg": bool(al.get("svg_file")), "error": None}

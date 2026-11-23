@@ -30,6 +30,7 @@ import re
 import unicodedata
 
 from hazop import paths, store_io
+from hazop.graph import sheets as sheet_rules
 from hazop.register import registry
 
 FIELDS = (("drawing_number", "도면 번호"), ("design_revision", "개정"), ("title", "제목"))
@@ -69,14 +70,15 @@ def _page_count(record):
     return sum(len(d.get("page_ids") or []) for d in record.get("documents") or []) or 1
 
 
-def _graph_id_of(extraction):
-    """build_graph와 같은 규칙의 그래프 ID."""
-    drawing = extraction.get("drawing") or {}
-    return "graph-%s" % (drawing.get("drawing_number") or (extraction.get("source_context") or {}).get("page_name") or "drawing")
+def _graph_id_of(extraction, project_id):
+    """그래프를 지을 때와 같은 규칙의 그래프 ID(hazop.graph.sources.sheet_name)."""
+    from hazop.graph import sources
+    return sources.sheet_name(project_id, extraction)
 
 
 def _sheets(record):
-    """쪽마다 추출 결과가 있는 가장 새 등록 버전 [{page, version, name, graph_id, page_name}]. 추출한 적 없는 쪽은 뺀다."""
+    """쪽마다 추출 결과가 있는 가장 새 등록 버전 [{page, version, name, graph_id, page_name, material_id, page_count, file}].
+    추출한 적 없는 쪽은 뺀다."""
     out = []
     for page in range(_page_count(record)):
         for version in range(record["registration_version"], 0, -1):
@@ -86,8 +88,9 @@ def _sheets(record):
                     ex = json.load(fh)
             except (OSError, ValueError):
                 continue
-            out.append({"page": page, "version": version, "name": name, "graph_id": _graph_id_of(ex),
-                        "page_name": (ex.get("source_context") or {}).get("page_name")})
+            f = sheet_rules.facts(ex)
+            out.append({"page": page, "version": version, "name": name, "graph_id": _graph_id_of(ex, record.get("project_id")),
+                        "page_name": f["page_name"], "material_id": f["material_id"], "page_count": f["page_count"], "file": f["file"]})
             break
     return out
 
@@ -226,8 +229,12 @@ def _check_values(fields):
     return out
 
 
-def _gid(number, sheet):
-    return "graph-%s" % (number or sheet.get("page_name") or "drawing")
+def _gid(number, sheet, project_id):
+    """번호가 number가 되면 그 쪽이 얻을 그래프 ID(그래프를 지을 때와 같은 규칙)."""
+    from hazop.graph import sources
+    return sources.name_for(project_id, {"material_id": sheet.get("material_id"), "page_index": sheet.get("page") or 0,
+                                         "page_count": sheet.get("page_count") or 1, "number": number,
+                                         "page_name": sheet.get("page_name"), "file": sheet.get("file")})
 
 
 def _others(project_id, material_id, store_root):
@@ -259,7 +266,7 @@ def _guard_number(project_id, record, sheets, new_number, store_root):
         if old_number in sources.load_choices(project_id):
             raise Refused("drawing_number", "rule", "도면 번호 %s에 사람이 고른 원본 형식 선택이 있어 번호를 바꾸지 않음(같은 번호의 다른 형식 "
                           "원본에 걸린 선택이라 새 번호로 옮길 수 없음)" % old_number)
-    targets = [(s.get("graph_id"), _gid(new_number, s)) for s in sheets]
+    targets = [(s.get("graph_id"), _gid(new_number, s, project_id)) for s in sheets]
     if not sheets and new_number is not None:
         targets = [(None, "graph-%s" % new_number)]
     for old, new in targets:

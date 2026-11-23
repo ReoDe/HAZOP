@@ -317,7 +317,8 @@ class OldGraphTest(unittest.TestCase):
 
     def test_graph_header_keeps_its_frame(self):
         g = build.build_graph(drawio.extract(DRAWIO))
-        self.assertEqual(sorted(g["source"]), ["drawing_number", "extraction_file", "extraction_run_id"])
+        self.assertEqual(sorted(g["source"]), ["drawing_number", "extraction_file", "extraction_run_id", "file", "format", "material_id", "number",
+                                            "page_count", "page_index", "page_name", "registration_version"])  # 판 칸(id_basis)은 머리 틀을 바꾸지 않음, 시트 정체 칸만 더함
 
     def test_extraction_file_format(self):
         with tempfile.TemporaryDirectory() as d:

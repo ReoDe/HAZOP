@@ -497,7 +497,7 @@ class RegisteredPathTest(unittest.TestCase):
         folder = [p for p in glob.glob(paths.folder("references", "pid-samples", "*")) if "SNP-M-101" in p][0]
         src = shutil.copy(glob.glob(os.path.join(folder, "*.drawio"))[0], self.tmp)        # 등록은 원본을 저장소에 복사한다(원본 폴더는 건드리지 않음)
         register_flow.register_and_extract(self.engine, src, lambda *a, **k: None)
-        self.gid = next(g for g in self.engine.graph_names() if "101" in g)
+        self.gid = next(iter(self.engine.graph_names()))   # 등록한 도면 하나(번호 확정 전이라 graph-<자료>-p0)
         self.name = self.engine.graph_names()[self.gid]
 
     def call_nodes(self, name, args):

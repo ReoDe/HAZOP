@@ -226,7 +226,8 @@ class GraphTest(unittest.TestCase):
                 self.assertEqual(a["validation"]["blockers"], [])
                 self.assertEqual(a["graph_version"], b["graph_version"])
                 self.assertEqual(a, b)
-                self.assertEqual(sorted(a["source"]), ["drawing_number", "extraction_file", "extraction_run_id"])  # 그래프 파일 틀은 그대로
+                self.assertEqual(sorted(a["source"]), ["drawing_number", "extraction_file", "extraction_run_id", "file", "format", "material_id", "number",
+                                            "page_count", "page_index", "page_name", "registration_version"])  # 시트 정체 칸까지(hazop.graph.sheets)
                 kinds = a["structure"]["node_kinds"]
                 self.assertEqual(kinds["pipe_segment"], 5)
                 self.assertEqual(a["structure"]["segments_with_endpoint_count_not_2"], [])
