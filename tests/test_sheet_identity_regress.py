@@ -111,6 +111,20 @@ class SeatRegressTest(SheetCase):
         _pg, n = self.node()
         self.assertEqual((n["members"], n.get("lost") or []), (before["nodes"][0]["members"], []))
 
+    def test_e3_refusal_text_does_not_send_the_user_to_a_no_op(self):
+        """옛 자리 주인 a가 번호를 확정했다가 취소하면 옛 자리 이름으로 돌아가는데, 그 이름을 b의 번호가 쓰고 있다. 판이 이미 맞는데 '도면 변경 반영하기'를 시키면 막다른 글이다."""
+        from hazop.register import titleblock as tb
+        a, b = self.legacy_pair()
+        self.make_nodes(a)
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-102"})["ok"])
+        self.assertEqual(self.owner("graph-SNP-M-101"), b, "시험 전제: 옛 자리 이름을 지금은 b가 씀")
+        pg = project_ctx.project_graph(P)
+        self.assertEqual(nodes.load(pg)["graph_version"], pg["graph_version"], "시험 전제: 구간 저장본이 지금 판과 같음")
+        out = tb.unconfirm(P, a, ["drawing_number"], BY, ver=self.row(a)["ver"], dry=True)
+        self.assertFalse(out["ok"], "시험 전제: 옛 이름을 b의 번호가 쓰므로 막음")
+        self.assertNotIn("도면 변경 반영하기", out["refused"][0]["reason"], "이미 맞는 판을 반영하라는 막다른 글")
+
+
 class DocLogRegressTest(SheetCase):
     def test_e4_a_past_loss_in_a_documents_move_log_does_not_block_the_number(self):
         a = self.add("SNP-M-101", "pdf")

@@ -68,6 +68,7 @@ TAGS = [None, None, None, "V-1", "V-2", "P-1", "V-1"]
 FORMATS = ["pdf_vector", "pdf_vector", "raster_png", "drawio", "dexpi"]
 LIMIT = "표지가 같은 다른 기호(알려진 한계)"
 LIMIT_PIPE = "같은 두 끝 사이 겉모습이 같은 상자 없는 배관(알려진 한계, 위 한계 수에 듦)"
+LIMIT_OLD = "시트 자료 칸이 없던 옛 집합의 참조가 같은 이름의 다른 자료 기호로 이어짐(설계의 남은 위험, 위 한계 수에 듦)"
 LIMIT_SOURCE = "같은 source id·같은 종류로 돌아온 다른 기호(알려진 한계, 위 한계 수에 듦)"
 RULE = "R-1"
 SET_HOLDERS = tuple(p for p, s in idmap.FIELDS[idmap.SET] if s == idmap.MEMBERS)
@@ -100,6 +101,34 @@ def to_a_form(ns, g):
 
 # ---------------------------------------------------------------- 합성 도면
 
+SUBST = {}   # 같은 파일 id·같은 종류로 돌아오게 만든 기호들의 uid -> 묶음 열쇠(LIMIT_SOURCE 생성). 사슬(시드)마다 비운다
+
+
+def same_file_id(a, b):
+    return SUBST.get(a) is not None and SUBST.get(a) == SUBST.get(b)
+
+
+def pfx(w):
+    """기호 정체(uid)의 앞부분. 같은 시트 이름에 다른 파일(자료)이 들어오면 다른 앞부분을 쓴다(switch_material)."""
+    return w.get("pfx") or w["sheet"]
+
+
+def key_of(s):
+    """파일 안의 기호 id가 되는 값. 다른 기호가 같은 파일 id를 가질 수 있도록 uid와 따로 둘 수 있다(soid_key)."""
+    return s.get("soid_key") or s["uid"].split(":")[1]
+
+
+def mat_of(u):
+    """진짜 정체 uid가 속한 자료(앞부분). 도면 연결 구간 정체('x:…')는 없다."""
+    return u.split(":")[0] if isinstance(u, str) and ":" in u and not u.startswith("x:") else None
+
+
+def switched(a, b):
+    """같은 시트(A와 A1은 같은 시트 이름)의 다른 자료에 속한 기호 둘인가."""
+    ma, mb = mat_of(a), mat_of(b)
+    return bool(ma and mb and ma != mb and ma.rstrip("0123456789") == mb.rstrip("0123456789"))
+
+
 def place(r):
     return [r.randrange(0, 12) * 20.0, r.randrange(0, 3) * 20.0, 5.0, 5.0]
 
@@ -124,6 +153,7 @@ def make_project(r):
     k = r.randint(1, 3)
     a = make_world(r, "A", ["TO B\nL-%d" % i for i in range(1, k + 1)])
     b = make_world(r, "B", ["FROM A\nL-%d" % i for i in range(1, k + 1)])
+    a["material"], b["material"] = "m-A-0", "m-B-0"
     return {"sheets": {"A": a, "B": b}}
 
 
@@ -164,7 +194,7 @@ def split_or_unsplit(r, w):
     pieces = []
     for _ in range(r.randint(2, 3)):
         w["next"] += 1
-        pieces.append({"uid": "%s:s%d" % (w["sheet"], w["next"]), "kind": r.choice(KINDS), "tag": r.choice(TAGS),
+        pieces.append({"uid": "%s:s%d" % (pfx(w), w["next"]), "kind": r.choice(KINDS), "tag": r.choice(TAGS),
                        "bbox": place(r), "nobox": False, "fixed": False, "split": "op%d" % w["next"],
                        "split_group": group})
     body = place(r) if r.random() < 0.5 else None
@@ -207,7 +237,7 @@ def redo_split(r, w):
     if other:  # 같은 연산 id로 다시 나누되 조각 하나를 다른 종류로: 같은 나눈 id의 다른 기호
         k = r.randrange(len(pieces))
         w["next"] += 1
-        pieces[k] = dict(pieces[k], uid="%s:s%d" % (w["sheet"], w["next"]),
+        pieces[k] = dict(pieces[k], uid="%s:s%d" % (pfx(w), w["next"]),
                          kind=r.choice(sorted(set(KINDS) - {pieces[k]["kind"]})))
     blob = next(s for s in w["syms"] if s["uid"] == rec["blob"]["uid"])
     body = [dict(blob, bbox=list(rec["body"]))] if rec["body"] is not None else []
@@ -233,6 +263,7 @@ def undo_or_redo(kind):
 
 def mutate(r, w):
     w = copy.deepcopy(w)
+    earlier = {d["uid"] for d in w.get("deleted") or []}   # 앞 판에서 이미 지운 기호(이번 판에서 지우고 곧바로 바꿔 놓은 것은 도면에서 가를 정보가 없다)
     w["split_events"] = []
     split_or_unsplit(r, w)
     out = []
@@ -252,14 +283,19 @@ def mutate(r, w):
         if r.random() < 0.15:  # 지운 자리에 다른 기호(새 uid)
             w["next"] += 1
             out.append(dict({k: v for k, v in d.items() if k not in ("split", "split_group")},
-                            uid="%s:s%d" % (w["sheet"], w["next"]), tag=None))
+                            uid="%s:s%d" % (pfx(w), w["next"]), tag=None))
     for d in list(w.get("deleted") or []):
         if r.random() < 0.4 and d["uid"] not in {s["uid"] for s in out}:  # 같은 기호가 돌아옴
-            out.append(copy.deepcopy(d))
+            back = copy.deepcopy(d)
+            if d["uid"] in earlier and d["kind"] != "continuation" and (w["fmt"] == "drawio" or d.get("fixed")) and not d.get("split") and r.random() < 0.3:
+                w["next"] += 1   # 같은 파일 id·같은 종류(태그도 같음)로 돌아온 다른 기호(알려진 한계 LIMIT_SOURCE가 700시드에서 0건이던 길)
+                back = dict(back, uid="%s:s%d" % (pfx(w), w["next"]), soid_key=key_of(d))
+                SUBST[back["uid"]] = SUBST[d["uid"]] = (mat_of(d["uid"]), key_of(d))
+            out.append(back)
             w["deleted"].remove(d)
     for _ in range(r.randint(0, 2)):
         w["next"] += 1
-        out.append({"uid": "%s:s%d" % (w["sheet"], w["next"]), "kind": r.choice(KINDS), "tag": r.choice(TAGS),
+        out.append({"uid": "%s:s%d" % (pfx(w), w["next"]), "kind": r.choice(KINDS), "tag": r.choice(TAGS),
                     "bbox": place(r), "nobox": False, "fixed": r.random() < 0.15})
     w["syms"] = out
     alive = {s["uid"] for s in out + w["juncs"]}
@@ -271,11 +307,11 @@ def mutate(r, w):
             continue
         if x < 0.14 and len(p["ends"]) == 2:  # 가운데 새 이음점으로 둘로 나눔
             w["next"] += 2
-            j = {"uid": "%s:j%d" % (w["sheet"], w["next"]), "kind": "tee", "tag": None, "bbox": place(r)[:2] + [2.0, 2.0],
+            j = {"uid": "%s:j%d" % (pfx(w), w["next"]), "kind": "tee", "tag": None, "bbox": place(r)[:2] + [2.0, 2.0],
                  "nobox": False, "fixed": False}
             w["juncs"].append(j)
             pipes.append(dict(p, ends=[p["ends"][0], j["uid"]]))
-            pipes.append(dict(copy.deepcopy(p), uid="%s:c%d" % (w["sheet"], w["next"] - 1), ends=[j["uid"], p["ends"][1]],
+            pipes.append(dict(copy.deepcopy(p), uid="%s:c%d" % (pfx(w), w["next"] - 1), ends=[j["uid"], p["ends"][1]],
                               bbox=place(r)[:2] + [15.0, 1.0]))
             continue
         if x < 0.18 and p["ends"]:  # 한쪽 끝이 끊김
@@ -292,7 +328,7 @@ def mutate(r, w):
     ends_pool = sorted(alive | {j["uid"] for j in w["juncs"]})
     if len(ends_pool) > 1 and r.random() < 0.3:  # 새 배관
         w["next"] += 1
-        pipes.append({"uid": "%s:c%d" % (w["sheet"], w["next"]), "ends": r.sample(ends_pool, 2),
+        pipes.append({"uid": "%s:c%d" % (pfx(w), w["next"]), "ends": r.sample(ends_pool, 2),
                       "bbox": place(r)[:2] + [15.0, 1.0], "nobox": r.random() < 0.4, "tag": r.choice([None, "L-1"])})
     w["pipes"] = pipes
     w["order_seed"] = r.random()
@@ -315,6 +351,27 @@ def overlay(r, w):
             p["bbox"] = place(r)[:2] + [15.0, 1.0]
         elif x < 0.4 and len(p["ends"]) == 2 and set(alive) - set(p["ends"]):
             p["ends"] = [p["ends"][0], r.choice(sorted(set(alive) - set(p["ends"])))]
+    return w
+
+
+def switch_material(r, w):
+    """시트 graph_id는 그대로인데 다른 파일(자료)이 들어옴(같은 도면 번호의 다른 파일로 갈아탐). 파일 id(soid_key)는 일부러 그대로이고 기호는 모두
+    다른 기호다. 시트 자료가 다르면 파일 id가 같아도 같은 기호라는 증거가 아니다(idmap.compute의 자료 바뀜 검사)."""
+    w = copy.deepcopy(w)
+    w["split_events"] = []
+    gen = w.get("gen", 0) + 1
+    w.update(gen=gen, pfx="%s%d" % (w["sheet"], gen), material="m-%s-%d" % (w["sheet"], gen), fmt="drawio", basis=True)
+    ren = {}
+    for x in w["syms"] + w["juncs"] + w["pipes"]:
+        x["soid_key"] = key_of(x)
+        ren[x["uid"]] = x["uid"] = "%s:%s" % (w["pfx"], x["uid"].split(":")[1])
+        x.pop("split", None)
+        x.pop("split_group", None)
+    for pipe in w["pipes"]:
+        pipe["ends"] = [ren.get(e, e) for e in pipe["ends"]]
+    for k in ("deleted", "split_blobs", "split_undone"):
+        w.pop(k, None)
+    w["split_events"] = ["material"]
     return w
 
 
@@ -341,18 +398,18 @@ def ver(w):
 def soid_of(fmt, s, k, what):
     """(source_object_id, 어댑터가 지은 id인가). k는 그 판의 열거 순번."""
     if fmt == "drawio":
-        return ("edge-" if what == "conn" else "cell-") + s["uid"].split(":")[1], False
+        return ("edge-" if what == "conn" else "cell-") + key_of(s), False
     if fmt == "dexpi":
         if what == "conn":
             return "Seg_1__Connection_%d" % k, True
         if what == "junction" or s["fixed"]:
-            return "Item-" + s["uid"].split(":")[1], False
+            return "Item-" + key_of(s), False
         return "Seg_1__item_%d" % k, True
     head = "img" if fmt == "raster_png" else "pdf-p0"
     if s.get("split"):
         return "%s-split-%s" % (head, s["split"]), False
     if s.get("fixed"):
-        return "manual-c-" + s["uid"].split(":")[1], False
+        return "manual-c-" + key_of(s), False
     return "%s-%s-%04d" % (head, what, k), False
 
 
@@ -384,7 +441,8 @@ def build(w, gid=GID):
         for e in p["ends"]:
             rel += 1
             edges.append({"entity_id": "relation-%03d" % rel, "kind": "has_endpoint", "nodes": [sid, by_uid[e]["entity_id"]]})
-    return dict({"project_id": None, "graph_id": gid, "graph_version": ver(w), "source": {"drawing_number": w["sheet"]},
+    return dict({"project_id": None, "graph_id": gid, "graph_version": ver(w),
+                 "source": dict({"drawing_number": w["sheet"]}, **({"material_id": w["material"]} if w.get("material") else {})),
                  "validation": {"status": "passed"}, "nodes": nodes, "edges": edges},
                 **({"base_version": w["base"]} if w.get("base") else {}))
 
@@ -399,7 +457,7 @@ def build_any(world):
 def next_world(r, world, kind):
     if "sheets" not in world:
         out = {"mutate": mutate, "reorder": reorder, "recategorize": lambda r, w: recategorize(w), "overlay": overlay,
-               "redo": undo_or_redo("redo"), "unsplit": undo_or_redo("unsplit")}.get(
+               "redo": undo_or_redo("redo"), "unsplit": undo_or_redo("unsplit"), "switch": switch_material}.get(
             kind, lambda r, w: restamp(w))(r, world)
         if kind != "overlay":   # 다시 추출·나누기는 순번을 매긴 입력(기준 추출)을 바꾼다
             out["base"] = "b" + ver(out)
@@ -412,6 +470,8 @@ def next_world(r, world, kind):
         names = [n for n in names if redo_ready(out["sheets"][n])]
     elif kind == "unsplit":
         names = [n for n in names if out["sheets"][n].get("split_blobs")]
+    elif kind == "switch":   # 파일 id가 정체인(source 근거) 시트만: 순번 근거는 표시가 같은 다른 기호가 알려진 한계다
+        names = [n for n in names if out["sheets"][n]["fmt"] == "drawio"]
     pick = names if kind == "mutate" and r.random() < 0.3 else [r.choice(names)]  # 보통은 한 도면만 다시 추출
     for name in pick:
         out["sheets"][name] = next_world(r, out["sheets"][name], kind)
@@ -488,7 +548,7 @@ def stale_targets(world, g):
     """처음 판에는 없고 다음 판에 생길 수 있는 참조·id(다음 순번)."""
     w = world["sheets"]["A"] if "sheets" in world else world
     sheet = "graph-A" if "sheets" in world else GID
-    soid, _ = soid_of(w["fmt"], {"uid": "%s:s%d" % (w["sheet"], w["next"] + 1), "fixed": False}, len(w["syms"]) + 1, "sym")
+    soid, _ = soid_of(w["fmt"], {"uid": "%s:s%d" % (pfx(w), w["next"] + 1), "fixed": False}, len(w["syms"]) + 1, "sym")
     lift = (sheet + "/") if "sheets" in world else ""
     return "%s#%s" % (sheet, soid), lift + "entity-node-%03d" % (len(w["syms"]) + 1)
 
@@ -643,6 +703,8 @@ class Track:
         self.tomb_first = {}   # 묘비 id → 처음 본 기록
         self.tomb_seen = {}    # 묘비 id → (잃기 전 판의 참조, 겉모습)
         self.sets = {}         # 등록 경로 → [{"allowed": 정체 집합, "taint": bool}]
+        self.strict = False
+        self.ever_lax = False
 
     def see(self, truth):
         for u, lk in truth.look.items():
@@ -667,6 +729,15 @@ class Track:
                              | {self.tomb_truth[t] for t in lost or () if self.tomb_truth.get(t)}, "taint": False})
 
     def judge_limit(self, u_new, allowed, truth_new):
+        if any(same_file_id(u_new, a) for a in allowed):
+            self.j.stats[LIMIT_SOURCE] += 1   # 같은 파일 id·같은 종류로 돌아온 다른 기호(되돌아온 판에서 원래 기호가 다시 나오는 것 포함)
+            return True
+        suffix = u_new.split(":")[1] if ":" in u_new else None
+        if suffix and any(switched(a, u_new) and a.split(":")[1] == suffix for a in allowed):
+            if not self.ever_lax:   # 같은 파일 id를 가진 다른 자료의 기호: 판 사진에 시트 자료가 있으면 표지가 같아도 한계가 아니다
+                return False
+            self.j.stats[LIMIT_OLD] += 1   # 시트 자료 칸이 없던 집합을 거쳤으면 전처럼 참조로 이을 수 있다(설계의 남은 위험)
+            return True
         return self.looked_like(allowed, truth_new.look.get(u_new))
 
     def check_holder(self, where, h, row, truth_new):
@@ -700,6 +771,8 @@ class Track:
             self.j.note(LIMIT if twin else "① 사라짐(이어지지도 묘비도 아님)", (self.seed, where, sorted(missing)))
 
     def check_set(self, ns_a, ns_b, truth_a, truth_b):
+        self.strict = "graph_member_sheets" in ns_a   # 시트 자료 칸이 없는 옛 집합은 전처럼 참조로 잇는다(설계의 남은 위험)
+        self.ever_lax = self.ever_lax or not self.strict
         d = ns_b["history"][-1]["detail"]
         for t, rec in (ns_b.get("tombstones") or {}).items():
             key = json.dumps([rec.get(k) for k in ("entity_id", "ref", "mark", "lost_from", "lost_at")])
@@ -714,8 +787,9 @@ class Track:
         for t, e in (d.get("found") or {}).items():
             want, got = self.tomb_truth.get(t), truth_b.eid.get(e)
             if want is not None and got != want:
-                ok = self.looked_like([want], truth_b.look.get(got))
-                if not ok and self.same_source(t, got, truth_b):
+                cross = not self.ever_lax and switched(want, got)   # 다른 자료의 기호는 한계가 아니다
+                ok = not cross and self.looked_like([want], truth_b.look.get(got))
+                if not ok and not cross and self.same_source(t, got, truth_b):
                     ok = True
                     self.j.stats[LIMIT_SOURCE] += 1
                 self.j.note(LIMIT if ok else "② 되찾은 묘비가 다른 기호", (self.seed, t, want, got))
@@ -843,6 +917,12 @@ class Track:
                     continue
                 if u is None:
                     self.j.note("③ 참조가 묘비도 살아 있는 대상도 아님(%s)" % label, (self.seed, key[0], row["orig"], v))
+                elif same_file_id(u, row["uid"]):
+                    self.j.stats[LIMIT_SOURCE] += 1
+                    row["uid"] = u
+                elif self.ever_lax and switched(row["uid"], u):
+                    self.j.stats[LIMIT_OLD] += 1
+                    row["uid"] = u
                 elif any(self.looked_like([row["uid"]], lk) for lk in [truth_new.look.get(u)] + self.looks.get(u, [])):
                     # 늦게 따라온 참조는 이은 그 판의 겉모습으로 본다(그 뒤 사람 고침이 태그·종류를 바꿨을 수 있음)
                     self.j.note(LIMIT, (self.seed, key[0], v))
@@ -904,6 +984,8 @@ def plan_chain(r, project_mode):
             kind, w = "restamp", next_world(r, worlds[-1], "restamp")
         elif x < 0.58:
             kind, w = "recategorize", next_world(r, worlds[-1], "recategorize")
+        elif "sheets" in worlds[-1] and x < 0.66 and any(w["fmt"] == "drawio" for w in worlds[-1]["sheets"].values()):
+            kind, w = "switch", next_world(r, worlds[-1], "switch")
         elif x < 0.86:
             kind, w = "mutate", next_world(r, worlds[-1], "mutate")
         else:
@@ -928,6 +1010,7 @@ def run(seeds, judge, after_step=None):
     """after_step(seed, i, ns2, track, truth2) -> ns2: 판 이전마다 되돌리기 점검 전에 집합을 더 고치는 갈고리(test_study_discard_fuzz)."""
     for seed in seeds:
         r = random.Random(seed)
+        SUBST.clear()
         project_mode = r.random() < 0.3
         first, steps = plan_chain(r, project_mode)
         stage = "만들기"
@@ -1140,9 +1223,9 @@ class MigrateFuzzTest(unittest.TestCase):
                   "결과 줄 번호 없음", "집합을 백업으로 되돌림", "문서가 이번 판 이전을 건너뜀",
                   "되돌아온 판에서 새로 단 문서 참조", "표지 없는 옛 문서 옮김", "표지 없는 옛 문서 묘비(증명 못 함)",
                   "그래프 판으로 표지를 찍은 문서", "옛 표지 아래 새 판 쓰기를 거절함", "나누기 연산 split",
-                  "나누기 연산 unsplit", "같은 source id로 되찾은 묘비"):
+                  "나누기 연산 unsplit", "같은 source id로 되찾은 묘비", LIMIT_SOURCE):
             self.assertGreater(s[k], SEEDS // 20, k)
-        for k in ("나누기 연산 redo", "나누기 연산 redo_other"):  # 나누고 되돌린 뒤 차례가 더 남은 사슬에서만 난다
+        for k in ("나누기 연산 redo", "나누기 연산 redo_other", "다시 추출 switch"):  # 나누고 되돌린 뒤 차례가 더 남은 사슬에서만 난다
             self.assertGreater(s[k], SEEDS // 40, k)
         for form in ("new", "a", "b"):
             self.assertGreater(s["집합 꼴 " + form], SEEDS // 10)
