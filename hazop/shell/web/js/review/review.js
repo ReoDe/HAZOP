@@ -27,10 +27,10 @@ export function reviewView(row) {
   const r = row.review;
   if (r === "not_run") return { text: "AI 검토 전", action: "start", label: "AI 검토 시작", tone: "" };
   if (r === "nothing") return { text: "AI에 물을 곳 없음", action: null, label: null, tone: "quiet" };
-  if (r === "waiting") return { text: "AI 검토 기다리는 중" + (row.ahead ? " · 앞에 " + row.ahead + "장" : ""), action: null, label: null, tone: "info" };
+  if (r === "waiting") return { text: "AI 검토 기다리는 중" + (row.ahead ? " · 앞에 " + row.ahead + "장" : ""), action: "stop", label: "취소", tone: "info" };
   if (r === "running") {
     const p = row.progress || {};
-    return { text: "AI 검토 중" + (p.total ? " · 호출 " + (p.done || 0) + "/" + p.total + "회" : ""), action: null, label: null, tone: "info" };
+    return { text: "AI 검토 중" + (p.total ? " · 호출 " + (p.done || 0) + "/" + p.total + "회" : ""), action: "stop", label: "멈추기", tone: "info" };
   }
   if (r === "candidates") return { text: "AI 후보 " + row.proposed + "건 남음", action: "queue", label: "검토하기", tone: "ai" };
   if (r === "partial") return { text: "AI 검토 일부만 함" + (row.left ? " · 남은 곳 " + row.left : ""), action: "start", label: "이어서 검토", tone: "" };
@@ -72,6 +72,7 @@ export function press(gid) {
   const v = reviewView(rowOf(gid));
   if (!v || !v.action) return;
   if (v.action === "queue") { if (openQueue && !(queueOpen && queueOpen(gid))) openQueue("ai", gid); return; }      // 이미 그 대기열이 열려 있으면 다시 열지 않는다
+  if (v.action === "stop") { stopReview(gid); return; }
   startReview(gid);
 }
 
@@ -93,6 +94,15 @@ async function estimate(cap) {
   const cur = rv.get().confirm;
   if (!cur || cur.gid !== c.gid) return;
   rv.set({ confirm: Object.assign({}, cur, { cap, est: e, error: e ? null : "예상 호출 수를 읽지 못했습니다." }) });
+}
+
+/** 묻는 중이면 지금 호출 뒤 멈추고, 기다리는 중이면 빠진다(aireview.stop: 그 도면만, 다른 작업은 그대로). 창을 닫지 않고 멈출 수 있다. */
+export async function stopReview(gid) {
+  try {
+    const r = await cmd("aireview.stop", { graph_id: gid });
+    store.set({ toast: { text: r && r.was === "waiting" ? "AI 검토를 취소했습니다." : "AI 검토를 멈추는 중입니다. 지금 묻는 것 하나를 마치고 멈춥니다." } });
+  } catch (e) { store.set({ toast: { text: (e && e.message) || "멈추지 못했습니다.", kind: "err" } }); }
+  soon(0);
 }
 
 export function setCap(n) { estimate(Math.max(1, Math.min(200, parseInt(n, 10) || 20))); }

@@ -34,7 +34,7 @@ export const tests = [
   { name: "AI 검토 칩: 상태 여덟 가지의 글자와 단추(세 자리가 같은 함수를 쓴다)", async run(assert) {
     const cases = [
       [ROW("not_run"), "AI 검토 전", "AI 검토 시작"], [ROW("nothing"), "AI에 물을 곳 없음", null],
-      [ROW("waiting", { ahead: 1 }), "AI 검토 기다리는 중 · 앞에 1장", null], [ROW("running", { progress: { done: 5, total: 12 } }), "AI 검토 중 · 호출 5/12회", null],
+      [ROW("waiting", { ahead: 1 }), "AI 검토 기다리는 중 · 앞에 1장", "취소"], [ROW("running", { progress: { done: 5, total: 12 } }), "AI 검토 중 · 호출 5/12회", "멈추기"],
       [ROW("candidates", { proposed: 9 }), "AI 후보 9건 남음", "검토하기"], [ROW("partial", { left: 3 }), "AI 검토 일부만 함 · 남은 곳 3", "이어서 검토"],
       [ROW("failed"), "AI 검토를 마치지 못했습니다", "다시 시도"], [ROW("done"), "AI 검토 끝", null]];
     for (const [row, text, label] of cases) {

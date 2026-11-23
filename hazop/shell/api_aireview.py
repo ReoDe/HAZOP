@@ -165,7 +165,7 @@ _LIVE_LOCK = threading.Lock()
 def _live(engine):
     d = getattr(engine, "_review_live", None)
     if d is None:
-        d = engine._review_live = {"seq": 0, "names": {}, "failed": {}}
+        d = engine._review_live = {"seq": 0, "names": {}, "failed": {}, "cancel": set()}
     return d
 
 
@@ -177,6 +177,7 @@ def _mark_waiting(engine, names):
         for n in names:
             live["names"][n] = {"state": "waiting", "seq": token, "done": None, "total": None}
             live["failed"].pop(n, None)
+            live["cancel"].discard(n)
     return token
 
 
@@ -199,8 +200,40 @@ def _mark_ended(engine, token, names, error=None):
         for n in names:
             if live["names"].get(n, {}).get("seq") == token:
                 del live["names"][n]
+                live["cancel"].discard(n)
             if error:
                 live["failed"][n] = error
+
+
+def request_stop(engine, graph_id):
+    """도면 하나의 AI 검토를 멈추거나(묻는 중) 취소한다(기다리는 중). 다른 도면·다른 작업(등록·분석)은 멈추지 않는다.
+    묻는 중이면 지금 호출 하나를 마친 뒤 멈추고(그때까지 받은 후보는 저장, 남은 곳은 '일부만 함'), 기다리는 중이면 차례를 잡기 전에 빠진다.
+    → {"graph_id", "was": waiting|running} 또는 None(그 도면은 돌거나 기다리지 않음)."""
+    name = engine.graph_names().get(graph_id)
+    with _LIVE_LOCK:
+        live = _live(engine)
+        entry = live["names"].get(name) if name else None
+        if not entry or entry["state"] not in ("waiting", "running"):
+            return None
+        live["cancel"].add(name)
+        was = entry["state"]
+    engine.changed("aireview", None)
+    return {"graph_id": graph_id, "was": was}
+
+
+def _stopper(engine, token):
+    """이 실행이 멈춰야 하는가: 엔진 전체 멈춤, 또는 지금 묻는 도면(차례 전이면 이 실행의 모든 도면)이 멈춤·취소를 받음."""
+    def should_stop():
+        if engine.stop_requested():
+            return True
+        with _LIVE_LOCK:
+            live = _live(engine)
+            mine = [(n, v) for n, v in live["names"].items() if v["seq"] == token and v["state"] in ("waiting", "running")]
+            running = [n for n, v in mine if v["state"] == "running"]
+            if running:
+                return running[0] in live["cancel"]
+            return bool(mine) and all(n in live["cancel"] for n, _v in mine)
+    return should_stop
 
 
 def _after_extract(name, runs):
@@ -438,16 +471,19 @@ def run_review(engine, graph_ids, cap, progress, token=None):
     client, reason = ai_image_flow.subscription_client(engine)   # 분석 연결이 API 키여도 AI 검토는 구독으로만 돈다
     if reason:
         raise RuntimeError(reason)
-    with engine.ai_turn("AI 검토", progress):                    # 다른 일괄 AI 작업이 돌면 끝날 때까지 기다린다(구독 호출은 한 번에 하나)
+    stop = _stopper(engine, token) if token is not None else engine.stop_requested
+    with engine.ai_turn("AI 검토", progress, should_stop=stop):    # 다른 일괄 AI 작업이 돌면 끝날 때까지 기다린다(구독 호출은 한 번에 하나). 기다리는 중 취소하면 빠진다
         names = engine.graph_names()                             # 도면은 차례를 잡은 뒤 읽는다: 기다리는 동안 다시 추출됐으면 새 판으로 묻는다
-        pages = [(names[g], _original(names[g])) for g in graph_ids if g in names]
+        with _LIVE_LOCK:
+            cancelled = set(_live(engine)["cancel"]) if token is not None else set()
+        pages = [(names[g], _original(names[g])) for g in graph_ids if g in names and names[g] not in cancelled]
         est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, ai_image_flow.enabled(engine))
         if pages and token is not None and _mark_running(engine, token, pages[0][0], 0, est["pages"][0]["calls"] if est["pages"] else None):
             engine.changed("aireview", None)                     # 차례를 잡았다: 첫 도면은 이제 묻는 중
         progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, est["calls"] or None)
         to_gid = {v: k for k, v in names.items()}
         done, images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
-                                               lambda name, d, t, left: _progress(engine, token, progress, name, d, t), engine.stop_requested)
+                                               lambda name, d, t, left: _progress(engine, token, progress, name, d, t), stop)
     used = images.used if images is not None else {}
     failed = list(images.failed) if images is not None else []
     engine.changed("aireview", None)
@@ -487,6 +523,13 @@ def _h_decide(fn):
 
 def _h_bulk(engine, a):
     return _unwrap(accept_bulk(engine, a["graph_id"], a["task"], a["ver"]))
+
+
+def _h_stop(engine, a):
+    out = request_stop(engine, a["graph_id"])
+    if out is None:
+        raise _api().CommandError("not_found", "이 도면은 AI 검토가 돌거나 기다리고 있지 않습니다.")
+    return out
 
 
 def _h_run(engine, a):
@@ -552,6 +595,8 @@ def register(commands):
     put("revert", dict(base, cand_ids=ids), _h_decide(revert), "수락·거절 되돌리기(수락한 연산은 수정 기록에서 빠지고 그래프를 다시 만든다)")
     put("accept_bulk", dict(base, task=(v_enum(*ai_review.TASK_ORDER), True)), _h_bulk,
         "확신 높은 묶음 수락(묶음은 엔진이 센다. 기호 종류는 확신 0.95 이상이고 이웃 기호에 붙지 않은 것만)")
+    put("stop", {"graph_id": (v_str(1, 200), True)}, _h_stop,
+        "도면 하나의 AI 검토를 멈춘다(묻는 중이면 지금 호출 뒤) 또는 취소한다(차례를 기다리는 중). 다른 도면·작업은 그대로")
     put("run", {"graph_ids": (v_list(v_str(1, 200), 200), True), "cap": (v_int(1, 200), False), "conn_ver": (v_str(1, 40), True)}, _h_run,
         "고른 도면에 AI 검토 실행(도면당 상한 cap, 한 번 실행 300회까지). conn_ver는 estimate가 보인 연결의 판")
 

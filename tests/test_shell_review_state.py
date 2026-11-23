@@ -98,6 +98,68 @@ class ReviewStateTest(TA.Base):
         os.utime(p, (time.time(), time.time()))
         self.assertEqual(self.row()["review"], "not_run")
 
+    # ------------------------------------------------------------ 멈추기·취소(aireview.stop, 실제 창 확인에서 미룬 것)
+    def test_cancel_while_waiting_asks_nothing_and_goes_back(self):
+        client = StubClient(TA.kind_answers)
+        self.start(client)
+        self.assertEqual(self.row()["review"], "waiting")
+        out = self.call("aireview.stop", graph_id=self.gid)
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["data"]["was"], "waiting")
+        self.run_held()
+        self.assertEqual(len(client.requests), 0, "취소한 도면은 묻지 않는다")
+        self.assertEqual(self.row()["review"], "not_run")
+        failed = [e for e in self.events.items if e.get("name") == "job.failed" and not e["data"].get("stopped")]
+        self.assertEqual(failed, [], "취소는 실패가 아니다(차례가 비어 있으면 묻지 않고 끝나고, 기다리는 중이면 '중지'로 끝난다)")
+
+    def test_cancel_while_another_ai_job_holds_the_turn(self):
+        import threading
+        import time
+        release, held = threading.Event(), threading.Event()
+
+        def other():
+            with self.engine.ai_turn("다른 AI 작업", lambda *a, **k: None):
+                held.set()
+                release.wait(20)
+        t = threading.Thread(target=other)
+        t.start()
+        held.wait(10)
+        client = StubClient(TA.kind_answers)
+        self.start(client)
+        runner = threading.Thread(target=self.run_held)
+        runner.start()
+        time.sleep(0.3)
+        self.assertEqual(self.row()["review"], "waiting")
+        self.assertTrue(self.call("aireview.stop", graph_id=self.gid)["ok"])
+        runner.join(10)
+        self.assertFalse(runner.is_alive(), "차례를 기다리던 검토가 취소로 빠지지 않음")
+        release.set()
+        t.join(10)
+        self.assertEqual(len(client.requests), 0)
+        self.assertEqual(self.row()["review"], "not_run")
+
+    def test_stop_while_running_ends_after_the_current_call(self):
+        def answers(request):
+            if not hasattr(self, "_stopped"):
+                self._stopped = self.call("aireview.stop", graph_id=self.gid)
+            return TA.kind_answers(request)
+        client = StubClient(answers)
+        self.start(client)
+        self.run_held()
+        self.assertEqual(self._stopped["data"]["was"], "running")
+        self.assertEqual(len(client.requests), 1, "지금 호출 하나를 마치고 멈춤(상한 2회)")
+        self.assertIn(self.row()["review"], ("candidates", "partial"))
+        self.assertGreater(self.row()["left"] or 0, 0, "남은 곳이 있다")
+
+    def test_stop_on_an_idle_drawing_is_refused(self):
+        out = self.call("aireview.stop", graph_id=self.gid)
+        self.assertEqual(out["error"]["code"], "not_found")
+
+    def test_stopping_one_drawing_leaves_the_engine_running(self):
+        self.start(StubClient(TA.kind_answers))
+        self.call("aireview.stop", graph_id=self.gid)
+        self.assertFalse(self.engine.stop_requested(), "엔진 전체 멈춤(등록·분석)을 걸지 않는다")
+
     def test_next_shows_unreviewed_then_candidates(self):
         items = api_next.summary(self.engine)["items"]
         kinds = [i["kind"] for i in items]
