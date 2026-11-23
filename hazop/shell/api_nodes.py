@@ -192,9 +192,9 @@ def sheet_view(engine, graph_id):
 def sheet_links(pg, graph_id, ns):
     """이 도면 위 다른 도면 연결(오각형) 목록: {id(도면 안 local_id), status, label(맞은편 도면 번호), peer_graph_id, peer_id(맞은편 local_id), reason, nodes(이 연결이 든 구간 ID)}.
     이어지지 않은 연결은 사유와 함께 싣는다(이전 화면의 '미연결' 표시와 같다)."""
-    from hazop.graph import project
+    from hazop.graph import project, sheets
     fwd, _ = chatview._locals(pg)
-    nums = {s["graph_id"]: s.get("drawing_number") for s in pg.get("sheets") or []}
+    nums = {s["graph_id"]: sheets.display_name(s) for s in pg.get("sheets") or []}      # 사람용 이름(번호, 없으면 '파일 · n쪽')
     owners = _owners(ns)
     reasons = {}
     for l in pg.get("sheet_links") or []:
@@ -212,7 +212,7 @@ def sheet_links(pg, graph_id, ns):
         hit = fwd.get(peer) if peer else None
         row = {"id": n["local_id"], "status": link.get("status") or "unlinked", "nodes": owners.get(n["entity_id"], [])}
         if link.get("status") == "linked" and hit:
-            row.update(peer_graph_id=hit[0], peer_id=hit[1], label=nums.get(hit[0]) or hit[0].replace("graph-", "", 1))
+            row.update(peer_graph_id=hit[0], peer_id=hit[1], label=nums.get(hit[0]) or sheets.display_name({"graph_id": hit[0]}))
         else:
             row["reason"] = reasons.get(n["entity_id"]) or link.get("reason")
         out.append(row)
@@ -251,18 +251,22 @@ def detail(engine, node_id):
     history = [{"batch_id": b["batch_id"], "origin": b.get("origin"), "kind": b.get("kind"), "at": b.get("at"),
                 "undone": bool(b.get("undone")), "ops": sorted({o["op"] for o in b["ops"] if o["node_id"] == node_id})}
                for b in ns.get("batches") or [] if any(o["node_id"] == node_id for o in b.get("ops") or [])]
-    lost_items = [{"key": x["key"], "name": lost_name(x["name"], x.get("ref"))} for x in nodes.lost_items(ns, node_id)]
+    from hazop.shell import api_drawings
+    lost_items = [{"key": x["key"], "name": lost_name(x["name"], x.get("ref"), lambda g: api_drawings.display(engine, g))}
+                  for x in nodes.lost_items(ns, node_id)]
     return dict(row, set_rev=ns.get("set_rev") or 0, majors=majors[:MAJORS_SHOWN], majors_total=len(majors),
                 boundary=[majors[0], majors[-1]] if len(majors) >= 2 else majors[:1], kinds=dict(kinds.most_common(8)),
                 members=members, members_total=len(node["members"]), history=history,
                 lost_items=lost_items, discarded=(idmap.needs_check(ns).get("discarded") or {}).get(node_id, 0))
 
 
-def lost_name(name, ref):
+def lost_name(name, ref, sheet_name=None):
     """찾지 못한 구성요소의 화면 이름. 표시(종류·태그)가 없어 안정 참조('graph-SNP-M-102#n16')가 이름으로 온 것은 내부 ID라 보이지 않고
     도면 번호로 바꾼다(실제 창 확인 2026-11-23). 판 이름(lost_at)도 화면에 내지 않는다."""
     if ref and name == ref and "#" in ref:
-        return "%s 도면의 구성요소(이름 모름)" % ref.split("#", 1)[0].replace("graph-", "", 1)
+        gid = ref.split("#", 1)[0]
+        from hazop.graph import sheets
+        return "%s 도면의 구성요소(이름 모름)" % (sheet_name(gid) if sheet_name else sheets.display_name({"graph_id": gid}))
     return name
 
 
@@ -282,7 +286,8 @@ def suggest(engine, sheet, ids):
     elif majors:
         name = "%s 주변" % majors[0]
     else:
-        name = "%s 구간" % sheet.replace("graph-", "", 1)
+        from hazop.shell import api_drawings
+        name = "%s 구간" % api_drawings.display(engine, sheet)      # 사람용 도면 이름(임시 이름이 구간 이름에 들어가지 않게)
     owners = _owners(ns)
     shared = collections.Counter(o for m in members for o in owners.get(m, ()))
     return {"count": len(members), "asked": len(ids), "name": name, "majors": majors[:MAJORS_SHOWN],
@@ -322,11 +327,12 @@ def drawings_view(engine):
         marked, problem = {}, "도면 빼기 표시를 읽지 못했습니다(%s)." % str(exc)[:120]
     keys = {nodes.drawing_key(k): v for k, v in marked.items()}
     texts = {nodes.drawing_key(k): v for k, v in _drawing_texts().items()}
+    from hazop.graph import sheets as sheet_names
     sheets = pg.get("sheets") or [{"graph_id": pg.get("graph_id"), "drawing_number": (pg.get("source") or {}).get("drawing_number")}]
     rows = []
     for sh in sheets:
         mark = keys.get(nodes.drawing_key(sh.get("drawing_number"))) if sh.get("drawing_number") else None
-        rows.append({"graph_id": sh["graph_id"], "drawing_number": sh.get("drawing_number"), "excluded": mark is not None,
+        rows.append({"graph_id": sh["graph_id"], "drawing_number": sh.get("drawing_number"), "display": sheet_names.display_name(sh), "excluded": mark is not None,
                      "reason": (mark or {}).get("reason"), "by": (mark or {}).get("by"), "at": (mark or {}).get("at"),
                      "nodes": node_commands.drawing_nodes(pg, ns, sh["graph_id"]), "ver": ver,
                      "legend_hint": mark is None and nodes.looks_like_legend(*texts.get(nodes.drawing_key(sh.get("drawing_number")), ()))})

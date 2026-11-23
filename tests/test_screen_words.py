@@ -11,6 +11,7 @@ INTENT §3.8: 엔진 사정을 사용자에게 시키지 않고, 화면 글은 �
 | 자리 확인 안 됨 | 위치를 아직 확인하지 않음 |
 | 참조 확인 필요 | 다시 확인할 곳 |
 | 엔진이 … | 프로그램이 … |
+| graph-material-…-p0, SCN__material-… | 사람용 도면 이름(번호, 없으면 '파일 · n쪽') |
 """
 
 import ast
@@ -19,7 +20,8 @@ import re
 import unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BANNED = ("묘비", "판 이전", "판 사진", "lost:", "그래프 판")
+BANNED = ("묘비", "판 이전", "판 사진", "lost:", "그래프 판",
+          "graph-material-", "SCN__material")     # 번호 없는 시트의 임시 이름·폴더 이름 꼴(시트 정체 U4: 화면은 sheets.display_name만 쓴다)
 BANNED_WEB = BANNED + ("엔진이", "엔진은")      # 웹 글에는 '엔진'도 쓰지 않는다(Python 문자열은 개발자용 명령 설명에 쓰여 센다 않음)
 
 

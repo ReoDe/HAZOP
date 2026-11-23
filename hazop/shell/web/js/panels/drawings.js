@@ -10,6 +10,13 @@ import { focusSheet as openTitleblock } from "./titleblock.js";
 import { DrawingExclude, DrawingExcludedChip } from "./nodes_screen.js";
 import { ReviewChip, summaryText as reviewSummary, useReview } from "../review/review.js";      // 도면별 AI 검토 상태·시작(HZ-DSN-06 §3.7)      // 범례·기호표 도면을 분석에서 빼고 다시 넣는 부품(구간 쪽)
 
+/** 도면 번호 상태(시트 정체 U4): 확정된 번호면 칩 없음, 번호 없음·보류면 그 까닭(엔진 notice 글)을 말풍선에. */
+function NumberChip({ d }) {
+  if (!d.number_state || d.number_state === "confirmed") return null;
+  const text = d.number_state === "held" ? "번호 보류" : "번호 미확정";
+  return html`<${Chip} kind="warn" title=${(d.notice && d.notice.text) || text}>${text}<//>`;
+}
+
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
 const STATE_TEXT = { open: "확정 조건 남음", ready: "확정만 남음", confirmed: "확정됨", changed: "내보내는 사이 도면 자료가 바뀜", error: "쪽 확정 기록을 읽지 못함" };
@@ -39,7 +46,7 @@ function DexpiExport() {
     catch (e) { setError(e.message || "내보내지 못했습니다."); setBusy(false); reload(); }
   }
   if (!info) return null;
-  const label = (d) => d.drawing_number || d.name;
+  const label = (d) => d.display || d.drawing_number || d.name;
   return html`<div class="card dexpi-card"><h3>DEXPI로 내보내기</h3>
     <div class="muted small">사람이 '쪽 확정'을 마친 쪽만 DEXPI XML로 냅니다. 확정 전 쪽과 옮기지 못한 항목은 아래 요약에 나옵니다.</div>
     ${info.drawings.length === 0 ? html`<${Notice}>내보낼 도면이 없습니다.<//>` : html`<div class="list" role="list" aria-label="내보내기 대상">${info.drawings.map((d) => html`<div class="row" role="listitem" key=${d.graph_id}>
@@ -50,10 +57,10 @@ function DexpiExport() {
     ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">${error}</span><//>` : null}
     ${result && result.cancelled ? html`<${Notice} kind="info">${result.overwrite_refused ? "덮어쓰기를 취소해 내보내지 않았습니다." : "저장 위치를 고르지 않아 내보내지 않았습니다."}<//>` : null}
     ${result && !result.cancelled ? html`<div class="card" aria-label="내보내기 결과"><b>${result.drawings.length}쪽을 내보냈습니다</b> <span class="muted small">폴더 ${result.folder}</span>
-      <ul class="tight">${result.drawings.map((d) => html`<li key=${d.graph_id}>${d.drawing_number || d.graph_id}: ${d.files.join(", ")}
+      <ul class="tight">${result.drawings.map((d) => html`<li key=${d.graph_id}>${d.display || d.drawing_number}: ${d.files.join(", ")}
         ${d.stats && (d.stats.excluded_components || d.stats.excluded_connections || d.stats.excluded_attributes) ? html`<span class="muted small"> · 뺀 구성요소 ${d.stats.excluded_components || 0} · 연결 ${d.stats.excluded_connections || 0} · 속성 ${d.stats.excluded_attributes || 0}</span>` : null}
         ${d.stats && (d.stats.cut_pipes || d.stats.cut_signal_lines) ? html`<span class="warnline small" title="빠진 구성요소에 이어져 있어 내지 못한 연결"> · 끊긴 배관 ${d.stats.cut_pipes || 0} · 신호선 ${d.stats.cut_signal_lines || 0}</span>` : null}</li>`)}</ul>
-      ${result.not_exported.length ? html`<div class="muted small">내보내지 않은 쪽: <ul class="tight" aria-label="내보내지 않은 쪽">${result.not_exported.map((x) => html`<li key=${x.graph_id || x.drawing_number}>${x.drawing_number || x.graph_id}: ${whyNot(x)}</li>`)}</ul></div>` : null}</div>` : null}</div>`;
+      ${result.not_exported.length ? html`<div class="muted small">내보내지 않은 쪽: <ul class="tight" aria-label="내보내지 않은 쪽">${result.not_exported.map((x) => html`<li key=${x.graph_id || x.drawing_number}>${x.display || x.drawing_number}: ${whyNot(x)}</li>`)}</ul></div>` : null}</div>` : null}</div>`;
 }
 
 /** AI 검토를 켰을 때 도면별 예상 호출 수(엔진이 사람이 고친 자리를 뺀 미확인 항목으로 센다). 꺼져 있으면 읽지 않는다. */
@@ -107,12 +114,13 @@ export function DrawingsPanel({ onOpen, onClose }) {
         ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 위 자리에 도면 파일을 끌어 놓으면 등록하고 읽습니다.<//>` : html`<div class="list">
           ${data.drawings.map((d) => html`<${Fragment} key=${d.graph_id}><div class=${"row drow" + (d.graph_id === sheet ? " on" : "")}>
             <div class="thumb" aria-hidden="true"></div>
-            <div class="main"><b>${d.drawing_number || d.name}</b><span>${d.title || "표제란 확인 전"}</span></div>
+            <div class="main"><b>${d.display}</b><span>${d.title || "표제란 확인 전"}</span></div>
+            <${NumberChip} d=${d} />
             ${d.unknowns ? html`<${Chip} kind="warn" title="추출에서 읽지 못한 항목">미확인 ${d.unknowns}<//>` : html`<${Chip} kind="ok" icon="check">읽음<//>`}
             <${ReviewChip} gid=${d.graph_id} />
             <${DrawingExcludedChip} graphId=${d.graph_id} />
-            <${Btn} sm=${true} kind="ghost" label=${(d.drawing_number || d.name) + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//>
-            <${Btn} sm=${true} label=${(d.drawing_number || d.name) + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>
+            <${Btn} sm=${true} kind="ghost" label=${d.display + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//>
+            <${Btn} sm=${true} label=${d.display + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>
             ${d.graph_id === sheet ? html`<${DrawingExclude} graphId=${d.graph_id} />` : null}<//>`)}</div>`}</div>
       <${SourceConflicts} />
       <${DexpiExport} />

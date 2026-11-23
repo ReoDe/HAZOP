@@ -37,6 +37,41 @@ def _trim(rows, n=MAX_ROWS):
     return list(rows[:n])
 
 
+# ---------------------------------------------------------------- 사람용 도면 이름(시트 정체 U4)
+_LABELS = {}
+
+
+def labels(engine):
+    """{graph_id: 도면 목록 한 줄 엔진 값(hazop.graph.sources.sheet_rows) + display(사람용 이름, sheets.display_name)}.
+    셸이 도면을 부르는 모든 글(도면 목록·위 막대·구간·다음에 할 일·AI 검토·대기열)이 이 이름 하나를 쓴다(임시 이름·폴더 이름이 보이지 않게,
+    한 화면에 두 이름이 섞이지 않게). 프로젝트 그래프 입력이 같으면 다시 읽지 않는다. 읽기만 한다(정착하지 않음)."""
+    from hazop.app import project_ctx
+    from hazop.graph import sheets, sources
+    pid = engine.project_id()
+    try:
+        key = project_ctx._graph_inputs(pid)
+    except (OSError, ValueError):
+        key = None
+    hit = _LABELS.get(pid)
+    if hit is not None and key is not None and hit[0] == key:
+        return hit[1]
+    try:
+        rows = sources.sheet_rows(pid)
+    except (OSError, ValueError, KeyError):
+        LOG.warning("도면 목록 이름을 읽지 못함", exc_info=True)
+        rows = []
+    out = {r["graph_id"]: dict(r, display=sheets.display_name(r)) for r in rows if r.get("graph_id")}
+    _LABELS[pid] = (key, out)
+    return out
+
+
+def display(engine, graph_id, rows=None):
+    """한 도면의 사람용 이름. 목록에 없으면 graph-를 뗀 이름(임시 이름이면 '번호 미확정 도면')."""
+    from hazop.graph import sheets
+    row = (rows if rows is not None else labels(engine)).get(graph_id)
+    return row["display"] if row else sheets.display_name({"graph_id": graph_id})
+
+
 def status(engine, graph_id):
     """도면 한 쪽의 확정 상태(엔진이 센 값 그대로, 긴 목록만 자른다). 못 읽으면 {"available": False, "reason"}."""
     name = engine.graph_names().get(graph_id)
@@ -64,7 +99,7 @@ def exportable(engine):
         gid = names.get(r["name"])
         if gid is None:
             continue
-        rows.append({"graph_id": gid, "name": r["name"], "drawing_number": r.get("drawing_number"), "state": r.get("state"),
+        rows.append({"graph_id": gid, "name": r["name"], "display": display(engine, gid), "drawing_number": r.get("drawing_number"), "state": r.get("state"),
                      "unconfirmed": r.get("unconfirmed") or 0, "exportable": bool(r.get("exportable")), "why": list(r.get("why") or [])[:6]})
     return {"drawings": rows, "any": any(x["exportable"] for x in rows)}
 
@@ -160,7 +195,7 @@ def _export(engine, a):
     if not names:
         if skipped:
             raise api.CommandError("failed", "내보낼 수 있는 쪽이 없습니다.\n" + "\n".join(
-                "%s: %s" % (r.get("drawing_number") or r["name"], (r.get("why") or ["내보낼 수 없음"])[0]) for r in skipped[:12])[:700])
+                "%s: %s" % (r["display"], (r.get("why") or ["내보낼 수 없음"])[0]) for r in skipped[:12])[:700])
         raise api.CommandError("failed", "확정된 쪽이 하나도 없어 내보낼 것이 없습니다. 도면에서 '쪽 확정'을 마친 쪽만 내보냅니다.")
     pick = engine.hooks.get("save_dir")
     if pick is None:
@@ -181,12 +216,13 @@ def _export(engine, a):
     except OSError as exc:
         raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:160])
     to_gid = {v: k for k, v in by_gid.items()}
-    not_exported = [{"graph_id": to_gid.get(x["name"]), "drawing_number": x.get("drawing_number"), "state": x.get("state"),
+    lb = labels(engine)
+    not_exported = [{"graph_id": to_gid.get(x["name"]), "display": display(engine, to_gid.get(x["name"]), lb), "drawing_number": x.get("drawing_number"), "state": x.get("state"),
                      "unconfirmed": x.get("unconfirmed") or 0, "reason": x.get("reason")} for x in res["not_exported"]]
-    not_exported += [{"graph_id": r["graph_id"], "drawing_number": r.get("drawing_number"), "state": r.get("state"),
+    not_exported += [{"graph_id": r["graph_id"], "display": r["display"], "drawing_number": r.get("drawing_number"), "state": r.get("state"),
                       "unconfirmed": r.get("unconfirmed") or 0, "reason": (r.get("why") or [None])[0]} for r in skipped]
     return {"cancelled": False, "folder": os.path.basename(out_dir.rstrip("\\/")),
-            "drawings": [{"graph_id": to_gid.get(d["name"]), "drawing_number": d.get("drawing_number"), "files": d["files"], "stats": d.get("stats") or {},
+            "drawings": [{"graph_id": to_gid.get(d["name"]), "display": display(engine, to_gid.get(d["name"]), lb), "drawing_number": d.get("drawing_number"), "files": d["files"], "stats": d.get("stats") or {},
                           "graph_rebuilt": bool(d.get("graph_rebuilt"))} for d in res["drawings"]],
             "not_exported": not_exported}
 

@@ -28,6 +28,10 @@ setGo("panel:drawings#sheetconf", async (t) => {
   c.conf.set({ open: true, error: null });
   c.load(t || store.get().sheet);
 });
+setGo("panel:drawings#sources", () => {      // 같은 번호 자리의 파일·형식 고르기 카드로(도면 패널 안)
+  store.set({ panel: "drawings" });
+  [80, 400, 1200].forEach((ms) => setTimeout(() => { const el = document.querySelector(".src-card"); if (el) el.scrollIntoView({ block: "start" }); }, ms));
+});
 setGo("panel:nodes#pick", async () => { store.set({ panel: null }); const N = await import("./panels/nodes_state.js"); N.setMode("pick"); });
 setGo("queue:lost", () => openQueue("lost"));
 setGo("queue:ai", (t) => openQueue("ai", t));
@@ -198,7 +202,7 @@ function TopBar() {
   const queueOpen = useQueue((s) => s.open);
   const row = d.drawings.find((x) => x.graph_id === sheet);
   return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
-    <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => togglePanel("drawings")}>${row ? (row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
+    <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => togglePanel("drawings")}>${row ? (row.display || row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
     ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div>
     ${queueOpen ? html`<${QueueLine} />` : html`<${NextLine} />`}</header>`;     // 도면 제목은 도면 번호에 마우스를 올리면 보인다(1366 폭에서 다음에 할 일 줄이 잘리지 않게, HZ-DSN-06 §3.1)
 }

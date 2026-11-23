@@ -816,13 +816,19 @@ class ReadApi:
     def drawings(self):
         from hazop.app import data
         e = self.engine
+        from hazop.shell import api_drawings
         names = e.graph_names()
+        lb = api_drawings.labels(e)          # 쪽마다 한 줄: 사람용 이름(display)·번호 상태·알림·고를 것(시트 정체 U4)
         rows = []
-        for graph_id, name in sorted(names.items(), key=lambda kv: kv[1]):
+        for graph_id, name in names.items():
             brief = data.extraction_brief(data.extraction_path(name)) or {}
-            rows.append({"graph_id": graph_id, "name": name, "drawing_number": brief.get("drawing_number"), "title": brief.get("title"),
+            sr = lb.get(graph_id) or {}
+            rows.append({"graph_id": graph_id, "name": name, "display": api_drawings.display(e, graph_id, lb),
+                         "drawing_number": sr.get("drawing_number") if sr else brief.get("drawing_number"), "title": brief.get("title"),
                          "nodes": brief.get("nodes"), "relations": brief.get("relations"), "unknowns": brief.get("unknowns"),
-                         "origin": brief.get("origin")})
+                         "origin": brief.get("origin"), "number_state": sr.get("number_state"), "notice": sr.get("notice"),
+                         "conflict": sr.get("conflict"), "page_index": sr.get("page_index"), "material_id": sr.get("material_id")})
+        rows.sort(key=lambda r: (r["display"], r["page_index"] or 0, r["graph_id"]))
         data.save_briefs()      # 새로 읽은 쪽 요약을 캐시 파일에 남긴다(다음 실행부터 143쪽 추출 JSON을 다시 읽지 않는다)
         docs = []
         for r in data.list_registrations():

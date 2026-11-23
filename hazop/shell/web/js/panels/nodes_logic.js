@@ -73,7 +73,7 @@ export function sheetSegments(sheetView, list, focus) {
 /** 도면 범위 글: 도면 번호와 그 도면의 구성요소 수. drawings는 도면 목록(graph_id, drawing_number, name). */
 export function sheetName(g, drawings) {
   const d = (drawings || []).find((x) => x.graph_id === g);
-  return (d && (d.drawing_number || d.name)) || g.replace(/^graph-/, "");
+  return (d && (d.display || d.drawing_number)) || "번호 미확정 도면";
 }
 
 export function rangeText(n, drawings) {

@@ -29,6 +29,11 @@ def _api():
     return api
 
 
+def _conflicts(engine):
+    from hazop.graph import sources
+    return sources.conflicts(engine.project_id())
+
+
 def _safe(fn, what):
     try:
         return fn()
@@ -40,11 +45,20 @@ def _safe(fn, what):
 # ---------------------------------------------------------------- 사실 모으기(읽기만)
 def facts(engine):
     """영역 요약에서 RULES가 쓰는 수를 모은다. 못 읽은 영역의 값은 None(그 규칙은 건너뜀)."""
-    from hazop.shell import api_aireview, api_drawings, api_ie, api_nodes, api_results, api_titleblock
+    from hazop.shell import api_aireview, api_drawings, api_ie, api_nodes, api_results, api_titleblock  # noqa: F401
     f = {"project_id": engine.project_id()}
     f["running"] = engine.job_progress()
     names = _safe(engine.graph_names, "도면 목록") or {}
     f["sheets"] = len(names)
+    cf = _safe(lambda: _conflicts(engine), "원본 고르기")
+    if cf is not None:
+        f["sheet_choose"] = sum(1 for c in cf if c.get("reason") != "settle_rebuild_failed")
+        f["sheet_choose_first"] = next((c["graph_id"] for c in cf if c.get("reason") != "settle_rebuild_failed"), None)
+        f["sheet_skipped"] = sum(1 for c in cf if c.get("reason") == "settle_rebuild_failed")
+        f["sheet_skipped_text"] = next((c.get("text") for c in cf if c.get("reason") == "settle_rebuild_failed"), None)
+    lb = _safe(lambda: api_drawings.labels(engine), "도면 이름")
+    if lb is not None:
+        f["number_held"] = sum(1 for r in lb.values() if r.get("number_state") == "held")
     tb = _safe(lambda: api_titleblock.summary(engine), "표제란")
     f["titleblock"] = (tb["totals"]["materials"] - tb["totals"]["confirmed"]) if tb else None
     f["titleblock_first"] = next((r.get("material_id") for r in (tb or {}).get("rows") or [] if r.get("state") != "confirmed"), None)
@@ -107,9 +121,15 @@ RULES = (
      lambda f, n: "등록한 도면이 없습니다. 도면 파일을 끌어 놓아 시작하세요", "도면 올리기", "panel:drawings", ""),
     ("recheck", _recheck,
      lambda f, n: "도면이 바뀌어 %d곳을 다시 확인해야 합니다" % n, "확인하기", "queue:lost", "warn"),
-    # 시트 정체(r3b U1·U4)가 정해지면 여기에: 같은 번호 자리의 다른 파일 고르기, 여러 쪽 자료 등록 보류('먼저 표제란을 확정하세요')
+    # 시트 정체(U4): 같은 번호 자리에 파일·형식이 둘 이상이면 고르기, 정착이 들이지 못한 가려진 도면
+    ("sheet_choose", lambda f: _n(f, "sheet_choose"),
+     lambda f, n: "같은 번호의 도면 파일이 둘 이상인 곳이 %d곳 있습니다. 쓸 파일을 고르세요" % n, "파일 고르기", "panel:drawings#sources", "warn"),
+    ("sheet_skipped", lambda f: _n(f, "sheet_skipped"),
+     lambda f, n: "도면 %d장을 목록에 들이지 못했습니다" % n, "도면 보기", "panel:drawings#sources", "warn"),
     ("titleblock", lambda f: _n(f, "titleblock"),
      lambda f, n: "표제란을 확정하지 않은 도면이 %d장 있습니다" % n, "표제란 확정", "panel:drawings#titleblock", ""),
+    ("number_held", lambda f: _n(f, "number_held") if not _n(f, "titleblock") else 0,
+     lambda f, n: "여러 쪽 자료라 도면 번호를 쓰지 못한 쪽이 %d장 있습니다" % n, "도면 보기", "panel:drawings", ""),
     ("ai_unreviewed", lambda f: _n(f, "ai_unreviewed"),
      lambda f, n: ("%s는 아직 AI 검토를 하지 않았습니다" % f["ai_unreviewed_sheet"]) if n == 1 and f.get("ai_unreviewed_sheet") else "AI 검토를 하지 않은 도면이 %d장 있습니다" % n,
      "AI 검토 시작", "confirm:aireview.run", ""),
@@ -130,7 +150,7 @@ RULES = (
      lambda f, n: "초기사건 초안 %d그룹을 확인해 주세요" % n, "초안 보기", "panel:ie#draft", ""),
 )
 # 단추가 바로 갈 자리(화면이 그 도면·자료·구간을 연다). 없으면 그 패널만 연다
-TARGET = {"titleblock": "titleblock_first", "sheet_confirm": "sheet_confirm_first", "ai_unreviewed": "ai_unreviewed_first",
+TARGET = {"sheet_choose": "sheet_choose_first", "titleblock": "titleblock_first", "sheet_confirm": "sheet_confirm_first", "ai_unreviewed": "ai_unreviewed_first",
           "ai_candidates": "ai_candidates_first"}
 
 NONE_ITEM = {"kind": "none", "count": 0, "text": "지금 할 일이 없습니다", "detail": None,
@@ -151,6 +171,8 @@ def items(f):
 def _detail(f, kind):
     if kind == "recheck":
         return _lost_detail(f)
+    if kind == "sheet_skipped":
+        return f.get("sheet_skipped_text")
     if kind == "ai_candidates" and f.get("ai_candidates_sheet") and f["ai_candidates_sheet"][2] > 1:
         return "도면 %d장에 모두 %d건" % (f["ai_candidates_sheet"][2], f["ai_candidates"])
     return None

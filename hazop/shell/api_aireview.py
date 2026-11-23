@@ -119,7 +119,8 @@ def candidates(engine, graph_id):
         return {"ok": False, "code": exc.code, "message": exc.message}
     except (OSError, ValueError) as exc:
         return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
-    base = {"ok": True, "graph_id": graph_id, "drawing_number": (original.get("drawing") or {}).get("drawing_number") or name,
+    from hazop.shell import api_drawings
+    base = {"ok": True, "graph_id": graph_id, "drawing_number": api_drawings.display(engine, graph_id),      # 사람용 도면 이름(임시 이름·폴더 이름이 아님)
             "ver": ver, "graph_stale": stale, "graph_notes": stale_notes}
     if doc is None:
         return dict(base, available=False, reason="이 도면에는 AI 후보가 없습니다. AI 검토를 실행하면 생깁니다.", counts={}, groups=[], bulk=[],
@@ -253,14 +254,16 @@ def _review_state(engine, name, doc, proposed):
 def overview(engine):
     """도면별 후보 수와 AI 검토 상태(목록, HZ-DSN-06 §3.7). 후보 파일이 없는 도면도 0으로 넣는다.
     review: not_run·nothing·waiting·running·candidates·partial·failed·done. ahead는 waiting일 때 앞 도면 수, progress는 running일 때 {done, total}."""
+    from hazop.shell import api_drawings
+    lb = api_drawings.labels(engine)
     rows = []
-    for gid, name in sorted(engine.graph_names().items(), key=lambda kv: kv[1]):
+    for gid, name in sorted(engine.graph_names().items(), key=lambda kv: (api_drawings.display(engine, kv[0], lb), kv[0])):
         try:
             doc = ai_review.load_doc(name)
         except (OSError, ValueError):
             doc = None
         cands = (doc or {}).get("candidates") or []
-        row = {"graph_id": gid, "drawing_number": (doc or {}).get("drawing_number") or name,
+        row = {"graph_id": gid, "drawing_number": api_drawings.display(engine, gid, lb),
                "proposed": sum(1 for c in cands if c["status"] == "proposed"), "total": len(cands),
                "accepted": sum(1 for c in cands if c["status"] == "accepted"), "ran": bool((doc or {}).get("runs"))}
         row.update(_review_state(engine, name, doc, row["proposed"]))
@@ -463,10 +466,10 @@ def _progress(engine, token, progress, name, done, total):
 
 
 def _number(engine, name):
-    try:
-        return (_original(name).get("drawing") or {}).get("drawing_number") or name
-    except (OSError, ValueError):
-        return name
+    """진행 줄의 도면 이름(사람용 이름, hazop.shell.api_drawings.display)."""
+    from hazop.shell import api_drawings
+    gid = next((g for g, n in engine.graph_names().items() if n == name), None)
+    return api_drawings.display(engine, gid) if gid else "도면"
 
 
 BUSY_TEXT = "이 도면은 AI 검토가 이미 돌고 있거나 차례를 기다리고 있습니다. 끝난 뒤 다시 실행하세요."

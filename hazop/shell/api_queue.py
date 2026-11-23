@@ -101,7 +101,9 @@ def _lost_items(engine):
     ns, legacy = api_nodes._peek(pg)
     if legacy:
         return [], None, []
+    from hazop.shell import api_drawings
     names = engine.graph_names()
+    lb = api_drawings.labels(engine)
     tombs = ns.get("tombstones") or {}
     set_rev = ns.get("set_rev") or 0
     items = []
@@ -117,8 +119,8 @@ def _lost_items(engine):
             gid = mk[1] if idmap.valid_mark(mk) and mk[1] in names else idmap.drawing_of(rec.get("ref"))
             key = idmap.tomb_handle(t)
             items.append({"qid": "lost|%s|%s" % (nid, key), "kind": "lost", "node_id": nid, "node_name": node.get("name") or nid,
-                          "key": key, "label": api_nodes.lost_name(idmap.tomb_name(rec), rec.get("ref")), "graph_id": gid if gid in names else None,
-                          "sheet": names.get(gid) if gid in names else None, "where": [{"node": nid}],
+                          "key": key, "label": api_nodes.lost_name(idmap.tomb_name(rec), rec.get("ref"), lambda g: api_drawings.display(engine, g, lb)),
+                          "graph_id": gid if gid in names else None, "sheet": api_drawings.display(engine, gid, lb) if gid in names else None, "where": [{"node": nid}],
                           "target": target, "held": target["state"] != "applied", "cands": [], "state": "open"})
     return items, set_rev, ["rev=%s" % set_rev]
 
