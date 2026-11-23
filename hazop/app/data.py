@@ -254,14 +254,15 @@ def catch_up_study(project_id):
 _SETTLE_LOCK = threading.Lock()
 
 
-def settle_sheets(project_id):
+def settle_sheets(project_id, prepare=True):
     """그 프로젝트의 시트 자리를 정착한다(hazop.graph.sources.settle, 작업 루트에서만, 멱등). 추출·그래프 짓기 같은 명시적인 차례가
     맨 앞에서 부른다. 읽는 길(프로젝트 그래프·도면 이름·고르기 줄)에서는 부르지 않는다. 다른 곳에서 먼저 정착해 자리 표가 바뀌었으면
-    한 번 더 읽어 끝낸다. 실패하면 예외를 그대로 올리고 파일은 옛 상태 그대로다. -> settle 결과 또는 None(프로젝트 없음)."""
+    한 번 더 읽어 끝낸다. 실패하면 예외를 그대로 올리고 파일은 옛 상태 그대로다. -> settle 결과 또는 None(프로젝트 없음).
+    prepare: 정착 전에 옛 검토구간 집합의 판 사진 칸을 채운다(prepare_reextract). 이미 채운 길(추출 맨 앞, prepared_for_reextract 안)은 False."""
     if not project_id:
         return None
     bg = script_module("build_graph")
-    if not graph_sources.load_seats(project_id)[1]:
+    if prepare and not getattr(_PREPARED, "on", False) and not graph_sources.load_seats(project_id)[1]:
         prepare_reextract(project_id)      # 자리를 바꾸기 전에 옛 집합의 판 사진 칸(시트 자료)을 지금 그래프로 채운다
     with _SETTLE_LOCK:
         try:
@@ -290,9 +291,9 @@ def _extract_and_graph(registration_path, progress=None, ctx=None):
     record, original = registry.load_for_extraction(registration_path)
     if ctx is not None:
         ctx["project"] = record.get("project_id")
-    settle_sheets(record.get("project_id"))             # 추출 결과를 쓰기 전에 지금 시트 이름을 자리 표에 붙박는다
     if not getattr(_PREPARED, "on", False):
         prepare_reextract(record.get("project_id"))     # 추출 결과를 덮어쓰기 전에 검토구간 표지를 채운다
+    settle_sheets(record.get("project_id"), prepare=False)   # 추출 결과를 쓰기 전에 지금 시트 이름을 자리 표에 붙박는다(표지는 위에서 채움)
     if raster_scan.is_scan_record(record, original):  # 스캔 PDF·PNG·JPG(HZ-PLN-23 §8): 쪽마다 20초 안팎이라 progress로 알린다
         return _extract_scan_pages(record, original, ex, bg, progress)
     if record.get("format") == "pdf":
