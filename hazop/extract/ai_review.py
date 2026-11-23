@@ -695,7 +695,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         if should_stop and should_stop():
             stats["stopped"] = True
             break
-        if stats["calls"] >= limit:          # 다시 묻기로 상한을 다 쓰면 남은 묶음을 부르지 않는다(남은 항목은 left에 남는다)
+        if stats["calls"] >= limit - reserve:   # 다시 묻기로 첫 묻기 몫을 다 쓰면 남은 묶음을 부르지 않는다(남은 항목은 left에 남는다)
             break
         done, new, no_kind = _ask(ex, client, call, images, answer_kinds, stats, kinds)
         if done:

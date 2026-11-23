@@ -41,7 +41,9 @@ def register_and_extract(engine, path, progress):
 def review_if_wanted(engine, pages, progress):
     """추출 뒤 AI 검토 토글이 켜져 있고 연결이 준비돼 있으면 도면마다 호출 상한까지 후보를 제안받는다(이전 화면 ①의 AiReviewBar와 같은
     `ai_review.run_many`). 꺼져 있거나 연결이 없거나 API 연결이면 건너뛴다. AI 검토가 실패해도 등록·추출은 완료로 둔다.
-    -> {"ran": bool, "candidates": 수, "skipped": 까닭 또는 None, ran이면 "calls": 쓴 호출 수, "estimate": 예상 호출 수, "capped": 상한에 걸렸는지}
+    -> {"ran": bool, "candidates": 수, "skipped": 까닭 또는 None, ran이면 "calls": 쓴 호출 수, "estimate": 예상 호출 수, "capped": 상한에 걸렸는지,
+        수동 AI 검토가 잡고 있어 건너뛴 도면이 있으면 "busy": [이름]}
+    도면은 차례를 잡은 뒤 다시 읽는다(기다리는 동안 다시 추출됐으면 새 판으로 묻는다).
     한 번 실행 상한(RUN_CAP 300)과 사람이 고친 자리 제외는 run_many가 지킨다. 창을 닫으려고 멈추라고 하면 도면 사이·호출 사이에서 멈춘다."""
     if not engine.settings.get("extract_ai_review"):
         return {"ran": False, "candidates": 0, "skipped": "off"}
@@ -51,25 +53,35 @@ def review_if_wanted(engine, pages, progress):
         return {"ran": False, "candidates": 0, "skipped": "no_connection"}
     cap = int(engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP)
     held = engine.reserve_review([name for name, _ex in pages], partial=True)   # 수동 AI 검토가 돌거나 기다리는 도면은 건너뛴다
+    busy = {"busy": [name for name, _ex in pages if name not in held]} if len(held) < len({n for n, _ex in pages}) else {}
     pages = [(name, ex) for name, ex in pages if name in held]
     if not pages:
-        return {"ran": False, "candidates": 0, "skipped": "busy"}
+        return dict({"ran": False, "candidates": 0, "skipped": "busy"}, **busy)
     try:
         client, reason = ai_image_flow.subscription_client(engine)   # 분석 연결이 API 키여도 자동 AI 검토는 구독으로만 돈다. 구독을 못 쓰면 건너뛴다
         if reason:
             return {"ran": False, "candidates": 0, "skipped": reason}
         pics = ai_image_flow.enabled(engine, auto=True)               # 안내를 본 적 없는 사용자의 도면 조각은 보내지 않는다: 설정이 명시적으로 켜졌을 때만
-        est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, pics)   # 사람이 고친 자리를 뺀 호출 수(실제 부르기 전 예상)
-        progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, None)
         with engine.ai_turn("추출 뒤 AI 검토", progress):          # 다른 일괄 AI 작업이 돌면 끝날 때까지 기다린다
+            pages = [(name, _fresh(name, ex)) for name, ex in pages]
+            est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, pics)   # 사람이 고친 자리를 뺀 호출 수(실제 부르기 전 예상)
+            progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, None)
             done, _images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
                                                     lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), engine.stop_requested, auto=True)
     except api.JobStopped:
-        return {"ran": False, "candidates": 0, "skipped": "stopped"}   # 차례를 기다리다 멈춤. 등록·추출은 완료로 둔다
+        return dict({"ran": False, "candidates": 0, "skipped": "stopped"}, **busy)   # 차례를 기다리다 멈춤. 등록·추출은 완료로 둔다
     except Exception as exc:  # noqa: BLE001 - AI 검토 실패는 등록·추출을 되돌리지 않는다
         LOG.exception("AI 검토 오류")
-        return {"ran": False, "candidates": 0, "skipped": "error: %s" % type(exc).__name__}
+        return dict({"ran": False, "candidates": 0, "skipped": "error: %s" % type(exc).__name__}, **busy)
     finally:
         engine.release_review(held)
-    return {"ran": True, "candidates": sum(count for _name, count, _stats in done), "skipped": None,
-            "calls": sum(stats.get("calls", 0) for _name, _count, stats in done), "estimate": est["calls"], "capped": est["capped"]}
+    return dict({"ran": True, "candidates": sum(count for _name, count, _stats in done), "skipped": None,
+                 "calls": sum(stats.get("calls", 0) for _name, _count, stats in done), "estimate": est["calls"], "capped": est["capped"]}, **busy)
+
+
+def _fresh(name, ex):
+    """지금 파일의 추출 결과. 읽지 못하면 받은 것을 그대로 쓴다."""
+    try:
+        return data.read_json(data.extraction_path(name))
+    except (OSError, ValueError):
+        return ex

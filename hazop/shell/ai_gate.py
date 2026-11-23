@@ -15,22 +15,29 @@ import threading
 POLL_SECONDS = 0.2
 
 
+class Reentry(RuntimeError):
+    """차례를 잡은(또는 기다리는) 스레드가 차례를 다시 잡으려 함. 기다리면 자기 자신을 기다려 멈추기 전까지 서므로 바로 올린다."""
+
+
 class Gate:
     def __init__(self):
         self._cond = threading.Condition()
-        self._queue = []      # [(번호, 이름)] 앞이 지금 차례
+        self._queue = []      # [(번호, 이름, 스레드)] 앞이 지금 차례
         self._seq = 0
 
     def waiting(self):
         """차례를 잡았거나 기다리는 작업 이름(앞부터)."""
         with self._cond:
-            return [label for _n, label in self._queue]
+            return [t[1] for t in self._queue]
 
     @contextlib.contextmanager
     def turn(self, label, should_stop, stopped, on_wait=None, poll=POLL_SECONDS):
+        me = threading.get_ident()
         with self._cond:
+            if any(t[2] == me for t in self._queue):
+                raise Reentry("이 작업이 이미 AI 호출 차례를 잡고 있음: %s" % label)
             self._seq += 1
-            ticket = (self._seq, label)
+            ticket = (self._seq, label, me)
             self._queue.append(ticket)
         try:
             told = None

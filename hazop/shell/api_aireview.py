@@ -325,12 +325,12 @@ def run_review(engine, graph_ids, cap, progress):
     client, reason = ai_image_flow.subscription_client(engine)   # 분석 연결이 API 키여도 AI 검토는 구독으로만 돈다
     if reason:
         raise RuntimeError(reason)
-    names = engine.graph_names()
-    pages = [(names[g], _original(names[g])) for g in graph_ids if g in names]
-    est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, ai_image_flow.enabled(engine))
-    progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, est["calls"] or None)
-    to_gid = {v: k for k, v in names.items()}
     with engine.ai_turn("AI 검토", progress):                    # 다른 일괄 AI 작업이 돌면 끝날 때까지 기다린다(구독 호출은 한 번에 하나)
+        names = engine.graph_names()                             # 도면은 차례를 잡은 뒤 읽는다: 기다리는 동안 다시 추출됐으면 새 판으로 묻는다
+        pages = [(names[g], _original(names[g])) for g in graph_ids if g in names]
+        est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, ai_image_flow.enabled(engine))
+        progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, est["calls"] or None)
+        to_gid = {v: k for k, v in names.items()}
         done, images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
                                                lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), engine.stop_requested)
     used = images.used if images is not None else {}
