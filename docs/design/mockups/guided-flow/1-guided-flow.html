@@ -484,7 +484,7 @@ const KINDS = [
 const RUN_TEXT = "SNP-M-102를 읽고 있습니다 · 3장 중 2장";
 
 /* ── 도면별 AI 검토 상태: 엔진이 aireview 목록 행마다 내주는 review 값(규격 §3.7). 수·연결은 예시 값 ── */
-const SH = [{ no: "SNP-M-101", st: "candidates", items: 14, calls: 12, done: 0, cand: 12, ahead: 0 },
+const SH = [{ no: "SNP-M-101", st: "candidates", items: 14, calls: 12 /* 도면당 상한 20(ai_review.DEFAULT_CAP) 안의 예시 */, done: 0, cand: 12, ahead: 0 },
             { no: "SNP-M-102", st: "not_run", items: 9, calls: 8, done: 0, cand: 0, ahead: 0 }];
 const eun = (no) => no + ("013678".includes(no.slice(-1)) ? "은" : "는");
 const eul = (no) => no + ("013678".includes(no.slice(-1)) ? "을" : "를");
@@ -756,8 +756,8 @@ function renderFloats() {
     h += `<div class="modal-bg" onclick="if(event.target===this){S.modal=null;render()}"><div class="modal" role="dialog" aria-modal="true" aria-label="${s.no} AI 검토">
       <h3>${ic("sparkles")}${s.no} AI 검토</h3><div class="sub">스크립트가 정하지 못한 곳을 AI가 보고 후보를 냅니다. 후보는 사람이 확정합니다.</div>
       <div class="kv"><div class="k"><b>물을 곳</b><span>종류를 정하지 못했거나 다시 볼 곳 ${s.items}곳</span></div></div>
-      <div class="kv"><div class="k"><b>예상</b><span>AI 호출 약 ${s.calls}회 · 약 ${Math.max(1, Math.round(s.calls * 15 / 60))}분</span></div></div>
-      <div class="kv"><div class="k"><b>도면당 상한</b><span>이보다 많으면 일부만 묻고 ‘일부만 함’으로 남깁니다</span></div><input type="number" value="30" min="1" max="200" aria-label="도면당 호출 상한"></div>
+      <div class="kv"><div class="k"><b>예상</b><span>AI 호출 약 ${s.calls}회 · 약 ${Math.max(1, Math.round(s.calls * 30 / 60))}분</span></div></div>
+      <div class="kv"><div class="k"><b>도면당 상한</b><span>이보다 많으면 일부만 묻고 ‘일부만 함’으로 남깁니다</span></div><input type="number" value="20" min="1" max="200" aria-label="도면당 호출 상한"></div>
       <div class="kv"><div class="k"><b>연결</b><span>구독 · 빠른 모델 · 구독 사용량 안에서 씁니다</span></div><span class="chip ok">${ic("plug-connected", "sm")}준비됨</span></div>
       <div class="notice info">${ic("info-circle", "sm")}<span>종류를 정하지 못한 기호 둘레의 도면 조각 그림과 범례판을 AI에 보냅니다. 구독 연결로만 보냅니다.</span></div>
       ${busy ? `<div class="notice warn">${ic("hourglass", "sm")}<span>앞선 도면 1장이 끝난 뒤 시작합니다.</span></div>` : ""}
