@@ -426,10 +426,13 @@ def notice(node_set):
     h = (node_set or {}).get("history") or []
     if not h or h[-1].get("op") != OP:
         return None
+    from hazop.graph import sheets
     d = h[-1]["detail"]
     again = len(d.get("recheck") or {})
-    return "그래프 판이 바뀌어(%s → %s) 구성요소 %d개를 새 판에 다시 맞췄습니다. %s" % (
-        d["from"], d["to"], d["matched"],
+    renamed = ", ".join("%s → %s" % (sheets.display_name({"graph_id": a}), sheets.display_name({"graph_id": b}))
+                        for a, b in sorted((d.get("sheets") or {}).items()))
+    return "%s그래프 판이 바뀌어(%s → %s) 구성요소 %d개를 새 판에 다시 맞췄습니다. %s" % (
+        "도면 이름이 바뀐 것(%s)을 따라 옮겼습니다. " % renamed if renamed else "", d["from"], d["to"], d["matched"],
         "내용이 바뀐 구간 %d개만 다시 확인이 필요합니다." % again if again else "확정은 그대로입니다.")
 
 

@@ -230,6 +230,7 @@ class GuardOwnerTest(GuardCase):
 
     def _undo_after_rename(self, a, new_number, then=None):
         _pg, before = self.make_nodes(a)
+        old = self.sheet(a)["graph_id"]
         batch = self.remove_node()
         self.assertTrue(self.confirm(a, {"drawing_number": new_number})["ok"])
         if then:
@@ -237,16 +238,17 @@ class GuardOwnerTest(GuardCase):
         self.nodes_cmd("undo", {"batch_id": batch})
         pg, n = self.node()
         ids = {x["entity_id"] for x in pg["nodes"]}
-        self.assertEqual([m for m in n["members"] if m in ids], [], "옛 이름의 구성원이 다른 도면의 기호에 붙지 않음")
-        self.assertEqual(len(n.get("lost") or []), len(before["nodes"][0]["members"]), "되돌린 구간의 구성원은 찾지 못한 구성요소로 보임")
+        want = sorted(m.replace(old + "/", "graph-%s/" % new_number, 1) for m in before["nodes"][0]["members"])
+        self.assertEqual((sorted(n["members"]), n.get("lost") or []), (want, []), "되돌린 구간이 새 이름의 같은 기호로 돌아옴")
+        self.assertTrue(set(want) <= ids)
 
-    def test_undoing_a_removal_after_the_number_changed_shows_the_members_as_not_found(self):
-        """번호를 바꾼 뒤 그 앞의 구간 지우기를 되돌리면 옛 이름의 구성원이 돌아온다. 묶음을 버리지 않는다: 구성원은 찾지 못한 구성요소로
-        보이고(사람이 버리거나 다시 고름) 다른 도면으로 조용히 이어지지 않는다. 이름 바뀜 잇기(U5)가 생기면 같은 묶음을 새 이름으로 잇는다."""
+    def test_undoing_a_removal_after_the_number_changed_comes_back_on_the_new_name(self):
+        """R6. 번호를 바꾼 뒤 그 앞의 구간 지우기를 되돌리면, 판 이전이 되돌리기 묶음도 같은 자료의 새 이름으로 옮겨 두었으므로 구성원이 새 이름으로 돌아온다
+        (U2에서는 찾지 못한 구성요소로 보였다)."""
         self._undo_after_rename(self.add("SNP-M-101", "pdf"), "SNP-M-101")
 
-    def test_undo_after_the_old_number_went_to_another_file_does_not_attach_to_it(self):
-        """옛 번호를 다른 파일이 받은 뒤 되돌려도(같은 graph_id, entity id도 겹침) 그 파일의 기호로 잇지 않는다."""
+    def test_undo_after_the_old_number_went_to_another_file_follows_its_own_file(self):
+        """R7. 옛 번호를 다른 파일이 받은 뒤 되돌려도(같은 graph_id, entity id도 겹침) 그 파일의 기호로 잇지 않고 제 파일의 새 번호로 돌아온다."""
         def other_takes_the_old_number():
             b = self.add("SNP-M-102", "drawio")
             self.assertTrue(self.confirm(b, {"drawing_number": "SNP-M-101"})["ok"])

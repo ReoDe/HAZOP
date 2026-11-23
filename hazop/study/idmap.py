@@ -22,6 +22,12 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
 - 시트의 자료가 바뀌면(같은 도면 번호의 다른 파일로 갈아탐, hazop.graph.sources) 파일 id가 같아도 같은 기호라는 증거가 아니다. 판 사진에
   시트별 자료(graph_member_sheets {시트 graph_id: material_id})를 남기고, 옛 사진과 새 그래프의 자료가 다른 시트의 source 구성요소는
   참조로 잇지 않는다(표시로 증명하지 못하면 묘비). 그 칸이 없는 옛 사진은 전처럼 참조로 잇는다.
+- 시트 이름 바뀜(표제란 번호 확정·확정 취소·번호 바꾸기): 옛 사진과 새 그래프 양쪽에 같은 자료가 한 시트씩 있고 이름만 다르면 그 두 이름을
+  짝으로 본다(sheet_pairs). 짝의 새 이름이 짝 없이 남는 옛 이름과 겹치면(그 이름을 다른 자료가 쓰다가 넘김) 짝을 모두 버린다. 짝은 기록하지
+  않고 두 상태에서 매번 셈한다(끊긴 뒤 다시 해도 같은 짝). 맞추기에 쓰는 옛 값(참조·표시·겉모습·끝의 시트 칸, 시트별 자료)만 새 이름으로
+  한꺼번에 바꾸고, 대응표의 열쇠·새 묘비 기록은 옛 값 그대로다. 짝이 없으면 전과 같다(옛 이름의 구성요소는 묘비).
+- 새 묘비 기록에는 잃을 때의 시트 자료(material)를 적는다. 묘비를 되찾을 때 기록의 시트가 새 그래프에 없으면, 그 자료가 새 그래프에
+  한 시트로만 있을 때 그 시트로 옮겨 맞춘다(material이 없는 옛 기록은 임시 이름 graph-<자료>-p<쪽>에서 자료를 읽음).
 - 등록되지 않은 자리에서 옛 판 id를 만나면 report["unregistered"]에 경로를 적는다(시험에서는 비어 있어야 한다).
 - 경로의 `[]`는 목록의 항목, `{}`는 ID를 열쇠로 쓰는 사전의 값이다. 경로가 `{}`로 끝나면 그 사전의 열쇠를 옮긴다(키 다시
   짓기). 옮긴 열쇠가 다른 항목의 열쇠와 겹치면 뒤 항목은 묘비 열쇠로 둔다(어느 쪽이 맞는지 모르므로 덮지 않음). 값이 자기
@@ -244,6 +250,38 @@ def sheet_materials(graph):
     return {graph["graph_id"]: mid} if mid and graph.get("graph_id") else {}
 
 
+_TEMP_SHEET = re.compile(r"^graph-(material-[0-9a-f]{12})-p\d+$")
+
+
+def _temp_material(sheet):
+    m = _TEMP_SHEET.match(sheet or "")
+    return m.group(1) if m else None
+
+
+def sheet_pairs(node_set, graph):
+    """같은 자료의 1:1 시트 이름 바뀜 {옛 시트 graph_id: 새 시트 graph_id}. 옛 판 사진(graph_member_sheets)과 새 그래프에 그 자료가 한 시트씩
+    있고 이름만 다를 때. 짝의 새 이름이 짝 없이 남는 옛 이름(사진의 시트·참조의 도면)과 겹치면 어느 쪽 기록인지 모르므로 {}."""
+    old, new = node_set.get("graph_member_sheets") or {}, sheet_materials(graph)
+
+    def once(d):
+        seen = collections.Counter(v for v in d.values() if v)
+        return {m: g for g, m in d.items() if m and seen[m] == 1}
+    o, n = once(old), once(new)
+    pairs = {o[m]: n[m] for m in o if m in n and o[m] != n[m]}
+    known = set(old) | {drawing_of(r) for r in (node_set.get("graph_member_refs") or {}).values()}
+    return {} if set(pairs.values()) & (known - set(pairs)) else pairs
+
+
+def _renamed_ref(r, pairs):
+    g, sep, rest = (r or "").partition("#")
+    return pairs[g] + sep + rest if sep and g in pairs else r
+
+
+def _renamed_sheet(v, sheet):
+    """표시·겉모습·끝 [node_type, 도면, …]의 도면 칸을 sheet로 바꾼 사본."""
+    return v if v[1] == sheet else v[:1] + [sheet] + v[2:]
+
+
 def snapshot(graph):
     """집합이 가리키는 판의 사진: 그래프 전체 구성요소의 참조·id 근거와, 상자가 있는 순번 구성요소의 표시, 상자가 없고 끝이
     있는 순번 구성요소의 겉모습과 끝(graph_member_ends {id: [node_type, 도면, kind, tag, [끝 id]]}), source 구성요소의
@@ -317,7 +355,7 @@ def _recorded_as(t, rec, graph_id):
 
 def _empty_table(graph_id, frm, to, partial):
     return {"graph_id": graph_id, "from": frm, "to": to, "eid": {}, "ref": {}, "found": {}, "new_tombs": {},
-            "check": "mark", "partial": partial, "drawings": [], "unnamed": []}
+            "check": "mark", "partial": partial, "drawings": [], "unnamed": [], "sheets": {}}
 
 
 def _registered_ids(doc, kind, spaces):
@@ -337,12 +375,17 @@ def _registered_ids(doc, kind, spaces):
 
 
 def compute(node_set, graph, at=None):
-    """옛 판 사진(집합)에서 새 그래프로 가는 대응표. 순수 함수. 집합은 upgrade를 거친 것이어야 한다."""
+    """옛 판 사진(집합)에서 새 그래프로 가는 대응표. 순수 함수. 집합은 upgrade를 거친 것이어야 한다.
+    시트 이름이 바뀐 짝(sheet_pairs)은 맞추기에 쓰는 옛 값만 새 이름으로 보고, 표의 열쇠와 새 묘비 기록은 옛 값 그대로 둔다."""
     gid = graph.get("graph_id")
     frm, to = node_set.get("graph_version"), graph.get("graph_version")
     table = _empty_table(gid, frm, to, False)
+    pairs = sheet_pairs(node_set, graph)
+    table["sheets"] = dict(sorted(pairs.items()))
     old_refs = node_set.get("graph_member_refs") or {}
+    seen_refs = {m: _renamed_ref(r, pairs) for m, r in old_refs.items()}   # 맞추기에 쓰는 참조(짝의 새 이름)
     old_marks = {k: v for k, v in (node_set.get("graph_member_marks") or {}).items() if valid_mark(v)}
+    seen_marks = {k: _renamed_sheet(v, pairs.get(v[1], v[1])) for k, v in old_marks.items()}
     old_basis = node_set.get("graph_member_basis")
     old_looks = {k: v for k, v in (node_set.get("graph_member_looks") or {}).items() if valid_look(v)}
     tombs = node_set.get("tombstones") or {}
@@ -350,9 +393,28 @@ def compute(node_set, graph, at=None):
     new_basis = bases(graph)
     now_sheets = sheet_materials(graph)
     old_sheets = node_set.get("graph_member_sheets") or {}
-    moved = {s for s, mid in old_sheets.items() if mid and now_sheets.get(s) not in (None, mid)}
+    seen_sheets = {pairs.get(s, s): mid for s, mid in old_sheets.items()}
+    moved = {s for s, mid in seen_sheets.items() if mid and now_sheets.get(s) not in (None, mid)}
     # 옛 사진에 그 시트의 자료가 없으면(이 칸 전에 저장) 그 이름을 다른 자료도 원하는 시트에서는 자료가 바뀌었는지 알 수 없다: 파일 id를 믿지 않는다
-    moved |= {s["graph_id"] for s in graph.get("sheets") or () if s.get("contested") and not old_sheets.get(s["graph_id"])}
+    moved |= {s["graph_id"] for s in graph.get("sheets") or () if s.get("contested") and not seen_sheets.get(s["graph_id"])}
+    sheets_of = {}
+    for s, mid in now_sheets.items():
+        sheets_of.setdefault(mid, []).append(s)
+
+    def relocated(sheet, material):
+        """묘비 기록의 시트 → 지금 그 기호를 찾을 시트. 짝이면 새 이름. 그 이름이 새 그래프에 없으면 잃을 때 자료의 시트(하나뿐일 때).
+        그 이름을 다른 자료가 쓰고 있으면 옮기지 않는다(그 묘비는 자료 검사가 막아 다른 파일 기호에 붙지 않는다)."""
+        if not sheet:   # 도면 그래프의 구성요소는 시트 칸이 비어 있다
+            return sheet
+        s = pairs.get(sheet, sheet)
+        mid = material or _temp_material(sheet)
+        if mid and s not in now_sheets and len(sheets_of.get(mid) or ()) == 1:
+            return sheets_of[mid][0]
+        return s
+
+    def material_of(m):
+        sheet = m.partition("/")[0] if "/" in m else drawing_of(old_refs.get(m))
+        return old_sheets.get(sheet)
     by_id = {n["entity_id"]: n for n in graph.get("nodes", [])}
     new_ref = {e: ref_of(n, gid) for e, n in by_id.items()}
     by_ref = {}
@@ -373,13 +435,13 @@ def compute(node_set, graph, at=None):
             return old_basis.get(m, ids.SEQUENCE)
         if m in old_marks:  # B꼴 표시는 순번 id에만 있었다
             return ids.SEQUENCE
-        hits = by_ref.get(old_refs.get(m)) or []
+        hits = by_ref.get(seen_refs.get(m)) or []
         return ids.SOURCE if hits and all(new_basis[e] == ids.SOURCE for e in hits) else ids.SEQUENCE
 
     domain = set(old_refs) | {x for x in _registered_ids(node_set, SET, (MEMBERS, EID)) if not is_tomb(x)}
     link = {}
     for m in sorted(domain):
-        r = old_refs.get(m)
+        r = seen_refs.get(m)
         hits = []
         if m not in old_refs:
             pass  # 판 사진에 없는 떠돌이 id: 무엇이었는지 모른다
@@ -388,13 +450,14 @@ def compute(node_set, graph, at=None):
         elif m in old_marks:
             # 순번 구성요소는 표시로 잇는다. 표시가 없으면(상자 없음, A꼴, B꼴의 스캔·지은 id) 끝으로 잇거나(_link_by_ends) 묘비다.
             # 구간 지문(md3)이 같아도 위치는 지문에 없어서, 같은 종류·태그의 다른 자리 기호로 이을 수 있다(퍼즈로 확인)
-            hits = mark_hits(old_marks[m])
+            hits = mark_hits(seen_marks[m])
             if len(hits) > 1:  # 표시가 같은 것이 여럿이면 같은 참조인 것만
                 hits = [e for e in hits if new_ref[e] == r]
         if len(hits) == 1:
             link[m] = hits[0]
     contested = _drop_contested(link)
-    _link_by_ends(node_set, graph, new_basis, by_id, link, contested, old_basis_of, domain)
+    ends = {k: _renamed_sheet(v, pairs.get(v[1], v[1])) for k, v in (node_set.get("graph_member_ends") or {}).items() if valid_ends(v)}
+    _link_by_ends(ends, graph, new_basis, by_id, link, contested, old_basis_of, domain)
     for m in sorted(domain - set(link)):
         mk = old_marks.get(m)
         lk = old_looks.get(m) if m in old_refs and old_basis_of(m) == ids.SOURCE else None
@@ -405,8 +468,8 @@ def compute(node_set, graph, at=None):
                                      "lost_from": frm, "lost_at": to, "at": at, "legacy_key": None, "found": None}
             if lk is not None:
                 table["new_tombs"][t].update(look=lk, look_key=look_key(t, lk))
-                if old_sheets.get(drawing_of(old_refs.get(m))):   # 잃을 때의 시트 자료(다른 파일로 바뀐 뒤 같은 id로 되찾지 않게)
-                    table["new_tombs"][t]["material"] = old_sheets[drawing_of(old_refs.get(m))]
+            if material_of(m):   # 잃을 때의 시트 자료: 다른 파일로 바뀐 뒤 같은 id로 되찾지 않고, 이름이 바뀐 뒤에는 그 자료의 시트에서 찾는다
+                table["new_tombs"][t]["material"] = material_of(m)
     table["eid"].update(link)
     taken = set(link.values())
     claims = {}
@@ -414,17 +477,23 @@ def compute(node_set, graph, at=None):
         if not isinstance(rec, dict) or rec.get("found") is not None or t in gone or not _recorded_as(t, rec, gid):
             continue
         if valid_mark(rec.get("mark")):
-            hits = mark_hits(rec["mark"])
+            was = rec["mark"][1]
+            sheet = relocated(was, rec.get("material"))
+            hits = mark_hits(_renamed_sheet(rec["mark"], sheet))
         elif rec.get("basis") == ids.SOURCE and rec.get("ref") and valid_look(rec.get("look")):
-            sheet = drawing_of(rec["ref"])
-            lost_in = rec.get("material")       # 잃을 때의 시트 자료. 없는 옛 묘비는 이번에 자료가 바뀌었는지만 본다
+            lost_in = rec.get("material") or _temp_material(drawing_of(rec["ref"]))   # 잃을 때의 시트 자료
+            was = drawing_of(rec["ref"])
+            sheet = relocated(was, lost_in)
             if (sheet in moved) if lost_in is None else now_sheets.get(sheet, lost_in) != lost_in:
                 continue                        # 시트 자료가 다르면 같은 파일 id·같은 겉모습도 같은 기호가 아니다
-            hits = [e for e in by_ref.get(rec["ref"]) or ()
-                    if new_basis[e] == ids.SOURCE and _same_look(rec["look"], look_of(by_id[e]))]
+            ref = rec["ref"] if sheet == was else sheet + "#" + rec["ref"].partition("#")[2]   # 연결 구간 참조에는 도면이 없다
+            look = _renamed_sheet(rec["look"], relocated(rec["look"][1], lost_in))
+            hits = [e for e in by_ref.get(ref) or () if new_basis[e] == ids.SOURCE and _same_look(look, look_of(by_id[e]))]
         else:
             continue
-        hits = [e for e in hits if e not in taken and e not in contested]
+        # 자료로 옮겨 찾은 묘비(옛 이름이 사라졌거나 다른 파일이 받음): 그 기호는 새 이름 판 사진의 같은 기호가 이미 잡고 있으므로 잡힘을 보지 않는다
+        followed_file = sheet != pairs.get(was, was)
+        hits = [e for e in hits if (followed_file or e not in taken) and e not in contested]
         if len(hits) == 1:
             claims.setdefault(hits[0], []).append(t)
     for e, ts in claims.items():
@@ -456,12 +525,11 @@ def _drop_contested(link):
     return contested
 
 
-def _link_by_ends(node_set, graph, new_basis, by_id, link, contested, old_basis_of, domain):
+def _link_by_ends(every, graph, new_basis, by_id, link, contested, old_basis_of, domain):
     """상자가 없고 끝이 둘 이상인 순번 구성요소(배관 구간·도면 연결 구간)를 겉모습과 끝으로 잇는다(link를 고침). 끝이 모두
     이어졌고, 같은 겉모습으로 그 끝들을 가진 것이 옛 판에 하나·새 판에 하나뿐이며, 끝마다 닿는 같은 겉모습 구성요소 수가
     옛 판과 새 판에서 같을 때만 잇는다(나뉘며 생긴 같은 두 끝 우회선, 끊긴 끝으로 잇지 않음). 한쪽 끝만 있으면 잇지 않는다.
-    끝이 끝으로 이은 구성요소일 수도 있어 더 이을 것이 없을 때까지 되풀이한다."""
-    every = {m: v for m, v in (node_set.get("graph_member_ends") or {}).items() if valid_ends(v)}
+    끝이 끝으로 이은 구성요소일 수도 있어 더 이을 것이 없을 때까지 되풀이한다. every는 옛 판 사진의 끝(graph_member_ends, 시트 칸은 짝의 새 이름)."""
     old = {m: v for m, v in every.items() if m in domain and old_basis_of(m) == ids.SEQUENCE and len(set(v[4])) >= 2}
     if not old:
         return
@@ -501,7 +569,8 @@ def _link_by_ends(node_set, graph, new_basis, by_id, link, contested, old_basis_
 
 def record(table):
     """이력 detail에 남길 표(이름 renamed는 U1 R2 시험이 읽는다). 바뀐 것과 함께 그대로 이어진 것(kept_eids·kept_refs)과
-    도면(drawings)을 적어, 늦게 따라오는 문서도 from_record로 같은 표를 만든다(옛 판 사진에 없는 이 도면의 참조는 묘비)."""
+    도면(drawings)을 적어, 늦게 따라오는 문서도 from_record로 같은 표를 만든다(옛 판 사진에 없는 이 도면의 참조는 묘비).
+    sheets {옛 시트: 새 시트}는 이름이 바뀐 시트(화면 문구용, 참조 표에 이미 들어 있어 from_record는 쓰지 않음)."""
     eid = table["eid"]
     return {"renamed": {a: b for a, b in sorted(eid.items()) if not is_tomb(b) and a != b},
             "lost": {a: b for a, b in sorted(eid.items()) if is_tomb(b)},
@@ -512,6 +581,7 @@ def record(table):
             "kept_refs": sorted(a for a, b in table["ref"].items() if a == b),
             "unnamed_refs": list(table.get("unnamed") or []),
             "drawings": list(table["drawings"]),
+            "sheets": dict(table.get("sheets") or {}),
             "check": table["check"]}
 
 
