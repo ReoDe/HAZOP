@@ -295,8 +295,20 @@ def _sources_details(engine):
         return [{"label": "도면 번호", "after": a["drawing_number"]},
                 {"label": "쓸 원본 형식", "before": "%s%s" % (found.get("in_use_format") or "(없음)", " · 사람이 고름" if found.get("chosen") else ""),
                  "after": a["format"]},
-                {"label": "있는 형식", "after": ", ".join(found["formats"])}]
+                {"label": "있는 형식", "after": ", ".join(found["formats"])}] + _impact_rows(engine, found, a["format"])
     return details
+
+
+def _impact_rows(engine, found, fmt):
+    """웹 카드의 갈아타기 미리 알림과 같은 수(검토 ⑥ 가): 다시 확인할 구간·확정이 풀릴 구간. 구간 파일을 읽지 못하면 그렇다고 밝힌다."""
+    from hazop.shell import api_drawings
+    imp = api_drawings.choose_impact(engine, found, fmt=fmt)
+    if imp["recheck"] is None or imp["released"] is None:
+        return [{"label": "영향", "after": "구간 파일을 읽지 못해 다시 확인할 구간 수를 알 수 없습니다. 구간 패널을 먼저 열어 확인하세요."}]
+    if not imp["recheck"]:
+        return [{"label": "영향", "after": "이 도면에는 바뀌는 구간이 없습니다."}]
+    return [{"label": "다시 확인할 구간", "after": "%d개" % imp["recheck"]},
+            {"label": "확정이 풀릴 구간", "after": "%d개" % imp["released"]}]
 
 
 def _sources_execute(engine):

@@ -57,6 +57,16 @@ class FileChoiceTest(ShellSheetBase):
             self.assertNotRegex(t, TEMP)
         self.assertNotIn("name", c["candidates"][0], "폴더 이름은 싣지 않는다")
 
+    def test_unreadable_node_file_is_unknown_not_zero(self):
+        """검토 ⑥ 나: 구간 파일을 읽지 못하면 '구간이 없다'(0)가 아니라 '알 수 없음'으로 보낸다."""
+        from hazop.shell import api_drawings, api_nodes
+        with mock.patch.object(api_nodes, "_peek", side_effect=OSError("깨짐")):
+            c = api_drawings.source_conflicts(self.eng)["conflicts"][0]
+        self.assertTrue(c["nodes_unknown"])
+        self.assertEqual([(x["recheck"], x["released"]) for x in c["candidates"] if not x["in_use"]], [(None, None)])
+        c = api_drawings.source_conflicts(self.eng)["conflicts"][0]
+        self.assertFalse(c["nodes_unknown"])
+
     def test_choosing_another_file_switches_and_reports_what_was_lost_then_back(self):
         refused = self.eng.dispatch("sources.choose", {"drawing_number": "graph-SNP-M-101", "format": "pdf_vector"})
         self.assertEqual(refused["error"]["code"], "failed", "같은 형식이라 형식으로는 고를 수 없음")

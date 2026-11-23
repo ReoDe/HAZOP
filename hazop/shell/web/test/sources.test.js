@@ -74,4 +74,26 @@ export const tests = [
     assert.equal(sent[0], ["sources.choose", { drawing_number: "graph-SNP-M-101", material_id: "m-b" }]);
     host.remove();
   } },
+  { name: "원본 고르기(검토 ⑥ 나·다): 구간 파일을 못 읽으면 '알 수 없음'을 밝히고 한 번 더 확인해야 바꾼다, 되돌아온다고 약속하지 않는다", async run(assert) {
+    const UNKNOWN = Object.assign({}, FILE_ROW, { nodes_on_sheet: 0, nodes_unknown: true,
+      candidates: FILE_ROW.candidates.map((x) => Object.assign({}, x, { recheck: x.in_use ? 0 : null, released: x.in_use ? 0 : null })) });
+    const t = previewText(UNKNOWN, choicesOf(UNKNOWN).find((x) => !x.using));
+    assert(t.includes("알 수 없습니다") && !t.includes("다시 확인할 것이 없습니다"), t);
+    sent = [];
+    window.hazopBridge = { send(text) { const m = JSON.parse(text); if (m.t !== "cmd") return; sent.push([m.name, m.args]);
+      Promise.resolve().then(() => deliver(JSON.stringify({ t: "reply", id: m.id, ok: true, data: { chosen: {} } }))); }, setHandler() {} };
+    window.fetch = async (u) => (String(u) === "/api/sources" ? { ok: true, status: 200, json: async () => ({ conflicts: [UNKNOWN] }) } : { ok: false, status: 404, json: async () => ({}) });
+    const host = document.createElement("div"); document.body.appendChild(host);
+    render(html`<${SourceConflicts} />`, host);
+    await tick(); await tick();
+    assert(!host.textContent.includes("바로 되돌아옵니다") && host.textContent.includes("다시 고르세요"), "되돌아온다고 약속하지 않는다");
+    [...host.querySelectorAll("button")].find((b) => b.textContent.includes("b.pdf")).click(); await tick();
+    const go = [...host.querySelectorAll(".src-ask button")].find((b) => b.textContent.includes("바꾸기"));
+    assert(go.disabled, "영향을 모르면 확인 칸을 체크하기 전에는 못 바꾼다");
+    const box = host.querySelector(".src-ask input[type=checkbox]");
+    box.checked = true; box.dispatchEvent(new Event("change", { bubbles: true })); await tick();
+    [...host.querySelectorAll(".src-ask button")].find((b) => b.textContent.includes("바꾸기")).click(); await tick();
+    assert.equal(sent[0], ["sources.choose", { drawing_number: "graph-SNP-M-101", material_id: "m-b" }]);
+    host.remove();
+  } },
 ];

@@ -14,6 +14,7 @@ const fmt = (f) => FORMAT[f] || f || "형식 모름";
 /** 갈아타기 미리 알림 글. 후보마다 엔진이 센 수(recheck)를 쓴다: 지금 쓰는 파일이면 바뀌는 것이 없다(검토 지적 3). */
 export function previewText(c, x) {
   if (x && x.using) return "지금 쓰는 원본입니다. 사람이 고른 것으로 붙박을 뿐 도면과 구간은 그대로입니다.";
+  if (unknownImpact(c, x)) return "구간 파일을 읽지 못해 이 원본으로 바꿨을 때 다시 확인할 구간이 몇 개인지 알 수 없습니다. 구간 패널에서 먼저 확인하거나, 영향을 모른 채 바꾸려면 아래에서 한 번 더 확인하세요.";
   const n = x && typeof x.recheck === "number" ? x.recheck : (c.nodes_on_sheet || 0);
   const firm = x && typeof x.released === "number" ? x.released : (c.confirmed_on_sheet || 0);
   return n ? "이 원본으로 바꾸면 지금 도면 위의 구간 " + n + "개가 다시 확인 대상이 됩니다."
@@ -21,6 +22,9 @@ export function previewText(c, x) {
       + " 같은 기호로 증명되지 않는 구성요소는 '찾지 못한 구성요소'로 남습니다."
     : "이 도면에는 아직 구간이 없어 바꿔도 다시 확인할 것이 없습니다.";
 }
+
+/** 엔진이 구간 파일을 읽지 못해 수를 셀 수 없음(검토 ⑥ 나: 0으로 '다시 확인할 것이 없다'고 안심시키지 않는다). */
+export const unknownImpact = (c, x) => !(x && x.using) && (!!c.nodes_unknown || (!!x && x.recheck === null));
 
 const fileChoice = (c, x, withFormat) => ({ key: x.material_id, kind: "file",
   label: (x.file || "파일") + (withFormat ? " (" + fmt(x.format) + ")" : "") + (x.modified ? " · " + x.modified : ""),
@@ -47,6 +51,7 @@ export function SourceConflicts() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(null);      // {c, x}: 갈아타기 확인 중
+  const [blindOk, setBlindOk] = useState(false);   // 영향을 모른 채 바꾸기를 한 번 더 확인함
   const [unapplied, setUnapplied] = useState(null);      // 고른 뒤 검토구간 반영에 실패했을 때의 글(검토 지적 2)
   const reload = () => read("sources").then(setInfo).catch(() => setInfo({ conflicts: [] }));
   useEffect(() => { reload(); return onChanged((t) => { if (t === "sources" || t === "drawings") reload(); }); }, []);
@@ -67,7 +72,7 @@ export function SourceConflicts() {
   }
   if (!info || !info.conflicts.length) return null;
   return html`<div class="card src-card" aria-label="같은 도면 자리의 원본 고르기"><h3>같은 도면 자리에 원본이 둘 이상 있습니다</h3>
-    <div class="muted small">분석에 쓸 원본을 고르세요. 고르기 전에는 먼저 쓰던 것을 씁니다. 다른 원본의 읽은 결과와 수정 기록은 지우지 않고 그대로 두며, 다시 고르면 바로 되돌아옵니다.</div>
+    <div class="muted small">분석에 쓸 원본을 고르세요. 고르기 전에는 먼저 쓰던 것을 씁니다. 다른 원본의 읽은 결과와 수정 기록은 지우지 않고 그대로 둡니다. 원래 원본으로 돌아가려면 그 원본을 다시 고르세요.</div>
     <div class="list" role="list" aria-label="고를 원본이 있는 도면">${info.conflicts.map((c) => {
       const choices = choicesOf(c);
       const picked = !!(c.chosen_material || c.chosen);       // 사람이 형식이나 파일을 고름
@@ -78,10 +83,11 @@ export function SourceConflicts() {
         <div class="acts">${choices.map((x) => (x.using && picked
           ? html`<${Chip} kind="ok" icon="check" key=${x.key}>${x.label} 쓰는 중<//>`
           : html`<${Btn} sm=${true} key=${x.key} label=${c.display + ": " + x.label + " 쓰기"} disabled=${busy}
-              onClick=${() => setAsking({ c, x })}>${x.label} 쓰기<//>`))}</div>
+              onClick=${() => { setBlindOk(false); setAsking({ c, x }); }}>${x.label} 쓰기<//>`))}</div>
         ${asking && asking.c.graph_id === c.graph_id ? html`<div class="src-ask" role="alertdialog" aria-label="원본 바꾸기 확인">
           <div>${previewText(c, asking.x)}</div>
-          <div class="acts-row"><${Btn} sm=${true} kind="primary" label=${asking.x.label + "로 바꾸기"} disabled=${busy} onClick=${() => choose(asking.x)}>바꾸기<//>
+          ${unknownImpact(c, asking.x) ? html`<label class="small"><input type="checkbox" checked=${blindOk} onChange=${(e) => setBlindOk(e.target.checked)} /> 영향을 모른 채 바꿉니다</label>` : null}
+          <div class="acts-row"><${Btn} sm=${true} kind="primary" label=${asking.x.label + "로 바꾸기"} disabled=${busy || (unknownImpact(c, asking.x) && !blindOk)} onClick=${() => choose(asking.x)}>바꾸기<//>
             <${Btn} sm=${true} label="바꾸지 않기" onClick=${() => setAsking(null)}>취소<//></div></div>` : null}</div>`;
     })}</div>
     ${unapplied ? html`<${Notice} kind="warn" icon="alert-triangle">${unapplied}

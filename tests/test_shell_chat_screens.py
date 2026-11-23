@@ -194,6 +194,20 @@ class SourcesTest(RunBase):
         self.assertTrue(self.approve(item)["ok"])
         self.assertEqual(self.chosen, [{"drawing_number": "SNP-M-101", "format": "pdf_vector"}])
 
+    def test_box_shows_the_same_impact_counts_as_the_card(self):
+        """검토 ⑥ 가: 웹 카드와 같은 수(다시 확인할 구간·확정이 풀릴 구간). 구간 파일을 읽지 못하면 0으로 안심시키지 않는다."""
+        self.conf[0]["graph_id"] = "graph-SNP-M-101"
+        with mock.patch("hazop.shell.api_drawings._nodes_on", lambda e, g: {"graph-SNP-M-101": 3}), \
+                mock.patch("hazop.shell.api_drawings._confirmed_on", lambda e, g: {"graph-SNP-M-101": 1}):
+            rows = {r["label"]: r["after"] for r in self.one("sources.choose", drawing_number="SNP-M-101", format="pdf_vector")["details"]}
+        self.assertEqual((rows["다시 확인할 구간"], rows["확정이 풀릴 구간"]), ("3개", "1개"))
+        with mock.patch("hazop.shell.api_drawings._nodes_on", lambda e, g: None), \
+                mock.patch("hazop.shell.api_drawings._confirmed_on", lambda e, g: None):
+            rows = {r["label"]: r["after"] for r in self.one("sources.choose", drawing_number="SNP-M-101", format="pdf_vector")["details"]}
+        self.assertIn("알 수 없습니다", rows["영향"])
+        rows = {r["label"]: r["after"] for r in self.one("sources.choose", drawing_number="SNP-M-101", format="drawio")["details"]}
+        self.assertIn("바뀌는 구간이 없습니다", rows["영향"], "지금 쓰는 형식을 고르면 바뀌는 것이 없다")
+
     def test_no_conflict_or_missing_format_is_refused(self):
         self.assertIn("없음", self.one("sources.choose", drawing_number="SNP-M-101", format="dexpi")["reason"])
         self.assertIn("겹치지 않음", self.one("sources.choose", drawing_number="SNP-M-999", format="drawio")["reason"])

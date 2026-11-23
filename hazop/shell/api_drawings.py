@@ -169,6 +169,8 @@ def source_conflicts(engine):
     found = sources.conflicts(engine.project_id())[:MAX_ROWS]
     held = _nodes_on(engine, [c["graph_id"] for c in found]) if found else {}
     firm = _confirmed_on(engine, [c["graph_id"] for c in found]) if found else {}
+    unknown = held is None or firm is None          # 구간 파일을 읽지 못함: 0으로 안심시키지 않고 '알 수 없음'으로 보인다(검토 ⑥ 나)
+    held, firm = held or {}, firm or {}
     lb = labels(engine) if found else {}
     for c in found:
         shown = display(engine, c["graph_id"], lb)
@@ -176,19 +178,20 @@ def source_conflicts(engine):
                      "drawing_number": c["drawing_number"], "graph_id": c["graph_id"], "formats": list(c["formats"]),
                      "in_use_format": c.get("in_use_format"), "in_use_material": c.get("in_use_material"), "in_use_file": c.get("in_use_file"),
                      "chosen": c.get("chosen"), "chosen_material": c.get("chosen_material"), "nodes_on_sheet": held.get(c["graph_id"], 0),
-                     "confirmed_on_sheet": firm.get(c["graph_id"], 0),
+                     "confirmed_on_sheet": firm.get(c["graph_id"], 0), "nodes_unknown": unknown,
                      "candidates": [{"material_id": x.get("material_id"), "file": x.get("file"), "format": x.get("format"),
                                      "in_use": bool(x.get("in_use")),
                                      # 이 후보로 바꾸면 다시 확인할 구간 수(지금 쓰는 파일이면 바뀌는 것이 없어 0, 검토 지적 3)
-                                     "recheck": 0 if x.get("in_use") else held.get(c["graph_id"], 0),
-                                     "released": 0 if x.get("in_use") else firm.get(c["graph_id"], 0),       # 바꾸면 확정이 풀리는 구간 수
+                                     "recheck": 0 if x.get("in_use") else None if unknown else held.get(c["graph_id"], 0),
+                                     "released": 0 if x.get("in_use") else None if unknown else firm.get(c["graph_id"], 0),       # 바꾸면 확정이 풀리는 구간 수
                                      "modified": datetime.datetime.fromtimestamp(x["modified"]).strftime("%Y-%m-%d %H:%M") if x.get("modified") else None}
                                     for x in c["candidates"]]})
     return {"conflicts": rows}
 
 
 def _nodes_on(engine, graph_ids):
-    """{graph_id: 그 도면 구성요소를 품은 구간 수}(갈아타기 전 미리 알림). 구간 파일을 못 읽으면 0."""
+    """{graph_id: 그 도면 구성요소를 품은 구간 수}(갈아타기 전 미리 알림). 프로젝트 그래프가 아직 없으면 {}(구간도 없음),
+    구간 파일을 읽지 못하면 None(영향을 알 수 없음: 0으로 안심시키지 않는다)."""
     from hazop.shell import api_nodes
     from hazop.study import node_commands
     pg = api_nodes._pg(engine, strict=False)
@@ -196,8 +199,8 @@ def _nodes_on(engine, graph_ids):
         return {}
     try:
         ns, _legacy = api_nodes._peek(pg)
-    except Exception:  # noqa: BLE001 - 미리 알림의 수다: 못 읽으면 0
-        return {}
+    except Exception:  # noqa: BLE001 - 미리 알림의 수다: 못 읽으면 '알 수 없음'(None)
+        return None
     return {g: len(node_commands.drawing_nodes(pg, ns, g)) for g in graph_ids}
 
 
@@ -210,10 +213,21 @@ def _confirmed_on(engine, graph_ids):
         return {}
     try:
         ns, _legacy = api_nodes._peek(pg)
-    except Exception:  # noqa: BLE001 - 미리 알림의 수다: 못 읽으면 0
-        return {}
+    except Exception:  # noqa: BLE001 - 미리 알림의 수다: 못 읽으면 '알 수 없음'(None)
+        return None
     state = {n["node_id"]: nodes.node_state(n) for n in (ns or {}).get("nodes") or []}
     return {g: sum(1 for x in node_commands.drawing_nodes(pg, ns, g) if state.get(x["node_id"]) != "applied") for g in graph_ids}
+
+
+def choose_impact(engine, conflict, fmt=None, material_id=None):
+    """채팅 확인 상자의 미리 알림 수(웹 카드와 같은 셈): {"recheck": n 또는 None, "released": n 또는 None}. None은 구간 파일을
+    읽지 못해 알 수 없음. 지금 쓰는 원본을 고르면 바뀌는 것이 없어 0."""
+    same = (material_id and material_id == conflict.get("in_use_material")) or (not material_id and fmt and fmt == conflict.get("in_use_format"))
+    if same:
+        return {"recheck": 0, "released": 0}
+    g = conflict.get("graph_id")
+    held, firm = _nodes_on(engine, [g]), _confirmed_on(engine, [g])
+    return {"recheck": None if held is None else held.get(g, 0), "released": None if firm is None else firm.get(g, 0)}
 
 
 # ---------------------------------------------------------------- 쓰기
