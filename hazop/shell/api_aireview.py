@@ -74,13 +74,28 @@ def _show(field, value):
     return value
 
 
+def by_sid(corrected):
+    """{source_object_id: 항목}(기기·연결·열린 끝). 후보의 자리는 저장된 local_id가 아니라 이것으로 다시 찾는다."""
+    out = {}
+    for key in ("unresolved_connectors", "relations", "nodes"):
+        out.update((x["source_object_id"], x) for x in corrected.get(key) or [] if x.get("source_object_id"))
+    return out
+
+
+def local_of(c, shown):
+    """후보가 가리키는 기호의 지금 자리 번호. 기준 추출을 다시 지으면 local-node 번호가 밀리므로 저장된 c["local_id"]를 쓰지 않고
+    지금 고친 결과에서 그 기호(c["target"], source_object_id)로 찾는다. 지금 없는 기호면 None(엉뚱한 기호에 붙지 않게, 검토 차단 1)."""
+    hit = shown.get(c.get("target"))
+    return hit.get("local_id") if hit else None
+
+
 def _row(c, shown):
     block = ai_review.bulk_block(c)
     match = MATCH_LABELS.get(c.get("match")) if isinstance(c.get("match"), str) else None
     return {"cand_id": c["cand_id"], "task": c["task"], "field": c["field"], "field_label": FIELD_LABELS.get(c["field"], c["field"]),
             "current": _current(shown, c), "values": list(c["values"])[:3], "confidence": round(float(c["confidence"]), 2),
             "reason": (c.get("reason") or "")[:300], "status": c["status"], "status_label": STATUS_LABELS.get(c["status"], c["status"]),
-            "local_id": c.get("local_id"), "bulk_ok": block is None, "bulk_block": block if c["status"] == "proposed" else None,
+            "local_id": local_of(c, shown), "bulk_ok": block is None, "bulk_block": block if c["status"] == "proposed" else None,
             "decided_by": c.get("decided_by"), "script_value": c.get("script_value"), "match": c.get("match") if match else None,
             "match_label": match[0] if match else None, "match_hint": match[1] if match else None,
             "current_text": _show(c["field"], _current(shown, c)), "values_text": [_show(c["field"], v) for v in list(c["values"])[:3]],
@@ -125,7 +140,7 @@ def candidates(engine, graph_id):
     if doc is None:
         return dict(base, available=False, reason="이 도면에는 AI 후보가 없습니다. AI 검토를 실행하면 생깁니다.", counts={}, groups=[], bulk=[],
                     last_run=None)
-    shown = {n["source_object_id"]: n for n in corrections.resolve(name, original)["corrected"]["nodes"]}      # 기준 추출 위 고친 값(입력 연산 U2)
+    shown = by_sid(corrections.resolve(name, original)["corrected"])      # 기준 추출 위 고친 값(입력 연산 U2), 기호 번호로 찾음
     order = {f: i for i, f in enumerate(FIELD_LABELS)}
     rows = sorted(doc["candidates"], key=lambda c: (c["status"] != "proposed", order.get(c["field"], 99), -c["confidence"], c["cand_id"]))
     groups = []

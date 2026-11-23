@@ -81,8 +81,9 @@ def _sources(name):
         ai = None
     ops = list((doc or {}).get("ops") or [])
     r = corrections.resolve(name, original, ops)          # 기준 추출(나누기·배관 지정을 넣어 다시 읽은 것) 위에 덧바른다(입력 연산 U2)
+    bp = sheet_refresh.base_part(name, r)                 # 기준 추출을 다시 지으면 번호가 밀린다: 판에 그 열쇠를 넣는다(검토 차단 1)
     return {"original": original, "base": r["base"], "inputs": r["inputs"], "ops": ops, "doc": doc, "fp": fps["edits"], "corrected": r["corrected"],
-            "ver": sheet_refresh.ver_from(fps), "ai": ai}
+            "ver": sheet_refresh.ver_from(dict(fps, base=bp) if bp else fps), "ai": ai}
 
 
 def _ai_ops(ops):

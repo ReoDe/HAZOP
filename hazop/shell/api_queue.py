@@ -69,20 +69,23 @@ def _ai_items(engine, graph_id=None):
         try:
             original = api_aireview._original(name)
             resolved = corrections.resolve(name, original)
-            shown = {n.get("local_id"): n for n in resolved["corrected"]["nodes"]}
+            corrected = resolved["corrected"]
+            shown = {x["local_id"]: x for x in api_aireview.by_sid(corrected).values() if x.get("local_id")}
             pend = _inputs_of(name, original, resolved)
             if pend:
                 inputs[gid] = pend
         except (OSError, ValueError, TypeError, KeyError):
-            shown = {}
+            shown, corrected = {}, {}
         for g in view["groups"]:
             for c in g["items"]:
                 if c["status"] != "proposed":
                     continue
-                node = shown.get(c.get("local_id")) or {}
+                local = c.get("local_id")                         # 후보 줄(api_aireview._row)이 지금 고친 결과에서 기호 번호로 다시 찾은 자리(검토 차단 1)
+                node = shown.get(local) or {}
                 label = node.get("tag") or _kind_text(node.get("kind")) or "이름 없는 기호"
                 items.append({"qid": "ai|%s|%s" % (gid, c["cand_id"]), "kind": "ai", "graph_id": gid, "sheet": view["drawing_number"],
-                              "ver": view["ver"], "cand_id": c["cand_id"], "local_id": c.get("local_id"), "label": label,
+                              "ver": view["ver"], "cand_id": c["cand_id"], "local_id": local, "label": label,
+                              "item_fp": _item_fp(node, corrected) if local else None,
                               "task": g["label"], "field": c["field"], "field_label": c["field_label"],
                               "now": _value_text(c["field"], c["current"]) or "(비어 있음)",
                               "proposal": _value_text(c["field"], (c["values"] or [""])[0]),
@@ -94,6 +97,13 @@ def _ai_items(engine, graph_id=None):
                 bulk.append({"graph_id": gid, "sheet": view["drawing_number"], "task": b["task"], "label": b["label"], "count": b["count"],
                              "ver": view["ver"]})
     return items, bulk, vers, inputs
+
+
+def _item_fp(node, corrected):
+    """고쳐서 수락(E)이 보낼 대상 지문(api_corrections.item_fp): 그새 그 자리의 기호가 바뀌었으면 엔진이 거절한다."""
+    from hazop.shell import api_corrections
+    kind = "node" if node in (corrected.get("nodes") or []) else "relation"
+    return api_corrections.item_fp(kind, node, corrected)
 
 
 def _inputs_of(name, original, resolved):

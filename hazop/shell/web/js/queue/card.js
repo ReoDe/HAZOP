@@ -88,7 +88,7 @@ function InputsLine({ s, it }) {
   if (!d) return null;
   const bad = (d.lines || []).filter((x) => x.state === "not_applicable");
   return html`<div class="qmsg qinputs" role="status">
-    ${d.waiting ? html`<div>반영 전 수락 ${d.waiting}건 · 대기열을 닫거나 10초 쉬면 도면을 다시 읽어 반영합니다(도면 위 점선 상자).</div>` : null}
+    ${d.waiting ? html`<div>반영 전 수락 ${d.waiting}건 · 대기열을 닫으면 도면을 다시 읽어 반영합니다(도면 위 점선 상자).</div>` : null}
     ${bad.slice(0, 3).map((x) => html`<div class="warn">${x.text}</div>`)}${bad.length > 3 ? html`<div class="muted small">그 밖에 ${bad.length - 3}건</div>` : null}</div>`;
 }
 

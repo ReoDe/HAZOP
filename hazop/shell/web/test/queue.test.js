@@ -87,6 +87,26 @@ export const tests = [
     assert.equal([r.items.length, r.items[0].box, r.badges[0].text, r.missing.length], [1, "pending", "반영 전", 0]);
     host.remove();
   } },
+  { name: "대기열(검토 차단 1): 고쳐서 수락(E)은 대상 지문을 함께 보내고, 지금 도면에서 기호를 못 찾으면 보내지 않는다", async run(assert) {
+    await start([aiItem(1, { item_fp: "fp-1" })]);
+    Q.startEdit(); Q.setEditing("V777");
+    await Q.saveEdit(); await tick();
+    const e = sent.find(([n]) => n === "edit.apply");
+    assert(e && e[1].base === "fp-1" && e[1].local_id === "n1", JSON.stringify(e));
+    await start([aiItem(2, { local_id: null })]);
+    Q.startEdit(); Q.setEditing("V778");
+    await Q.saveEdit(); await tick();
+    assert(!sent.some(([n]) => n === "edit.apply"), "보내지 않음");
+    assert(Q.q.get().note.includes("찾지 못했습니다"), Q.q.get().note);
+  } },
+  { name: "대기열(검토 차단 2): AI 대기열을 연 채 다른 대기열을 열어도 미룸을 푼다", async run(assert) {
+    await start([aiItem(1)]);
+    served = { kind: "lost", items: [{ qid: "lost|S1|L-1", kind: "lost", node_id: "S1", key: "L-1", label: "밸브", graph_id: "G", where: [], target: {}, cands: [], state: "open" }], bulk: [], set_rev: 1 };
+    await Q.openQueue("lost");
+    await tick();
+    assert.equal(holds.slice(-2), [true, false], "AI 대기열이 바뀌면 미룸을 푼다");
+    Q.closeQueue();
+  } },
   { name: "대기열: Space는 저장하지 않고, 끝에서 건너뛴 것 다시 보기", async run(assert) {
     await start([aiItem(1), aiItem(2)]);
     await key(" "); await key(" ");

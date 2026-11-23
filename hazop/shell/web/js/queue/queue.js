@@ -50,7 +50,7 @@ export async function openQueue(kind, gid = null) {
   }
   q.set(Object.assign({}, START, { open: true, kind, gid, items: d.items.map((x) => Object.assign({}, x)), setRev: d.set_rev ?? null,
     projectId: d.project_id || null, bulk: d.bulk || [], inputs: d.inputs || {} }));
-  if (kind === "ai") hold(true);                  // 대기열이 열려 있는 동안 도면 다시 읽기를 미룬다(수락이 이어져도 기다리지 않게, 입력 연산 U2)
+  hold(kind === "ai");                            // AI 대기열이 열려 있는 동안만 도면 다시 읽기를 미룬다. 다른 대기열로 바뀌면 푼다(검토 차단 2)
   store.set({ panel: null });
   takeFocus();
   show();
@@ -210,7 +210,9 @@ export function saveEdit() {
   if (!it || !v) return null;
   const value = it.edit_op === "set_tag" ? { tag: v } : { value: v };
   return run(async () => {
-    const args = { graph_id: it.graph_id, op: it.edit_op, local_id: it.local_id, value, ver: it.ver };
+    if (!it.local_id) { q.set({ note: "이 기호를 지금 도면에서 찾지 못했습니다. 거절한 뒤 도면 고치기에서 고치세요." }); return null; }
+    // 대상 지문(item_fp)도 보낸다: 도면을 다시 읽어 자리 번호가 그새 다른 기호를 가리키면 엔진이 거절한다(검토 차단 1)
+    const args = { graph_id: it.graph_id, op: it.edit_op, local_id: it.local_id, value, ver: it.ver, base: it.item_fp || undefined };
     if (s.ask) args.confirm = s.ask;
     let made;
     try { made = await cmd("edit.apply", args); } catch (e) {
@@ -305,6 +307,7 @@ let wired = false;
 export function wire() {
   if (wired) return;
   wired = true;
+  hold(false);                                    // 웹을 다시 읽으면 앞 화면의 미룸을 푼다(대기열은 닫힌 채 뜬다, 검토 차단 2)
   window.addEventListener("keydown", (e) => {
     const s = q.get();
     if (!s.open || guardAsking()) return;                                       // 되돌리기 확인 창이 키를 받는다

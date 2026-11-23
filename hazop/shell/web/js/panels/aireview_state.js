@@ -92,13 +92,13 @@ async function write(name, args, notice) {
   }
 }
 
-export const accept = (id) => write("aireview.accept", { cand_ids: [id] }, (r) => r.changed.length ? "수락했습니다. 그래프에 바로 반영했습니다." : "바뀐 것이 없습니다.");
+export const accept = (id) => write("aireview.accept", { cand_ids: [id] }, (r) => r.changed.length ? "수락했습니다. 도면 연결 정보는 잠시 뒤 다시 만듭니다." : "바뀐 것이 없습니다.");
 export const reject = (id) => write("aireview.reject", { cand_ids: [id] }, (r) => r.changed.length ? "거절했습니다." : "바뀐 것이 없습니다.");
 /** 되돌리기: 기댄 사람 고침이 있으면 먼저 알리고 확인받은 목록을 함께 보낸다(U2 §11.6). 그만두면 아무것도 보내지 않는다. */
 export async function revert(id) {
   const ok = await confirmRevert(ai.get().graphId, [id]);
   if (!ok) return null;
-  return write("aireview.revert", { cand_ids: [id], confirm: ok.confirm }, (r) => r.changed.length ? "되돌렸습니다. 그래프도 되돌렸습니다." + (ok.text ? " " + ok.text.replace("빠집니다", "빠졌습니다").replace("돌아갑니다", "돌아갔습니다") : "") : "바뀐 것이 없습니다.");
+  return write("aireview.revert", { cand_ids: [id], confirm: ok.confirm }, (r) => r.changed.length ? "되돌렸습니다. 도면 연결 정보는 잠시 뒤 다시 만듭니다." + (ok.text ? " " + ok.text.replace("빠집니다", "빠졌습니다").replace("돌아갑니다", "돌아갔습니다") : "") : "바뀐 것이 없습니다.");
 }
 export const acceptBulk = (task) => write("aireview.accept_bulk", { task }, (r) => r.changed.length + "건을 한 번에 수락했습니다. 하나씩 되돌릴 수 있습니다.");
 

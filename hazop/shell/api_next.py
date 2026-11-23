@@ -82,7 +82,7 @@ def facts(engine):
         f["sheet_skipped_text"] = next((api_drawings.conflict_text(c, c.get("drawing_number") or "") for c in cf if c.get("reason") == "settle_rebuild_failed"), None)
     ip = _safe(lambda: _inputs(engine), "반영 전 수락")
     if ip is not None:
-        f["inputs_pending"] = len(ip["left"])          # 열 때 찾은 것만(짓기를 기다리는 10초 동안 한 줄이 깜빡이지 않게)
+        f["inputs_pending"] = len(ip["left"])          # 열 때 찾은 것과 늦은 반영 대기(짓기를 기다리는 10초 동안은 한 줄이 깜빡이지 않게)
         f["inputs_pending_first"] = ip["left"][0]["graph_id"] if ip["left"] else None
     lb = _safe(lambda: api_drawings.labels(engine), "도면 이름")
     if lb is not None:
@@ -161,9 +161,9 @@ RULES = (
      "확인하기", "queue:lost", "warn"),
     # 입력 연산 U2: 수락했지만 아직 도면에 반영하지 않은 나누기·배관 지정(앱을 닫을 때 남았거나 짓기를 기다리는 도면)
     ("inputs_pending", lambda f: _n(f, "inputs_pending"),
-     lambda f, n: "수락했지만 도면에 아직 반영하지 않은 나누기가 있는 도면이 %d장 있습니다" % n, "다시 읽기", "confirm:inputs.build", ""),
+     lambda f, n: "수락했지만 도면에 아직 반영하지 않은 도면이 %d장 있습니다" % n, "다시 읽기", "confirm:inputs.build", ""),
     ("sheet_released", lambda f: _n(f, "sheet_released"),
-     lambda f, n: "수락한 나누기를 도면에 반영해 쪽 확정이 풀린 도면이 %d장 있습니다. 바뀐 곳을 다시 확인하고 확정하세요" % n, "다시 확인",
+     lambda f, n: "도면을 다시 읽어(수락한 나누기 반영 등) 쪽 확정이 풀린 도면이 %d장 있습니다. 바뀐 곳을 다시 확인하고 확정하세요" % n, "다시 확인",
      "panel:drawings#sheetconf", "warn"),
     # 시트 정체(U4): 같은 번호 자리에 파일·형식이 둘 이상이면 고르기, 정착이 들이지 못한 가려진 도면
     ("sheet_choose", lambda f: _n(f, "sheet_choose"),

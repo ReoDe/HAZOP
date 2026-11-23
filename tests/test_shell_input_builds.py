@@ -106,6 +106,34 @@ class BuildsTest(Base):
         self.call("inputs.hold", on=False)
         self.assertIn("V901", self.graph_text(), "대기열을 닫으면 바로 짓는다")
 
+    def test_a_hold_that_is_never_released_expires(self):
+        """검토 차단 2: 대기열을 연 채 다른 대기열로 바꾸거나 웹을 다시 읽으면 미룸이 풀리지 않았다. 엔진의 미룸에는 시한이 있다."""
+        self.accept(1)
+        self.call("inputs.hold", on=True)
+        self.b.quiet = 0
+        self.b._tick()
+        self.assertNotIn("V901", self.graph_text(), "시한 전에는 미룬다")
+        self.b.hold_until = 0                     # 시한이 지남(마지막 수락 뒤 HOLD_MAX)
+        self.b._tick()
+        self.assertIn("V901", self.graph_text(), "시한이 지나면 짓는다")
+        self.assertFalse(self.b.hold)
+
+    def test_an_overdue_build_is_not_skipped_and_is_announced(self):
+        """반영 대기가 제때 돌지 못했으면(미룸이 남음·타이머 놓침) 프로젝트 그래프를 짓는 곳이 그 자리에서 다시 만들고, '다음에 할 일'이 알린다."""
+        self.accept(1)
+        with self.b.lock:
+            self.b.due[self.name] -= 3600 * 2      # 오래전 수락(조용한 시간도, 미룸 시한도 지남)
+        self.assertFalse(sheet_refresh.deferred(self.name), "늦은 반영 대기는 건너뛰지 않는다")
+        items = api_next.summary(self.engine)["items"]
+        self.assertIn("inputs_pending", [i["kind"] for i in items], "다음에 할 일이 알린다")
+        sheet_refresh.ensure_graph(self.name)
+        self.assertIn("V901", self.graph_text())
+
+    def test_a_fresh_accept_is_still_deferred_and_not_announced(self):
+        self.accept(1)
+        self.assertTrue(sheet_refresh.deferred(self.name))
+        self.assertNotIn("inputs_pending", [i["kind"] for i in api_next.summary(self.engine)["items"]], "조용해지기를 기다리는 10초 동안은 한 줄을 띄우지 않는다")
+
     def test_a_second_accept_does_not_rebuild_the_graph_in_place(self):
         """앞 수락이 남긴 '반영 대기' 표시를 다음 수락(ensure_graph)이 그 자리에서 다시 만들지 않는다."""
         self.accept(1)

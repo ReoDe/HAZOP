@@ -14,11 +14,14 @@
 import logging
 import threading
 import time
+import weakref
 
 LOG = logging.getLogger(__name__)
 
 TOPICS = ("inputs",)
 QUIET = 10.0          # 마지막 수락 뒤 이만큼 조용하면 짓는다(초, 총괄 결정)
+HOLD_MAX = 300.0      # 대기열의 미룸 시한(초): 미룸을 켠 뒤·마지막 수락 뒤 이만큼 지나면 풀린 것으로 본다(웹이 풀기를 못 보낸 때, 검토 차단 2)
+GRACE = 5.0           # 조용한 시간이 지나고도 이만큼 더 짓지 못했으면 늦은 반영 대기로 본다(건너뛰지 않고 알림)
 JOB_LABEL = "도면 다시 읽기"
 
 
@@ -36,7 +39,9 @@ class Builds:
         self.running = {}      # 이름 → 멈춤 신호(threading.Event)
         self.left = set()      # 열 때 찾은, 짓지 않은 입력 연산이 남은 도면(사람이 누를 때까지 짓지 않음)
         self.hold = False
+        self.hold_until = 0.0  # monotonic. 이 시각이 지나면 미룸을 푼다
         self.timer = None
+        _ALL.add(self)
 
     # ------------------------------------------------------------ 알림
     def note(self, name):
@@ -45,6 +50,8 @@ class Builds:
         sheet_refresh.defer(name)
         with self.lock:
             self.due[name] = time.monotonic()
+            if self.hold:
+                self.hold_until = self.due[name] + HOLD_MAX      # 수락이 이어지는 동안 미룸을 늘린다
             self.left.discard(name)
             ev = self.running.get(name)
         if ev is not None:
@@ -54,8 +61,38 @@ class Builds:
     def set_hold(self, on):
         with self.lock:
             self.hold = bool(on)
+            self.hold_until = time.monotonic() + HOLD_MAX if on else 0.0
         if not on:
             self.flush()
+        else:
+            self._arm()
+
+    def _held(self, now):
+        """미룸이 살아 있는가(시한이 지나면 푼다). self.lock 안에서 부른다."""
+        if self.hold and now >= self.hold_until:
+            self.hold = False
+            LOG.warning("대기열 미룸이 시한(%.0f초)을 넘겨 풀림: 기다리던 도면을 짓는다", HOLD_MAX)
+        return self.hold
+
+    def deferred(self, name):
+        """그래프 다시 만들기를 이 짓기 차례에 맡겨 둘 만한가: 짓는 중이거나, 미룸이 살아 있거나, 조용해지기를 기다리는 중.
+        늦은 반영 대기(조용한 시간·미룸 시한이 지났는데 짓지 못함)는 아니다: 그때는 프로젝트 그래프를 짓는 곳이 그 자리에서 다시 만든다."""
+        now = time.monotonic()
+        with self.lock:
+            if name in self.running:
+                return True
+            t = self.due.get(name)
+            if t is None:
+                return False
+            return self._held(now) or now - t < self.quiet + GRACE
+
+    def overdue(self):
+        """늦은 반영 대기 도면 이름(미룸이 풀린 채 조용한 시간이 지났는데 짓지 못함)."""
+        now = time.monotonic()
+        with self.lock:
+            if self._held(now):
+                return []
+            return sorted(n for n, t in self.due.items() if n not in self.running and now - t >= self.quiet + GRACE)
 
     def flush(self, names=None):
         """기다리는 도면(names를 주면 그것만)을 지금 짓는다. 열 때 찾은 도면도 names로 주거나 names=None이면 함께."""
@@ -100,15 +137,21 @@ class Builds:
         with self.lock:
             if self.timer is not None:
                 self.timer.cancel()
-            self.timer = threading.Timer(self.quiet, self._tick)
+            wait = self.quiet
+            if self.hold:
+                wait = max(0.05, min(wait, self.hold_until - time.monotonic()))      # 미룸 시한에도 깨어 본다
+            self.timer = threading.Timer(wait, self._tick)
             self.timer.daemon = True
             self.timer.start()
 
     def _tick(self):
         now = time.monotonic()
         with self.lock:
-            if self.hold:
-                return                                   # 대기열을 닫으면 set_hold(False)가 짓는다
+            held = self._held(now)
+        if held:
+            self._arm()                                  # 대기열을 닫으면 set_hold(False)가 짓는다. 시한이 지나면 다음 깸에서 짓는다
+            return
+        with self.lock:
             ripe = [n for n, t in self.due.items() if now - t >= self.quiet - 0.05 and n not in self.running]
             rest = any(n not in ripe for n in self.due)
         if ripe:
@@ -174,6 +217,14 @@ def _shown(engine, gid):
         return "도면"
 
 
+_ALL = weakref.WeakSet()       # 살아 있는 짓기 차례들(sheet_refresh.deferred가 묻는다)
+
+
+def is_deferred(name):
+    """어느 엔진의 짓기 차례가 이 도면의 다시 만들기를 맡고 있는가(sheet_refresh.ensure_graph·ensure_project가 건너뛸지)."""
+    return any(b.deferred(name) for b in list(_ALL))
+
+
 def of(engine):
     b = getattr(engine, "_input_builds", None)
     if b is None:
@@ -214,6 +265,7 @@ def summary(engine):
         running = sorted(b.running)
         hold = b.hold
         left = sorted(b.left - set(b.running))
+    left = sorted(set(left) | set(b.overdue()))         # 열 때 찾은 것 + 늦은 반영 대기(검토 차단 2: 알린다)
     waiting = b.waiting()
     row = lambda n: {"graph_id": names.get(n), "drawing_number": _shown(engine, names[n]) if names.get(n) else "도면"}    # noqa: E731
     return {"waiting": [row(n) for n in waiting if n in names], "running": [row(n) for n in running if n in names], "hold": hold,

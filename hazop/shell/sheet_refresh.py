@@ -44,8 +44,12 @@ def undefer(name):
 
 
 def deferred(name):
+    """짓기 작업에 맡긴 도면이고 그 차례가 아직 살아 있는가(늦은 반영 대기면 False: 그 자리에서 다시 만든다, 검토 차단 2)."""
     with _DEFERRED_GUARD:
-        return name in _DEFERRED
+        if name not in _DEFERRED:
+            return False
+    from hazop.shell import api_inputs
+    return api_inputs.is_deferred(name)
 
 
 @contextlib.contextmanager
@@ -62,10 +66,27 @@ def ver_from(files):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def base_part(name, resolved=None):
+    """판에 넣을 기준 추출 열쇠(입력 연산 U2 검토 차단 1). 기준 추출을 지으면 local-node 번호가 밀리므로 세 파일이 같아도 판이 달라야 한다.
+    입력 연산이 없으면 None(판에 넣지 않음: 예전 판과 같다). 있으면 실제로 쓴 기준 추출의 열쇠(아직 없으면 '-')."""
+    from hazop.extract import corrections
+    if resolved is None:
+        ops = (corrections.load(name) or {}).get("ops") or []
+        if not any(corrections.is_input(o) for o in ops):
+            return None
+        resolved = corrections.resolve(name)
+    st = resolved["inputs"]
+    if st.get("state") == "none":
+        return None
+    return st.get("base_key") or "-"
+
+
 def ver_of(name):
     from hazop.extract import confirmation
     files = confirmation.file_paths(name)
-    return ver_from({k: store_io.fingerprint(files[k]) for k in files})
+    fps = {k: store_io.fingerprint(files[k]) for k in files}
+    bp = base_part(name)
+    return ver_from(dict(fps, base=bp) if bp else fps)
 
 
 def stale_path(name):
