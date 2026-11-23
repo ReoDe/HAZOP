@@ -292,9 +292,14 @@ def copy_in(run, src, folder=False):
     return os.path.join(dst, os.path.basename(src))
 
 
-def gid_of(run, number):
+def gid_of(run, number, material_id=None):
+    """도면의 graph_id. 표제란을 확정하면 번호 이름(graph-<번호>)이고, 확정 전에는 시트 정체 규칙의 임시 이름(graph-<자료>-p<쪽>)이라
+    번호로 찾지 못한다: 그때는 자료(material_id)로 도면 목록 줄(api_drawings.labels)에서 찾는다(시트 정체 U1, 2026-11-23)."""
     names = run.engine.graph_names()
-    hits = [g for g in names if number in g]
+    hits = [g for g in names if g == "graph-" + number] or [g for g in names if number in g]
+    if not hits and material_id:
+        from hazop.shell import api_drawings
+        hits = sorted(g for g, r in api_drawings.labels(run.engine).items() if r.get("material_id") == material_id and g in names)
     if not hits:
         raise AssertionError("그래프에 %s가 없음: %s" % (number, sorted(names)))
     return hits[0]
@@ -314,7 +319,8 @@ def n1_register(run, c):
     c.ok("등록됨(outcome registered)", res.get("outcome") == "registered", res)
     c.ok("AI 검토는 꺼져 있어 돌지 않음", (res.get("ai_review") or {}).get("ran") is False, res.get("ai_review"))
     run.state["m101"] = res.get("material_id")
-    gid = gid_of(run, "SNP-M-101")
+    gid = gid_of(run, "SNP-M-101", run.state["m101"])
+    run.state["g101"] = gid
     name = run.engine.graph_names()[gid]
     from hazop import paths
     c.ok("추출 파일(extraction.json)", os.path.isfile(os.path.join(paths.output_root("extract"), name, "extraction.json")), name)
@@ -381,7 +387,7 @@ def n2_ai_review_extract(run, c):
     run.state["m102"] = res.get("material_id")
     c.ok("AI 검토가 돌았음(ran)", review.get("ran") is True, review)
     c.ok("도면당 상한(5) 안에서 부름", 1 <= len(stub.requests) <= 5, len(stub.requests))
-    gid = gid_of(run, "SNP-M-102")
+    gid = gid_of(run, "SNP-M-102", run.state["m102"])
     run.state["g102"] = gid
     name = run.engine.graph_names()[gid]
     from hazop.extract import ai_review
