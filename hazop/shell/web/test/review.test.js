@@ -96,4 +96,18 @@ export const tests = [
     await tick();
     assert(store.get().toast && store.get().toast.text === "SNP-M-101 AI 검토가 끝났습니다. 새 후보는 없습니다.");
   } },
+  { name: "AI 검토 칩(실제 창 3차 결함 2): 보는 도면을 바꾸면 칩은 그 도면의 상태만 보이고, 누르면 그 도면에 간다", async run(assert) {
+    install([ROW("running", { graph_id: "G2", drawing_number: "SNP-M-102", progress: { done: 0, total: 1 } }), ROW("waiting", { ahead: 1 })]);
+    await R.load(); await tick();
+    const host = document.createElement("div"); document.body.appendChild(host);
+    render(html`<${R.ReviewChip} gid="G2" />`, host);
+    await tick();
+    assert(host.textContent.includes("AI 검토 중"), host.textContent);
+    render(html`<${R.ReviewChip} gid="G1" />`, host);                     // 같은 칩 자리에서 도면만 바뀜(캔버스 위 칩 줄)
+    await tick();
+    const b = host.querySelector(".chip.review");
+    assert(b.textContent.includes("기다리는 중") && b.textContent.includes("취소"), "보는 도면(G1)의 상태: " + b.textContent);
+    assert(b.getAttribute("aria-label").startsWith("SNP-M-101"), b.getAttribute("aria-label"));
+    host.remove();
+  } },
 ];

@@ -36,7 +36,10 @@ class RulesTest(unittest.TestCase):
         kinds = [i["kind"] for i in api_next.items(f)]
         self.assertEqual(kinds, [k for k in SPEC_ORDER if k not in ("sheet_confirm", "number_held")], "표제란이 남으면 쪽 확정·번호 보류는 아직 띄우지 않는다")
         rc = next(i for i in api_next.items(f) if i["kind"] == "recheck")
-        self.assertEqual((rc["count"], rc["text"], rc["tone"]), (3, "도면이 바뀌어 3곳을 다시 확인해야 합니다", "warn"))
+        # 알림 줄과 같은 단위(찾지 못한 구성요소 수, 실제 창 3차 결함 6)
+        self.assertEqual((rc["count"], rc["text"], rc["tone"]), (2, "도면이 바뀌어 찾지 못한 구성요소 2개를 다시 확인해야 합니다", "warn"))
+        only_refs = next(i for i in api_next.items({"sheets": 1, "running": [], "lost_refs": 4}) if i["kind"] == "recheck")
+        self.assertEqual(only_refs["text"], "도면이 바뀌어 분석 결과 4곳을 다시 확인해야 합니다")
         self.assertIn("S1", rc["detail"])
 
     def test_nothing_to_do(self):
@@ -92,6 +95,20 @@ class FactsTest(unittest.TestCase):
         f = self.facts({"G1": "not_run", "G2": "partial"}, {"G1": "confirmed", "G2": "confirmed"})
         self.assertEqual(f["ai_unreviewed"], 0)
         self.assertNotIn("ai_unreviewed", [i["kind"] for i in api_next.items(dict(f, sheets=2, running=[]))], "목록에도 남지 않는다")
+
+    def test_a_chosen_source_is_no_longer_a_file_to_choose(self):
+        """실제 창 3차 결함 5: 같은 번호 카드에서 고른 뒤에도 '쓸 파일을 고르세요'가 남았다."""
+        from hazop.shell import api_aireview, api_drawings, api_ie
+        cf = [{"graph_id": "G1", "reason": "same_number_other_file", "chosen": None, "chosen_material": "m2"},
+              {"graph_id": "G2", "reason": "same_number_other_format", "chosen": "drawio", "chosen_material": None},
+              {"graph_id": "G3", "reason": "same_number_other_format", "chosen": None, "chosen_material": None}]
+        with mock.patch.object(api_aireview, "overview", lambda e: {"drawings": []}), \
+                mock.patch.object(api_drawings, "exportable", lambda e: {"drawings": []}), \
+                mock.patch.object(api_drawings, "labels", lambda e: {}), \
+                mock.patch.object(api_next, "_conflicts", lambda e: cf), \
+                mock.patch.object(api_ie, "summary", lambda e: {"available": False}):
+            f = api_next.facts(_FakeEngine())
+        self.assertEqual((f["sheet_choose"], f["sheet_choose_first"]), (1, "G3"))
 
     def test_a_draft_to_make_shows_up_after_judging(self):
         ie = {"available": True, "kpi": {"candidates": 3, "groups": 0, "draft": 0}}

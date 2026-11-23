@@ -38,7 +38,7 @@ function DexpiExport() {
   useEffect(() => {
     if (!job) return;
     if (job.state === "done") { setBusy(false); setResult(job.result); setJobId(null); reload(); }
-    else if (job.state === "failed") { setBusy(false); setError(job.message || "내보내지 못했습니다."); setJobId(null); reload(); }
+    else if (job.state === "failed" || job.state === "stopped") { setBusy(false); setError(job.state === "stopped" ? "내보내기를 멈췄습니다." : (job.message || "내보내지 못했습니다.")); setJobId(null); reload(); }
   }, [job && job.state]);
   async function run() {
     setBusy(true); setError(""); setResult(null);
@@ -77,6 +77,9 @@ function useAiEstimate(on, cap) {
   return est;
 }
 
+/** 끝난 작업 카드를 닫는다(작업 기록은 엔진에 그대로). */
+function dismissJob(id) { store.set((s) => { const j = Object.assign({}, s.jobs); delete j[id]; return { jobs: j }; }); }
+
 export function DrawingsPanel({ onOpen, onClose }) {
   const data = useStore((s) => s.drawings);
   const reviewLine = useReview((s) => reviewSummary(s.rows));
@@ -85,7 +88,9 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const jobs = useStore((s) => s.jobs);
   const over = useStore((s) => s.dropOver);
   const conn = useStore((s) => s.conn);
-  const running = Object.entries(jobs);
+  // 작업 카드: 도는 것과 끝난 것 가운데 가장 새 것 둘만(멈춘 것은 알림으로 끝: 카드로 쌓여 도면 줄의 단추를 밀어내지 않게, 실제 창 3차 결함 4)
+  const all = Object.entries(jobs).filter(([, j]) => j.state !== "stopped");
+  const running = all.filter(([, j]) => j.state === "running").concat(all.filter(([, j]) => j.state !== "running").slice(-2));
   const est = useAiEstimate(!!app.ai_review, app.ai_review_cap);
 
   const pick = () => cmd("register.pick").catch(toastError);
@@ -98,18 +103,11 @@ export function DrawingsPanel({ onOpen, onClose }) {
       <div class=${"drop" + (over ? " over" : "")} role="button" tabindex="0" aria-label="도면 파일 고르기" onClick=${pick}
         onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } }}>
         <${Icon} name="upload" size=${22} /><div><b>도면 파일을 여기에 끌어 놓으세요</b><br /><span>.drawio, .pdf, DEXPI .xml 여러 개 · 눌러서 고르기</span></div></div>
-      ${running.map(([id, j]) => html`<div class="card" key=${id}>
+      ${running.map(([id, j]) => html`<div class="card job" key=${id}>
         <div class="kv"><div class="k"><b>${j.label}</b><span>${j.state === "failed" ? j.message : (j.text || "준비 중")}${j.total ? " (" + j.done + "/" + j.total + ")" : ""}</span></div>
-          ${j.state === "running" ? html`<${Icon} name="loader-2" cls="spin" />` : j.state === "done" ? html`<${Chip} kind="ok" icon="check">완료<//>` : html`<${Chip} kind="err" icon="alert-triangle">실패<//>`}</div>
+          ${j.state === "running" ? html`<${Icon} name="loader-2" cls="spin" />` : j.state === "done" ? html`<${Chip} kind="ok" icon="check">완료<//>` : html`<${Chip} kind="err" icon="alert-triangle">실패<//>`}
+          ${j.state !== "running" ? html`<${Btn} sm=${true} kind="ghost" icon="x" label=${j.label + " 알림 닫기"} title="닫기" onClick=${() => dismissJob(id)} />` : null}</div>
           ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}</div>`)}
-      <div class="card"><h3>추출 설정</h3>
-        <div class="kv"><div class="k"><b>AI 검토</b><span>추출 뒤 AI가 미확인 항목의 후보를 제안합니다(구독 한도를 씁니다). 처음 값은 꺼짐이고, 한 번 실행에 최대 ${app.ai_review_run_cap}회까지 부릅니다.</span></div>
-          <${Switch} on=${app.ai_review} label="AI 검토" onChange=${(v) => setReview({ enabled: v })} /></div>
-        ${app.ai_review ? html`<div class="kv"><div class="k"><b>도면당 호출 상한</b><span>${app.ai_review_cap}회${est ? " · 지금 도면 전체 예상 호출 " + est.calls + "회, 약 " + Math.max(1, Math.round(est.seconds / 60)) + "분" + (est.capped ? "(한 번 실행 상한 " + est.run_cap + "회에 걸림)" : "") : ""}</span></div>
-          <input type="number" min="1" max="200" value=${app.ai_review_cap} aria-label="도면당 호출 상한" style="width:72px;height:30px"
-            onChange=${(e) => setReview({ cap: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 20)) })} /></div>` : null}
-        ${app.ai_review ? html`<div class="muted small ai-send-auto">${app.ai_review_images ? "추출 뒤에는 도면 조각 그림도 보냅니다(구독 연결로만 보냅니다)." : "추출 뒤에는 글만 보냅니다. 도면 조각 그림은 AI 검토 패널에서 켜면 보냅니다."}</div>` : null}
-        ${app.ai_review && !conn.can_start ? html`<${Notice} kind="warn" icon="alert-triangle">AI 연결이 준비되지 않아 검토는 건너뜁니다.<//>` : null}</div>
       <div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">도면 ${data.drawings.length}장${data.project_id ? " · 프로젝트 " + data.project_id : ""}${reviewLine ? " · " + reviewLine : ""}</div>
         ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 위 자리에 도면 파일을 끌어 놓으면 등록하고 읽습니다.<//>` : html`<div class="list">
           ${data.drawings.map((d) => html`<${Fragment} key=${d.graph_id}><div class=${"row drow" + (d.graph_id === sheet ? " on" : "")}>
@@ -122,6 +120,14 @@ export function DrawingsPanel({ onOpen, onClose }) {
             <${Btn} sm=${true} kind="ghost" label=${d.display + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//>
             <${Btn} sm=${true} label=${d.display + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>
             ${d.graph_id === sheet ? html`<${DrawingExclude} graphId=${d.graph_id} />` : null}<//>`)}</div>`}</div>
+      <div class="card"><h3>추출 설정</h3>
+        <div class="kv"><div class="k"><b>AI 검토</b><span>추출 뒤 AI가 미확인 항목의 후보를 제안합니다(구독 한도를 씁니다). 처음 값은 꺼짐이고, 한 번 실행에 최대 ${app.ai_review_run_cap}회까지 부릅니다.</span></div>
+          <${Switch} on=${app.ai_review} label="AI 검토" onChange=${(v) => setReview({ enabled: v })} /></div>
+        ${app.ai_review ? html`<div class="kv"><div class="k"><b>도면당 호출 상한</b><span>${app.ai_review_cap}회${est ? " · 지금 도면 전체 예상 호출 " + est.calls + "회, 약 " + Math.max(1, Math.round(est.seconds / 60)) + "분" + (est.capped ? "(한 번 실행 상한 " + est.run_cap + "회에 걸림)" : "") : ""}</span></div>
+          <input type="number" min="1" max="200" value=${app.ai_review_cap} aria-label="도면당 호출 상한" style="width:72px;height:30px"
+            onChange=${(e) => setReview({ cap: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 20)) })} /></div>` : null}
+        ${app.ai_review ? html`<div class="muted small ai-send-auto">${app.ai_review_images ? "추출 뒤에는 도면 조각 그림도 보냅니다(구독 연결로만 보냅니다)." : "추출 뒤에는 글만 보냅니다. 도면 조각 그림은 AI 검토 패널에서 켜면 보냅니다."}</div>` : null}
+        ${app.ai_review && !conn.can_start ? html`<${Notice} kind="warn" icon="alert-triangle">AI 연결이 준비되지 않아 검토는 건너뜁니다.<//>` : null}</div>
       <${SourceConflicts} />
       <${DexpiExport} />
       ${data.documents.length ? html`<div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">등록 자료 ${data.documents.length}건</div><div class="list">

@@ -140,7 +140,10 @@ function wireEvents() {
     const dup = d.result && d.result.conflicts;
     if (dup && dup.length) toast("같은 도면 번호 " + dup.join(", ") + "의 원본이 다른 형식으로 이미 있습니다. 도면 패널에서 쓸 쪽을 고르세요(고르기 전에는 먼저 있던 쪽을 씁니다).");
     loadDrawings().then((x) => { if (!store.get().sheet && x.drawings.length === 1) openSheet(x.drawings[0].graph_id); }); });
-  on("job.failed", (d) => { job("failed")(d); toast(d.label + ": " + d.message, "err"); });
+  on("job.failed", (d) => {       // 사람이 한 멈춤·취소(stopped)는 실패가 아니다: 빨간 표시를 하지 않고 조용히 알린다(실제 창 3차 결함 3)
+    if (d.stopped) { job("stopped")(d); toast(d.label + ": 멈췄습니다."); return; }
+    job("failed")(d); toast(d.label + ": " + d.message, "err");
+  });
   onChanged((topic) => {
     if (topic === "drawings") loadDrawings().catch(() => {});
     if (topic === "state") loadState().catch(() => {});

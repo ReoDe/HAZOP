@@ -30,9 +30,10 @@ export const tests = [
     assert.equal(confirmedLostText({ confirmed: { by: "a" } }), "");
     assert.equal(confirmedLostText({}), "");
   } },
-  { name: "알림: 다시 추출 뒤 글은 '도면이 바뀌어 n곳을 다시 확인해야 합니다'이고 확인할 곳이 없으면 비어 있다", run(assert) {
+  { name: "알림: 다시 추출 뒤 글은 '찾지 못한 구성요소 n개'(한 줄과 같은 단위)이고 확인할 곳이 없으면 비어 있다", run(assert) {
     const t = lostNoticeText({ sections: 3, members: 5 });
-    assert(t.startsWith("도면이 바뀌어 3곳을 다시 확인해야 합니다") && t.includes("찾지 못한 구성요소 5개"), t);
+    assert.equal(t, "도면이 바뀌어 찾지 못한 구성요소 5개를 다시 확인해야 합니다(검토구간 3곳).", "한 줄과 같은 단위(실제 창 3차 결함 6)");
+    assert.equal(lostNoticeText({ sections: 2, members: 0 }), "도면이 바뀌어 검토구간 2곳을 다시 확인해야 합니다.");
     assert.equal(lostNoticeText({ sections: 0, members: 0 }), "");
     assert(!/lost:|묘비|판 이전|stale/.test(t), "내부 말이 없다");
   } },

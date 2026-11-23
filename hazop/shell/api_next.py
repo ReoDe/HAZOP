@@ -52,8 +52,9 @@ def facts(engine):
     f["sheets"] = len(names)
     cf = _safe(lambda: _conflicts(engine), "원본 고르기")
     if cf is not None:
-        f["sheet_choose"] = sum(1 for c in cf if c.get("reason") != "settle_rebuild_failed")
-        f["sheet_choose_first"] = next((c["graph_id"] for c in cf if c.get("reason") != "settle_rebuild_failed"), None)
+        open_ = [c for c in cf if c.get("reason") != "settle_rebuild_failed" and not c.get("chosen") and not c.get("chosen_material")]   # 사람이 고른 자리는 끝난 일
+        f["sheet_choose"] = len(open_)
+        f["sheet_choose_first"] = open_[0]["graph_id"] if open_ else None
         f["sheet_skipped"] = sum(1 for c in cf if c.get("reason") == "settle_rebuild_failed")
         f["sheet_skipped_text"] = next((c.get("text") for c in cf if c.get("reason") == "settle_rebuild_failed"), None)
     lb = _safe(lambda: api_drawings.labels(engine), "도면 이름")
@@ -106,7 +107,8 @@ def _n(f, key):
 
 
 def _recheck(f):
-    return _n(f, "lost_members") + _n(f, "lost_refs")
+    """다시 확인할 수: 찾지 못한 구성요소 수(알림 줄과 같은 단위, 실제 창 3차 결함 6). 구성요소가 없고 분석 결과만 걸렸으면 그 수."""
+    return _n(f, "lost_members") or _n(f, "lost_refs")
 
 
 def _lost_detail(f):
@@ -124,7 +126,8 @@ RULES = (
     ("no_sheets", lambda f: 1 if f.get("sheets") == 0 and not f.get("running") else 0,
      lambda f, n: "등록한 도면이 없습니다. 도면 파일을 끌어 놓아 시작하세요", "도면 올리기", "panel:drawings", ""),
     ("recheck", _recheck,
-     lambda f, n: "도면이 바뀌어 %d곳을 다시 확인해야 합니다" % n, "확인하기", "queue:lost", "warn"),
+     lambda f, n: ("도면이 바뀌어 찾지 못한 구성요소 %d개를 다시 확인해야 합니다" if _n(f, "lost_members") else "도면이 바뀌어 분석 결과 %d곳을 다시 확인해야 합니다") % n,
+     "확인하기", "queue:lost", "warn"),
     # 시트 정체(U4): 같은 번호 자리에 파일·형식이 둘 이상이면 고르기, 정착이 들이지 못한 가려진 도면
     ("sheet_choose", lambda f: _n(f, "sheet_choose"),
      lambda f, n: "같은 번호의 도면 파일이 둘 이상인 곳이 %d곳 있습니다. 쓸 파일을 고르세요" % n, "파일 고르기", "panel:drawings#sources", "warn"),

@@ -18,6 +18,7 @@ if (typeof document !== "undefined" && !document.querySelector("link[data-clean-
 
 export const clean = createStore({
   choice: {},        // graph_id → "orig" | "clean": 사람이 바꾼 보기(앱을 닫을 때까지)
+  lastByFormat: {},  // 읽은 방법 → 사람이 마지막에 고른 보기: 아직 고르지 않은 같은 형식의 쪽도 이것으로 연다(PDF 쪽마다 '정리'를 다시 누르지 않게)
   data: {},          // graph_id → /api/clean 자료(없으면 null)
   built: {},         // graph_id → {ms, elements, missingKinds, placeholders}
   bubble: null,      // {id, reason, fragment}
@@ -47,12 +48,17 @@ export function viewOf(state, gid) {
   const data = state.data[gid];
   if (!data) return "orig";
   if (data.source_format === "dexpi") return "clean";        // 원본 그림이 없다
-  return state.choice[gid] || defaultView(data.source_format, !!(data.confirmed && data.confirmed.state === "confirmed"));
+  return state.choice[gid] || (state.lastByFormat || {})[data.source_format] || defaultView(data.source_format, !!(data.confirmed && data.confirmed.state === "confirmed"));
 }
 
 export function toggleOverlay(name) { clean.set((s) => ({ overlay: Object.assign({}, s.overlay, { [name]: !s.overlay[name] }) })); }
 
-export function setView(gid, view) { clean.set((s) => ({ choice: Object.assign({}, s.choice, { [gid]: view }) })); }
+export function setView(gid, view) {
+  clean.set((s) => {
+    const fmt = s.data[gid] && s.data[gid].source_format;
+    return { choice: Object.assign({}, s.choice, { [gid]: view }), lastByFormat: fmt ? Object.assign({}, s.lastByFormat, { [fmt]: view }) : s.lastByFormat };
+  });
+}
 
 export function toggleView(gid) {
   const s = clean.get();

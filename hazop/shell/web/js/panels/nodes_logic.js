@@ -27,7 +27,9 @@ export const confirmedLostText = (n) => (n && n.confirmed && n.confirmed.lost ? 
 export function lostNoticeText(info) {
   const n = (info && info.sections) || 0, m = (info && info.members) || 0;
   if (!n && !m) return info && info.generic ? "다시 추출한 도면과 저장된 구간·분석 결과를 이은 기록 가운데 확인이 필요한 것이 있습니다." : "";
-  return "도면이 바뀌어 " + (n || 1) + "곳을 다시 확인해야 합니다" + (m ? "(찾지 못한 구성요소 " + m + "개)" : "") + ".";
+  // '다음에 할 일' 한 줄(api_next recheck)과 같은 단위: 찾지 못한 구성요소 수를 앞에, 걸린 구간 수를 괄호에(실제 창 3차 결함 6)
+  if (!m) return "도면이 바뀌어 검토구간 " + n + "곳을 다시 확인해야 합니다.";
+  return "도면이 바뀌어 찾지 못한 구성요소 " + m + "개를 다시 확인해야 합니다" + (n ? "(검토구간 " + n + "곳)" : "") + ".";
 }
 
 /** 도면 변경 반영이 확정을 푼 구간(엔진 migrate의 demoted) → 한 줄 알림. 없으면 빈 글. */

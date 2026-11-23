@@ -11,7 +11,7 @@ const data = (fmt, list) => ({ source_format: fmt, items: {}, text_items: [], un
 const U = [{ id: "a", reason: "unknown_symbol" }, { id: "b", reason: "open_end" }, { id: "c", reason: "missing_tag" }];
 
 function reset() {
-  C.clean.set({ choice: {}, data: {}, built: {}, bubble: null, cursor: -1 });
+  C.clean.set({ choice: {}, lastByFormat: {}, data: {}, built: {}, bubble: null, cursor: -1 });
   store.set({ sheet: "g1", command: { seq: 0 } });
 }
 
@@ -40,12 +40,14 @@ export const tests = [
     core.destroy();
     host.remove();
   } },
-  { name: "정리된 보기: 사람이 바꾼 보기가 기본보다 앞서고 도면마다 따로 기억", run(assert) {
+  { name: "정리된 보기: 사람이 바꾼 보기가 기본보다 앞서고, 아직 고르지 않은 같은 형식의 도면은 마지막 보기를 따른다(실제 창 3차 결함 7)", run(assert) {
     reset();
     C.onClean("g1", data("drawio"));
     C.onClean("g2", data("drawio"));
     C.toggleView("g1");
-    assert.equal([C.viewOf(C.clean.get(), "g1"), C.viewOf(C.clean.get(), "g2")], ["orig", "clean"]);
+    assert.equal([C.viewOf(C.clean.get(), "g1"), C.viewOf(C.clean.get(), "g2")], ["orig", "orig"]);
+    C.setView("g2", "clean");
+    assert.equal([C.viewOf(C.clean.get(), "g1"), C.viewOf(C.clean.get(), "g2")], ["orig", "clean"], "이미 고른 도면은 제 것");
     C.toggleView("g1");
     assert.equal(C.viewOf(C.clean.get(), "g1"), "clean");
     C.toggleView("자료-없음");                                           // 자료가 없으면 바꾸지 않는다
@@ -183,5 +185,17 @@ export const tests = [
     assert.equal(cc.props.overlays.original, true);
     assert(host.querySelector(".vm-dot:not(.warn)"), "켜 둔 겹쳐 보기는 '보기' 단추에 점");
     render(null, h2); h2.remove(); render(null, host); host.remove();
+  } },
+  { name: "보기(실제 창 3차 결함 7): PDF 한 쪽에서 '정리'로 바꾸면 같은 프로젝트의 다른 PDF 쪽도 정리로 연다", async run(assert) {
+    const CU = await import("../js/canvas/clean_ui.js");
+    const pdf = { source_format: "pdf_vector", counts: { total: 0 } };
+    CU.clean.set({ choice: {}, data: { P1: pdf, P2: pdf, D1: { source_format: "drawio", counts: { total: 0 } } } });
+    assert.equal(CU.viewOf(CU.clean.get(), "P2"), "orig", "처음은 원본(PDF 기본)");
+    CU.setView("P1", "clean");
+    assert.equal(CU.viewOf(CU.clean.get(), "P2"), "clean", "마지막 보기를 유지");
+    CU.setView("P2", "orig");
+    assert.equal(CU.viewOf(CU.clean.get(), "P1"), "clean", "이미 고른 쪽은 그대로");
+    assert.equal(CU.viewOf(CU.clean.get(), "D1"), "clean", "drawio는 제 기본");
+    CU.clean.set({ choice: {}, data: {}, lastByFormat: {} });
   } },
 ];

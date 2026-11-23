@@ -2,7 +2,7 @@
 // 도면 목록 줄, 다음에 할 일 줄)가 같은 글자와 같은 확인 창을 쓴다. 시작은 지금 명령 aireview.run을 그대로 부른다(새 실행 길 없음).
 // 끝나면 알림 줄에 '후보 n건 · 검토하기'를 띄운다(대기열은 저절로 열지 않는다).
 import { html } from "../ui/html.js";
-import { useEffect, useLayoutEffect, useState } from "../../vendor/hooks.module.js";
+import { useEffect, useLayoutEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { createStore, store } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
@@ -12,11 +12,14 @@ export const rv = createStore({ rows: [], confirm: null });
 
 export function useReview(selector) {
   const [value, setValue] = useState(() => selector(rv.get()));
+  const latest = useRef(selector);
+  latest.current = selector;               // 칩이 보는 도면이 바뀌어도(캔버스 칩 줄) 늘 지금 도면으로 고른다(실제 창 3차 결함 2)
   useLayoutEffect(() => {
-    const sync = (s) => { const n = selector(s); setValue((p) => (Object.is(p, n) ? p : n)); };
+    const sync = (s) => { const n = latest.current(s); setValue((p) => (Object.is(p, n) ? p : n)); };
     sync(rv.get());
     return rv.subscribe(sync);
   }, []);
+  useLayoutEffect(() => { const n = selector(rv.get()); setValue((p) => (Object.is(p, n) ? p : n)); });
   return value;
 }
 
@@ -158,7 +161,8 @@ export function wire() {
 /** 'AI 검토' 칩 단추(도면 위 칩 줄 맨 앞, 도면 목록 줄). 단추가 없는 상태는 글자만 보인다. */
 export function ReviewChip({ gid, compact }) {
   wire();
-  const row = useReview((s) => s.rows.find((x) => x.graph_id === gid) || null);
+  const rows = useReview((s) => s.rows);
+  const row = rows.find((x) => x.graph_id === gid) || null;      // 그린 때의 gid로 바로 고른다(낡은 선택 함수가 남지 않게)
   const v = reviewView(row);
   if (!v) return null;
   const cls = "chip review " + (v.tone === "ai" ? "ai" : v.tone === "warn" ? "warn" : v.tone === "ok" ? "ok" : v.tone === "info" ? "accent" : "");
