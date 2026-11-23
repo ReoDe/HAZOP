@@ -82,6 +82,7 @@ tombstones: {
     "ref": "graph-X#pdf-p0-sym-0012",    # 잃기 직전 판의 참조(기록용)
     "mark": [...] | null,                # null이면 되찾지 않음
     "basis": "sequence" | "source" | null,
+    "look": [node_type, 도면, kind, tag],  # source 묘비만(16절). 없으면 참조로 되찾지 않음
     "lost_from": "v-…(옛 판)", "lost_at": "v-…(새 판)", "at": "2026-…",
     "legacy_key": "graph-X#pdf-p0-sym-0012~lost" | null,   # B꼴에서 옮긴 것만(5.2)
     "found": null | {"entity_id", "ref", "version", "at"}
@@ -619,3 +620,23 @@ M2 검토(Claude reviewer high, Codex)는 구조가 맞다고 보았다. 퍼즈�
 2000시드에서 처음 고친 ⑨가 5건을 냈다(시드 715·774). 사람이 S1에서 버리고 S1을 지운 묘비를, 앞 판으로 되돌아간 뒤 새로 단 구간(S93)이 같은 기호를 들었다가 같은 판 이전에서 다시 잃었다. 묘비 id는 잃은 기호의 지문이라 같은 id가 S93의 `lost`에 들고, `discarded_tombs`는 `lost`에 든 것을 빼므로 다시 열린 묘비가 된다. 새로 든 구간이 잃은 것은 새로 확인할 일이라 이 동작을 맞다고 보고, ⑨는 '버린 구간의 lost로 돌아옴'만 위반으로 센다(다른 구간이 다시 잃은 것은 따로 센다). 이 경우 그 묘비는 다시 되찾기 대상이 되고, 되찾으면 ⑤ 참조도 그 기호로 옮겨진다.
 
 퍼즈 시각. 갈고리가 남기는 이력 줄의 시각을 퍼즈 차례(`c01a` 문서 < `c01a5` 갈고리 < `c01b` 새로 제안)에 맞췄다. 처음에는 `apply_nodes`가 지금 시각(`2026-…`)을 적어, 표지 없는 옛 문서의 판 추정(집합 이력 시각을 봄)이 틀려 ②가 150건 났다. 퍼즈 생성기의 시각 꼴 때문이고 엔진 결함이 아니다.
+
+## 16. source 묘비 되찾기(2026-11-23)
+
+나누기를 되돌렸다 다시 하면 같은 나눈 id(`pdf-p<n>-split-<op_id>`, `id_basis` source)가 돌아오는데 구간은 그 자리 묘비를 되찾지 못했다. 되찾기가 표시(mark)로만 했고, source 구성요소의 묘비에는 표시가 없다(`mark: null`). 53c7476에서 `test_redo_of_split_brings_tombstoned_member_back`의 `expectedFailure`를 떼면 되찾은 구성요소가 `[]`다(기대 `entity-node-003·004·005`).
+
+- 판 사진에 `graph_member_looks {id: [node_type, 도면, kind, tag]}`를 더했다(source 구성요소만). 옛 집합은 같은 판으로 읽을 때 사진을 채운다(`with_refs`, `graph_member_ends`를 더할 때와 같음).
+- source 구성요소를 잃으면 묘비 기록에 `look`을 적고 지문에도 넣는다(`tomb_key`의 마지막 칸, `look`이 없으면 넣지 않아 옛 묘비 id는 그대로다).
+- 되찾기는 표시 길 옆에 참조 길을 둔다. 기록의 `basis`가 source이고 `look`이 있을 때, 기록의 참조와 같은 참조의 새 source 구성요소 가운데 node_type·도면·종류가 같고 기록에 태그가 있으면 태그도 같은 것을 고른다. 하나뿐·아무도 안 가짐·다툼 없음·지문 확인·버린 묘비 아님은 표시 길과 같은 검사다. 찾은 것은 같은 `table["found"]`에 들어 ⑤ 결과·M3 문서도 같은 표로 풀린다.
+- 같은 참조가 다른 종류로 돌아오면 다른 기호로 보고 묘비로 둔다. 같은 참조·같은 종류로 돌아온 다른 기호는 가릴 정보가 없어 되찾는다(알려진 한계, 퍼즈가 따로 센다). 고치기 전에 지은 source 묘비(`look` 없음)는 참조로 되찾지 않는다.
+
+**퍼즈.** 나누기 되돌림 뒤 다시 하기(`redo`, 같은 uid·같은 나눈 id)와 조각 하나를 다른 종류로 다시 하기(`redo_other`, 새 uid·같은 나눈 id)를 생성기에 더하고, 사슬 차례로 되돌리기만·다시 하기만 하는 다시 추출을 넣었다. 판정 ⑧에 '앞 판에 없던 기호가 잃을 때와 같은 참조·종류로 돌아왔고 그 기호를 든 열린 묘비가 하나뿐이며 구간 lost에 있으면 되찾아야 함'을 더했다. 생성기를 넓히자 지운 조각이 되살아난 채 다시 나눠 같은 id가 둘이 되는 꼴이 나와 ⑧(내용이 같은데 잃음) 6건이 났고(시드 696, 고치기 전 엔진에서도 같음), 생성기에서 그런 다시 하기를 막았다.
+
+| 변이(700시드, 판 이전·버리기 퍼즈) | 잡은 것 |
+| --- | --- |
+| 겉모습 확인 없음 | ② 되찾은 묘비가 다른 기호 16·16, 단위 시험 `test_same_ref_with_other_kind_stays_a_tomb` |
+| 참조 길 없음(고치기 전) | ⑧ 되찾지 못함 91·70, 단위 시험 `test_redo_of_split_brings_tombstoned_member_back` |
+| 버린 묘비도 되찾음 | ⑨ 80(버리기 퍼즈), 단위 시험 `test_discarded_source_tomb_is_not_refound` |
+| 지문 확인 없음 | 퍼즈는 못 잡음(기록을 고쳐 쓰지 않음), 단위 시험 `test_edited_look_in_the_record_does_not_open_the_tomb` |
+| `look` 없는 묘비도 참조로 되찾음 | 단위 시험 `test_tomb_without_a_recorded_look_is_not_refound_by_ref` |
+| 종류만 보고 node_type·도면은 안 봄 | 못 잡음. 참조에 도면이 들어 있어 도면은 늘 같고, 퍼즈에 같은 id로 node_type이 바뀌는 꼴이 없다 |

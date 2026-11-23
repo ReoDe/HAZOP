@@ -11,7 +11,8 @@
 새로 단 참조를 함께 본다. 사슬 가운데 집합을 앞 판 백업으로 되돌리거나(결과는 그대로), 이력 줄을 옛 꼴(kept_*·step 없음)로
 바꾸거나, 결과의 줄 번호를 지우기도 한다.
 알려진 한계는 종류·태그·상자가 같은 기호(표시가 같아 가릴 수 없음)와, 상자 없는 배관 하나를 지우고 같은 두 끝 사이에
-겉모습(종류·태그)이 같은 배관을 새로 그은 것(도면에서 가를 정보가 없음, 시드 584)뿐이다. 상자 없는 구성요소가 겉모습이
+겉모습(종류·태그)이 같은 배관을 새로 그은 것(도면에서 가를 정보가 없음, 시드 584), 같은 source id·같은 종류로 돌아온 다른
+기호(source 묘비는 참조와 겉모습으로 되찾음)뿐이다. 상자 없는 구성요소가 겉모습이
 같아도 끝이 다른 것으로 이어지거나 둘이 하나로 모이면 위반이다.
 
 불변식(위반 이름의 첫 글자)
@@ -24,6 +25,8 @@
 ⑥ 등록되지 않은 자리에서 옛 id를 만나지 않는다.
 ⑦ 순번 구성요소를 이었으면 앞뒤 기호의 종류·태그·위치가 같다.
 ⑧ 내용이 같은 다시 추출(순서만 섞임·판 문자열만 바뀜·범주만 바뀜)은 확인할 수 있는 구성요소를 잃지 않고 재확인 구간을 만들지 않는다.
+  나누기를 되돌렸다 다시 해 같은 나눈 id·같은 종류(잃을 때 태그가 있었으면 같은 태그)로 돌아온 기호는, 그 기호를 든 열린
+  묘비가 하나뿐이고 잃을 때 집합이 겉모습을 적어 두었으면 되찾는다.
 
 프로젝트 문서(M3: ⑥ 초기사건 문서·FMEA·잠재 후보 판단, hazop.study.follow)도 ⑤ 결과처럼 따라간다. 판 이전마다 따라가거나
 건너뛰고(판 표지로 늦게 따라옴), 되돌아온 판에서 새로 단 표제 대상을 함께 보며, 판 표지가 없는 옛 문서는 사슬 끝에 한 번
@@ -64,6 +67,7 @@ TAGS = [None, None, None, "V-1", "V-2", "P-1", "V-1"]
 FORMATS = ["pdf_vector", "pdf_vector", "raster_png", "drawio", "dexpi"]
 LIMIT = "표지가 같은 다른 기호(알려진 한계)"
 LIMIT_PIPE = "같은 두 끝 사이 겉모습이 같은 상자 없는 배관(알려진 한계, 위 한계 수에 듦)"
+LIMIT_SOURCE = "같은 source id·같은 종류로 돌아온 다른 기호(알려진 한계, 위 한계 수에 듦)"
 RULE = "R-1"
 SET_HOLDERS = tuple(p for p, s in idmap.FIELDS[idmap.SET] if s == idmap.MEMBERS)
 DOC_KINDS = (idmap.IE, idmap.FMEA, idmap.LATENT)
@@ -129,19 +133,17 @@ def split_or_unsplit(r, w):
     """사람의 나누기 연산(U1)과 그 되돌림. 순번 도면(벡터 PDF·스캔)에서 덩어리 기호 하나를 기호 2~3개로 나눈다. 나눈 기호는
     연산마다 id가 `<머리>-split-<op>`로 고정이고(hazop.extract.ids), 덩어리는 없어지거나 몸체만 남아 상자가 바뀐다. 배관 끝은
     나눈 기호로 옮겨 붙는다. 되돌리면 나눈 기호가 모두 빠지고 덩어리가 처음 모습으로 돌아오며 배관 끝도 덩어리로 돌아간다.
-    다시 나누면 새 연산이라 새 id다. 일어난 일은 w["split_events"]에 적는다(판 문자열에는 들지 않음)."""
+    되돌린 것을 다시 하면(redo) 같은 연산이라 같은 나눈 기호(같은 id·uid·종류·태그)가 돌아온다. 다시 할 때 조각 하나를 다른
+    종류로 고쳐 나누면(redo_other) 같은 나눈 id의 다른 기호(새 uid)다. 새로 나누면 새 연산이라 새 id다. 일어난 일은
+    w["split_events"]에 적는다(판 문자열에는 들지 않음)."""
     if w["fmt"] not in ("pdf_vector", "raster_png"):
         return
     events = w.setdefault("split_events", [])
     done = w.setdefault("split_blobs", [])
     if done and r.random() < 0.4:
-        rec = done.pop(r.randrange(len(done)))
-        pieces = [s["uid"] for s in w["syms"] if s.get("split_group") == rec["group"]]
-        blob = rec["blob"]
-        w["syms"] = [s for s in w["syms"] if s.get("split_group") != rec["group"] and s["uid"] != blob["uid"]]
-        w["syms"].append(copy.deepcopy(blob))
-        _repoint(w["pipes"], {u: blob["uid"] for u in pieces})
-        events.append("unsplit")
+        unsplit(r, w)
+        return
+    if redo_split(r, w):
         return
     cand = [s for s in w["syms"] if s["kind"] != "continuation" and not s.get("fixed") and not s.get("split")
             and s["uid"] not in {d["blob"]["uid"] for d in done}]
@@ -156,11 +158,68 @@ def split_or_unsplit(r, w):
         pieces.append({"uid": "%s:s%d" % (w["sheet"], w["next"]), "kind": r.choice(KINDS), "tag": r.choice(TAGS),
                        "bbox": place(r), "nobox": False, "fixed": False, "split": "op%d" % w["next"],
                        "split_group": group})
-    keep = r.random() < 0.5
-    done.append({"group": group, "blob": copy.deepcopy(blob)})
-    w["syms"] = [s for s in w["syms"] if s is not blob] + ([dict(blob, bbox=place(r))] if keep else []) + pieces
+    body = place(r) if r.random() < 0.5 else None
+    done.append({"group": group, "blob": copy.deepcopy(blob), "pieces": copy.deepcopy(pieces), "body": body})
+    w["syms"] = [s for s in w["syms"] if s is not blob] + ([dict(blob, bbox=body)] if body is not None else []) + pieces
     _repoint(w["pipes"], {blob["uid"]: [pieces[0]["uid"], pieces[-1]["uid"]]})
     events.append("split")
+
+
+def unsplit(r, w):
+    """나누기 하나를 되돌린다(split_or_unsplit)."""
+    rec = w["split_blobs"].pop(r.randrange(len(w["split_blobs"])))
+    pieces = [s["uid"] for s in w["syms"] if s.get("split_group") == rec["group"]]
+    blob = rec["blob"]
+    w["syms"] = [s for s in w["syms"] if s.get("split_group") != rec["group"] and s["uid"] != blob["uid"]]
+    w["syms"].append(copy.deepcopy(blob))
+    _repoint(w["pipes"], {u: blob["uid"] for u in pieces})
+    w.setdefault("split_undone", []).append(rec)
+    w.setdefault("split_events", []).append("unsplit")
+
+
+def redo_ready(w):
+    """다시 할 수 있는 되돌린 나누기의 차례들. 덩어리가 살아 있고 다른 나누기에 들지 않았으며, 지운 조각이 되살아나 있지
+    않아야 한다(그러면 같은 id가 둘이 된다)."""
+    here = {s["uid"] for s in w.get("syms") or ()}
+    busy = {d["blob"]["uid"] for d in w.get("split_blobs") or ()}
+    return [i for i, d in enumerate(w.get("split_undone") or ()) if d["blob"]["uid"] in here
+            and d["blob"]["uid"] not in busy and not here & {x["uid"] for x in d["pieces"]}]
+
+
+def redo_split(r, w):
+    """되돌린 나누기 하나를 다시 한다(split_or_unsplit). 했으면 True."""
+    ready = redo_ready(w)
+    if not ready:
+        return False
+    rec = w["split_undone"].pop(r.choice(ready))
+    pieces = copy.deepcopy(rec["pieces"])
+    w["deleted"] = [d for d in w.get("deleted") or [] if d["uid"] not in {x["uid"] for x in pieces}]
+    other = r.random() < 0.4
+    if other:  # 같은 연산 id로 다시 나누되 조각 하나를 다른 종류로: 같은 나눈 id의 다른 기호
+        k = r.randrange(len(pieces))
+        w["next"] += 1
+        pieces[k] = dict(pieces[k], uid="%s:s%d" % (w["sheet"], w["next"]),
+                         kind=r.choice(sorted(set(KINDS) - {pieces[k]["kind"]})))
+    blob = next(s for s in w["syms"] if s["uid"] == rec["blob"]["uid"])
+    body = [dict(blob, bbox=list(rec["body"]))] if rec["body"] is not None else []
+    w["syms"] = [s for s in w["syms"] if s is not blob] + body + copy.deepcopy(pieces)
+    _repoint(w["pipes"], {blob["uid"]: [pieces[0]["uid"], pieces[-1]["uid"]]})
+    w["split_blobs"].append(dict(rec, pieces=pieces))
+    w.setdefault("split_events", []).append("redo_other" if other else "redo")
+    return True
+
+
+def undo_or_redo(kind):
+    """나누기를 되돌리기만, 또는 되돌린 나누기를 다시 하기만 하는 다시 추출(사람이 수정 기록에서 누름)."""
+    def step(r, w):
+        w = copy.deepcopy(w)
+        w["split_events"] = []
+        if kind == "redo":
+            redo_split(r, w)
+        else:
+            unsplit(r, w)
+        return w
+    return step
 
 
 def mutate(r, w):
@@ -310,12 +369,17 @@ def build_any(world):
 
 def next_world(r, world, kind):
     if "sheets" not in world:
-        return {"mutate": mutate, "reorder": reorder, "recategorize": lambda r, w: recategorize(w)}.get(
+        return {"mutate": mutate, "reorder": reorder, "recategorize": lambda r, w: recategorize(w),
+                "redo": undo_or_redo("redo"), "unsplit": undo_or_redo("unsplit")}.get(
             kind, lambda r, w: restamp(w))(r, world)
     out = copy.deepcopy(world)
     for s in out["sheets"].values():
         s.pop("split_events", None)
     names = sorted(out["sheets"])
+    if kind == "redo":
+        names = [n for n in names if redo_ready(out["sheets"][n])]
+    elif kind == "unsplit":
+        names = [n for n in names if out["sheets"][n].get("split_blobs")]
     pick = names if kind == "mutate" and r.random() < 0.3 else [r.choice(names)]  # 보통은 한 도면만 다시 추출
     for name in pick:
         out["sheets"][name] = next_world(r, out["sheets"][name], kind)
@@ -543,6 +607,7 @@ class Track:
         self.looks = collections.defaultdict(list)  # 정체 → 지나온 판에서 보인 겉모습들
         self.tomb_truth = {}   # 묘비 id → 처음 잃은 기호의 정체
         self.tomb_first = {}   # 묘비 id → 처음 본 기록
+        self.tomb_seen = {}    # 묘비 id → (잃기 전 판의 참조, 겉모습)
         self.sets = {}         # 등록 경로 → [{"allowed": 정체 집합, "taint": bool}]
 
     def see(self, truth):
@@ -610,12 +675,20 @@ class Track:
             u = truth_a.eid.get(m)
             if self.tomb_truth.setdefault(t, u) != u:
                 self.j.note("① 같은 묘비 id가 다른 기호에 다시 쓰임", (self.seed, t, self.tomb_truth[t], u))
+            if u is not None:
+                self.tomb_seen.setdefault(t, (next((r for r, x in truth_a.ref.items() if x == u), None), truth_a.look[u]))
         for t, e in (d.get("found") or {}).items():
             want, got = self.tomb_truth.get(t), truth_b.eid.get(e)
             if want is not None and got != want:
                 ok = self.looked_like([want], truth_b.look.get(got))
+                if not ok and self.same_source(t, got, truth_b):
+                    ok = True
+                    self.j.stats[LIMIT_SOURCE] += 1
                 self.j.note(LIMIT if ok else "② 되찾은 묘비가 다른 기호", (self.seed, t, want, got))
             self.j.stats["되찾은 묘비"] += 1
+            if self.tomb_seen.get(t, (None,))[0] and truth_b.ref.get(self.tomb_seen[t][0]) == got:
+                self.j.stats["같은 source id로 되찾은 묘비"] += 1
+        self.check_redo(ns_b, truth_a, truth_b)
         before, after = holders(ns_a), holders(ns_b)
         for p in SET_HOLDERS:
             if len(before[p]) != len(after[p]):
@@ -624,6 +697,29 @@ class Track:
             for i, h in enumerate(after[p]):
                 self.j.stats["구간 자리 점검"] += 1
                 self.check_holder("%s[%d]" % (p, i), h, self.sets[p][i], truth_b)
+
+    def same_source(self, t, u, truth):
+        """잃은 기호와 같은 참조·같은 종류(잃을 때 태그가 있었으면 같은 태그)로 돌아온 기호인가."""
+        ref, look = self.tomb_seen.get(t, (None, None))
+        now = truth.look.get(u)
+        return (ref is not None and now is not None and truth.ref.get(ref) == u and now[:2] == look[:2]
+                and (look[2] is None or now[2] == look[2]))
+
+    def check_redo(self, ns_b, truth_a, truth_b):
+        """⑧ 앞 판에 없던 기호가 잃을 때와 같은 참조·종류로 돌아왔고(나누기 되돌림 뒤 다시 나누기), 그 기호를 든 열린
+        묘비가 하나뿐이며 구간 lost에 있고 잃을 때 집합이 겉모습을 적어 두었으면 되찾았어야 한다."""
+        tombs = ns_b.get("tombstones") or {}
+        gone = idmap.discarded_tombs(ns_b)
+        held = {t for n in ns_b["nodes"] for t in n.get("lost") or []}
+        open_ = collections.defaultdict(list)
+        for t, rec in tombs.items():
+            u = self.tomb_truth.get(t)
+            if (isinstance(rec, dict) and rec.get("found") is None and t not in gone and u is not None
+                    and u not in truth_a.look and self.same_source(t, u, truth_b)):
+                open_[u].append(t)
+        for u, ts in open_.items():
+            if len(ts) == 1 and ts[0] in held and tombs[ts[0]].get("look") is not None:
+                self.j.note("⑧ 같은 나눈 id로 돌아온 기호의 묘비를 되찾지 못함", (self.seed, ts[0], u))
 
     def check_seq_look(self, ns_b, g_a, g_b):
         """⑦ 순번 구성요소는 표시로만 잇는다: 이은 앞뒤 기호의 종류·태그·위치가 같다."""
@@ -747,7 +843,12 @@ def plan_chain(r, project_mode):
     worlds, steps = [first], []
     for _ in range(r.randint(3, 6)):
         x = r.random()
-        if len(worlds) > 1 and x < 0.3:
+        sheets = worlds[-1]["sheets"].values() if "sheets" in worlds[-1] else [worlds[-1]]
+        if any(redo_ready(w) for w in sheets) and r.random() < 0.8:
+            kind, w = "redo", next_world(r, worlds[-1], "redo")
+        elif any(w.get("split_blobs") for w in sheets) and r.random() < 0.3:
+            kind, w = "unsplit", next_world(r, worlds[-1], "unsplit")
+        elif len(worlds) > 1 and x < 0.3:
             kind, w = "revisit", copy.deepcopy(r.choice(worlds[:-1]))
         elif x < 0.42:
             kind, w = "reorder", next_world(r, worlds[-1], "reorder")
@@ -792,7 +893,7 @@ def run(seeds, judge, after_step=None):
             judge.stats["사슬 " + ("프로젝트 그래프" if project_mode else "도면 " + first["fmt"])] += 1
             for kind, w in steps:
                 sheets = w["sheets"].values() if "sheets" in w else [w]
-                for e in [e for s in sheets for e in s.get("split_events") or ()] if kind == "mutate" else ():
+                for e in [e for s in sheets for e in s.get("split_events") or ()] if kind in ("mutate", "redo", "unsplit") else ():
                     judge.stats["나누기 연산 " + e] += 1
             track.adopt_set(ns, truth)
             live_slots = {}
@@ -986,8 +1087,10 @@ class MigrateFuzzTest(unittest.TestCase):
                   "결과 줄 번호 없음", "집합을 백업으로 되돌림", "문서가 이번 판 이전을 건너뜀",
                   "되돌아온 판에서 새로 단 문서 참조", "표지 없는 옛 문서 옮김", "표지 없는 옛 문서 묘비(증명 못 함)",
                   "그래프 판으로 표지를 찍은 문서", "옛 표지 아래 새 판 쓰기를 거절함", "나누기 연산 split",
-                  "나누기 연산 unsplit"):
+                  "나누기 연산 unsplit", "같은 source id로 되찾은 묘비"):
             self.assertGreater(s[k], SEEDS // 20, k)
+        for k in ("나누기 연산 redo", "나누기 연산 redo_other"):  # 나누고 되돌린 뒤 차례가 더 남은 사슬에서만 난다
+            self.assertGreater(s[k], SEEDS // 40, k)
         for form in ("new", "a", "b"):
             self.assertGreater(s["집합 꼴 " + form], SEEDS // 10)
         self.assertEqual(failures(judge), {}, report(judge))

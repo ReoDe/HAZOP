@@ -19,6 +19,7 @@ from hazop import paths  # noqa: E402
 from hazop.extract import corrections  # noqa: E402
 from hazop.extract.adapters import pdf_vector  # noqa: E402
 from hazop.graph import build  # noqa: E402
+from hazop.study import migrate  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 from tests.test_adapter import make_pdf  # noqa: E402
 
@@ -352,7 +353,6 @@ class InputOpsTest(unittest.TestCase):
         self.assertEqual(got["not_applicable"],
                          [{"op_id": tag["op_id"], "reason": "나누기 %s로 덩어리가 나뉘어 대상이 없음" % ops[0]["op_id"]}])
 
-    @unittest.expectedFailure  # idmap은 묘비를 표시(mark)로만 되찾는데 source 근거 구성요소의 묘비에는 표시가 없다(판 이전 쪽 몫, 보고함)
     def test_redo_of_split_brings_tombstoned_member_back(self):
         ops = self.split_ops()
         self.save(ops)
@@ -363,14 +363,22 @@ class InputOpsTest(unittest.TestCase):
         held = sorted(m for seg in ns["nodes"] for m in seg["members"]
                       if next(n for n in g2["nodes"] if n["entity_id"] == m)["source_object_id"] in made)
         self.assertTrue(held)
+        refs = sorted("%s#%s" % (g2["graph_id"], n["source_object_id"]) for n in g2["nodes"] if n["entity_id"] in held)
+        res = {"schema_version": "0.3", "graph_id": g2["graph_id"], "graph_version": g2["graph_version"],
+               "cells": [{"node_id": ns["nodes"][0]["node_id"], "entries": [{"cause_refs": [{"ref": x} for x in refs]}]}]}
         corrections.save_fp(NAME, [], "김고침", at=AT, action="undo")
-        sn.load(build.build_graph(corrections.resolve(NAME, allow_extract=True)["corrected"]))
+        mid = sn.load(build.build_graph(corrections.resolve(NAME, allow_extract=True)["corrected"]))
+        step, _ = migrate.migrate_results(res, mid, at=AT)
+        self.assertFalse([c for c in step["cells"][0]["entries"][0]["cause_refs"] if c["ref"] in refs])
         corrections.save_fp(NAME, ops, "김고침", at=AT, action="redo")
         g4 = build.build_graph(corrections.resolve(NAME, allow_extract=True)["corrected"])
         back = sn.load(g4)
         self.assertEqual(sorted(m for seg in back["nodes"] for m in seg["members"] if m in set(held)), held,
                          "같은 나눈 id가 돌아오면 묘비를 되찾음")
         self.assertFalse([t for seg in back["nodes"] for t in seg.get("lost") or ()])
+        for moved in (migrate.migrate_results(step, back, at=AT)[0], migrate.migrate_results(res, back, at=AT)[0]):
+            self.assertEqual(sorted(c["ref"] for c in moved["cells"][0]["entries"][0]["cause_refs"]), refs,
+                             "⑤ 결과의 그 묘비 참조도 같은 되찾기로 풀림(따라감·늦게 따라옴)")
 
     def test_failed_write_leaves_record_and_base_as_they_were(self):
         ops = self.split_ops()

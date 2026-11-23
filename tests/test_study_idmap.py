@@ -315,5 +315,68 @@ class EditsKeepTombsTest(StoreCase):
         self.assertEqual(out["history"][-1]["detail"]["with_lost"], {"S1": 1})
 
 
+def source_drawing(version, gone=(), kinds=None):
+    """drawio처럼 source_object_id가 파일 id인 도면. kinds {이름: 종류}로 같은 id의 종류를 바꾼다."""
+    g = drawing(version, gone=gone)
+    for n in g["nodes"]:
+        n["source_object_id"] = "cell-" + n["_name"]
+        n["id_basis"] = "source"
+        n["kind"] = (kinds or {}).get(n["_name"], n["kind"])
+    return g
+
+
+class SourceTombTest(StoreCase):
+    """source 구성요소의 묘비는 같은 참조가 같은 종류(기록에 태그가 있으면 같은 태그)로 돌아오면 되찾는다."""
+
+    def lost_v1(self):
+        g1 = source_drawing("v-1")
+        ns = sn.propose(g1, at=AT)
+        ns["nodes"] = [dict({"node_id": "S1", "name": "a", "basis": "b", "members": [eid(g1, "TK"), eid(g1, "V1")]},
+                            **sn._v2_fields("script"))]
+        ns2, _ = migrate.migrate_set(ns, source_drawing("v-2", gone=("V1",)), at=AT)
+        self.assertEqual(len(ns2["nodes"][0]["lost"]), 1)
+        return ns2
+
+    def back(self, ns, **kw):
+        g3 = source_drawing("v-3", **kw)
+        out, _ = migrate.migrate_set(ns, g3, at=AT)
+        return out, g3
+
+    def test_same_ref_and_kind_brings_the_member_back(self):
+        out, g3 = self.back(self.lost_v1())
+        self.assertEqual(sorted(out["nodes"][0]["members"]), sorted([eid(g3, "TK"), eid(g3, "V1")]))
+        self.assertFalse(out["nodes"][0].get("lost"))
+
+    def test_same_ref_with_other_kind_stays_a_tomb(self):
+        ns = self.lost_v1()
+        out, _ = self.back(ns, kinds={"V1": "check_valve"})
+        self.assertEqual(out["nodes"][0]["lost"], ns["nodes"][0]["lost"], "같은 id의 다른 종류는 다른 기호")
+
+    def test_edited_look_in_the_record_does_not_open_the_tomb(self):
+        ns = self.lost_v1()
+        t = ns["nodes"][0]["lost"][0]
+        ns["tombstones"][t]["look"][2] = "check_valve"
+        out, _ = self.back(ns, kinds={"V1": "check_valve"})
+        self.assertEqual(out["nodes"][0]["lost"], [t], "지문이 묘비 id와 맞지 않으면 되찾지 않음")
+
+    def test_tomb_without_a_recorded_look_is_not_refound_by_ref(self):
+        ns = self.lost_v1()
+        t = ns["nodes"][0]["lost"][0]
+        rec = ns["tombstones"].pop(t)
+        old = idmap.tomb_id("graph-T", rec["lost_at"], idmap.tomb_key("graph-T", rec["lost_from"], rec["lost_at"],
+                                                                     rec["entity_id"], rec["ref"], rec["mark"]))
+        ns["tombstones"][old] = {k: v for k, v in rec.items() if k != "look"}  # 이 고침 전에 지은 묘비
+        ns["nodes"][0]["lost"] = [old]
+        out, _ = self.back(ns)
+        self.assertEqual(out["nodes"][0]["lost"], [old], "기록에 겉모습이 없으면 같은 기호인지 몰라 묘비로 둠")
+
+    def test_discarded_source_tomb_is_not_refound(self):
+        ns = sn.discard_lost(self.lost_v1(), "S1", None, by="김검토", at=AT)
+        out, _ = self.back(ns)
+        self.assertNotIn(eid(source_drawing("v-3"), "V1"), out["nodes"][0]["members"])
+        t = out["nodes"][0]["discarded"][0]
+        self.assertIsNone(out["tombstones"][t]["found"], "버린 묘비는 같은 기호가 돌아와도 닫힌 채")
+
+
 if __name__ == "__main__":
     unittest.main()

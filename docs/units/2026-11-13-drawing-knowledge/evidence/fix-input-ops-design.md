@@ -203,7 +203,7 @@ Codex 교차검증과 `hazop-reviewer`가 `6ec8d53`을 반려했다. 차단 지�
 - 경미 지적도 고쳤다. 덩어리에 한 고침은 나눈 뒤 사유에 나누기를 적는다(`test_edit_on_lump_that_was_split_says_why`, 전에는 같은 자리의 가운데 나눈 기호로 조용히 옮겨 붙었다). R7은 44e0c6e 분리 작업트리에서 계산한 고정값(합성 PDF·추출·고침 적용 해시)과 견준다(`test_r7_no_input_ops_matches_44e0c6e`). 실제 나누기 길을 무작위로 타는 시험(`RealSplitFuzzTest`, 기본 12시드, `HAZOP_SPLIT_FUZZ_SEEDS`)이 겹친 짝·겹친 고르기·부분 적용·캐시 무효를 본다. 80시드에서 적용 41건, 겹침 49건, 파일 바뀜 36건, 기호가 되지 못함 25건, 일부 못 나눔 10건, 겹친 짝 2건이 나왔다.
 - R5 시험 둘은 PDF만 바꾸고 원본을 다시 추출하지 않는 흐름이었다. 이 흐름은 이제 적용 불가이므로, 원본을 다시 추출한 뒤 나누기를 다시 찾게 고쳤다.
 - 원자적 쓰기, 되돌리기, 옛 기록은 결함이 없었다. 수정 기록과 기준 추출 파일은 쓰다 실패해도 앞 판 그대로이고(`test_failed_write_leaves_record_and_base_as_they_were`), 입력 연산이 없던 판의 기록(지문에 `objs`·`via` 없음)도 그대로 적용되며 그 위에 나누기를 더할 수 있다(`test_record_from_before_input_ops_still_applies`).
-- 남은 결함(판 이전 쪽). 나누기를 되돌렸다가 다시 하면 같은 나눈 id가 돌아오지만 구간의 묘비를 되찾지 않는다. `idmap`은 묘비를 표시(mark)로만 되찾는데 `source` 근거 구성요소의 묘비에는 표시가 없다. `test_redo_of_split_brings_tombstoned_member_back`에 `expectedFailure`로 남겼다.
+- 남은 결함(판 이전 쪽). 나누기를 되돌렸다가 다시 하면 같은 나눈 id가 돌아오지만 구간의 묘비를 되찾지 않는다. `idmap`은 묘비를 표시(mark)로만 되찾는데 `source` 근거 구성요소의 묘비에는 표시가 없다. `test_redo_of_split_brings_tombstoned_member_back`에 `expectedFailure`로 남겼다. 2026-11-23에 고쳤다(migration-map-design.md 16절). source 묘비는 잃을 때의 겉모습을 지문에 넣고, 같은 참조·같은 종류로 돌아오면 되찾는다.
 - 남은 위험. 같은 바이트에서 pdfplumber 판만 바뀌면 `objs` 지문은 같은데 순번이 다른 도형을 가리킬 수 있다. 기준 추출은 열쇠로 다시 만들지만, 덧바르는 고침의 `objs` 다시 찾기는 종류가 같아야 한다는 것만 지킨다.
 
 ## 6. 다시 추출 비용과 화면 흐름

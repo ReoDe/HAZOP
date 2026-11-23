@@ -12,7 +12,10 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
   해시다. 판 문자열은 내용 해시라 (잃기 전 판, 옛 entity_id)가 기호 하나를 정하므로, 같은 id면 같은 잃은 기호이고 다른
   기호면 다른 id다. 집합을 새로 제안하거나 백업에서 되돌려도, 결과가 든 묘비 id를 다른 기호에 다시 쓰지 않는다. 살아 있는
   id(entity-·relation-·xlink-·<graph_id>/·graph-·project-)와 꼴이 겹치지 않는다. 묘비는 지우지 않고, 표시가 맞는 구성요소가
-  하나뿐으로 다시 나오면 되찾는다(found). 되찾기는 기록의 지문이 묘비 id와 맞는 것만 한다(기록에 없는 묘비 id는 풀지 않음).
+  하나뿐으로 다시 나오면 되찾는다(found). source 구성요소의 묘비는 표시 대신 겉모습(look: 종류·도면·기호 종류·태그)을 지문에
+  넣어 두고, 같은 참조의 source 구성요소가 하나뿐으로 다시 나오고 겉모습이 같으면(기록에 태그가 없으면 태그는 보지 않음)
+  되찾는다(나누기를 되돌렸다 다시 하면 같은 나눈 id가 돌아온다). 같은 참조가 다른 종류로 돌아오면 다른 기호라 묘비로 둔다.
+  되찾기는 기록의 지문이 묘비 id와 맞는 것만 한다(기록에 없는 묘비 id는 풀지 않음).
 - 구간(members를 가진 사전)은 members에 지금 판의 살아 있는 id만 두고 잃은 것은 lost(묘비 id)에 둔다. 실행 취소 기록의
   before·after와 조각 기록도 같은 규칙이라 되돌려도 묘비는 묘비다. 사람이 확인하고 버린 묘비는 lost에서 discarded로
   옮긴다(hazop.study.nodes.discard_lost). 지금 구간 어디에도 lost로 남지 않고 버려진 묘비(discarded_tombs)는 되찾지 않는다.
@@ -84,7 +87,7 @@ FIELDS = {
 # 일부러 옮기지 않는 자리: 지난 일의 기록(history·version_migrations), 판 이전 끝에 새로 만드는 판 사진, 묘비 기록
 IGNORED = {
     SET: ("history", "graph_member_refs", "graph_member_marks", "graph_member_basis", "graph_member_ends",
-          "member_digest", "tombstones", "tomb_seq", "legacy.member_digest", "legacy.member_refs"),
+          "graph_member_looks", "member_digest", "tombstones", "tomb_seq", "legacy.member_digest", "legacy.member_refs"),
     RESULTS: ("version_migrations", "cells[].entries[].history", "archived_cells[].cell.entries[].history",
               "legacy", "carried_from", "study_nodes_ref"),
     IE: MARKER_FIELDS, FMEA: MARKER_FIELDS, LATENT: MARKER_FIELDS,
@@ -216,6 +219,15 @@ def look_of(node):
     return [node.get("node_type"), node.get("sheet"), node.get("kind"), node.get("tag")]
 
 
+def valid_look(v):
+    return isinstance(v, list) and len(v) == 4 and all(x is None or isinstance(x, str) for x in v)
+
+
+def _same_look(rec, new):
+    """source 묘비의 되찾기: 종류·도면·기호 종류가 같고, 기록에 태그가 있으면 태그도 같다."""
+    return rec[:3] == new[:3] and (rec[3] is None or rec[3] == new[3])
+
+
 def valid_ends(v):
     return (isinstance(v, list) and len(v) == 5 and all(x is None or isinstance(x, str) for x in v[:4])
             and isinstance(v[4], list) and all(isinstance(x, str) for x in v[4]))
@@ -223,11 +235,12 @@ def valid_ends(v):
 
 def snapshot(graph):
     """집합이 가리키는 판의 사진: 그래프 전체 구성요소의 참조·id 근거와, 상자가 있는 순번 구성요소의 표시, 상자가 없고 끝이
-    있는 순번 구성요소의 겉모습과 끝(graph_member_ends {id: [node_type, 도면, kind, tag, [끝 id]]})."""
+    있는 순번 구성요소의 겉모습과 끝(graph_member_ends {id: [node_type, 도면, kind, tag, [끝 id]]}), source 구성요소의
+    겉모습(graph_member_looks {id: [node_type, 도면, kind, tag]}, 묘비를 되찾을 때 같은 기호인지 본다)."""
     gid = graph.get("graph_id")
     basis = bases(graph)
     ends = ends_of(graph)
-    refs, marks, linked = {}, {}, {}
+    refs, marks, linked, looks = {}, {}, {}, {}
     for n in graph.get("nodes", []):
         e = n["entity_id"]
         refs[e] = ref_of(n, gid)
@@ -236,8 +249,11 @@ def snapshot(graph):
             marks[e] = m
         elif basis[e] == ids.SEQUENCE and ends.get(e):
             linked[e] = look_of(n) + [ends[e]]
+        if basis[e] == ids.SOURCE:
+            looks[e] = look_of(n)
     return {"graph_member_refs": dict(sorted(refs.items())), "graph_member_marks": dict(sorted(marks.items())),
-            "graph_member_basis": dict(sorted(basis.items())), "graph_member_ends": dict(sorted(linked.items()))}
+            "graph_member_basis": dict(sorted(basis.items())), "graph_member_ends": dict(sorted(linked.items())),
+            "graph_member_looks": dict(sorted(looks.items()))}
 
 
 def has_snapshot(node_set, graph):
@@ -254,8 +270,9 @@ def tomb_id(graph_id, version, key):
     return "%s%s:%s:%s" % (TOMB_PREFIX, graph_id, version or "legacy", key)
 
 
-def tomb_key(graph_id, frm, to, entity_id, ref, mark):
-    canon = json.dumps([graph_id, frm, to, entity_id, ref, mark], ensure_ascii=False, separators=(",", ":"))
+def tomb_key(graph_id, frm, to, entity_id, ref, mark, look=None):
+    row = [graph_id, frm, to, entity_id, ref, mark] + ([look] if look is not None else [])  # 겉모습 없는 옛 묘비 id는 그대로
+    canon = json.dumps(row, ensure_ascii=False, separators=(",", ":"))
     return "t-" + hashlib.sha256(canon.encode("utf-8")).hexdigest()[:12]
 
 
@@ -265,7 +282,8 @@ def _recorded_as(t, rec, graph_id):
         key = json.dumps([rec.get("entity_id"), rec.get("ref"), rec.get("lost_from")], sort_keys=True)
         return t == tomb_id(graph_id, "legacy", "b-" + _sha8(key))
     return t == tomb_id(graph_id, rec["lost_at"], tomb_key(graph_id, rec.get("lost_from"), rec["lost_at"],
-                                                            rec.get("entity_id"), rec.get("ref"), rec.get("mark")))
+                                                            rec.get("entity_id"), rec.get("ref"), rec.get("mark"),
+                                                            rec.get("look")))
 
 
 # ---------------------------------------------------------------- 대응표
@@ -299,6 +317,7 @@ def compute(node_set, graph, at=None):
     old_refs = node_set.get("graph_member_refs") or {}
     old_marks = {k: v for k, v in (node_set.get("graph_member_marks") or {}).items() if valid_mark(v)}
     old_basis = node_set.get("graph_member_basis")
+    old_looks = {k: v for k, v in (node_set.get("graph_member_looks") or {}).items() if valid_look(v)}
     tombs = node_set.get("tombstones") or {}
     gone = discarded_tombs(node_set)
     new_basis = bases(graph)
@@ -346,20 +365,28 @@ def compute(node_set, graph, at=None):
     _link_by_ends(node_set, graph, new_basis, by_id, link, contested, old_basis_of, domain)
     for m in sorted(domain - set(link)):
         mk = old_marks.get(m)
-        t = tomb_id(gid, to, tomb_key(gid, frm, to, m, old_refs.get(m), mk))
+        lk = old_looks.get(m) if m in old_refs and old_basis_of(m) == ids.SOURCE else None
+        t = tomb_id(gid, to, tomb_key(gid, frm, to, m, old_refs.get(m), mk, lk))
         table["eid"][m] = t
         if t not in tombs:  # 같은 id면 같은 기호라 앞 기록을 그대로 둔다
             table["new_tombs"][t] = {"entity_id": m, "ref": old_refs.get(m), "mark": mk, "basis": (old_basis or {}).get(m),
                                      "lost_from": frm, "lost_at": to, "at": at, "legacy_key": None, "found": None}
+            if lk is not None:
+                table["new_tombs"][t]["look"] = lk
     table["eid"].update(link)
     taken = set(link.values())
     claims = {}
     for t, rec in sorted(tombs.items()):
-        if (not isinstance(rec, dict) or rec.get("found") is not None or not valid_mark(rec.get("mark"))
-                or t in gone or not _recorded_as(t, rec, gid)):
+        if not isinstance(rec, dict) or rec.get("found") is not None or t in gone or not _recorded_as(t, rec, gid):
             continue
-        mk = rec["mark"]
-        hits = [e for e in mark_hits(mk) if e not in taken and e not in contested]
+        if valid_mark(rec.get("mark")):
+            hits = mark_hits(rec["mark"])
+        elif rec.get("basis") == ids.SOURCE and rec.get("ref") and valid_look(rec.get("look")):
+            hits = [e for e in by_ref.get(rec["ref"]) or ()
+                    if new_basis[e] == ids.SOURCE and _same_look(rec["look"], look_of(by_id[e]))]
+        else:
+            continue
+        hits = [e for e in hits if e not in taken and e not in contested]
         if len(hits) == 1:
             claims.setdefault(hits[0], []).append(t)
     for e, ts in claims.items():
