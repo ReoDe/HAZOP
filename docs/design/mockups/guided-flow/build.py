@@ -26,7 +26,7 @@ ROOT = pathlib.Path(__file__).resolve().parent
 REPO = ROOT.parents[3]
 BASE = ROOT.parent / "app-shell-web" / "assets"
 ICON_DIRS = [pathlib.Path(os.environ["HAZOP_TABLER_OUTLINE"])] if os.environ.get("HAZOP_TABLER_OUTLINE") else []
-ICON_DIRS += [pathlib.Path(r"D:\HAZOP-trials\2026-11-13-icons\pkg\package\icons\outline"), REPO / "resources" / "library" / "icons" / "tabler"]
+ICON_DIRS += [REPO / "resources" / "library" / "icons" / "tabler"]   # 여기 없는 아이콘은 HAZOP_TABLER_OUTLINE(Tabler 3.51.0 outline 폴더)로 준다
 CHROME = os.environ.get("HAZOP_CHROME", r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 OUT = ROOT / "1-guided-flow.html"
 
@@ -43,7 +43,7 @@ def icon(name):
             raw = re.sub(r'\s(width|height|class)="[^"]*"', "", raw)
             raw = re.sub(r"\s+", " ", raw).replace("> <", "><")
             return raw.replace("<svg", '<svg class="ic" aria-hidden="true"', 1)
-    raise SystemExit("아이콘 없음: %s" % name)
+    raise SystemExit("아이콘 없음: %s (환경변수 HAZOP_TABLER_OUTLINE에 Tabler Icons 3.51.0 outline 폴더를 주세요)" % name)
 
 
 def build():

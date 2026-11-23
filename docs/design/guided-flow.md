@@ -102,10 +102,12 @@ HZ-DSN-05의 틀은 그대로 쓴다. 왼쪽 얇은 메뉴, 가운데 도면, �
 
 **지금.** 다시 추출하면 검토구간 집합이 옛 그래프 판에 머문다(`stale`). 사용자가 구간 패널에서 '판 이전 지금 하기'(`nodes.catch_up`)를 눌러야 하고, 그 전에는 ⑤ 분석 실행과 Excel 내보내기가 막힌다.
 
+**이미 된 것(2026-11-23, 커밋 081373a, 다른 세션).** 다시 추출·다시 짓기·도면 고치기 저장이 끝나면 엔진(`data.notify_graph_changed` → `auto_catch_up`)이 프로젝트 잠금 안에서 판 이전을 이어서 한다. AI 차례가 도는 중이면 끝난 뒤에 한다. 새로 찾지 못한 구성요소가 생기면 `study.lost` 사건(`{sections, members, first_node}`)을 보내고, 웹은 닫을 수 있는 알림 줄(`web/js/notices.js`)에 '그 자리로' 단추를 띄운다. 잃은 것이 없으면 아무것도 띄우지 않는다. 자동 이전이 실패하면 지금의 막음과 '판 이전 지금 하기' 단추가 안전망으로 남는다. 아래는 그 위에 더할 것이다.
+
 **바꿀 것.**
 
-1. 추출 흐름(`register_flow.py`)이 새 그래프를 저장한 다음, 같은 프로젝트 잠금 안에서 `nodes.load_fp`(지금 `_catch_up`이 부르는 것)를 바로 부른다. 화면 단추는 없앤다. 옛 형식(0.1) 구간 파일의 '새 형식으로 바꾸기'도 같은 자리에서 한다.
-2. 결과는 `study.lost` 사건 하나로 웹에 알린다. 꼴은 `{sheet, kept, lost, lost_refs, nodes: ["S3","S5"], failed: null|"사유"}`다. `kept`는 그대로 옮긴 구성요소 수, `lost`는 찾지 못한 구성요소 수, `lost_refs`는 분석 결과에서 다시 확인할 참조 수다.
+1. 자동 반영(081373a)을 그대로 쓴다. 옛 형식(0.1) 구간 파일의 '새 형식으로 바꾸기'도 같은 자리에서 한다. 자동 반영이 실패했을 때의 안전망 단추는 남기되, 이름을 '도면 변경 다시 반영하기'로 바꾸고 다음에 할 일 줄(`apply_failed`)에서도 누를 수 있게 한다.
+2. `study.lost` 사건에 필드를 더한다: `sheet`(도면 번호), `kept`(그대로 옮긴 구성요소 수), `lost_refs`(분석 결과에서 다시 확인할 참조 수), `nodes`(걸린 구간 번호 목록), `failed`(실패 사유 또는 null). 지금 있는 `sections`·`members`·`first_node`는 그대로 둔다. 잃은 것이 없을 때도 `members: 0`으로 한 번 보내, 웹이 사라지는 알림 한 줄(R7)을 띄울 수 있게 한다.
 3. 화면은 세 경우로 나눈다.
 
 | 경우 | 보이는 것 | 사라지는 때 |
@@ -244,12 +246,14 @@ HZ-DSN-05의 틀은 그대로 쓴다. 왼쪽 얇은 메뉴, 가운데 도면, �
 | 단위 | 하는 일 | 고치는 파일(주인) | 완료 항목 | 권장 모델·강도 |
 | --- | --- | --- | --- | --- |
 | **U1 다음 할 일 엔진** | `next` 토픽: 영역 summary를 모아 §3.1 목록을 만든다. 영역 `changed` 뒤 `next` 알림 | 새 `hazop/shell/api_next.py`, `tests/test_shell_next.py`. `api.py`의 `MODULES` 목록에 한 줄 | G1 엔진 쪽 | Sonnet 5.5 medium |
-| **U2 자동 반영** | 다시 추출 뒤 판 이전·형식 바꾸기를 추출 흐름에서 바로 한다. `study.lost` 꼴(§3.2). '판 이전 지금 하기'와 stale 안내를 웹에서 뺀다 | `hazop/shell/register_flow.py`, `api_nodes.py`, `api_results.py`(stale 막힘 조건), `web/js/panels/nodes.js`·`nodes_logic.js`·`results.js`의 해당 부분, 재현 스크립트, `tests/test_shell_nodes.py` | G2 | Opus 5.5 medium(저장 경로) |
+| **U2 자동 반영 마무리** | 자동 판 이전(081373a, 이미 됨) 위에: `study.lost` 필드 더하기, 잃은 것 없을 때 사라지는 알림, 실패 때 `apply_failed`, 안전망 단추 이름, 옛 형식 자동 바꾸기(§3.2) | `hazop/app/data.py`, `hazop/shell/api.py`의 `study.lost` 부분, `api_nodes.py`, `web/js/notices.js`, `web/js/panels/nodes.js`·`nodes_logic.js`·`results.js`의 해당 부분, `tests/test_shell_auto_catch_up.py` | G2 | Opus 5.5 medium(저장 경로) |
 | **U3 대기열 엔진** | `queue` 토픽과 `queue.decide`·`undo`·`bulk_accept`. 찾지 못한 구성요소의 후보 찾기(같은 종류, 가까운 자리) | 새 `hazop/shell/api_queue.py`, `tests/test_shell_queue.py`. 묘비 되찾기에 함수가 모자라면 `hazop/study/idmap.py`(이 단위가 주인) | G3 엔진 쪽 | Opus 5.5 medium(ID·저장 경로). 후보 찾기 규칙은 high |
 | **U4 화면 틀** | 위 막대의 다음에 할 일 줄과 펼침, Ctrl+J. 오른쪽 칸을 채팅과 대기열 카드 사이에서 바꾸는 자리. 알림 띠·사라지는 알림 꼴(§3.4) | `web/js/main.js`, 새 `web/js/next/*.js`, 위 막대 부품, `shell.css`·`app.css`, `tests/test_shell_web.py`의 해당 시험 | G1 화면, G4(2), G5 | Sonnet 5.5 medium |
 | **U5 대기열 화면** | 카드, 도면 확대·표시, 키, 묶음 수락, 끝 화면 | 새 `web/js/queue/*.js`·`queue.css`, 도면 확대는 `web/js/canvas/`의 공개 함수만 부름(고칠 일이 생기면 U4에 요청), `web/js/panels/aireview.js`(표를 대기열 시작 단추로) | G3 화면 | Sonnet 5.5 medium |
 | **U6 사람 말** | §4 표대로 문구를 바꾸고 금지어 시험을 넣는다 | §4 표의 파일 전부(앞 단위들이 끝난 뒤라 겹치지 않는다), `tests/test_screen_words.py`(다른 세션이 만든 것을 넓힘. 그 세션이 아직 돌면 끝난 뒤에) | G4(1)(3) | Sonnet 5.5 medium |
 | **U7 측정** | §3.6 시나리오를 바꾸기 전(U1보다 먼저)과 U6 뒤에 잰다 | `docs/units/<날짜>-guided-flow-metrics/`, 필요하면 `scripts/` 아래 새 시나리오 파일 | G6 | Sonnet 5.5 medium(실제 창) |
+
+**다른 세션이 이미 하고 있는 것(2026-11-23 14시 확인).** 자동 판 이전과 알림 줄은 081373a로 들어왔다. 같은 체크아웃에 문구 바꾸기(`nodes.js`·`results.js`·`clean_ui.js`·`bridge.js` 등 고침, 새 `tests/test_screen_words.py`)가 커밋되지 않은 채 돌고 있다. U2와 U6은 그 세션이 끝난 뒤 그 결과를 읽고 남은 것만 한다. 이 문서 §4의 말은 그 시험 표(판 이전 → 도면 변경 반영, 참조 확인 필요 → 위치 확인 필요, 엔진이 → 앱이)에 맞췄다.
 
 **차례.**
 
