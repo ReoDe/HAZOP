@@ -348,6 +348,12 @@ def read(engine, parts, query):
             cap = ai_review.DEFAULT_CAP
         gid = query.get("graph_id") or None            # 도면 하나의 확인 창(§3.7): 실행 상한을 다른 도면과 나누지 않고 센다
         return api._json(estimate(engine, cap, [gid] if gid else None))
+    if len(parts) == 3 and parts[2] == "revert":            # 되돌리기 미리 알림: aireview/<도면>/revert?ids=a,b
+        ids = [i for i in str(query.get("ids") or "").split(",") if i][:MAX_IDS]
+        try:
+            return api._json(revert_preview(engine, parts[1], ids))
+        except Refused:
+            return None
     if len(parts) == 2:
         data = candidates(engine, parts[1])
         if not data["ok"] and data["code"] == "not_found":
@@ -361,17 +367,50 @@ def read(engine, parts, query):
 STALE_TEXT = "AI 후보나 도면 수정이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
 
 
-def _decide(engine, graph_id, cand_ids, action, ver, by=None):
+NEEDS_CONFIRM_TEXT = "이 수락에 기대 사람이 한 고침 %d건이 함께 빠집니다. 무엇이 빠지는지 확인한 뒤 다시 되돌리세요."
+
+
+def _op_words(dependents):
+    """함께 빠지는 고침 → 사람 말 '태그 고침 2건 · 종류 고침 1건'(연산 이름·op_id를 싣지 않는다)."""
+    from hazop.shell import api_corrections
+    labels = dict(api_corrections.OP_LABELS, split="나누기", pipe="배관 지정")
+    count = {}
+    for d in dependents:
+        w = labels.get(d.get("op"), "도면")
+        count[w] = count.get(w, 0) + 1
+    return " · ".join("%s 고침 %d건" % (w, n) for w, n in count.items())
+
+
+def revert_preview(engine, graph_id, cand_ids):
+    """되돌리기 전에 화면이 알릴 값(입력 연산 U2 §11.6). 파일을 쓰지 않는다.
+    → {"confirm": [확인받을 사람 고침 op_id], "human": 수, "ai": 함께 제안으로 돌아갈 AI 수락 수, "text": 사람 말}."""
+    name = _name(engine, graph_id)
+    doc, _original = _load(name)
+    if doc is None:
+        return {"confirm": [], "human": 0, "ai": 0, "text": ""}
+    pv = ai_review.revert_preview(doc, list(cand_ids), name)
+    deps = pv.get("dependents") or []
+    human = [d for d in deps if not d.get("candidate")]
+    ai = [d for d in deps if d.get("candidate")]
+    parts = []
+    if human:
+        parts.append("이 수락에 기대 사람이 한 고침 %d건(%s)이 함께 빠집니다." % (len(human), _op_words(human)))
+    if ai:
+        parts.append("이 수락에 기댄 다른 AI 후보 수락 %d건도 제안으로 돌아갑니다." % len(ai))
+    return {"confirm": [d["op_id"] for d in human], "human": len(human), "ai": len(ai), "text": " ".join(parts)}
+
+
+def _decide(engine, graph_id, cand_ids, action, ver, by=None, confirm=None):
     """도면별 잠금 안에서 _decide_locked를 부른다(같은 판을 본 두 결정·사람 고침이 서로를 덮지 않게, sheet_refresh.lock)."""
     try:
         name = _name(engine, graph_id)
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     with lock(name):
-        return _decide_locked(engine, graph_id, cand_ids, action, ver, by)
+        return _decide_locked(engine, graph_id, cand_ids, action, ver, by, confirm)
 
 
-def _decide_locked(engine, graph_id, cand_ids, action, ver, by=None):
+def _decide_locked(engine, graph_id, cand_ids, action, ver, by=None, confirm=None):
     """낱개 결정의 공통 길. ver(읽은 판)는 꼭 있어야 한다(채팅도 같다, 검토 5).
     → {ok, changed, failed, ver, notes, recheck, graph_stale} 또는 {ok: False, code, message}.
     저장한 뒤의 실패(그래프 다시 만들기)는 오류가 아니라 '저장됨, 그래프 갱신 실패'로 돌려주고 낡은 그래프 표시를 남긴다(검토 3·4)."""
@@ -399,7 +438,9 @@ def _decide_locked(engine, graph_id, cand_ids, action, ver, by=None):
         elif action == "reject":
             ai_review.reject(doc, ids, by=by)
         else:
-            ai_review.revert(doc, ids, name, by=by)
+            ai_review.revert(doc, ids, name, by=by, confirm=confirm)
+    except ai_review.RevertNeedsConfirm as exc:                  # 기댄 사람 고침을 확인받지 않음: 아무것도 지우지 않았다
+        return {"ok": False, "code": "needs_confirm", "message": NEEDS_CONFIRM_TEXT % len(exc.dependents)}
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     except store_io.Conflict:
@@ -433,8 +474,9 @@ def reject(engine, graph_id, cand_ids, ver, by=None):
     return _decide(engine, graph_id, cand_ids, "reject", ver, by)
 
 
-def revert(engine, graph_id, cand_ids, ver, by=None):
-    return _decide(engine, graph_id, cand_ids, "revert", ver, by)
+def revert(engine, graph_id, cand_ids, ver, by=None, confirm=None):
+    """confirm: 미리 알림(revert_preview)의 confirm 목록. 기댄 사람 고침이 있는데 빠졌으면 needs_confirm으로 거절하고 아무것도 지우지 않는다."""
+    return _decide(engine, graph_id, cand_ids, "revert", ver, by, confirm)
 
 
 def _bulk(doc, task):
@@ -609,7 +651,9 @@ def register(commands):
 
     put("accept", dict(base, cand_ids=ids), _h_decide(accept), "후보 수락(사람 수정 기록에 연산으로 들어가고 그래프를 다시 만든다)")
     put("reject", dict(base, cand_ids=ids), _h_decide(reject), "후보 거절")
-    put("revert", dict(base, cand_ids=ids), _h_decide(revert), "수락·거절 되돌리기(수락한 연산은 수정 기록에서 빠지고 그래프를 다시 만든다)")
+    put("revert", dict(base, cand_ids=ids, confirm=(v_list(v_str(1, 120), 500), False)),
+        lambda engine, a: _unwrap(revert(engine, a["graph_id"], a["cand_ids"], a["ver"], confirm=a.get("confirm"))),
+        "수락·거절 되돌리기(수락한 연산은 수정 기록에서 빠지고 그래프를 다시 만든다). 기댄 사람 고침이 있으면 confirm에 미리 알림의 목록")
     put("accept_bulk", dict(base, task=(v_enum(*ai_review.TASK_ORDER), True)), _h_bulk,
         "확신 높은 묶음 수락(묶음은 엔진이 센다. 기호 종류는 확신 0.95 이상이고 이웃 기호에 붙지 않은 것만)")
     put("stop", {"graph_id": (v_str(1, 200), True)}, _h_stop,

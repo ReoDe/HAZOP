@@ -154,6 +154,48 @@ class DecideTest(Base):
         self.assertEqual(self.ops(), [])
 
 
+
+class RevertConfirmTest(Base):
+    """입력 연산 U2(§11.6): 수락에 기대 사람이 한 고침이 있으면 엔진 revert는 confirm(미리 알림의 op_id)이 없으면 아무것도 지우지 않고
+    RevertNeedsConfirm을 낸다. 셸은 미리 알림을 읽기로 주고(aireview/<도면>/revert?ids=), 거절은 사람 말 needs_confirm으로, confirm은 그대로 넘긴다."""
+
+    def setUp(self):
+        super().setUp()
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        self.call("aireview.accept", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        self.calls = []
+        real = ar.revert
+
+        def fake_revert(doc, ids, name, by, at=None, confirm=None):
+            self.calls.append(list(confirm or []))
+            if "h-1" not in (confirm or []):
+                raise ar.RevertNeedsConfirm(["h-1"])
+            return real(doc, ids, name, by, at=at)
+        preview = {"ops": ["a-1"], "dependents": [{"op_id": "h-1", "op": "set_tag", "target": "x", "candidate": None},
+                                                   {"op_id": "a-2", "op": "set_kind", "target": "y", "candidate": "t-9:kind"}]}
+        for p_ in (mock.patch.object(ar, "revert", fake_revert), mock.patch.object(ar, "revert_preview", lambda d, ids, n: preview)):
+            p_.start()
+            self.addCleanup(p_.stop)
+
+    def test_preview_read_names_what_goes_with_it(self):
+        r = AR.read(self.engine, ["aireview", self.gid, "revert"], {"ids": "t-1:tag"})
+        d = json.loads(r.body.decode("utf-8"))
+        self.assertEqual(d["confirm"], ["h-1"], "사람이 한 고침만 확인받는다")
+        self.assertEqual(d["human"], 1)
+        self.assertIn("태그", d["text"])
+        self.assertNotRegex(d["text"], r"set_tag|op_id|h-1")
+
+    def test_revert_without_confirm_is_refused_in_words_and_writes_nothing(self):
+        out = self.call("aireview.revert", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"])
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["error"]["code"], "needs_confirm")
+        self.assertIn("함께 빠집니다", out["error"]["message"])
+        self.assertEqual(len(self.ops()), 1, "아무것도 지우지 않음")
+        out = self.call("aireview.revert", graph_id=self.gid, cand_ids=["t-1:tag"], ver=self.view()["ver"], confirm=["h-1"])
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(self.calls[-1], ["h-1"], "확인한 목록을 그대로 넘김")
+        self.assertEqual(self.ops(), [])
+
 class LockTest(Base):
     def test_lock_serializes_two_decisions_on_one_view(self):  # 총괄 지시: 읽기 → 대조 → 쓰기는 도면별 잠금 안에서
         import threading

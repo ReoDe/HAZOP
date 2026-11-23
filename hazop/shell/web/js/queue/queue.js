@@ -5,6 +5,7 @@
 import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore, store } from "../store.js";
 import { cmd, read } from "../bridge.js";
+import { asking as guardAsking, confirmRevert } from "../review/revert_guard.js";
 
 const START = { open: false, kind: null, gid: null, items: [], i: 0, undo: [], busy: false, error: null, note: null, editing: null, ask: null,
   bulkAsk: false, done: false, setRev: null, projectId: null, bulk: [] };
@@ -256,10 +257,21 @@ export function undo() {
     if (last.type === "lost") {
       await cmd("nodes.undo", { project_id: s.projectId, set_rev: q.get().setRev, batch_id: last.batch_id });
     } else if (last.type === "edit") {
-      const r = await cmd("aireview.revert", { graph_id: last.graph_id, cand_ids: last.cand_ids, ver: await aiVer(last.graph_id) });
+      const ok = await confirmRevert(last.graph_id, last.cand_ids);        // 기댄 사람 고침이 있으면 먼저 알리고 확인받는다(U2 §11.6)
+      if (!ok) { q.set({ note: "되돌리지 않았습니다." }); return null; }
+      const r = await cmd("aireview.revert", { graph_id: last.graph_id, cand_ids: last.cand_ids, ver: await aiVer(last.graph_id), confirm: ok.confirm });
       await cmd("edit.undo", { graph_id: last.graph_id, op_id: last.op_id, ver: r.ver });
     } else {
-      for (const p of last.parts) await cmd("aireview.revert", { graph_id: p.graph_id, cand_ids: p.cand_ids, ver: await aiVer(p.graph_id) });
+      const asked = [];
+      for (const p of last.parts) {
+        const ok = await confirmRevert(p.graph_id, p.cand_ids);
+        if (!ok) { q.set({ note: "되돌리지 않았습니다." }); return null; }
+        asked.push(ok.confirm);
+      }
+      for (let i = 0; i < last.parts.length; i++) {
+        const p = last.parts[i];
+        await cmd("aireview.revert", { graph_id: p.graph_id, cand_ids: p.cand_ids, ver: await aiVer(p.graph_id), confirm: asked[i] });
+      }
     }
     mark(last.qids, "open");
     const j = q.get().items.findIndex((x) => x.qid === last.qids[0]);
@@ -287,7 +299,7 @@ export function wire() {
   wired = true;
   window.addEventListener("keydown", (e) => {
     const s = q.get();
-    if (!s.open) return;
+    if (!s.open || guardAsking()) return;                                       // 되돌리기 확인 창이 키를 받는다
     const tag = (e.target && e.target.tagName) || "";
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;       // 고치기 입력칸은 자기 Enter·Esc를 쓴다
     // 대기열 밖 단추(도면 위 칩 등)에 포커스가 있어도 Enter·Space가 그 단추를 누르지 않게 한다(Space는 아래에서 건너뛰기)

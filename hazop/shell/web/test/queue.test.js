@@ -4,6 +4,7 @@ import { store } from "../js/store.js";
 import { deliver } from "../js/bridge.js";
 import * as Q from "../js/queue/queue.js";
 import { QueueCard } from "../js/queue/card.js";
+import { RevertGuard } from "../js/review/revert_guard.js";
 
 const tick = async () => { for (let i = 0; i < 400; i++) await Promise.resolve(); };
 const aiItem = (n, extra) => Object.assign({ qid: "ai|G|c" + n, kind: "ai", graph_id: "G", sheet: "SNP-M-101", ver: "v0", cand_id: "c" + n, local_id: "n" + n,
@@ -75,6 +76,27 @@ export const tests = [
     const last = sent[sent.length - 1];
     assert.equal([last[0], last[1].cand_ids], ["aireview.revert", ["c1"]]);
     assert.equal([Q.q.get().i, Q.current().state, Q.q.get().undo.length], [0, "open", 0]);
+  } },
+  { name: "대기열(입력 연산 U2 §11.6): Z는 기댄 사람 고침이 있으면 먼저 알리고, Esc면 보내지 않고 Enter면 확인한 목록을 실어 되돌린다", async run(assert) {
+    await start([aiItem(1), aiItem(2)]);
+    const base = window.fetch;
+    window.fetch = async (u) => (String(u).startsWith("/api/aireview/G/revert?ids=c1")
+      ? { ok: true, status: 200, json: async () => ({ confirm: ["h-1"], human: 1, ai: 0, text: "이 수락에 기대 사람이 한 고침 1건(태그 고침 1건)이 함께 빠집니다." }) } : base(u));
+    const host = document.createElement("div"); document.body.appendChild(host);
+    render(html`<${RevertGuard} />`, host);
+    await key("a");
+    await key("z");
+    assert(host.querySelector(".rg-modal") && host.textContent.includes("태그 고침 1건"), "확인 창: " + host.textContent);
+    await key("Escape");
+    assert(!sent.some(([n]) => n === "aireview.revert"), "그만두면 보내지 않음");
+    assert.equal(Q.q.get().undo.length, 1, "되돌리기 쌓임은 그대로");
+    assert(Q.q.get().open, "Esc가 대기열을 닫지 않음");
+    await key("z");
+    await key("Enter");
+    const last = sent[sent.length - 1];
+    assert.equal([last[0], last[1].cand_ids, last[1].confirm], ["aireview.revert", ["c1"], ["h-1"]]);
+    window.fetch = base;
+    host.remove();
   } },
   { name: "대기열: E는 edit.apply 뒤 같은 판 사슬로 aireview.reject, Z는 되돌리기 뒤 edit.undo", async run(assert) {
     await start([aiItem(1)]);

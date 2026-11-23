@@ -117,7 +117,20 @@ class AiReviewDialogTest(base.AppTestBase):
         self.assertTrue(all(c["status"] == "accepted" for c in dlg.doc["candidates"]))
         self.assertEqual(len(corrections.load(name)["ops"]), len(valves))
         dlg.table.selectRow(0)
-        dlg.decide("revert")
+        real, calls = ar.revert, []
+
+        def needs(doc, ids, nm, by, at=None, confirm=None):          # 입력 연산 U2 §11.6: 기댄 사람 고침이 있으면 confirm 없이는 거절
+            calls.append(confirm)
+            if confirm != ["h-1"]:
+                raise ar.RevertNeedsConfirm(["h-1"])
+            return real(doc, ids, nm, by, at=at)
+        with mock.patch.object(ar, "revert", needs), mock.patch.object(QMessageBox, "question", return_value=QMessageBox.No) as ask:
+            dlg.decide("revert")
+        self.assertEqual((calls, ask.call_count), ([None], 1), "알리고, 아니오면 다시 부르지 않음")
+        self.assertIn("1건이 함께 빠집니다", ask.call_args[0][2])
+        self.assertEqual(len(corrections.load(name)["ops"]), len(valves))
+        with mock.patch.object(ar, "revert", needs), mock.patch.object(QMessageBox, "question", return_value=QMessageBox.Yes):
+            dlg.decide("revert")
         self.assertEqual(dlg.doc["candidates"][0]["status"], "proposed")
         self.assertEqual(corrections.load(name)["ops"], [])
         dlg.table.selectRow(0)
