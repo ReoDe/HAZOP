@@ -139,7 +139,10 @@ def item_fps(b):
 def summary(engine):
     ctx, why = _context(engine)
     if ctx is None:
-        return {"available": False, "reason": why}
+        out = {"available": False, "reason": why}
+        if why == follow.STALE + ".":
+            out["action"] = "nodes"      # 화면이 '검토구간 패널 열기'를 보인다(거기서 판 이전 지금 하기)
+        return out
     pg, ns, doc, ie_doc, ie_fp = ctx
     ie_doc = _view_doc(ie_doc, doc, ns)
     b = _build(doc, ns, pg, ie_doc, nodes.now_utc())

@@ -551,6 +551,7 @@ Tab 순서는 메뉴 → 위 막대 → 도면 도구 막대 → 패널 → 채�
 | `ai.recheck` · `settings.reviewer` · `ui.save` | — · `name` · `state` | 연결 다시 확인, 검토자 이름, 보기 상태 저장 | — | 1 |
 | `nodes.apply` | `ops`, `set_rev`, `targets[{node_id, rev, state}]` | 구간 규격 `apply_nodes` | 구간 판 | 2 |
 | `nodes.undo` · `nodes.confirm` · `nodes.unconfirm` · `nodes.lock` · `nodes.unlock` | `batch_id` 또는 `node_id`, `set_rev`, `targets`, (`unlock`은 `reason`) | `hazop/study/nodes.py` | 구간 판 | 2 |
+| `nodes.catch_up` | `project_id` | 다시 추출 뒤 검토구간 판 이전만 한다(읽기 API는 파일을 바꾸지 않아 사용자가 누른다). 프로젝트 잠금 안에서 `nodes.load_fp`만 부르고, 같은 판이면 아무것도 쓰지 않으며, 쓰다 실패하면 옛 파일이 남는다. 답 `{changed, matched, tombstones, lost_members}` | 구간 판 | 2 |
 | `analysis.run` · `analysis.cancel` | `scope` · `job_id` | 분석 작업 | 결과 파일 지문 | 3 |
 | `results.set_status` · `results.edit` · `results.ie_hint` | `node_id`, `deviation_id`, `entry_id`, `status`·`fields`, `reason`, `ver` | `hazop/study/results.py` | 결과 파일 지문 | 3 |
 | `export.excel` · `export.ie_bundle` | `scope` | 새 파일(이름에 시각). 저장 위치는 Qt 대화상자 | 읽기 | 3 |

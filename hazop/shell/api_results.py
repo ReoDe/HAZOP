@@ -159,7 +159,8 @@ def summary(engine):
         return {"available": False, "reason": "프로젝트 그래프가 없습니다. 도면을 먼저 추출하세요."}
     ns, legacy = _node_set(pg)
     active = scope_rows(ns)
-    base = {"available": True, "legacy": legacy, "set_rev": ns.get("set_rev") or 0}
+    base = {"available": True, "legacy": legacy, "set_rev": ns.get("set_rev") or 0,
+            "stale": nodes.is_stale(ns, pg)}       # 다시 추출로 그래프 판이 바뀌었는데 구간 집합이 아직 판 이전 전이면 True: 옛 참조의 자리를 새 그래프로 확인하지 않는다
     if legacy or not active:
         return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
                     reason="옛 판 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요." if legacy else "확정한 구간이 아직 없습니다.")
@@ -230,6 +231,9 @@ def _run_state(engine):
     return snap
 
 
+STALE_LABEL = "판 이전 전(자리 확인 안 됨)"
+
+
 def cell_view(engine, node_id, deviation_id):
     pg = _pg(engine, strict=False)
     if pg is None:
@@ -246,12 +250,12 @@ def cell_view(engine, node_id, deviation_id):
     problem = res.editable_problem(doc, node_id, deviation_id, ns)
     return {"cell": cell, "node": {"node_id": node_id, "name": node.get("name"), "state": nodes.node_state(node) if node else None},
             "deviation": dev, "editable": problem is None, "not_editable_reason": problem, "ver": _ver(fp),
-            "set_rev": ns.get("set_rev") or 0,
+            "set_rev": ns.get("set_rev") or 0, "stale": look.stale,
             "cause_kinds": res.CAUSE_KINDS, "read_only": doc.get("read_only"),
             "severities": list(SEVERITIES), "frequencies": list(FREQUENCIES),
             "intent": _intent(ns, node) if node else None,
             "roles": refs_mod().ROLES, "actuations": refs_mod().ACTUATIONS, "bases": res.CONSEQUENCE_BASES,
-            "targets": look.targets(node)}
+            "targets": [] if look.stale else look.targets(node)}      # 판 이전 전에는 새 그래프의 참조를 고르지 않게 한다
 
 
 def refs_mod():
@@ -286,6 +290,7 @@ class _Lookup:
         self.dn = {s["graph_id"]: s["drawing_number"] for s in pg.get("sheets") or []}
         self.labels = study_xlsx.entity_labels(pg)
         self.entities = {n.get("entity_id") for n in pg.get("nodes") or []}
+        self.stale = ns is not None and nodes.is_stale(ns, pg)      # 구간 집합이 지금 그래프보다 옛 판: 참조·경로의 자리를 확인하지 않는다
         self._docs = None
         self._expect = False
 
@@ -294,6 +299,8 @@ class _Lookup:
 
     def ref(self, r, **extra):
         """참조 하나 {ref, label, missing}: 그래프에서 사라진 대상이면 missing(화면이 '도면에서 사라짐'으로 보임). 저장 값은 원래 참조 그대로."""
+        if self.stale and not idmap.is_tomb(r):
+            return dict({"ref": r, "label": STALE_LABEL, "missing": False, "unverified": True}, **extra)      # 순번 id는 다시 추출로 다른 기호를 가리킬 수 있다
         return dict({"ref": r, "label": self.label(r), "missing": r not in self.idx}, **extra)
 
     def expectations(self):
@@ -333,6 +340,9 @@ class _Lookup:
         paths = []
         for p in basis.get("kg_paths") or []:
             if not p:
+                continue
+            if self.stale:      # 판 이전 전: 도면에서 보기가 다른 기호를 강조하지 않게 경로를 그리지 않는다
+                paths.append({"labels": [STALE_LABEL] * len(p), "marks": {}, "sheet": None, "missing": 0, "stale": True})
                 continue
             by_sheet = chatview.path_steps(self.pg, [{"id": x, "flow": None} for x in p])
             marks = {g: [{"op": "path", "steps": steps, "style": "path", "numbered": True}] for g, steps in by_sheet.items()}

@@ -279,6 +279,8 @@ export function ResultsPanel({ onClose }) {
         <${Btn} kind="primary" label="구간 만들기" onClick=${() => store.set({ panel: "nodes" })}>구간 패널 열기<//></div>` : html`
         <${Header} s=${s} />
         ${s.read_only ? html`<${Notice} kind="warn" icon="alert-triangle">${s.read_only}<//>` : null}
+        ${s.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면을 다시 추출해 그래프 판이 바뀌었습니다. 판 이전 전에는 분석 결과의 위치 참조를 새 도면에서 확인하지 않습니다(자리 확인 안 됨).
+          <div class="acts-row"><${Btn} sm=${true} kind="primary" label="검토구간 패널 열기" onClick=${() => store.set({ panel: "nodes" })}>검토구간 패널 열기(판 이전 지금 하기)<//></div><//>` : null}
         ${s.check && s.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(s.check)}<//>` : null}
         <${RunState} run=${s.run} /><${PlanCard} />
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${R.dismissError}>닫기<//><//>` : null}

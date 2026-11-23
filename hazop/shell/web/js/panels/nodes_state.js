@@ -4,7 +4,7 @@ import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore, store as shell } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
 import { openSheet as openSheetVia } from "./results_state.js";
-import { blankCard, errorText, targetsOf } from "./nodes_logic.js";
+import { blankCard, catchUpText, errorText, targetsOf } from "./nodes_logic.js";
 
 const EMPTY_LIST = {project_id: null,  available: false, set_rev: 0, nodes: [], batches: [], outside: { count: 0, total: 0 }, stale: false, read_only: null, pending_ai: 0 };
 
@@ -227,6 +227,19 @@ export async function migrate() {
   try {
     await cmd("nodes.migrate", { project_id: nodes.get().list.project_id });
     nodes.set({ busy: false });
+    await refresh();
+  } catch (e) {
+    await afterError(e);
+  }
+}
+
+/** 다시 추출 뒤 판 이전을 지금 한다(읽기는 파일을 바꾸지 않으므로 사용자가 누른다). 끝나면 이어진 수와 되찾지 못한 묘비 수를 알린다. */
+export async function catchUp() {
+  nodes.set({ busy: true, error: null });
+  try {
+    const r = await cmd("nodes.catch_up", { project_id: nodes.get().list.project_id });
+    nodes.set({ busy: false });
+    shell.set({ toast: { text: catchUpText(r), kind: "info" } });
     await refresh();
   } catch (e) {
     await afterError(e);

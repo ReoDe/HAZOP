@@ -235,6 +235,7 @@ export function IePanel({ onClose }) {
       <${Ask} />
       ${!s.available ? html`<div class="center-empty"><p>${s.reason || "초기사건을 볼 자료가 없습니다."}</p>
         ${unreadable ? html`<${Btn} kind="primary" label="원본을 백업하고 새로 시작" onClick=${I.replaceUnreadable}>원본 백업 뒤 새로 시작<//>`
+          : s.action === "nodes" ? html`<${Btn} kind="primary" label="검토구간 패널 열기" onClick=${() => store.set({ panel: "nodes" })}>검토구간 패널 열기<//>`
           : html`<${Btn} kind="primary" label="분석 결과 열기" onClick=${() => store.set({ panel: "results" })}>분석 결과 패널 열기<//>`}
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error}<//>` : null}</div>` : html`
         <${Header} s=${s} />

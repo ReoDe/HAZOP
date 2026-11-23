@@ -6,7 +6,7 @@ import { store, useStore } from "../store.js";
 import { cmd } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
-import { canEdit, checkText, colorOf, rangeText, sheetName, stateChip } from "./nodes_logic.js";
+import { canEdit, checkText, colorOf, confirmedLostText, rangeText, sheetName, stateChip } from "./nodes_logic.js";
 import * as N from "./nodes_state.js";
 
 const cssHref = new URL("nodes.css", import.meta.url).href;
@@ -28,6 +28,7 @@ function Row({ n, list, drawings, on, checked }) {
       <span class="seg-dot" style=${"background:" + colorOf(list, n.node_id)}></span>
       <span class="main"><b>${n.node_id} <span class="nm">${n.name || "(이름 없음)"}</span></b><span>${rangeText(n, drawings)}${n.span && n.span.spans ? html` <span class="span-mark" title="여러 도면에 걸친 구간">⇄</span>` : null} · 구성요소 ${n.count}</span></span></button>
     ${n.lost ? html`<${Chip} kind="warn" icon="alert-triangle" title="다시 추출한 도면에서 같은 자리의 구성요소를 찾지 못했습니다. 이 구간의 구성요소를 확인하세요">찾지 못한 구성요소 ${n.lost}개<//>` : null}
+    ${confirmedLostText(n) ? html`<${Chip} kind="warn" title="확정할 때 찾지 못한 구성요소가 남아 있었습니다">${confirmedLostText(n)}<//>` : null}
     ${n.broken ? html`<${Chip} kind="warn" icon="alert-triangle" title="도면을 고치거나 다시 추출해 도면에서 사라진 구성원입니다. 구간에서 빼거나 다시 넣으세요">끊긴 구성원 ${n.broken}<//>` : null}
     ${n.overlaps.length ? html`<${Chip} kind="warn" title=${"겹치는 구간: " + n.overlaps.map((o) => o.node_id + "(" + o.shared + ")").join(", ")}>겹침 ${n.overlaps.length}<//>` : null}
     <${Chip} kind=${chip.kind} icon=${chip.icon}>${chip.label}<//></div>`;
@@ -123,7 +124,8 @@ export function NodesPanel({ onClose }) {
         <div class="acts-row"><${Btn} sm=${true} label="새 판으로 바꾸기" disabled=${busy} onClick=${N.migrate}>새 판으로 바꾸기<//></div><//>` : null}
       ${list.read_only ? html`<${Notice} kind="warn" icon="lock">이 구간 파일은 읽기 전용이라 고칠 수 없습니다: ${list.read_only}<//>` : null}
       ${list.check && list.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(list.check)}<//>` : null}
-      ${list.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면 그래프가 바뀌어 저장된 구간과 어긋날 수 있습니다. 확정하기 전에 구성요소를 확인하세요.<//>` : null}
+      ${list.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면을 다시 추출해 그래프 판이 바뀌었습니다. 저장된 구간을 새 판에 잇는 판 이전을 아직 하지 않았습니다. 판 이전을 하기 전에는 분석 결과·초기사건이 옛 참조의 자리를 확인하지 않습니다.
+        <div class="acts-row"><${Btn} sm=${true} kind="primary" icon="refresh" label="판 이전 지금 하기" disabled=${busy || !!list.read_only} onClick=${N.catchUp}>판 이전 지금 하기<//></div><//>` : null}
       ${!list.available ? html`<${Notice}>프로젝트 그래프가 아직 없습니다. 도면을 추출하면 구간을 만들 수 있습니다.<//>` : null}
       ${list.pending_ai ? html`<${Notice} kind="info" icon="sparkles">채팅이 만든 구간 ${list.pending_ai}개가 아직 확인 전입니다. 이름과 설계 의도는 초안입니다.<//>` : null}
       <div class="acts-row"><div class="seg-toggle" role="group" aria-label="목록 범위">

@@ -12,6 +12,8 @@
 import collections
 import logging
 
+from hazop import store_io
+
 from hazop.chat import view as chatview
 from hazop.study import idmap, node_commands, node_tools, nodes
 
@@ -460,6 +462,35 @@ def _exclude_drawing(eng, a):
     return {"ver": out["ver"], "changed": out["changed"]}
 
 
+def _catch_up(eng, a):
+    """다시 추출 뒤 판 이전만 한다(구간 집합이 지금 그래프보다 옛 판일 때 사용자가 누른다). 읽기 API는 파일을 바꾸지 않으므로 이 길이 없으면 ④를 열어도
+    판 이전이 끝나지 않았다. 프로젝트 잠금 안에서 nodes.load_fp(판 이전과 ⑤ 결과 잇기를 하고 바뀐 파일을 쓴다)만 부른다. 같은 판이면 아무것도 쓰지 않는다.
+    쓰다 실패하면 옛 파일이 그대로 남는다(store_io의 원자적 쓰기). → {changed, matched(이어진 구성요소 수), tombstones(되찾지 못한 묘비 수), lost_members}."""
+    api = _api()
+    _check_project(eng, a)
+    pg = _pg(eng)
+    ns, legacy = _peek(pg)
+    if legacy:
+        raise api.CommandError("failed", "옛 판(0.1) 구간 파일입니다. '새 판으로 바꾸기'를 먼저 눌러 주세요.")
+    if not nodes.is_stale(ns, pg):
+        info = idmap.needs_check(ns)
+        return {"changed": False, "matched": 0, "tombstones": info["tombstones"], "lost_members": info["lost_members"]}
+    with node_commands.project_lock(pg.get("project_id")):
+        try:
+            got, _fp = nodes.load_fp(pg)
+        except (OSError, ValueError, store_io.Conflict) as exc:
+            raise api.CommandError("failed", "판 이전을 저장하지 못했습니다(%s). 파일은 그대로입니다. 다시 눌러 주세요." % str(exc)[:120])
+    if got is None or got.get("read_only"):
+        raise api.CommandError("failed", "판 이전을 할 수 없습니다: %s" % ((got or {}).get("read_only") or "구간 파일이 없음"))
+    if nodes.is_stale(got, pg):
+        raise api.CommandError("failed", "판 이전을 마치지 못했습니다. 다시 눌러 주세요.")
+    row = next((h.get("detail") or {} for h in reversed(got.get("history") or []) if isinstance(h, dict) and h.get("op") == "migrate_version"), {})
+    info = idmap.needs_check(got)
+    for topic in ("nodes", "results", "ie", "kg"):
+        eng.changed(topic, got.get("set_rev") if topic == "nodes" else None)
+    return {"changed": True, "matched": int(row.get("matched") or 0), "tombstones": info["tombstones"], "lost_members": info["lost_members"]}
+
+
 def _migrate(eng, a):
     """0.1 구간 파일을 새 판으로 바꾼다(사용자가 누를 때 한 번. 읽기 API는 바꾸지 않는다)."""
     _check_project(eng, a)
@@ -525,6 +556,7 @@ def register(commands):
         _check_project(eng, a)
         return suggest(eng, a["sheet"], a["ids"])
     put("suggest", {"project_id": proj, "sheet": sheet, "ids": ids}, h_suggest, "고른 구성요소로 만들 구간의 카드 초안(저장하지 않음)")
+    put("catch_up", {"project_id": proj}, _catch_up, "다시 추출 뒤 검토구간 판 이전을 지금 한다(같은 판이면 아무것도 쓰지 않음). 이어진 수·되찾지 못한 묘비 수를 답한다")
     put("migrate", {"project_id": proj}, _migrate, "0.1 구간 파일을 새 판으로 바꾼다(사용자가 누를 때 한 번)")
     return commands
 
