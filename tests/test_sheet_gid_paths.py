@@ -3,7 +3,7 @@ DEXPI는 graph-<도면 이름>) 다른 도면이 한 시트 이름을 나눠 쓰
 
 가상 도면 SNP의 원본을 임시 작업 루트·저장 루트에 등록하고 실제로 추출한다. 기대는 '넣은 시트가 모두 프로젝트 그래프에 들어오고,
 사람이 만든 구간이 다른 도면 때문에 묘비가 되거나 다른 기호를 가리키지 않는다'이다.
-표제란 가드 쪽 길(P4·P5, 빠졌던 둘째 도면의 번호 확정, 구간 제외 표시)은 U2 단위가 옮긴다.
+표제란 가드 쪽 길(P4·P5, 빠졌던 둘째 도면의 번호 확정, 구간 제외 표시)은 U2가 tests/test_sheet_guard.py로 옮겼다.
 실행: python -m unittest tests.test_sheet_gid_paths
 """
 
@@ -185,12 +185,14 @@ class SheetGidPathTest(SheetCase):
         self.assertEqual([(c.get("kind"), c["in_use_format"]) for c in sources.conflicts(P)], [("format", "drawio")])
 
     def test_registering_the_same_file_again_with_a_number_is_one_sheet(self):
-        """P3의 고르기 쪽. 옛 등록 화면·명령줄은 같은 원본을 도면 번호와 함께 다시 등록할 수 있다(새 등록 판). 같은 (자료, 쪽)이면
-        판이 달라도 한 시트다. 번호를 바꾸는 등록을 보류하는 일(가드)은 U2 단위가 한다."""
+        """P3의 고르기 쪽. 이 단위 전 옛 등록 화면·명령줄은 같은 원본을 도면 번호와 함께 다시 등록할 수 있었다(새 등록 판). 같은 (자료, 쪽)이면
+        판이 달라도 한 시트다. 지금은 그 등록을 보류한다(tests.test_sheet_guard). 여기서는 그렇게 이미 저장된 판을 만든다."""
         a = self.add("SNP-M-101", "pdf")
         rec, _p = registry.latest(P, a)
         src = registry.Store(paths.store_root(), P).abs_ref(rec["storage_ref"])
-        self.register(src, NUMBER)
+        res = registry.register(src, P, "P&ID", paths.store_root(), NUMBER, BY, number_checked=True)
+        self.assertEqual(res["outcome"], "new_version")
+        data.extract_and_graph(res["registration_file"])
         self.assertEqual(self.gids(), ["graph-SNP-M-101"], "같은 원본의 두 등록 판이 두 시트로 들어감")
 
     def test_mixed_formats_and_files_with_the_same_number_wait_for_a_choice(self):

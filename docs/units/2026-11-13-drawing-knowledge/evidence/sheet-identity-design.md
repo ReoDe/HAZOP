@@ -1,7 +1,7 @@
 # 시트 정체(sheet identity) 설계
 
 - 날짜: 2026-11-23
-- 성격: 설계(2026-11-23 총괄 승인). 저장소에는 1단계(U1: 이름·자리·고르기) 구현 커밋과 함께 넣었다. 구현하며 바꾼 것은 9장, 규격은 [DEXPI 가져오기·내보내기](../../../specs/dexpi-exchange.md) §4.3이다.
+- 성격: 설계(2026-11-23 총괄 승인). 저장소에는 1단계(U1: 이름·자리·고르기) 구현 커밋과 함께 넣었고, 2단계(U2: 가드·등록)는 11장이다. 구현하며 바꾼 것은 9장, 규격은 [DEXPI 가져오기·내보내기](../../../specs/dexpi-exchange.md) §4.3이다.
 - 앞선 판: 브랜치 `fix/sheet-gid-collision` 0bef8fe(검토 반려). 그 재현 시험 가운데 U1 몫은 `tests/test_sheet_gid_paths.py`로 옮겼고, 가드 몫은 U2에 넘겼다(8장).
 - 쓴 원칙: Attack the Premise(1장), Model the Domain(2장), Make Operations Idempotent·Boundary Discipline(4장)
 
@@ -174,7 +174,7 @@ settle(project_id, render):              # 작업 루트에서만. 이미 seats_
 | 3 다시 추출 불변 | 지킴 | 두 PDF의 다시 추출, P9(시각으로 고르는 변이) |
 | 4 정착 멱등, 보이던 시트 이름 불변 | 지킴 | `test_sheet_settle`의 정착·실패 시험, `…saved_collision…`(legacy 자리 변이) |
 | 5 다른 도면으로 안 이음 | 지킴(갈아타기 포함) | `…choosing_another_drawio_file…`, `MaterialSwitchIdmapTest`(시트 자료 검사를 지우는 변이) |
-| 6 가드 건전 | U2 | U2 시험 |
+| 6 가드 건전 | U2가 지킴 | 11장의 표(`tests/test_sheet_guard.py`, 변이 12개 모두 잡힘) |
 
 U3(퍼즈)로 넘기는 변이 목록:
 
@@ -186,7 +186,7 @@ U3(퍼즈)로 넘기는 변이 목록:
 
 ## 8. U2로 넘긴 시험(0bef8fe에서)
 
-U1 커밋에는 넣지 않았다(실패하는 시험·기대 실패를 두지 않음). U2가 가드를 고치며 옮긴다.
+U1 커밋에는 넣지 않았다(실패하는 시험·기대 실패를 두지 않음). U2가 가드를 고치며 `tests/test_sheet_guard.py`로 옮겼다(11장).
 
 - `test_guard_counts_fmea_rows`(P4): FMEA 행만 가리켜도 번호 바꾸기를 막음
 - `test_guard_counts_sheet_links_in_their_stored_form`(P5): 도면 연결 지정의 끝(번호)만 가리켜도 막음
@@ -218,4 +218,67 @@ U1 커밋에는 넣지 않았다(실패하는 시험·기대 실패를 두지 �
   그 사이 집합이 한 번도 다시 쓰이거나 채워지지 않았으면(정착·다시 추출 직전에 채움) 다른 파일의 같은 id로 이을 수 있다. `material`이 없는 옛 묘비도 같은 경우에 되찾을 수 있다.
 - 주인 파일의 그래프가 사라지면 4번 차례로 다른 파일이 말없이 그 이름을 얻는다. 판 이전은 5장 규칙으로 묘비를 내지만 알림은 고르기 줄뿐이다.
 - 정착이 건너뛴 가려진 시트(`settle_rebuild_failed`)는 그 시트를 다시 추출할 때까지 가려진 채다. 정착은 한 번뿐이라 저절로 다시 시도하지 않는다.
-- 정착 전 프로젝트에서 표제란 확정 취소의 예측 이름이 정착 뒤 이름과 다를 수 있다(8장, U2).
+- 정착 전 프로젝트에서 표제란 확정 취소의 예측 이름이 정착 뒤 이름과 다를 수 있었다. U2가 번호를 바꾸기 전에 정착해 닫았다(11장).
+
+## 11. 2단계 U2: 가드·등록(2026-11-23)
+
+사용자가 갇히거나(남의 기록 때문에 번호를 못 고침) 가드가 놓치는(기록이 끊기는 바꾸기를 허락) 길을 닫았다. 고친 곳은 `hazop/register/titleblock.py`(가드)와
+`hazop/register/registry.py`(등록) 둘이고, 규격은 [표제란 명령](titleblock-commands.md) §2와 [DEXPI 가져오기·내보내기](../../../specs/dexpi-exchange.md) §4.3이다.
+
+**가드(`titleblock._guard_number`).**
+
+- 앞 이름의 참조는 이 쪽이 그 이름의 지금 주인(프로젝트 그래프가 그 이름에 고른 폴더의 (자료, 쪽))일 때만 센다(`_owns`). 같은 번호의 다른 형식·파일,
+  정착 전에 가려진 도면은 주인 도면의 구간 때문에 번호를 고치거나 취소하지 못하던 길이다. 주인은 지금처럼 막힌다.
+- 새 이름의 참조는 늘 센다. 그 이름을 받으면 고르기 차례(먼저 등록한 자료 등)로 주인이 바뀔 수 있는데 가드는 그것을 미리 셈하지 않는다(고르기 규칙의 사본을 두지 않음).
+  그래서 구간이 있는 도면과 같은 번호를 다른 파일에 확정하는 일은 막힌 채다(10장 아래 '남은 일').
+- 세는 곳을 더했다: FMEA(`.fmea.json`, P4), 도면 연결 지정의 끝(도면 번호로 적힘, P5), 구간 제외 표시(`구간제외도면.json`, 맨 도면 번호. 앞서는 `drawings` 칸을
+  판 이전 줄의 도면 목록으로 보고 빼서 세지 못했다), 지식그래프 판단 CSV(따옴표 없는 `graph-X:태그`. 앞서는 JSON만 읽었다. 판단 열이 있으면 사람이 판단한 행만).
+- 번호 꼴은 `sheets.number_problem` 한 곳으로 본다. 여러 쪽 자료의 번호 확정은 `multi_page_number`, 임시 이름 꼴은 `reserved_number`로 막는다. 여러 쪽 자료의
+  번호 취소는 이름이 바뀌지 않으므로 막지 않는다(앞서는 막혀 이 규칙 전에 받은 번호를 지울 길이 없었다).
+- 번호를 바꾸는 요청이면 가드 앞에서 정착한다(`_settle` → `data.settle_sheets`, 정착 전 프로젝트만 실제로 씀). dry 요청도 정착한다. 셸은 dry로 먼저 묻고
+  거절이면 작업을 시작하지 않으므로, dry가 옛 이름(`graph-drawing`)으로 예측하면 정착 뒤에는 생기지 않을 거절로 사용자를 가둔다. 정착은 보이던 이름을 바꾸지 않는
+  한 번뿐인 정리이고 어차피 다음 추출 맨 앞에서 돈다. 정착이 실패하면 번호를 바꾸지 않는다(`code: io`).
+- 거절 줄에 `reason_code`를 더했다(`titleblock.REASON_CODES`). 사람용 글에서 '그래프 ID'·자료 ID를 뺐다.
+
+| `reason_code` | 언제 | 사람용 글(요지) |
+| --- | --- | --- |
+| `sheet_has_records` | 지금 이름(주인일 때)이나 새 이름을 사람 기록이 가리킴 | '<도면>의 구성요소를 구간 n곳·…이 가리키고 있어 번호를 바꾸면 끊기거나 섞임. 그 기록을 먼저 정리' |
+| `confirm_title_block_first` | 번호 미확정 도면(임시 이름)에 구간 등이 먼저 생김 | '번호가 확정되지 않은 도면 <파일 · n쪽>을 …이 가리켜 지금 확정하면 끊김(구간 전에 확정하면 이런 일이 없음)' |
+| `multi_page_number` | 여러 쪽 자료에 번호 | `sheets.TEXTS` 그대로 |
+| `reserved_number` | 임시 이름 꼴 번호 | `sheets.TEXTS` 그대로 |
+| `source_choice_pinned` | 앞 번호에 사람이 고른 원본 형식 선택 | '그 선택은 새 번호로 옮겨지지 않음' |
+| `number_taken` | 다른 자료가 같은 형식으로 같은 번호, 또는 글자만 다른 번호를 씀 | '다른 자료 <파일>이 이미 …' |
+
+**등록(`registry._register_one`).** 옛 Qt 등록 화면과 명령줄이 모두 지나는 한 곳에서 번호를 받기 전에 묻는다(`_number_hold`, P&ID만).
+
+- 이미 등록한 원본을 다른 번호와 함께 다시 등록하면(재사용 가지) 새 등록 판을 만들지 않고 보류한다(`outcome: on_hold`, 지금 판의 사본에
+  `validation.blockers: [{check: "confirm_title_block_first", field: "drawing_number", reason}]`). 글은 '번호는 표제란 확정에서 바꾸세요'다.
+  표제란 확정은 가드를 지난 뒤 `register(..., number_checked=True)`로 부른다. 번호를 안 바꾸는 다시 등록(제목·개정, 원본 옆 SVG)은 그대로 새 판이다.
+- 새 자료든 재사용이든 여러 쪽 자료의 번호는 `multi_page_number`, 임시 이름 꼴은 `reserved_number`로 보류한다(같은 꼴의 문제 줄).
+
+**가드 건전 시험 표**(불변식 6). 변이 검사 `D:\HAZOP-trials\2026-11-14-r3-read-quality\fixflow\migrate2\sheetid\u2\mutate_guard.py`가
+고친 코드에 변이를 하나씩 넣어 그 시험이 실패하는지 본다(12개 모두 잡힘).
+
+| 지키는 것 | 시험(`tests.test_sheet_guard.`) | 잡는 변이 |
+| --- | --- | --- |
+| 구간이 있는 도면은 번호 바꾸기·취소가 막히고 구간이 그대로(P0) | `GuardOwnerTest.test_guard_blocks_title_block_number_change_and_unconfirm_with_a_node` | 주인도 안 세기 |
+| FMEA 행(P4) | `GuardCountsTest.test_guard_counts_fmea_rows` | FMEA 자리 빼기 |
+| 도면 연결 지정의 끝(P5) | `…test_guard_counts_sheet_links_in_their_stored_form` | 끝 세지 않기 |
+| 구간 제외 표시 | `…test_guard_counts_the_excluded_drawing_mark` | 표시 세지 않기 |
+| 지식그래프 판단 CSV, 판단 전 후보는 막지 않음 | `…test_guard_counts_knowledge_graph_judgements_in_csv` | CSV 세지 않기, 후보도 세기 |
+| 주인이 아닌 같은 번호 파일은 번호를 고침, 주인은 막힘 | `GuardOwnerTest.test_other_file_with_the_same_number_can_change_its_number` | 늘 세기 |
+| 새 이름에 기록이 있으면 막힘 | `…test_taking_a_number_whose_drawing_has_records_is_refused` | 새 이름 안 세기 |
+| 정착 전 저장본의 가려진 도면은 번호로 들어오고 주인은 막힘 | `…test_left_out_second_drawing_can_be_numbered` | (정착·주인 검사 둘 다 지워야 깨짐) |
+| 정착 전 확정 취소가 정착 뒤 이름으로 예측됨 | `…test_unconfirm_before_settle_uses_the_settled_name` | 정착 빼기 |
+| 임시 이름 꼴 번호 거절·보류 | `NumberRuleTest.test_reserved_number_is_refused_by_the_title_block_and_held_by_registration` | 번호 꼴 검사 빼기 |
+| 여러 쪽 자료 번호 등록 보류 | `…test_multi_page_pdf_with_a_number_is_held_at_registration` | 등록 여러 쪽 보류 빼기 |
+| 여러 쪽 번호 확정 거절, 받아 둔 번호 취소는 됨 | `…test_multi_page_number_is_refused_but_a_held_number_can_be_cleared` | - |
+| 재사용 가지의 번호 바꿈 보류(P3 등록 쪽) | `…test_registering_the_same_file_again_with_another_number_is_held` | 재사용 가지 보류 빼기 |
+| 거절에 사유 코드, 글에 내부 말 없음 | `RefusalWordsTest.test_refusals_carry_a_code_and_plain_words` | - |
+
+**남은 일.**
+
+- 구간이 있는 도면과 같은 번호를 다른 형식 파일에 확정하는 길(같은 도면의 drawio에 PDF를 더하기)은 막힌 채다. 먼저 파일을 더하고 번호를 확정한 뒤 구간을
+  만들면 된다. 풀려면 가드가 고르기 결과를 미리 셈해야 한다(`sources.pick`에 바뀐 후보를 넣어 보는 공개 함수).
+- 번호 미확정 도면에 구간을 먼저 만들면 그 도면의 번호는 구간을 정리하기 전에는 확정하지 못한다(`confirm_title_block_first`). 그래프 ID를 옮기는 길이 없어서다(후속).
+  화면이 구간을 만들기 전에 이 알림(도면 목록 행 `notice`)을 보이는 일은 U4다.

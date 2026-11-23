@@ -327,12 +327,14 @@ def _unfinished_trace_only(store, material_id, sha):
 
 
 def register(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
-             now=None):
+             now=None, number_checked=False):
     """_register_one과 같되, 같은 프로젝트에 사람이 확정한 같은 도면 번호를 다른 형식(drawio·PDF·DEXPI)의 자료가 이미 쓰고 있으면
     결과에 conflicts(hazop.graph.sources.registration_conflicts)와 알림 문장을 더한다. 등록 자체는 막지 않고 그래프에 쓰는 원본도 바꾸지 않는다
-    (고르기는 hazop.graph.sources.choose)."""
+    (고르기는 hazop.graph.sources.choose).
+    number_checked: 부르는 쪽이 도면 번호 가드를 이미 지났다(hazop.register.titleblock만 True). 아니면 이미 등록한 P&ID의 번호를 바꾸는
+    다시 등록은 보류한다(_number_hold)."""
     with INDEX_LOCK:
-        result = _register_one(source_path, project_id, material_type, store_root, metadata, actor, now)
+        result = _register_one(source_path, project_id, material_type, store_root, metadata, actor, now, number_checked)
     rec = result.get("record") or {}
     if rec.get("status") == "registered" and rec.get("drawing_number") and material_type == "P&ID":
         from hazop.graph import sources
@@ -346,8 +348,41 @@ def register(source_path, project_id, material_type="P&ID", store_root=None, met
     return result
 
 
+NUMBER_CHANGE_TEXT = ("이미 등록한 도면 %(name)s의 도면 번호를 다시 등록으로 바꾸지 않았습니다(%(before)s → %(after)s). 번호는 표제란 확정에서 "
+                      "바꾸세요. 그 도면을 가리키는 구간·분석 결과가 끊기지 않는지 확인한 뒤 바꿉니다.")
+
+
+def _number_hold(record, metadata, material_type, page_count, number_checked):
+    """도면 번호를 받기 전의 검사 -> 보류 사유 문제 목록. 사유 코드(check)는 hazop.graph.sheets의 값이다.
+    record: 이미 등록된 등록정보(새 자료면 None). P&ID만 본다(시트 이름이 번호에서 나옴)."""
+    number = (metadata or {}).get("drawing_number")
+    if material_type != "P&ID" or not isinstance(number, str) or not number.strip():
+        return []
+    from hazop.graph import sheets
+    problem = sheets.number_problem(number, page_count)
+    if problem:
+        return [_problem(problem["code"], problem["text"], "drawing_number")]
+    if record is not None and record.get("status") == "registered" and number != record.get("drawing_number") and not number_checked:
+        return [_problem(sheets.CONFIRM_FIRST, NUMBER_CHANGE_TEXT % {
+            "name": record.get("original_name"), "before": record.get("drawing_number") or "미확정", "after": number}, "drawing_number")]
+    return []
+
+
+def _pages_of(record):
+    return sum(len(d.get("page_ids") or []) for d in record.get("documents") or []) or 1
+
+
+def _held(record, problems, path, notes):
+    """이미 있는 자료의 다시 등록을 보류한 결과(새 등록 판을 만들지 않음). 반환 record는 지금 판의 사본에 보류 사유를 단 것."""
+    held = json.loads(json.dumps(record))
+    held["status"] = "on_hold"
+    held["validation"]["status"] = "blocked"
+    held["validation"]["blockers"] = problems
+    return _result(held, "on_hold", path, notes + [p["reason"] for p in problems])
+
+
 def _register_one(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
-                  now=None):
+                  now=None, number_checked=False):
     """원본 1개를 등록한다. 원본 파일은 읽기만 한다. material_type: P&ID(draw.io·벡터 PDF) 또는
     design_document(글자가 있는 PDF 설계 문서). 저장 구조는 같다.
 
@@ -408,6 +443,10 @@ def _register_one(source_path, project_id, material_type="P&ID", store_root=None
             "project_id_case_conflict", "대소문자만 다른 기존 프로젝트가 있음(%s). 같은 폴더로 섞이지 않게 보류"
             % ", ".join(others or [index["project_id"]]), "project_id")])
     entry = next((m for m in index["materials"] if m["sha256"] == sha), None)
+    if entry is None:
+        held = _number_hold(None, metadata, material_type, len(info["pages"]), number_checked)
+        if held:
+            return _on_hold(project_id, material_type, source_path, held)
 
     if entry is not None:
         latest = entry["versions"][-1]
@@ -417,6 +456,9 @@ def _register_one(source_path, project_id, material_type="P&ID", store_root=None
             return _on_hold(project_id, material_type, source_path, [_problem(
                 "material_type_conflict", "같은 원본이 이미 %s(으)로 등록됨(%s). 다른 자료 종류로 다시 등록하지 않음"
                 % (record.get("material_type") or "P&ID", record["material_id"]), "material_type")])
+        held = _number_hold(record, metadata, material_type, _pages_of(record), number_checked)
+        if held:
+            return _held(record, held, path, ["같은 프로젝트에 동일 원본 등록됨: %s 버전 %d" % (record["material_id"], latest)])
         if record["status"] != "registered":
             # 저장 실패·중단 후 재시도: 같은 자료 ID·버전으로 다시 저장한다(중복 등록 없음).
             _apply_meta(record, metadata, actor, at)

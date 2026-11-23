@@ -237,6 +237,7 @@ PDF끼리의 개정판에도 같은 문제가 있습니다. 그 규칙은 이 �
 - **자리 표**: `data/drawing-sources/<프로젝트>.json`에 `seats{graph_id: {material_id, page, why: legacy|in_use|chosen, name, by, at}}`와 `seats_settled{at, rule}`를 더합니다(`schema_version` 0.2, 0.1 파일은 그대로 읽힘). 정착(`sources.settle`)이 이 규칙 전에 쓰던 이름을 지금 보이는 시트에 붙박습니다. 정착은 추출·그래프 짓기 같은 명시적인 차례에서만, 작업 루트에서만 돌고 읽는 길에서는 돌지 않습니다. 정착 전 프로젝트는 이 규칙 전 이름·고르기 그대로입니다.
 - **고르기 차례**: (자료, 쪽)마다 가장 새 등록 판 → 사람이 고른 파일 → 사람이 고른 형식 → 자리 주인 → 먼저 등록한 자료. 그래프 수정 시각은 쓰지 않습니다.
 - **고르기 줄**(`sources.conflicts`)에 `kind`(`format`·`file`)와 `reason`(`same_number_other_format`·`same_number_other_file`·`same_name_before_settle`)을 더했습니다. 같은 형식의 다른 파일은 형식이 아니라 자료(`material_id`)로 고릅니다(`sources.choose(..., material_id=)`).
+- **번호 가드(2단계, 2026-11-23)**: 표제란 확정·취소의 가드는 앞 이름의 참조를 그 이름의 지금 주인일 때만 세고, FMEA·도면 연결 지정의 끝·구간 제외 표시·지식그래프 판단 CSV도 셉니다. 거절 줄에 `reason_code`가 있습니다. 옛 등록 화면·명령줄은 이미 등록한 원본의 번호를 바꾸지 못하고 보류됩니다(`confirm_title_block_first`). 여러 쪽 자료의 번호(`multi_page_number`)와 임시 이름 꼴 번호(`reserved_number`)는 등록·표제란 모두 받지 않습니다. 근거는 설계 §11입니다.
 - **판 이전**: 시트의 자료가 바뀌면(다른 파일로 갈아탐) source 구성요소를 파일 id 같음으로 잇거나 되찾지 않습니다([검토구간 규격](study-node-segmentation.md) §2.6의 묘비 규칙, `graph_member_sheets`).
 
 ## 5. 가져오기 규칙

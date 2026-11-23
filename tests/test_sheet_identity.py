@@ -4,6 +4,7 @@
 
 import os
 import unittest
+from unittest import mock
 
 import pypdfium2 as pdfium
 
@@ -64,7 +65,8 @@ class EngineValueTest(SheetCase):
         dst = os.path.join(self.tmp, "in2", "two.pdf")
         os.makedirs(os.path.dirname(dst))
         doc.save(dst)
-        mid = self.register(dst, dict(NUMBER))
+        with mock.patch("hazop.register.registry._number_hold", lambda *a: []):   # 이 단위 전 앱이 받아 둔 자료 번호
+            mid = self.register(dst, dict(NUMBER))
         rows = sources.sheet_rows(P)
         self.assertEqual([(r["graph_id"], r["label"], r["number_state"], (r["notice"] or {}).get("code")) for r in rows],
                          [("graph-%s-p0" % mid, "two.pdf · 1쪽", "held", "multi_page_number"),
