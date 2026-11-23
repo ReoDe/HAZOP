@@ -118,8 +118,8 @@ function Header({ s }) {
     <span class="acts">
       <${Btn} sm=${true} label=${view === "recs" ? "행렬 보기" : "권고 " + (s.kpi ? s.kpi.recs : 0) + " 보기"}
         onClick=${() => R.setView(view === "recs" ? "matrix" : "recs")}>${view === "recs" ? "행렬" : "권고 " + (s.kpi ? s.kpi.recs : 0)}<//>
-      <${Btn} sm=${true} icon="cpu" label="분석 실행" disabled=${!!(s.run && s.run.running)} onClick=${() => setMenu(!menu)}>분석 실행<//>
-      <${Btn} sm=${true} icon="file-export" label="Excel 내보내기 범위 고르기" disabled=${exporting} onClick=${() => setExp(!exp)}>Excel<//>
+      <${Btn} sm=${true} icon="cpu" label="분석 실행" title=${s.stale ? "판 이전을 마친 뒤 분석합니다(검토구간 패널)" : null} disabled=${!!(s.run && s.run.running) || !!s.stale} onClick=${() => setMenu(!menu)}>분석 실행<//>
+      <${Btn} sm=${true} icon="file-export" label="Excel 내보내기 범위 고르기" title=${s.stale ? "판 이전을 마친 뒤 내보냅니다(검토구간 패널)" : null} disabled=${exporting || !!s.stale} onClick=${() => setExp(!exp)}>Excel<//>
       <${Btn} sm=${true} icon="file-export" label="초기사건 인계 묶음 내보내기" disabled=${exporting} onClick=${R.exportIe}>초기사건 인계<//></span></div>
     ${exp ? html`<${ExportCard} s=${s} onDone=${() => setExp(false)} />` : null}
     ${menu ? html`<div class="acts-row runmenu" role="menu">
@@ -279,8 +279,8 @@ export function ResultsPanel({ onClose }) {
         <${Btn} kind="primary" label="구간 만들기" onClick=${() => store.set({ panel: "nodes" })}>구간 패널 열기<//></div>` : html`
         <${Header} s=${s} />
         ${s.read_only ? html`<${Notice} kind="warn" icon="alert-triangle">${s.read_only}<//>` : null}
-        ${s.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면을 다시 추출해 그래프 판이 바뀌었습니다. 판 이전 전에는 분석 결과의 위치 참조를 새 도면에서 확인하지 않습니다(자리 확인 안 됨).
-          <div class="acts-row"><${Btn} sm=${true} kind="primary" label="검토구간 패널 열기" onClick=${() => store.set({ panel: "nodes" })}>검토구간 패널 열기(판 이전 지금 하기)<//></div><//>` : null}
+        ${s.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면을 다시 추출해 그래프 판이 바뀌었습니다. 판 이전을 마칠 때까지 분석 실행과 Excel 내보내기는 막히고, 위치 참조의 자리는 확인하지 않습니다(자리 확인 안 됨).
+          <div class="acts-row"><${Btn} sm=${true} kind="primary" label="검토구간 패널 열기" onClick=${() => store.set({ panel: "nodes" })}>검토구간 패널에서 판 이전하기<//></div><//>` : null}
         ${s.check && s.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(s.check)}<//>` : null}
         <${RunState} run=${s.run} /><${PlanCard} />
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${R.dismissError}>닫기<//><//>` : null}

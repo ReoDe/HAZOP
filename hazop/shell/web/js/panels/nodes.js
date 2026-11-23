@@ -124,7 +124,7 @@ export function NodesPanel({ onClose }) {
         <div class="acts-row"><${Btn} sm=${true} label="새 판으로 바꾸기" disabled=${busy} onClick=${N.migrate}>새 판으로 바꾸기<//></div><//>` : null}
       ${list.read_only ? html`<${Notice} kind="warn" icon="lock">이 구간 파일은 읽기 전용이라 고칠 수 없습니다: ${list.read_only}<//>` : null}
       ${list.check && list.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(list.check)}<//>` : null}
-      ${list.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면을 다시 추출해 그래프 판이 바뀌었습니다. 저장된 구간을 새 판에 잇는 판 이전을 아직 하지 않았습니다. 판 이전을 하기 전에는 분석 결과·초기사건이 옛 참조의 자리를 확인하지 않습니다.
+      ${list.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면을 다시 추출해 그래프 판이 바뀌었습니다. 저장된 구간을 새 판에 잇는 판 이전을 아직 하지 않았습니다. 판 이전을 마칠 때까지 초기사건(⑥)은 열리지 않고, 분석 결과(⑤)의 실행·Excel 내보내기는 막힙니다.
         <div class="acts-row"><${Btn} sm=${true} kind="primary" icon="refresh" label="판 이전 지금 하기" disabled=${busy || !!list.read_only} onClick=${N.catchUp}>판 이전 지금 하기<//></div><//>` : null}
       ${!list.available ? html`<${Notice}>프로젝트 그래프가 아직 없습니다. 도면을 추출하면 구간을 만들 수 있습니다.<//>` : null}
       ${list.pending_ai ? html`<${Notice} kind="info" icon="sparkles">채팅이 만든 구간 ${list.pending_ai}개가 아직 확인 전입니다. 이름과 설계 의도는 초안입니다.<//>` : null}

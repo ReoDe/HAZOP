@@ -13,7 +13,7 @@ import logging
 import os
 
 from hazop.analysis.risk import FREQUENCIES, SEVERITIES
-from hazop.study import idmap, nodes
+from hazop.study import follow, idmap, nodes
 from hazop.study import result_commands
 from hazop.study import results as res
 
@@ -45,6 +45,13 @@ def _node_set(pg):
     if (doc.get("schema_version") or nodes.LEGACY_SCHEMA_VERSION) == nodes.LEGACY_SCHEMA_VERSION:
         return nodes.new_set(pg), True
     return doc, False
+
+
+def _need_current(pg, ns):
+    """다시 추출 뒤 판 이전 전이면 거절한다(stale). 옛 판 구간 집합과 새 그래프를 섞어 분석 맥락·Excel을 만들면 옛 참조가 새 그래프의 다른 기호로 저장·내보내진다.
+    구간 집합이 없는 프로젝트(새 집합)는 판이 같아 막히지 않는다."""
+    if nodes.is_stale(ns, pg):
+        raise _api().CommandError("stale", follow.STALE + ".")
 
 
 def _load(ns):
@@ -300,7 +307,7 @@ class _Lookup:
     def ref(self, r, **extra):
         """참조 하나 {ref, label, missing}: 그래프에서 사라진 대상이면 missing(화면이 '도면에서 사라짐'으로 보임). 저장 값은 원래 참조 그대로."""
         if self.stale and not idmap.is_tomb(r):
-            return dict({"ref": r, "label": STALE_LABEL, "missing": False, "unverified": True}, **extra)      # 순번 id는 다시 추출로 다른 기호를 가리킬 수 있다
+            return dict({"ref": r, "label": STALE_LABEL, "missing": False}, **extra)      # 순번 id는 다시 추출로 다른 기호를 가리킬 수 있다
         return dict({"ref": r, "label": self.label(r), "missing": r not in self.idx}, **extra)
 
     def expectations(self):
@@ -502,6 +509,7 @@ def _export_excel(engine, a):
     ns, legacy = _node_set(pg)
     if legacy:
         raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+    _need_current(pg, ns)
     doc, _fp = _load(ns)
     scope = a.get("scope") or "all"
     node_ids = a.get("node_ids") or None
@@ -586,6 +594,7 @@ def _plan(engine, a):
     ns, legacy = _node_set(pg)
     if legacy:
         raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+    _need_current(pg, ns)
     doc, _fp = _load(ns)
     ns = scope_set(ns)                       # 확정·잠금 구간만 호출·요금에 들어간다
     rest = None

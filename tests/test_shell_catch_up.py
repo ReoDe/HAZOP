@@ -190,6 +190,67 @@ class ResultsStaleTest(Base):
         self.assertNotEqual(ref["label"], STALE_LABEL)
 
 
+class StaleBlocksAnalysisAndExportTest(Base):
+    """판 이전 전에는 ⑤ 분석 실행·Excel 내보내기가 옛 집합과 새 그래프를 섞어 쓰지 않는다(옛 참조가 새 그래프의 다른 기호로 저장·내보내짐)."""
+
+    def stale_code(self, name, args):
+        out = self.engine.dispatch(name, args, project=PID)
+        return None if out["ok"] else out["error"]["code"]
+
+    def test_run_plan_run_and_export_are_refused_until_catch_up(self):
+        self.re_extract()
+        for name, args in (("results.run_plan", {"scope": "all"}), ("results.run", {"scope": "all"}), ("results.export_excel", {"scope": "all"})):
+            self.assertEqual(self.stale_code(name, args), "stale", name)
+
+    def test_the_refusal_names_the_real_way(self):
+        self.re_extract()
+        out = self.engine.dispatch("results.run_plan", {"scope": "all"}, project=PID)
+        self.assertIn("판 이전 지금 하기", out["error"]["message"])
+
+    def test_chat_analysis_goes_through_the_same_guard(self):
+        self.re_extract()
+        with self.assertRaises(api.CommandError) as cm:
+            api_results._run(self.engine, {"scope": "node", "node_id": self.node})
+        self.assertEqual(cm.exception.code, "stale")
+
+    def test_after_catch_up_the_plan_and_export_work_again(self):
+        self.re_extract()
+        self.assertTrue(self.catch_up()["ok"])
+        self.assertIsNone(self.stale_code("results.run_plan", {"scope": "all"}))
+
+    def test_a_project_without_a_node_set_is_not_blocked(self):
+        os.remove(self.set_path())
+        self.re_extract()
+        self.assertNotEqual(self.stale_code("results.run_plan", {"scope": "all"}), "stale")
+
+
+class AfterCatchUpTest(Base):
+    def test_ie_opens_and_accepts_a_write_after_catch_up(self):
+        self.re_extract()
+        self.assertFalse(self.read("ie")["available"])
+        self.assertTrue(self.catch_up()["ok"])
+        s = self.read("ie")
+        self.assertTrue(s["available"], s)
+        out = self.engine.dispatch("ie.create_group", {"name": "그룹A", "ver": s["ver"], "rver": s.get("rver")}, project=PID)
+        self.assertTrue(out["ok"], out)
+
+    def test_a_failed_result_write_leaves_the_set_migrated_and_the_screen_follows_through_the_history(self):
+        """결과 파일 쓰기만 실패하면 집합은 옮겨졌고 결과 파일은 옛 참조 그대로다. ⑤ 화면은 집합 이력으로 메모리에서 옮겨 맞게 보인다(다음 쓰기가 파일을 옮김)."""
+        self.re_extract()
+        rpath = res.store_path(PID, self.g["graph_id"])
+        with open(rpath, "rb") as fh:
+            old = fh.read()
+        with mock.patch.object(res, "write", side_effect=OSError("결과 쓰기 실패")):
+            self.assertTrue(self.catch_up()["ok"])
+        with open(rpath, "rb") as fh:
+            self.assertEqual(fh.read(), old, "결과 파일은 그대로")
+        self.assertFalse(self.read("results")["stale"])
+        ref = self.read("results", "cell", self.node, self.dev)["cell"]["entries"][0]["detail"]["cause_refs"][0]
+        self.assertNotEqual(ref["ref"], V1_REF, "화면은 옮긴 참조를 보인다")
+        self.assertNotEqual(ref["label"], STALE_LABEL)
+        self.assertFalse(ref["missing"])
+
+
 class ConfirmedLostTest(Base):
     def test_a_node_confirmed_with_lost_members_says_so(self):
         """확정 기록 confirmed.lost가 구간 행에 실려 화면이 '잃은 구성요소를 둔 채 확정함'을 보일 수 있다."""
