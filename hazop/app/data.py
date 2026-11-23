@@ -261,8 +261,9 @@ def stamp_base_version(name):
     """기준 판(base_version)을 남기기 전에 지은 도면 그래프 name에 그 판을 한 번 찍는다(scripts/build_graph.render_one이 새 그래프에 적는 것과 같은 값).
     사람 고침을 저장하기 직전(corrections.save_fp)에 부른다: 저장 뒤에는 기록에 새 고침이 들어 디스크 그래프와 판이 맞지 않는다.
     디스크 판(graph_version)이 지금 기록·추출로 다시 계산한 판과 같을 때만 찍는다(기준 추출을 새로 짓지 않음). 다르거나 낡은 그래프 표시가 있으면
-    그대로 둔다. 143쪽 프로젝트 전부를 열 때 하면 6초쯤이라 쪽마다 처음 고칠 때 한다. 검토구간 판 사진 채우기(2~3초)는 화면이 기다리는 저장 답에
-    넣지 않고 다시 짓기 직전(fill_stamped_base)에 한다. 실패해도 저장을 막지 않는다(그 쪽은 전처럼 첫 고침에 표시로 잇는다). → 찍었으면 True."""
+    그대로 둔다. 143쪽 프로젝트 전부를 열 때 하면 판 확인만 5.9~6.2초라 쪽마다 처음 고칠 때 한다. 검토구간 판 사진 채우기(3.3~4.7초)는 화면이
+    기다리는 저장 답에 넣지 않고 다시 짓기 직전(fill_stamped_base)에 한다. 수치는 찍기 단위 측정 기록(2026-11-24, 143쪽 프로젝트 사본, c38a404 위
+    고침 코드, 판 확인 두 번·채우기 네 번, CPU 부하 10~77%, 보류 쪽 포함·내용 미열람)이고 설계 migration-map-design.md §17에 적었다. 실패해도 저장을 막지 않는다(그 쪽은 전처럼 첫 고침에 표시로 잇는다). → 찍었으면 True."""
     try:
         from hazop.shell import sheet_refresh
         path = os.path.join(paths.safe_join(paths.output_root("graph"), paths.safe_name(name)), "graph.json")
