@@ -23,10 +23,11 @@
 ④ 같은 판 이전을 두 번 해도 같고, 판이 같으면 결과를 다시 옮기지 않으며, 즉시 옮긴 결과와 이력으로 늦게 옮긴 결과가 같다.
 ⑤ 예외가 없다.
 ⑥ 등록되지 않은 자리에서 옛 id를 만나지 않는다.
-⑦ 순번 구성요소를 이었으면 앞뒤 기호의 종류·태그·위치가 같다.
+⑦ 다시 추출에서 순번 구성요소를 이었으면 앞뒤 기호의 종류·태그·위치가 같다(사람 고침은 ⑬).
 ⑧ 내용이 같은 다시 추출(순서만 섞임·판 문자열만 바뀜·범주만 바뀜)은 확인할 수 있는 구성요소를 잃지 않고 재확인 구간을 만들지 않는다.
   나누기를 되돌렸다 다시 해 같은 나눈 id·같은 종류(잃을 때 태그가 있었으면 같은 태그)로 돌아온 기호는, 그 기호를 든 열린
   묘비가 하나뿐이고 잃을 때 집합이 겉모습을 적어 두었으면 되찾는다.
+⑬ 덧바르는 사람 고침(태그·종류·배관 번호·경로·끝, 기준 추출 판이 같음)은 새 판에도 있는 기호를 잃지 않는다.
 
 프로젝트 문서(M3: ⑥ 초기사건 문서·FMEA·잠재 후보 판단, hazop.study.follow)도 ⑤ 결과처럼 따라간다. 판 이전마다 따라가거나
 건너뛰고(판 표지로 늦게 따라옴), 되돌아온 판에서 새로 단 표제 대상을 함께 보며, 판 표지가 없는 옛 문서는 사슬 끝에 한 번
@@ -298,6 +299,25 @@ def mutate(r, w):
     return w
 
 
+def overlay(r, w):
+    """덧바르는 사람 고침(태그·종류·배관 번호·경로·끝): 기준 추출이 같아 순번 id가 그대로다(기호 목록·순서는 그대로)."""
+    w = copy.deepcopy(w)
+    w["split_events"] = []
+    alive = [s["uid"] for s in w["syms"] if s["kind"] in KINDS]
+    for s in w["syms"]:
+        if s["kind"] in KINDS and r.random() < 0.3:
+            s.update({"tag": r.choice(TAGS)} if r.random() < 0.5 else {"kind": r.choice(KINDS)})
+    for p in w["pipes"]:
+        x = r.random()
+        if x < 0.15:
+            p["tag"] = r.choice([None, "L-1", "L-H"])
+        elif x < 0.3:
+            p["bbox"] = place(r)[:2] + [15.0, 1.0]
+        elif x < 0.4 and len(p["ends"]) == 2 and set(alive) - set(p["ends"]):
+            p["ends"] = [p["ends"][0], r.choice(sorted(set(alive) - set(p["ends"])))]
+    return w
+
+
 def reorder(r, w):
     """내용은 같고 열거 순서만 다른 다시 추출(순번이 밀림)."""
     return dict(copy.deepcopy(w), order_seed=r.random())
@@ -364,8 +384,9 @@ def build(w, gid=GID):
         for e in p["ends"]:
             rel += 1
             edges.append({"entity_id": "relation-%03d" % rel, "kind": "has_endpoint", "nodes": [sid, by_uid[e]["entity_id"]]})
-    return {"project_id": None, "graph_id": gid, "graph_version": ver(w), "source": {"drawing_number": w["sheet"]},
-            "validation": {"status": "passed"}, "nodes": nodes, "edges": edges}
+    return dict({"project_id": None, "graph_id": gid, "graph_version": ver(w), "source": {"drawing_number": w["sheet"]},
+                 "validation": {"status": "passed"}, "nodes": nodes, "edges": edges},
+                **({"base_version": w["base"]} if w.get("base") else {}))
 
 
 def build_any(world):
@@ -377,9 +398,12 @@ def build_any(world):
 
 def next_world(r, world, kind):
     if "sheets" not in world:
-        return {"mutate": mutate, "reorder": reorder, "recategorize": lambda r, w: recategorize(w),
-                "redo": undo_or_redo("redo"), "unsplit": undo_or_redo("unsplit")}.get(
+        out = {"mutate": mutate, "reorder": reorder, "recategorize": lambda r, w: recategorize(w), "overlay": overlay,
+               "redo": undo_or_redo("redo"), "unsplit": undo_or_redo("unsplit")}.get(
             kind, lambda r, w: restamp(w))(r, world)
+        if kind != "overlay":   # 다시 추출·나누기는 순번을 매긴 입력(기준 추출)을 바꾼다
+            out["base"] = "b" + ver(out)
+        return out
     out = copy.deepcopy(world)
     for s in out["sheets"].values():
         s.pop("split_events", None)
@@ -743,6 +767,16 @@ class Track:
                     and not same_look(look_of(o), look_of(n)):
                 self.j.note("⑦ 순번 구성요소인데 표지가 다른 기호로 이음", (self.seed, m, e))
 
+    def check_overlay(self, ns_a, ns_b, g_b, truth_a, truth_b):
+        """⑬ 덧바르는 사람 고침의 판 이전: 옛 판 사진과 새 그래프의 기준 추출 판이 같은 시트에서 새 판에도 있는 기호를 잃지 않는다."""
+        now = idmap.sheet_bases(g_b)
+        same_base = {s for s, b in (ns_a.get("graph_member_bases") or {}).items() if now.get(s) == b}
+        refs = ns_a.get("graph_member_refs") or {}
+        self.j.stats["덧바르는 사람 고침(기준 같음)" if same_base else "덧바르는 사람 고침(기준 판 모름)"] += 1
+        for m in ns_b["history"][-1]["detail"].get("lost") or {}:
+            if idmap.drawing_of(refs.get(m)) in same_base and truth_a.eid.get(m) in truth_b.look:
+                self.j.note("⑬ 사람 고침만 한 기호를 잃음", (self.seed, m))
+
     def check_same_content(self, ns_a, ns_b, plan, g_a):
         """⑧ 확인할 수 있는 구성요소(상자가 있고 표시가 겹치지 않는 순번, source)는 내용이 같은 다시 추출에서 잃지 않는다."""
         if ns_a.get("graph_member_basis") is None:
@@ -809,7 +843,8 @@ class Track:
                     continue
                 if u is None:
                     self.j.note("③ 참조가 묘비도 살아 있는 대상도 아님(%s)" % label, (self.seed, key[0], row["orig"], v))
-                elif self.looked_like([row["uid"]], truth_new.look.get(u)):
+                elif any(self.looked_like([row["uid"]], lk) for lk in [truth_new.look.get(u)] + self.looks.get(u, [])):
+                    # 늦게 따라온 참조는 이은 그 판의 겉모습으로 본다(그 뒤 사람 고침이 태그·종류를 바꿨을 수 있음)
                     self.j.note(LIMIT, (self.seed, key[0], v))
                     row["uid"] = u
                 else:
@@ -850,6 +885,9 @@ def undo_check(track, ns_b, truth_b):
 def plan_chain(r, project_mode):
     """[(다시 추출 종류, 세계)]. 되돌아감은 앞서 지나간 판 가운데 하나로 간다."""
     first = make_project(r) if project_mode else make_world(r)
+    for w in first["sheets"].values() if project_mode else [first]:
+        if r.random() < 0.8:   # 나머지는 기준 추출 판을 남기기 전에 지은 그래프
+            w["base"] = "b" + ver(w)
     worlds, steps = [first], []
     for _ in range(r.randint(3, 6)):
         x = r.random()
@@ -866,8 +904,10 @@ def plan_chain(r, project_mode):
             kind, w = "restamp", next_world(r, worlds[-1], "restamp")
         elif x < 0.58:
             kind, w = "recategorize", next_world(r, worlds[-1], "recategorize")
-        else:
+        elif x < 0.86:
             kind, w = "mutate", next_world(r, worlds[-1], "mutate")
+        else:
+            kind, w = "overlay", next_world(r, worlds[-1], "overlay")
         worlds.append(w)
         steps.append((kind, w))
     return first, steps
@@ -953,7 +993,10 @@ def run(seeds, judge, after_step=None):
                 if g2["graph_version"] in seen:
                     judge.stats["앞 판으로 되돌아감"] += 1
                 track.check_set(ns, ns2, truth, truth2)
-                track.check_seq_look(ns2, g, g2)
+                if kind == "overlay":   # ⑦ 대신 ⑬: 사람 고침은 표시를 바꾸지만 기준 추출이 같으면 순번 구성요소를 잃지 않는다
+                    track.check_overlay(ns, ns2, g2, truth, truth2)
+                else:
+                    track.check_seq_look(ns2, g, g2)
                 if kind in ("reorder", "restamp", "recategorize") and not restored:  # 되돌린 집합에는 앞 세계가 다르다
                     track.check_same_content(ns, ns2, p, g)
                 stage = "두 번 적용 %d" % i
@@ -1066,7 +1109,7 @@ def run(seeds, judge, after_step=None):
 
 
 def failures(judge):
-    return {k: v for k, v in judge.stats.items() if k[0] in "①②③④⑤⑥⑦⑧"}
+    return {k: v for k, v in judge.stats.items() if k[0] in "①②③④⑤⑥⑦⑧⑬"}
 
 
 def report(judge):
@@ -1092,7 +1135,7 @@ class MigrateFuzzTest(unittest.TestCase):
         self.assertGreater(s["문서 따라감"], 6 * SEEDS, "프로젝트 문서를 실제로 따라감")
         self.assertGreater(s["앞 판으로 되돌아감"], SEEDS // 4, "앞 판으로 되돌아가는 사슬을 실제로 돌림")
         self.assertGreater(s["사슬 프로젝트 그래프"], SEEDS // 5, "프로젝트 그래프를 실제로 돌림")
-        for k in ("다시 추출 reorder", "다시 추출 restamp", "다시 추출 recategorize", "되돌림", "되찾은 묘비", "늦게 따라온 결과",
+        for k in ("다시 추출 overlay", "덧바르는 사람 고침(기준 같음)", "다시 추출 reorder", "다시 추출 restamp", "다시 추출 recategorize", "되돌림", "되찾은 묘비", "늦게 따라온 결과",
                   "되돌아온 판에서 새로 단 참조", "결과가 이번 판 이전을 건너뜀", "구간을 새로 제안", "옛 꼴 이력 줄",
                   "결과 줄 번호 없음", "집합을 백업으로 되돌림", "문서가 이번 판 이전을 건너뜀",
                   "되돌아온 판에서 새로 단 문서 참조", "표지 없는 옛 문서 옮김", "표지 없는 옛 문서 묘비(증명 못 함)",
