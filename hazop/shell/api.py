@@ -165,6 +165,7 @@ class Engine:
         self.ai_gate = ai_gate.Gate()    # 일괄 AI 작업(AI 검토·추출 뒤 자동 검토·AI 분석)의 구독 호출 차례
         self._reviewing = set()          # AI 검토가 돌거나 차례를 기다리는 도면(추출 이름)
         self._catching = set()           # 검토구간 판 이전을 기다리는 프로젝트
+        self._settle_gate = threading.Lock()   # 열 때 정착과 도면 등록·추출 작업을 가른다(정착이 다시 짓는 폴더와 추출이 쓰는 폴더가 겹치지 않게)
         # 판 이전과 ⑤ AI 분석 시작을 가른다(분석이 도는 동안 판 이전을 하지 않고, 판 이전 중에는 분석을 시작하지 않는다). 같은 스레드가 다시 잡을 수 있다:
         # 분석 시작 검사가 이 잠금 안에서 프로젝트 그래프를 지으면 낡은 도면을 다시 만들고 그 끝의 알림이 같은 스레드에서 판 이전을 한다(그러면 검사가 판이
         # 바뀐 것을 보고 시작하지 않는다)
@@ -241,16 +242,24 @@ class Engine:
         → 정착 결과(changed·state·renamed·skipped) 또는 None(하지 않음·실패, 실패는 기록만 하고 옛 파일 그대로)."""
         from hazop.app import data
         pid = self.project_id()
-        if self.running_jobs() or self._ai_busy():
+        if not self._settle_gate.acquire(blocking=False):
             return None
-        with self._study_lock:
-            if self.analysis.running:
+        try:
+            # 문을 잡은 뒤에 본다: 그 사이 시작한 등록 작업은 문 앞에서 기다리므로 정착과 겹치지 않는다(검토 확인 항목)
+            if self.running_jobs() or self._ai_busy():
                 return None
-            try:
-                res = data.settle_sheets(pid)
-            except Exception:  # noqa: BLE001 - 열 때 한 번의 덤: 실패해도 앱은 열리고 다음 추출이 다시 한다
-                LOG.exception("열 때 시트 정착 실패: %s", pid)
-                return None
+            with self._study_lock:
+                if self.analysis.running:
+                    return None
+                try:
+                    res = data.settle_sheets(pid)
+                except Exception as exc:  # noqa: BLE001 - 열 때 한 번의 덤: 실패해도 앱은 열리고 다음 추출이 다시 한다
+                    LOG.exception("열 때 시트 정착 실패: %s", pid)
+                    self.emit("app.notice", {"text": "도면 목록을 새 이름 규칙으로 정리하지 못했습니다(%s). 파일은 그대로이고, 다음에 도면을 읽을 때 다시 합니다."
+                                             % (str(exc)[:80] or type(exc).__name__)})
+                    return None
+        finally:
+            self._settle_gate.release()
         if res and res.get("changed"):
             for topic in ("drawings", "sources", "aireview", "nodes", "kg"):
                 self.changed(topic)
@@ -371,6 +380,14 @@ class Engine:
         return self._analysis
 
     # ------------------------------------------------------------ 진행 중인 작업(창 닫기·화면 바꾸기 전에 묻는다)
+    def spawn(self, target, name):
+        """뒤 스레드 하나를 띄우고 창을 닫을 때 wait_jobs가 기다리게 한다(열 때 정착·판 이전이 쓰는 도중 닫히지 않게)."""
+        t = threading.Thread(target=target, name=name, daemon=True)
+        with self._lock:
+            self._threads.append(t)
+        t.start()
+        return t
+
     def running_jobs(self):
         """아직 도는 작업의 ID 목록."""
         with self._lock:
@@ -445,6 +462,9 @@ class Engine:
             self._jobs[job_id] = {"label": label, "state": "running", "kind": kind}
 
         def run():
+            if kind == "register":                 # 열 때 정착이 도는 중이면 끝날 때까지 기다린다(정착은 한 번뿐)
+                with self._settle_gate:
+                    pass
             self.emit("job.progress", {"id": job_id, "label": label, "state": "running"})
             def progress(text, done=None, total=None):
                 if self._stop.is_set():
@@ -518,7 +538,7 @@ def _h_set_project(engine, a):
     if engine.chat is not None:
         engine.chat.check_project()      # 프로젝트가 바뀌면 대화를 끝낸다
     engine.current_sheet = None
-    threading.Thread(target=engine.catch_up_on_open, name="catch-up-on-open", daemon=True).start()      # 이미 낡은 프로젝트면 한 번 맞춘다(읽기를 붙잡지 않게 뒤에서)
+    engine.spawn(engine.catch_up_on_open, "catch-up-on-open")      # 닫을 때 기다림. 이미 낡은 프로젝트면 한 번 맞춘다(읽기를 붙잡지 않게 뒤에서)
     engine.emit("project.changed", {"project_id": pid})      # 웹이 구간·결과·초기사건 상태를 모두 비우고 다시 읽는다
     for topic in ("drawings", "state") + tuple(TOPIC_OWNER):      # 등록된 영역 모두(구간·결과·초기사건 …)
         engine.changed(topic)
@@ -527,7 +547,7 @@ def _h_set_project(engine, a):
 
 def _h_open_check(engine, a):
     """앱을 켠 뒤 웹이 한 번 부른다: 지금 프로젝트가 이미 낡았으면(앱을 끈 사이 도면이 다시 읽힘) 같은 길로 맞춘다. 읽기를 붙잡지 않게 뒤에서."""
-    threading.Thread(target=engine.catch_up_on_open, name="catch-up-on-open", daemon=True).start()
+    engine.spawn(engine.catch_up_on_open, "catch-up-on-open")
     return {"started": True}
 
 

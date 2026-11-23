@@ -136,6 +136,8 @@ def source_conflicts(engine):
                      "chosen": c.get("chosen"), "chosen_material": c.get("chosen_material"), "nodes_on_sheet": held.get(c["graph_id"], 0),
                      "candidates": [{"material_id": x.get("material_id"), "file": x.get("file"), "format": x.get("format"),
                                      "in_use": bool(x.get("in_use")),
+                                     # 이 후보로 바꾸면 다시 확인할 구간 수(지금 쓰는 파일이면 바뀌는 것이 없어 0, 검토 지적 3)
+                                     "recheck": 0 if x.get("in_use") else held.get(c["graph_id"], 0),
                                      "modified": datetime.datetime.fromtimestamp(x["modified"]).strftime("%Y-%m-%d %H:%M") if x.get("modified") else None}
                                     for x in c["candidates"]]})
     return {"conflicts": rows}
@@ -200,7 +202,27 @@ def _choose_source(engine, a):
     data.notify_graph_changed(engine.project_id())      # 쓸 원본이 바뀌면 프로젝트 그래프 판도 바뀐다: 검토구간을 이어서 맞춘다
     engine.changed("sources", None)
     engine.changed("drawings", None)
-    return {"chosen": {"drawing_number": a["drawing_number"], "format": record.get("format"), "material_id": record.get("material_id")}}
+    applied = _applied(engine)
+    out = {"chosen": {"drawing_number": a["drawing_number"], "format": record.get("format"), "material_id": record.get("material_id")},
+           "applied": applied}
+    if not applied:      # 고르기는 저장했지만 검토구간에 반영하지 못함(검토 지적 2): 화면이 '도면 변경 반영하기' 안전망을 보인다
+        out["apply_text"] = APPLY_FAILED_TEXT
+    return out
+
+
+APPLY_FAILED_TEXT = ("쓸 파일은 바꿨지만 검토구간에 도면 변경을 반영하지 못했습니다. '도면 변경 반영하기'를 눌러 다시 맞추세요. "
+                     "그 전까지 구간 고치기와 분석은 막혀 있습니다.")
+
+
+def _applied(engine):
+    """고른 뒤 검토구간이 지금 그래프에 맞춰졌는가. AI 작업이 끝나기를 기다리는 자동 반영(catching)은 실패가 아니다.
+    읽지 못하면 True(알 수 없음을 실패로 알리지 않음)."""
+    from hazop.shell import api_nodes
+    try:
+        s = api_nodes.summary(engine)
+    except Exception:  # noqa: BLE001
+        return True
+    return not (s.get("available") and s.get("stale")) or engine.catching(engine.project_id())
 
 
 def _export(engine, a):
