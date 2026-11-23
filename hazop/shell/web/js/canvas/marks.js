@@ -333,3 +333,39 @@ export function uncrowdTags(labels, cell = 48) {
   }
   return shown;
 }
+
+// ---------------------------------------------------------------- 도면 연결 칩 놓기
+const CHIP_H = 18, CHIP_GAP = 2;
+const chipWidth = (text) => [...text].reduce((w, ch) => w + (ch.charCodeAt(0) > 0x2e80 ? 12 : 7), 16);
+const hits = (a, b) => a.x < b.x + b.w + CHIP_GAP && b.x < a.x + a.w + CHIP_GAP && a.y < b.y + b.h + CHIP_GAP && b.y < a.y + a.h + CHIP_GAP;
+
+/**
+ * 도면 연결 칩의 자리(화면 좌표). 미연결 칩은 짧게 '미연결'만 쓰고 사유는 title에 둔다. 미연결 칩이 서로 겹치면 한 칩으로 모아
+ * '미연결 n곳'으로 쓴다(누르면 첫 곳의 연결 카드, 사유는 title에 모두). 이어진 칩이 겹치면 아래 줄로 내린다(네 줄까지).
+ * screenRectOf(id) → {x, y, w, h} 또는 null. → [{link, text, title, warn, x, y, w, h, count}]
+ */
+export function placeChips(links, screenRectOf) {
+  const placed = [];
+  for (const link of links || []) {
+    if (!link || typeof link.id !== "string") continue;
+    const sr = screenRectOf(link.id);
+    if (!sr) continue;
+    const warn = link.status !== "linked";
+    const text = warn ? "미연결" : "→ " + (link.label || link.peer_graph_id || "");
+    const why = warn ? "미연결" + (link.reason ? " · " + link.reason : "") : text;
+    const c = { link, text, title: why, warn, x: sr.x, y: sr.y + sr.h + 4, w: chipWidth(text), h: CHIP_H, count: 1 };
+    if (warn) {
+      const near = placed.find((p) => p.warn && hits(p, c));
+      if (near) {
+        near.count += 1;
+        near.text = "미연결 " + near.count + "곳";
+        near.w = chipWidth(near.text);
+        if (!near.title.split("\n").includes(why)) near.title += "\n" + why;
+        continue;
+      }
+    }
+    for (let row = 0; row < 4 && placed.some((p) => hits(p, c)); row++) c.y += CHIP_H + CHIP_GAP;
+    placed.push(c);
+  }
+  return placed;
+}
