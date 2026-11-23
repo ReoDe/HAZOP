@@ -213,3 +213,34 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .next-list .item .go { color: var(--accent-ink); font-size: var(--fs-sm); white-space: nowrap; }
 .next-list .item.warn .ic { color: var(--warn); }
 @media (max-width: 1400px) { .search { width: 168px; } }
+
+/* ── 검토 대기열 카드(HZ-DSN-06 §3.3, web/js/queue/*.js). 오른쪽 칸(채팅 자리)에 온다 ───────── */
+.chat.queue .qwrap { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-3); display: flex; flex-direction: column; gap: 12px; }
+.qprog .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.qprog .bar, .next .line .bar { display: block; height: 6px; border-radius: 3px; background: var(--accent-weak); overflow: hidden; }
+.qprog .bar i { display: block; height: 100%; background: var(--accent); }
+.qbody { display: flex; flex-direction: column; gap: 8px; }
+.qbody .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.qbody .target b { display: block; font-size: var(--fs-lg, 16px); }
+.qbody .target .muted { font-size: var(--fs-sm); }
+.qbody .change { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-md); }
+.qbody .change .now { color: var(--muted); text-decoration: line-through; }
+.qbody .change .to { font-weight: 700; color: var(--accent-ink); }
+.qbody .conf { font-size: var(--fs-sm); color: var(--ink-2); }
+.qbody .why { padding: 8px 10px; border-radius: var(--r-sm); border: 1px dashed var(--ai-line); background: repeating-linear-gradient(135deg, var(--ai-a) 0 5px, var(--ai-b) 5px 10px); font-size: var(--fs-sm); }
+.qbody .why .muted { display: block; font-size: var(--fs-xs); margin-bottom: 2px; }
+.qbody .edit input { width: 100%; box-sizing: border-box; height: 32px; padding: 0 8px; border: 1px solid var(--accent); border-radius: var(--r-sm); font: inherit; }
+.qbody .ask, .qmsg { padding: 6px 9px; border-radius: var(--r-sm); background: var(--warn-bg); color: var(--warn); font-size: var(--fs-sm); }
+.qmsg { background: var(--surface-2); color: var(--ink-2); }
+.qmsg.err { background: var(--err-bg); color: var(--err); }
+.qacts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.qacts .btn { height: 40px; padding: 0 6px; }
+.qsub { display: flex; gap: 6px; flex-wrap: wrap; }
+.qbulk { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-sm); flex-wrap: wrap; }
+.qbulk.open { flex-direction: column; align-items: stretch; border-color: var(--accent); }
+.qbulk ul { margin: 0; padding-left: 18px; max-height: 220px; overflow: auto; }
+.qbulk .acts { display: flex; gap: 6px; }
+.qdone { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 0; color: var(--ink); text-align: center; }
+.qdone svg { color: var(--ok); }
+.qkeys { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px; }
+.chat.queue .small { font-size: var(--fs-xs); }
