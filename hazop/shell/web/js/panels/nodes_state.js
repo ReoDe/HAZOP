@@ -38,8 +38,16 @@ export function useNodes(selector) {
 
 // ---------------------------------------------------------------- 읽기
 let seq = 0;
+let reading = null;          // 지금 도는 목록 읽기(명령이 그 판을 기다렸다 보낸다)
 
-export async function loadList() {
+export function loadList() {
+  const p = loadListNow();
+  reading = p;
+  p.catch(() => {}).then(() => { if (reading === p) reading = null; });
+  return p;
+}
+
+async function loadListNow() {
   const mine = ++seq;
   const list = await read("nodes");
   if (mine !== seq) return nodes.get().list;           // 더 늦게 시작한 읽기가 이긴다
@@ -158,13 +166,15 @@ export async function submitCard() {
 // ---------------------------------------------------------------- 명령
 async function afterError(e) {
   nodes.set({ error: errorText(e), busy: false });
+  shell.set({ toast: { text: errorText(e), kind: "err" } });      // 패널 위 안내는 목록을 내려 본 사람에게 안 보일 수 있다: 토스트로도 알린다
   if (e && (e.code === "stale" || e.code === "not_found")) await refresh();
 }
 
 /** 구간 명령 하나. 화면이 본 판(set_rev, 대상 rev·state)을 함께 보낸다. 거절되면 엔진 사유를 error에 둔다. */
 export async function run(name, args, targetIds) {
-  const { list } = nodes.get();
   nodes.set({ busy: true, error: null, needArchive: null });
+  if (reading) { try { await reading; } catch (e) { /* 읽기 실패: 가진 판으로 보낸다(엔진이 판을 대조한다) */ } }   // 패널을 열며 읽는 중이면 그 판으로 보낸다
+  const { list } = nodes.get();
   try {
     const r = await cmd("nodes." + name, Object.assign({ project_id: list.project_id, set_rev: list.set_rev }, args, targetIds && targetIds.length ? { targets: targetsOf(list.nodes, targetIds) } : {}));
     nodes.set({ busy: false });
@@ -264,7 +274,8 @@ let wired = false;
 export function wire() {
   if (wired) return;
   wired = true;
-  onChanged((topic) => { if (topic === "nodes") refresh(); });
+  // 구간 목록은 프로젝트 그래프에서 나온다: 도면 등록·원본 선택·도면 연결이 바뀌어도 다시 읽는다('프로젝트 그래프가 아직 없습니다'가 남지 않게)
+  onChanged((topic) => { if (topic === "nodes" || topic === "drawings" || topic === "sources" || topic === "links") refresh(); });
   on("chat.answer", () => { setTimeout(refresh, 150); });   // 채팅이 구간을 만들었을 수 있다
   let lastProject = shell.get().drawings.project_id;
   let last = null;

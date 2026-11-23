@@ -359,6 +359,50 @@ export const tests = [
     store.set({ panel: null });
     host.remove();
   } },
+  { name: "구간 패널(측정 2): 등록·추출 뒤 도면 알림만 와도 '프로젝트 그래프가 아직 없습니다'를 거둔다", async run(assert) {
+    await setup();
+    engine.list = Object.assign({}, engine.list, { available: false, nodes: [], set_rev: 0 });
+    await N.refresh();
+    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    await tick();
+    assert(host.textContent.includes("프로젝트 그래프가 아직 없습니다"), "시험의 전제");
+    engine.list = Object.assign({}, engine.list, { available: true, set_rev: 1 });
+    deliver(JSON.stringify({ t: "changed", topic: "drawings", rev: null }));      // 등록은 drawings·sources만 알린다
+    await tick();
+    assert(!host.textContent.includes("프로젝트 그래프가 아직 없습니다"), "도면이 바뀌면 구간 목록도 다시 읽는다");
+    host.remove();
+  } },
+  { name: "구간 패널(측정 2): 패널을 열 때마다 다시 읽는다(알림을 놓쳤어도 낡은 안내가 남지 않게)", async run(assert) {
+    await setup();
+    engine.list = Object.assign({}, engine.list, { available: false, nodes: [], set_rev: 0 });
+    await N.refresh();
+    engine.list = Object.assign({}, engine.list, { available: true, set_rev: 1 });     // 알림 없이 바뀜
+    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    await tick();
+    assert(!host.textContent.includes("프로젝트 그래프가 아직 없습니다"), "열 때 읽은 목록을 보인다");
+    host.remove();
+  } },
+  { name: "구간 패널(측정 7): 열자마자 누른 확정은 열 때 읽는 목록을 기다려 지금 판으로 보낸다", async run(assert) {
+    await setup();
+    N.nodes.set({ scope: "all", focus: "S1" });
+    engine.list = Object.assign({}, engine.list, { set_rev: 7 });                  // 뒤에서 판 이전이 집합 판을 올렸다(알림 전)
+    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    N.confirm(["S1"]);                                                               // 그리자마자(열 때 읽기가 끝나기 전) 누름
+    await tick();
+    const m = sent.filter((x) => x.name === "nodes.confirm").pop();
+    assert(m, "명령을 보냄");
+    assert.equal(m.args.set_rev, 7, "열 때 읽은 판으로 보낸다");
+    host.remove();
+  } },
+  { name: "구간 패널(측정 7): 거절되면 패널 위 안내와 함께 토스트로도 알린다", async run(assert) {
+    await setup();
+    store.set({ toast: null });
+    engine.reply = () => ({ ok: false, error: { code: "stale", message: "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요." } });
+    const r = await N.confirm(["S1"]);
+    assert(r === null);
+    const t = store.get().toast;
+    assert(t && t.text.includes("바뀌어 저장하지 않았습니다") && t.kind === "err", JSON.stringify(t));
+  } },
   { name: "구간 연결: 엔진의 changed(nodes) 알림을 받으면 다시 읽는다", async run(assert) {
     await setup();
     engine.list = Object.assign({}, engine.list, { set_rev: 9, nodes: engine.list.nodes.slice(0, 1) });

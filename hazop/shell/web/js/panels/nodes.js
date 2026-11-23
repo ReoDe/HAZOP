@@ -1,7 +1,7 @@
 // 구간 패널(규격 §2.1·§2.3 ④): 구간 목록(S 번호 색, 이름, 도면 범위, 상태), 고른 구간의 상세와 고치기·확정·잠금, 묶음 되돌리기.
 // 이름·설계 의도·태그는 도면·모델에서 온 글이라 텍스트로만 넣는다. 엔진이 거절하면 그 사유를 그대로 보인다.
 import { html } from "../ui/html.js";
-import { useState } from "../../vendor/hooks.module.js";
+import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { store, useStore } from "../store.js";
 import { cmd } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
@@ -121,6 +121,7 @@ function BatchStrip({ list, busy }) {
 
 export function NodesPanel({ onClose }) {
   N.wire();
+  useLayoutEffect(() => { N.refresh(); }, []);      // 열 때마다 다시 읽는다(알림을 놓쳤어도 낡은 목록·안내로 시작하지 않게)
   const list = N.useNodes((s) => s.list);
   const detail = N.useNodes((s) => s.detail);
   const focus = N.useNodes((s) => s.focus);
