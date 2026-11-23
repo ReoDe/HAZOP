@@ -501,6 +501,12 @@ def compute(node_set, graph, at=None):
 
     domain = set(old_refs) | {x for x in _registered_ids(node_set, SET, (MEMBERS, EID)) if not is_tomb(x)}
     link = {}
+    # 번호 기준이 같으면 같은 번호의 새 기호가 그 기호나 몸체다(증명). 그 번호가 없으면(뒷 단계에서 개체가 바뀌어 끝 번호 뒤 번호를
+    # 받음) 표시로 잇되, 번호로 증명된 기호는 표시로 다시 잡지 않는다(표시가 같은 다른 옛 기호가 잡아 둘 다 묘비가 되지 않게)
+    by_number = {m: [e for e in by_ref.get(seen_refs[m]) or () if new_basis[e] == ids.SEQUENCE] for m in domain
+                 if m in old_refs and old_basis_of(m) != ids.SOURCE and drawing_of(seen_refs[m]) not in same_base
+                 and same_numbering(seen_refs[m])}
+    proven = {hs[0] for hs in by_number.values() if len(hs) == 1}
     for m in sorted(domain):
         r = seen_refs.get(m)
         hits = []
@@ -510,12 +516,12 @@ def compute(node_set, graph, at=None):
             hits = [] if drawing_of(r) in moved else by_ref.get(r) or []   # 다른 파일의 같은 id는 같은 기호가 아니다
         elif drawing_of(r) in same_base:
             hits = [e for e in by_ref.get(r) or () if new_basis[e] == ids.SEQUENCE]
-        elif same_numbering(r):
-            hits = [e for e in by_ref.get(r) or () if new_basis[e] == ids.SEQUENCE]
+        elif by_number.get(m):
+            hits = by_number[m]
         elif m in old_marks:
             # 순번 구성요소는 표시로 잇는다. 표시가 없으면(상자 없음, A꼴, B꼴의 스캔·지은 id) 끝으로 잇거나(_link_by_ends) 묘비다.
             # 구간 지문(md3)이 같아도 위치는 지문에 없어서, 같은 종류·태그의 다른 자리 기호로 이을 수 있다(퍼즈로 확인)
-            hits = mark_hits(seen_marks[m])
+            hits = [e for e in mark_hits(seen_marks[m]) if e not in proven]
             if len(hits) > 1:  # 표시가 같은 것이 여럿이면 같은 참조인 것만
                 hits = [e for e in hits if new_ref[e] == r]
         if len(hits) == 1:

@@ -81,19 +81,33 @@ class NumberingLinkTest(unittest.TestCase):
         new = graph("v-2", "b-split", [("e1", "pdf-p0-junction-0001", [90, 90, 2, 2])], N1)
         self.assertEqual(landed(old, new), {"e1": None}, "이음점 순번은 나누기로 사슬을 다시 지으면 밀린다")
 
+    def test_symbol_that_lost_its_number_is_still_linked_by_mark(self):
+        new = graph("v-2", "b-split", [("e1", "pdf-p0-sym-0001", BODY), ("e5", "pdf-p0-sym-0005", FAR)], N1)
+        self.assertEqual(landed(self.old, new), {"e1": "e1", "e2": "e5"},
+                         "뒷 단계에서 개체가 바뀌어 끝 번호 뒤 번호를 받은 기호도 표시가 같으면 전처럼 잇는다")
 
-class ResplitWithAnotherKindTest(unittest.TestCase):
-    """결정 대기(2026-11-24, 판 이전 퍼즈 시드 248): 나누기를 되돌리기 전 집합(백업)에서 곧바로, 같은 연산 id를 종류만 바꿔 다시
-    나눈 판으로 옮기면 나눈 id(source)가 같아 그 조각으로 잇는다. 묘비를 거치면 종류가 달라 되찾지 않는다. 퍼즈는 종류가 바뀐
-    조각을 다른 기호로 본다. 이 판정이 맞으면 source 잇기도 종류를 봐야 한다. 이번 단위에서는 고치지 않는다."""
+    def test_mark_fallback_does_not_take_a_symbol_proven_by_number(self):
+        new = graph("v-2", "b-split", [("e2", "pdf-p0-sym-0002", LUMP)], N1)
+        self.assertEqual(landed(self.old, new), {"e1": None, "e2": "e2"},
+                         "번호로 증명된 기호를 표시가 같은 다른 옛 기호가 잡지 않는다")
 
-    @unittest.expectedFailure
-    def test_split_id_returning_with_another_kind_is_not_linked(self):
+    def test_mark_fallback_keeps_the_two_into_one_guard(self):
+        old = graph("v-1", "b-orig1", [("e1", "pdf-p0-sym-0001", LUMP), ("e2", "pdf-p0-sym-0002", LUMP)], N1)
+        new = graph("v-2", "b-split", [("e9", "pdf-p0-sym-0009", LUMP)], N1)
+        self.assertEqual(landed(old, new), {"e1": None, "e2": None}, "옛 기호 둘이 표시로 새 기호 하나에 모이면 둘 다 묘비")
+
+
+class SplitIdKeepsItsPieceTest(unittest.TestCase):
+    """나눈 id(pdf-p<쪽>-split-<op_id>)는 연산 하나가 만든 조각 하나이고 개체도 연산에 고정이다. op_id는 다시 쓰지 않는다
+    (corrections.issued_op_ids). 그래서 같은 나눈 id는 같은 조각이고, 종류만 바뀐 것(분류 규칙 변경·set_kind)은 같은 기호로 잇는다
+    (판 이전 퍼즈 시드 248, 2026-11-24 검토 판정)."""
+
+    def test_split_id_returning_with_another_kind_is_the_same_piece(self):
         old = graph("v-1", "b-1", [("e1", "pdf-p0-split-c-0003", BODY)])
         new = graph("v-2", "b-2", [("e1", "pdf-p0-split-c-0003", BODY)])
         for g, kind in ((old, "manual_valve"), (new, "pump")):
             g["nodes"][0].update(kind=kind, id_basis="source")
-        self.assertEqual(landed(old, new), {"e1": None})
+        self.assertEqual(landed(old, new), {"e1": "e1"})
 
 
 @unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 필요")
