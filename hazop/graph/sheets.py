@@ -116,10 +116,11 @@ def pin(seat):
 
 def seat(material_id, page, why, name, prior=None):
     """그 이름의 주인을 적은 자리 한 곳. prior(그 이름의 앞 자리)가 붙박던 옛 이름은 이어받는다(주인이 바뀌어도 그 쪽의 이름은 그대로).
-    사람이 붙박힌 쪽이 아닌 다른 파일을 고르면 붙박기를 푼다: 붙박혔던 쪽은 다음 추출에서 자기 이름으로 따로 들어온다."""
+    사람이 붙박힌 쪽이 아닌 다른 파일을 골라도 붙박기는 남는다: 붙박힌 쪽은 다시 추출하거나 제목만 확정해도 그 이름의 고르기 후보로 남아
+    다시 고르면 구간이 되돌아온다. 그 쪽을 따로 보려면 번호를 확정한다(쓸 수 있는 번호가 붙박기를 이긴다)."""
     out = {"material_id": material_id, "page": page or 0, "why": why, "name": name}
     p = pin(prior or {})
-    if p and why != LEGACY and not (why == CHOSEN and (p["material_id"], p.get("page") or 0) != (material_id, page or 0)):
+    if p and why != LEGACY:
         out["pin"] = dict(p)
     return out
 

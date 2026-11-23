@@ -25,6 +25,9 @@ V8 자료를 넘지 않음: 이름 바뀜·고르기·등록으로 옮긴 참조
 V9 합쳐도 같음: 같은 연산열을 연산마다 판 이전하며 돌린 끝과, 판 이전을 미루고 한 번에 합쳐 돌린 끝이 같다.
 V10 끊김 수렴: 쓰기 직전·직후에 끊기거나 다시 추출이 실패해도 다시 읽으면(같은 확정을 다시 하면) 끊기지 않은 흐름과 같은 끝이고, 그
    중간에 화면이 읽어도 틀린 대상이 보이지 않는다.
+V11 되찾기: 이름의 주인 a를 두고 다른 파일을 골랐다가 a를 다시 추출하거나 제목만 확정해도 a는 그 이름의 고르기 후보로 남고, a를 다시 고르면
+   고르기 전에 살아 있던 a의 구간 구성요소가 모두 돌아온다(화면 카드의 '다시 고르면 바로 되돌아옵니다'). 같은 기호의 묘비가 두 이름에 있어 서로 다투는
+   꼴(알려진 결함 E6, hazop/study/idmap.compute)은 위반으로 세지 않고 known_E6으로 센다.
 X  예외: 연산이 예상 밖 예외를 올리지 않는다.
 
 '깨끗한 구간'은 만든 뒤 사람이 파일을 바꿔 고른 적(고르기)이 없고 정착 전에 가려진 시트에 걸치지 않았으며 쓰는 중에 프로세스가 죽은 적(끊김 ③)이
@@ -176,7 +179,6 @@ class World:
         self.moved = False
         self.known = None
         self.chosen = {}      # 사람이 고른 파일: 시트 이름 -> 자료
-        self.unpinned = set()
         self.ended = False
         self.pre_extracted = set()
         self.settled_at_entry = True
@@ -535,9 +537,6 @@ class World:
             self.known = "E2"   # 옛 자리 주인을 고르기로 다시 고름
         sources.choose(P, gid, None, BY, material_id=mid)
         self.chosen[gid] = mid
-        for k, v in list(self.legacy_gid.items()):
-            if v == gid and k[0] != mid:
-                self.unpinned.add(k)   # 자리는 이름마다 하나라 다른 파일을 고르면 앞 주인의 옛 이름 붙박기가 풀린다(그 파일을 다시 추출할 때 임시 이름이 됨)
         for s in self.segs.values():
             if any((x[0], x[1]) == old for x in s["truth"]):
                 s["clean"] = False
@@ -547,6 +546,59 @@ class World:
                 b["owner"] = new
             if b.get("gid2") == gid:
                 b["owner2"] = new
+
+    def recover(self):
+        """V11. 고르기 줄이 있는 이름의 지금 주인 a를 두고 다른 파일을 골랐다가, a를 다시 추출하거나 제목만 확정한 뒤 a를 다시 고른다."""
+        snap = self.snapshot()
+        rows = [c for c in snap.conflicts or () if c["graph_id"] in snap.owner]
+        if not self.settled or not rows:
+            return False
+        row = self.rng.choice(rows)
+        gid = row["graph_id"]
+        owner = snap.owner[gid]
+        others = sorted({c["material_id"] for c in row["candidates"]} - {owner[0]})
+        if not others:
+            return False
+        key = self.key_of(owner[0])
+        keep = {nid: sorted(s["syms"]) for nid, s in snap.segs.items() if nid in self.segs and s["members"] and not s["lost"]
+                and all(x is not None and (x[0], x[1]) == owner for x in s["syms"])}
+        self.choose(gid, self.rng.choice(others))
+        self.check(self.snapshot(), "choose(되찾기 앞) %s" % gid)
+        how = self.rng.choice(["extract", "title"])
+        self.log("recover %s %s" % (how, key))
+        if how == "extract":
+            self.extract_file(key)
+        else:
+            out = tb.confirm(P, owner[0], {"title": "제목 %d" % self.rng.randint(1, 99)}, BY, ver=self.row(key)["ver"])
+            if not out["ok"]:
+                fail("V11", "%s의 제목만 확정이 거절됨: %s" % (key, out["refused"]))
+        mid = self.snapshot()
+        self.check(mid, "recover %s %s" % (how, key))
+        if owner[0] not in {x["material_id"] for c in mid.conflicts or () if c["graph_id"] == gid for x in c["candidates"]}:
+            fail("V11", "%s 뒤 %s가 %s의 고르기 후보에서 사라져 다시 고를 수 없음" % (how, key, gid))
+        self.choose(gid, owner[0])
+        back = self.snapshot()
+        self.check(back, "choose(되찾기) %s" % gid)
+        for nid, syms in sorted(keep.items()):
+            got = sorted(x for x in back.segs.get(nid, {}).get("syms") or () if x is not None)
+            if got == syms:
+                continue
+            if self.twin_tombs(back.ns, nid, owner[0]):
+                self.stats["known_E6"] += 1
+                continue
+            fail("V11", "%s의 %s를 다시 골랐는데 구간 %s의 구성요소 %d개 가운데 %d개만 돌아옴" % (gid, key, nid, len(syms), len(got)))
+        self.stats["recovered"] += 1
+        self.stats["recovered_with_segment"] += 1 if keep else 0
+        return True
+
+    @staticmethod
+    def twin_tombs(ns, nid, mid):
+        """E6: 그 구간의 묘비 가운데 같은 자료·같은 파일 id의 다른 묘비(다른 이름에서 잃은 같은 기호)와 다투는 것이 있는가."""
+        tombs = (ns or {}).get("tombstones") or {}
+        node = next((n for n in (ns or {}).get("nodes") or () if n["node_id"] == nid), {})
+        live = collections.Counter(r["ref"].partition("#")[2] for r in tombs.values()
+                                   if isinstance(r, dict) and r.get("found") is None and r.get("material") == mid and r.get("ref"))
+        return any(live[(tombs.get(t) or {}).get("ref", "").partition("#")[2]] > 1 for t in node.get("lost") or ())
 
     # ---------------------------------------------------------------- 관측 판정
     @staticmethod
@@ -561,10 +613,6 @@ class World:
 
     def check_all(self, snap, op, before=None):
         self.refresh_settled()
-        for k in list(self.unpinned):
-            if snap.owner.get(temp_name(k[0], k[1])) == k:   # 다시 추출해 임시 이름으로 옮겨 감
-                self.legacy_gid.pop(k, None)
-                self.unpinned.discard(k)
         self.check_sheets(snap, op, before)
         self.check_segs(snap, op)
         self.check_docs(snap, op)
@@ -910,7 +958,7 @@ class World:
         r = self.rng
         reg = [k for k, m in self.mats.items() if m["mid"]]
         weights = [("register", 5), ("extract", 2), ("seg", 3), ("seg_remove", 1), ("seg_undo", 1), ("seg_confirm", 1),
-                   ("confirm", 7), ("unconfirm", 3), ("choose", 2), ("doc", 2), ("blocker", 2), ("settle", 1)]
+                   ("confirm", 7), ("unconfirm", 3), ("choose", 2), ("recover", 6), ("doc", 2), ("blocker", 2), ("settle", 1)]
         name = r.choices([w[0] for w in weights], [w[1] for w in weights])[0]
         before = self.snapshot()
         self.moved = False
@@ -954,6 +1002,10 @@ class World:
             label = "%s %s" % (name, key)
             mode = r.choices(["plain", "dry", "fail_retry", "cut_before", "cut_wfail", "cut_wafter", "kill"], [45, 25, 8, 7, 5, 5, 5])[0]
             self.apply_number(key, number, mode)
+        elif name == "recover":
+            if not self.recover():
+                return False
+            label = "choose(되찾기 끝)"
         elif name == "choose":
             rows = sources.conflicts(P)
             if not rows:

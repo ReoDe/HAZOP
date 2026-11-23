@@ -11,6 +11,10 @@ E5 (퍼즈가 시드 232에서 찾음) 먼저 등록하고 번호를 받았지�
    말없이 가져간다(고르는 차례 4 '먼저 등록한 자료'가 이김, 자리를 붙박지 않음). 등록 단조(새 자료를 넣어도 있던 시트의 주인이 안 바뀜)가 어긋나고, y의 구간은 묘비가 된다.
 고르기 가드(퍼즈가 시드 155·214·246에서 찾음) 다른 파일을 골라 옛 이름 붙박기가 풀린 파일은 다시 추출하기 전까지 옛 이름으로 보이는데, 표제란 가드는 규칙이
    셈한 임시 이름으로 센다. 그래서 옮길 구간을 0개로 알리고 허락한 뒤 구간을 묘비로 만들거나(214·246), 이름이 그대로인 확정을 자기 구간 때문에 거절한다(155).
+되찾기(R3 검토가 찾음) 다른 파일을 골랐다가 옛 자리 주인 a를 다시 추출하거나 제목만 확정하면 a가 임시 이름으로 옮겨 가 고르기 줄에서 사라지고,
+   다시 고를 길이 없어 a의 묘비가 영구히 남는다. 고르기는 이제 붙박기를 풀지 않는다.
+E6 (알려진 결함, 고치지 않음: hazop/study/idmap.compute) 같은 기호(같은 자료·쪽·파일 id)가 두 이름에서 묘비가 되면(옛 이름에서 한 번, 그 쪽이 잠시 보이던
+   임시 이름에서 한 번) 다시 고를 때 두 묘비가 한 구성요소를 다퉈 둘 다 되찾지 못한다. expectedFailure 시험 둘이 그 재현이고, 고치면 '뜻밖의 통과'로 알린다.
 실행: python -m unittest tests.test_sheet_identity_regress
 """
 
@@ -84,12 +88,35 @@ class SeatRegressTest(SheetCase):
         self.assertEqual(dry["carries"], {"구간": 1}, "가드가 a의 옛 이름 대신 임시 이름으로 셈해 옮길 구간을 놓침")
 
     def unpinned_owner(self):
-        """옛 자리 주인 a를 두고 b를 고르면 a의 옛 이름 붙박기가 풀린다. a는 다시 추출하기 전까지 디스크의 graph.json으로 옛 이름을 지닌다."""
+        """옛 자리 주인 a를 두고 b를 고른 자리 표를 고르기로 붙박기를 풀던 앱(19ce560f까지)이 쓴 꼴로 만든다. a는 다시 추출하기 전까지
+        디스크의 graph.json으로 옛 이름을 지닌다. 지금 앱은 고르기로 붙박기를 풀지 않지만 그 전에 쓴 자리 표는 남아 있다."""
         a, b = self.legacy_pair()
         self.make_nodes(a)
         sources.choose(P, "graph-SNP-M-101", None, BY, material_id=b)
-        self.assertNotIn("pin", sources.load_seats(P)[0]["graph-SNP-M-101"], "시험 전제: b를 고르자 a의 붙박기가 풀림")
+        path = sources.choices_path(P)
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        del doc["seats"]["graph-SNP-M-101"]["pin"]
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, ensure_ascii=False)
         return a, b
+
+    @unittest.expectedFailure
+    def test_e6_a_stuck_project_recovers_by_confirming_the_shared_number_and_choosing_back(self):
+        """고르기로 붙박기를 풀던 앱에서 a를 다시 추출해 갇힌 프로젝트(a는 임시 이름, 묘비 6, 고르기 줄 없음). 사람이 a에 b와 같은 번호를 확정하면
+        a가 그 이름의 후보로 돌아오고, 다시 고르면 같은 자료·같은 쪽·같은 기호의 묘비가 되돌아와야 한다. E6 때문에 되돌아오지 않는다."""
+        a, _b = self.unpinned_owner()
+        self.node()
+        self.reextract(a)
+        self.assertEqual(self.sheet(a)["graph_id"], "graph-%s-p0" % a, "시험 전제: a가 임시 이름으로 옮겨 감")
+        self.assertEqual(sources.conflicts(P), [], "시험 전제: 고르기 줄이 사라짐")
+        _pg, n = self.node()
+        self.assertEqual((n["members"], len(n.get("lost") or [])), ([], 6), "시험 전제: a의 구성요소가 묘비로 남음")
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+        self.assertIn(a, [x["material_id"] for c in sources.conflicts(P) for x in c["candidates"]], "a가 번호를 확정해도 후보로 돌아오지 않음")
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
+        _pg, n = self.node()
+        self.assertEqual((len(n["members"]), n.get("lost") or []), (6, []), "같은 자료로 돌아온 a의 묘비가 되돌아오지 않음")
 
     def test_choose_guard_counts_the_segment_on_the_name_the_sheet_uses_now(self):
         """시드 214·246: 붙박기가 풀린 a를 다시 고르면 a는 옛 이름 그대로 보이는데, 가드는 규칙이 셈한 임시 이름으로 세어 옮길 구간을 0개로 알리고
@@ -140,6 +167,25 @@ class SeatRegressTest(SheetCase):
 
     def test_choosing_back_after_reextracting_the_unpinned_file_restores_its_segment(self):
         self.choose_back(self.reextract)
+
+    @unittest.expectedFailure
+    def test_e6_choosing_back_after_leaving_and_retaking_the_number_restores_its_segment(self):
+        """번호를 쓰는 두 파일 a·b 가운데 b를 고른 뒤 a가 번호를 취소했다가(임시 이름으로 보임) 같은 번호를 다시 확정하고 a를 다시 고른다.
+        E6 때문에 a의 구성요소가 묘비로 남는다."""
+        a = self.add("SNP-M-101", "drawio")
+        b = self.register(self.copy_in("SNP-M-101", "pdf", "in-b"), dict(NUMBER))
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
+        _pg, before = self.make_nodes(a)
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=b)
+        self.node()
+        self.assertTrue(tb.unconfirm(P, a, ["drawing_number"], BY, ver=self.row(a)["ver"])["ok"])
+        self.node()
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+        self.node()
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
+        _pg, n = self.node()
+        self.assertEqual((n["members"], n.get("lost") or []), (before["nodes"][0]["members"], []), "다시 고른 a의 구성요소가 묘비로 남음")
 
     def test_choosing_back_after_confirming_only_the_title_restores_its_segment(self):
         def title(a):
