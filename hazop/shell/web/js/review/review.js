@@ -27,10 +27,10 @@ export function reviewView(row) {
   const r = row.review;
   if (r === "not_run") return { text: "AI 검토 전", action: "start", label: "AI 검토 시작", tone: "" };
   if (r === "nothing") return { text: "AI에 물을 곳 없음", action: null, label: null, tone: "quiet" };
-  if (r === "waiting") return { text: "AI 검토 기다리는 중" + (row.ahead ? " · 앞에 " + row.ahead + "장" : ""), action: "stop", label: "취소", tone: "info" };
+  if (r === "waiting") return { text: "AI 검토 기다리는 중" + (row.ahead ? " · 앞에 " + row.ahead + "장" : ""), action: row.stoppable === false ? null : "stop", label: row.stoppable === false ? null : "취소", tone: "info" };
   if (r === "running") {
     const p = row.progress || {};
-    return { text: "AI 검토 중" + (p.total ? " · 호출 " + (p.done || 0) + "/" + p.total + "회" : ""), action: "stop", label: "멈추기", tone: "info" };
+    return { text: "AI 검토 중" + (p.total ? " · 호출 " + (p.done || 0) + "/" + p.total + "회" : ""), action: row.stoppable === false ? null : "stop", label: row.stoppable === false ? null : "멈추기", tone: "info" };
   }
   if (r === "candidates") return { text: "AI 후보 " + row.proposed + "건 남음", action: "queue", label: "검토하기", tone: "ai" };
   if (r === "partial") return { text: "AI 검토 일부만 함" + (row.left ? " · 남은 곳 " + row.left : ""), action: "start", label: "이어서 검토", tone: "" };

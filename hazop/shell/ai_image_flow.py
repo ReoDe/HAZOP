@@ -178,15 +178,23 @@ def _tolerant(progress, name):
     return on
 
 
-def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=False):
+def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=False, skip=None, on_page=None):
     """도면마다 AI 검토를 돌려 후보 문서에 합쳐 저장한다(ai_review.run_many와 같은 순서). 그림 입력은 설정(enabled)이 켜졌을 때만이고,
     범례판 출처·그림 실패는 그 실행 기록(runs[].images)에 저장과 함께 적힌다. 실행 상한이 바닥난 도면은 그림을 만들지 않는다.
     그림 입력을 만들지 못한 도면은 글 입력으로 돌리되 그 도면의 그림 입력 예상 호출 수에서 자른다.
+    skip(name): 참이면 그 도면은 묻지 않고 넘어간다(도면별 취소). on_page(name): 그 도면을 묻기 시작할 때 부른다(도면별 멈춤이 지금 도면을 알게).
+    should_stop은 그 도면을 묻는 동안의 멈춤이고, 도면 사이에서 참이면 남은 도면을 모두 그만둔다(엔진 멈춤).
     → ([(이름, 새 후보 수, stats)], Factory 또는 None)."""
     images = Factory(engine, pages) if enabled(engine, auto) else None
     done, used, kinds = [], 0, []          # kinds: 실행 전체의 오류 줄(같은 오류 3번이면 멈춤이 도면 경계에서 풀리지 않게)
     for name, ex in pages:
+        if skip and skip(name):
+            continue
+        if on_page:
+            on_page(name)
         if should_stop and should_stop():
+            if skip and skip(name):
+                continue
             break
         budget, limit, img, info = run_cap - used, cap, None, None
         if images is not None and budget > 0 and pdf_source(ex):

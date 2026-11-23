@@ -175,5 +175,23 @@ class LayoutTest(ShellBase):
         self.assertTrue(wait_for(lambda: self.js(win, "!document.querySelector('.next-list')"), 5), "Esc로 닫히지 않음")
 
 
+class CloseWaitTest(ShellBase):
+    """검토 지적 3(a2a3711): 창을 닫을 때 뒤 스레드(열 때 정착·판 이전, engine.spawn)만 돌고 있어도 끝나기를 기다린다(30초 상한)."""
+
+    def test_close_waits_for_a_spawned_thread(self):
+        import threading
+        import time
+        win = self.window((1366, 768))
+        done = threading.Event()
+
+        def work():
+            time.sleep(1.0)
+            done.set()
+        win.engine.spawn(work, "settle-like")
+        self.assertEqual(win.engine.running_jobs(), [], "작업은 없고 뒤 스레드만 돈다")
+        win.close()
+        self.assertTrue(done.is_set(), "닫기가 뒤 스레드를 기다리지 않음")
+
+
 if __name__ == "__main__":
     unittest.main()

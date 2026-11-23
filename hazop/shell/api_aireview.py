@@ -222,7 +222,8 @@ def request_stop(engine, graph_id):
 
 
 def _stopper(engine, token):
-    """이 실행이 멈춰야 하는가: 엔진 전체 멈춤, 또는 지금 묻는 도면(차례 전이면 이 실행의 모든 도면)이 멈춤·취소를 받음."""
+    """이 실행이 멈춰야 하는가: 엔진 전체 멈춤, 또는 지금 묻는 도면(차례 전이면 이 실행의 모든 도면)이 멈춤·취소를 받음.
+    지금 묻는 도면은 run_pages가 도면을 시작할 때(on_page) 적는다. 한 도면의 멈춤은 그 도면만 그만두고 다음 도면으로 간다(검토 지적 1)."""
     def should_stop():
         if engine.stop_requested():
             return True
@@ -234,6 +235,14 @@ def _stopper(engine, token):
                 return running[0] in live["cancel"]
             return bool(mine) and all(n in live["cancel"] for n, _v in mine)
     return should_stop
+
+
+def _skipper(engine, token):
+    """취소·멈춤을 받은 도면은 묻지 않고 넘어간다(한 번도 묻지 않음)."""
+    def skip(name):
+        with _LIVE_LOCK:
+            return name in _live(engine)["cancel"]
+    return skip
 
 
 def _after_extract(name, runs):
@@ -264,13 +273,13 @@ def _review_state(engine, name, doc, proposed):
         mine = dict(live["names"].get(name) or {})
         others = [dict(v) for n, v in live["names"].items() if n != name and v["state"] in ("waiting", "running")]
         failed = live["failed"].get(name)
-    out = {"review": None, "calls": None, "left": None, "ahead": None, "progress": None}
+    out = {"review": None, "calls": None, "left": None, "ahead": None, "progress": None, "stoppable": False}
     if mine.get("state") == "running":
-        return dict(out, review="running", progress={"done": mine.get("done") or 0, "total": mine.get("total")})
+        return dict(out, review="running", progress={"done": mine.get("done") or 0, "total": mine.get("total")}, stoppable=True)
     if mine.get("state") == "waiting" or (not mine and name in getattr(engine, "_reviewing", ())):
         # 앞 도면: 먼저 시작한 실행의 도면, 같은 실행에서 지금 묻는 도면
         ahead = sum(1 for v in others if v["seq"] < mine["seq"] or (v["seq"] == mine["seq"] and v["state"] == "running")) if mine else None
-        return dict(out, review="waiting", ahead=ahead)
+        return dict(out, review="waiting", ahead=ahead, stoppable=bool(mine))      # 추출 뒤 자동 검토가 잡은 도면은 aireview.stop이 닿지 않는다(검토 지적 2)
     if proposed:
         last = ((doc or {}).get("runs") or [{}])[-1]
         return dict(out, review="candidates", calls=last.get("calls"), left=last.get("left"))
@@ -483,7 +492,9 @@ def run_review(engine, graph_ids, cap, progress, token=None):
         progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, est["calls"] or None)
         to_gid = {v: k for k, v in names.items()}
         done, images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
-                                               lambda name, d, t, left: _progress(engine, token, progress, name, d, t), stop)
+                                               lambda name, d, t, left: _progress(engine, token, progress, name, d, t), stop,
+                                               skip=_skipper(engine, token) if token is not None else None,
+                                               on_page=(lambda name: _page_started(engine, token, name)) if token is not None else None)
     used = images.used if images is not None else {}
     failed = list(images.failed) if images is not None else []
     engine.changed("aireview", None)
@@ -498,6 +509,12 @@ def _progress(engine, token, progress, name, done, total):
     started = token is not None and _mark_running(engine, token, name, done, total)
     progress("%s AI 검토 중 · 호출 %s/%s회" % (_number(engine, name), done or 0, total or "?") if total else "AI 검토 %s" % name, done, total)
     if started:
+        engine.changed("aireview", None)
+
+
+def _page_started(engine, token, name):
+    """run_pages가 도면 하나를 묻기 시작함: 그 도면을 '묻는 중'으로(앞 도면은 끝남). 진행 알림이 오기 전의 첫 호출부터 그 도면의 멈춤을 본다."""
+    if _mark_running(engine, token, name, 0, None):
         engine.changed("aireview", None)
 
 

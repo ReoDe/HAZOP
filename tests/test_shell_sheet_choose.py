@@ -160,6 +160,26 @@ class MixedRowTest(ShellSheetBase):
         self.assertEqual((n["members"], n.get("lost") or []), (self.members, []), "확정 구간도 되찾음")
 
 
+class FormatVersusFileTest(MixedRowTest):
+    """검토 확인 항목: 형식 고르기(chosen)와 파일 고르기(seats)가 서로 다른 원본을 가리키면 파일이 이긴다(설계 §3 차례 2).
+    형식을 다시 고르면 앞서 고른 파일을 내려놓고 그 형식을 쓴다."""
+
+    def test_file_choice_wins_over_format_and_format_choice_drops_it(self):
+        row = self.conflict_row()
+        gid = row["graph_id"]
+        drawio = next(x["material_id"] for x in row["candidates"] if x["format"] == "drawio")
+        self.assertTrue(self.eng.dispatch("sources.choose", {"drawing_number": gid, "format": "drawio"})["ok"])
+        self.assertEqual(project_ctx.graph_names(P)[gid], self.sheet(drawio)["name"])
+        self.assertTrue(self.eng.dispatch("sources.choose", {"drawing_number": gid, "material_id": self.c})["ok"])
+        self.assertEqual(project_ctx.graph_names(P)[gid], self.sheet(self.c)["name"], "형식으로 drawio를 골라 두었어도 고른 파일(c, PDF)을 쓴다")
+        r = self.conflict_row()
+        self.assertEqual((r["chosen"], r["chosen_material"]), (None, self.c), "화면에는 파일을 고른 것으로만 보인다")
+        self.assertTrue(self.eng.dispatch("sources.choose", {"drawing_number": gid, "format": "drawio"})["ok"])
+        self.assertEqual(project_ctx.graph_names(P)[gid], self.sheet(drawio)["name"], "형식을 다시 고르면 고른 파일을 내려놓는다")
+
+    test_files_of_a_format_row_can_be_chosen_and_the_preview_counts_per_candidate = None
+    test_a_confirmed_section_switched_away_and_back = None
+
 class ApplyFailTest(FileChoiceTest):
     """검토 지적 2: 고른 뒤 판 이전이 실패하면 답에 싣는다(화면은 '도면 변경 반영하기'를 보인다)."""
 

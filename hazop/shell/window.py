@@ -510,6 +510,7 @@ class ShellWindow(QMainWindow):
                 event.ignore()
                 return
         self._closing = True
+        self.engine.wait_jobs(30)          # 열 때 정착·판 이전 같은 뒤 스레드(engine.spawn)가 쓰는 도중 닫지 않는다. 없으면 바로 돌아온다
         self.chat.shutdown()
         self.view.dispose()
         super().closeEvent(event)

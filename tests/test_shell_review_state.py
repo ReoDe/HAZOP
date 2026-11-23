@@ -176,5 +176,76 @@ class ReviewStateTest(TA.Base):
         self.assertIn("AI 후보 1건을 확인해 주세요", c["text"])
 
 
+class PerDrawingStopTest(TA.Base):
+    """검토 지적 1(739ce95): 한 실행에 도면 [A, B, C]가 있을 때 멈추기·취소는 그 도면만. 취소한 도면은 한 번도 묻지 않고, 다른 도면은 그대로 묻는다.
+    도면 셋을 따로 만들지 않고 run_pages에 가짜 쪽 셋을 넣고 도면 하나의 실행(ai_review.run)을 호출 세 번짜리 가짜로 바꾼다."""
+
+    def setUp(self):
+        super().setUp()
+        from hazop.shell import ai_image_flow
+        self.flow = ai_image_flow
+        self.engine.settings[ai_image_flow.KEY] = False           # 그림 입력 끔(가짜 쪽에는 PDF가 없다)
+        self.asked = []
+        self.on_call = None
+
+        def fake_run(ex, client, cap=None, budget=None, exclude=None, on_progress=None, should_stop=None, images=None, kinds=None):
+            stats = {"calls": 0, "left": 0, "halted": False, "refused": False, "stopped": False}
+            for i in range(3):
+                if should_stop and should_stop():
+                    stats["stopped"] = True
+                    stats["left"] = 3 - i
+                    break
+                self.asked.append(ex["name"])
+                stats["calls"] += 1
+                if self.on_call:
+                    self.on_call(ex["name"], i)
+                if on_progress:
+                    on_progress(i + 1, 3, 3 - i - 1)
+            return {"candidates": [], "stats": stats}
+        for p_ in (mock.patch.object(ar, "run", fake_run), mock.patch.object(ar, "merge_and_save", lambda *a, **k: None),
+                   mock.patch.object(ar, "decided_targets", lambda name: set())):
+            p_.start()
+            self.addCleanup(p_.stop)
+
+    def run_three(self, token):
+        pages = [(n, {"name": n}) for n in ("A", "B", "C")]
+        return self.flow.run_pages(self.engine, pages, object(), 3, 300,
+                                   lambda name, d, t, left: AR._progress(self.engine, token, lambda *a, **k: None, name, d, t),
+                                   AR._stopper(self.engine, token), skip=AR._skipper(self.engine, token),
+                                   on_page=lambda name: AR._page_started(self.engine, token, name))
+
+    def stop(self, name):
+        with AR._LIVE_LOCK:
+            AR._live(self.engine)["cancel"].add(name)
+
+    def test_stopping_a_stops_only_a(self):
+        token = AR._mark_waiting(self.engine, ["A", "B", "C"])
+        self.on_call = lambda name, i: self.stop("A") if (name, i) == ("A", 0) else None
+        self.run_three(token)
+        self.assertEqual(self.asked, ["A", "B", "B", "B", "C", "C", "C"], "A만 멈추고 B·C는 묻는다")
+
+    def test_cancelling_waiting_b_never_asks_b(self):
+        token = AR._mark_waiting(self.engine, ["A", "B", "C"])
+        self.on_call = lambda name, i: self.stop("B") if (name, i) == ("A", 0) else None
+        self.run_three(token)
+        self.assertEqual(self.asked, ["A", "A", "A", "C", "C", "C"], "취소한 B는 한 번도 묻지 않고 A·C는 끝까지")
+
+    def test_the_engine_stop_still_stops_everything(self):
+        token = AR._mark_waiting(self.engine, ["A", "B", "C"])
+        self.on_call = lambda name, i: self.engine.stop_jobs() if (name, i) == ("A", 0) else None
+        self.addCleanup(self.engine._stop.clear)
+        self.run_three(token)
+        self.assertEqual(self.asked, ["A"], "창 닫기 등 엔진 전체 멈춤은 남은 도면을 모두 그만둔다")
+
+    def test_auto_review_drawings_have_no_cancel(self):
+        """검토 지적 2: 추출 뒤 자동 검토가 잡은 도면(이 실행 기록 없음)은 aireview.stop이 닿지 않으므로 칩에 취소를 싣지 않는다."""
+        held = self.engine.reserve_review([self.name])
+        self.addCleanup(self.engine.release_review, held)
+        r = json.loads(AR.read(self.engine, ["aireview"], {}).body.decode("utf-8"))
+        row = next(d for d in r["drawings"] if d["graph_id"] == self.gid)
+        self.assertEqual((row["review"], row["stoppable"]), ("waiting", False))
+        self.assertEqual(self.call("aireview.stop", graph_id=self.gid)["error"]["code"], "not_found")
+
+
 if __name__ == "__main__":
     unittest.main()
