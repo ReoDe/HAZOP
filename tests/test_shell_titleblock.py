@@ -107,10 +107,11 @@ class CommandTest(Base):
         self.engine.settings["reviewer_name"] = "검토자A"
         self.cmd("confirm", material_id=self.mid, ver=self.ver(), fields={"drawing_number": "SNP-M-101"})
         self.assertTrue(self.engine.wait_jobs(60))
-        self.make_nodes(self.mid)   # 새 화면의 실제 길로 만든 구간(프로젝트 그래프 구간 파일)
+        self.make_nodes(self.mid)   # 새 화면의 실제 길로 만든 구간(프로젝트 그래프 구간 파일). 번호 바꾸기가 옮긴다
+        nodes.set_excluded("P1", "SNP-M-101", True, "검토자A", "범례 도면")   # 도면 번호로 적는 기록은 옮기지 못한다
         with self.assertRaises(api.CommandError) as cm:
             self.cmd("confirm", material_id=self.mid, ver=self.ver(), fields={"drawing_number": "SNP-M-777"})
-        self.assertIn("구간", cm.exception.message)
+        self.assertIn("구간 제외 표시", cm.exception.message)
         self.assertEqual(self.read(self.mid)["version"], 2, "막히면 작업을 시작하지 않음")
         with self.assertRaises(api.CommandError):
             self.cmd("confirm", material_id=self.mid, ver=self.ver(), fields={"owner": "x"})

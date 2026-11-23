@@ -180,24 +180,24 @@ class ConfirmTest(Base):
 
 
 class NumberChangeTest(Base):
-    def test_number_change_is_blocked_while_nodes_exist_and_allowed_without(self):
+    def test_number_change_with_nodes_carries_them_and_unconfirm_too(self):
+        """구간이 있어도 번호 바꾸기·취소는 같은 자료의 이름 바뀜이라 허락하고, 구간 구성원은 하나도 끊기지 않고 새 이름을 따라간다(U5)."""
         mid = self.add()
         self.confirm(mid, self.candidates(mid))
         pg, ns = self.make_nodes(mid)
         members = sorted({m for x in ns["nodes"] for m in x["members"]})
         self.assertTrue(members and all(m.startswith("graph-SNP-M-101/") for m in members))
-        before = self.row(mid)["version"]
-        out = self.confirm(mid, {"drawing_number": "SNP-M-999"})
-        self.assertFalse(out["ok"])
-        self.assertEqual(out["refused"][0]["code"], "rule")
-        self.assertIn("구간", out["refused"][0]["reason"])
-        self.assertEqual(self.row(mid)["version"], before, "막히면 등록정보를 바꾸지 않음")
         self.assertTrue(self.row(mid)["review_data"][0].startswith("구간 "), self.row(mid)["review_data"])
+        out = self.confirm(mid, {"drawing_number": "SNP-M-999"})
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["carries"], {"구간": 1})
         from hazop.app import project_ctx
-        ids = {x["entity_id"] for x in project_ctx.project_graph(P)["nodes"]}
-        self.assertEqual([m for m in members if m not in ids], [], "구간 구성원이 하나도 끊기지 않음")
-        undo = tb.unconfirm(P, mid, ["drawing_number"], BY, ver=self.row(mid)["ver"])
-        self.assertFalse(undo["ok"], "번호를 취소하면 graph-<자료>-p0으로 이름이 바뀌어 구간이 끊기므로 막음(hazop.graph.sheets)")
+        pg = project_ctx.project_graph(P)
+        ids = {x["entity_id"] for x in pg["nodes"]}
+        now = sorted({m for x in nodes.load(pg)["nodes"] for m in x["members"]})
+        self.assertEqual(now, [m.replace("graph-SNP-M-101/", "graph-SNP-M-999/") for m in members])
+        self.assertTrue(set(now) <= ids, "구간 구성원이 하나도 끊기지 않음")
+        self.assertTrue(tb.unconfirm(P, mid, ["drawing_number"], BY, ver=self.row(mid)["ver"])["ok"])
         os.remove(nodes.store_path(P, pg["graph_id"]))   # 사람이 구간을 정리한 뒤
         moved = self.confirm(mid, {"drawing_number": "SNP-M-999"})
         self.assertTrue(moved["ok"], moved)
@@ -243,8 +243,6 @@ class InterrogateFindingsTest(Base):
         self.assertEqual((r["version"], r["needs_reextract"], r["sheets"][0]["name"]), (2, True, old["name"]))
         self.assertTrue(os.path.isfile(os.path.join(paths.output_root("graph"), old["name"], "graph.json")), "앞 그래프를 되돌림")
         self.assertTrue(r["review_data"] and r["review_data"][0].startswith("구간"), "지금 쪽은 앞 버전의 추출")
-        blocked = self.confirm(mid, {"drawing_number": "SNP-M-999"})
-        self.assertEqual(blocked["refused"][0]["code"], "rule", "다시 읽기 실패 뒤에도 구간이 있는 번호 바꾸기는 막음")
         again = self.confirm(mid, {"title": "주 배관"})
         self.assertTrue(again["ok"] and again["re_extracted"], again)
         self.assertEqual(again["version"], 2, "새 버전 없이 다시 읽기만")
@@ -329,21 +327,21 @@ class ReviewFindingsTest(Base):
     def boom(self, _path):
         raise RuntimeError("추출 실패 흉내")
 
-    def test_r1_project_graph_nodes_block_the_number_change_and_stay_whole(self):
+    def test_r1_project_graph_nodes_follow_the_number_change_and_stay_whole(self):
         mid = self.add()
         self.confirm(mid, self.candidates(mid))
         pg, ns = self.make_nodes(mid, n=10)
         dry = tb.confirm(P, mid, {"drawing_number": "SNP-M-555"}, BY, self.row(mid)["ver"], dry=True)
-        self.assertFalse(dry["ok"], "dry 검사도 막음")
-        self.assertIn("구간", dry["refused"][0]["reason"])
+        self.assertEqual(dry["carries"], {"구간": 1}, "dry가 옮길 구간을 알림")
         out = self.confirm(mid, {"drawing_number": "SNP-M-555"})
-        self.assertFalse(out["ok"])
-        self.assertEqual(self.row(mid)["fields"][0]["value"], "SNP-M-101")
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(self.row(mid)["fields"][0]["value"], "SNP-M-555")
         from hazop.app import project_ctx
         pg2 = project_ctx.project_graph(P)
         ids = {x["entity_id"] for x in pg2["nodes"]}
         saved = nodes.load(pg2)
         self.assertEqual(sum(1 for x in saved["nodes"] for m in x["members"] if m not in ids), 0)
+        self.assertEqual(sum(len(x.get("lost") or []) for x in saved["nodes"]), 0)
         self.assertTrue(self.confirm(mid, {"title": "개정과 제목은 확정 가능"})["ok"], "번호를 안 바꾸는 확정은 그대로 됨")
 
     def test_r1_every_record_that_points_at_the_graph_is_counted(self):

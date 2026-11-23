@@ -20,11 +20,6 @@ from hazop.register import registry, titleblock as tb
 from hazop.study import follow, idmap, migrate, nodes
 
 
-def opened():
-    """표제란 가드를 걷는다(엔진 단위 U5a: 가드는 아직 이름 바뀜을 막는다)."""
-    return mock.patch.object(tb, "_guard_number", lambda *a, **k: ([], []))
-
-
 class RenameCase(GuardCase):
     def setUp(self):
         super().setUp()
@@ -65,8 +60,7 @@ class RenameTest(RenameCase):
     def test_r1_numbering_an_unnumbered_pdf_keeps_its_confirmed_segment(self):
         a = self.add("SNP-M-101", "pdf")
         before, old = self.made(a)
-        with opened():
-            self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         n = self.followed(before, old, "graph-SNP-M-101")
         self.assertEqual((n["state"], n["rev"]), (before["state"], before["rev"]), "내용이 같으면 확정 그대로")
         self.assertEqual(self.last_line()["sheets"], {old: "graph-SNP-M-101"})
@@ -78,8 +72,7 @@ class RenameTest(RenameCase):
         a = self.add("SNP-M-101", "drawio")
         before, old = self.made(a)
         refs = self.stored()["graph_member_refs"]
-        with opened():
-            self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         n = self.followed(before, old, "graph-SNP-M-101")
         self.assertEqual(n["state"], "confirmed")
         moved = self.last_line()["ref_moved"]
@@ -96,12 +89,12 @@ class RenameTest(RenameCase):
         mark = {ns["graph_id"]: {"graph_version": ns["graph_version"], "step": len(migrate.lines(ns))}}
         result = {"schema_version": "0.3", "graph_id": ns["graph_id"], "graph_version": ns["graph_version"],
                   "version_migrations": [{"step": len(migrate.lines(ns)), "to": ns["graph_version"]}],
-                  "cells": [{"node_id": before["node_id"], "entries": [{"cause_refs": [{"ref": ref}], "ai_basis": {"kg_paths": [[m0, m1]]}}]}]}
+                  "cells": [{"node_id": before["node_id"], "entries": [{"cause_refs": [{"ref": ref}, {"ref": old + "#pdf-p0-sym-9999"}],
+                                                                       "ai_basis": {"kg_paths": [[m0, m1]]}}]}]}
         docs = {idmap.IE: {"headings": {"h1": {"targets": [ref]}}, "ref_versions": mark},
                 idmap.FMEA: {"rows": {"r1": {"ref": ref, "entity_id": m0}}, "ref_versions": mark},
                 idmap.LATENT: {"judgements": {"rule-1|" + ref: {"key": "rule-1|" + ref, "target": ref}}, "ref_versions": mark}}
-        with opened():
-            self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         self.followed(before, old, "graph-SNP-M-101")
         new_ref = ref.replace(old + "#", "graph-SNP-M-101#")
         new0, new1 = (m.replace(old + "/", "graph-SNP-M-101/") for m in (m0, m1))
@@ -109,6 +102,7 @@ class RenameTest(RenameCase):
         got, _n = migrate.migrate_results(result, now)
         e = got["cells"][0]["entries"][0]
         self.assertEqual((e["cause_refs"][0]["ref"], e["ai_basis"]["kg_paths"]), (new_ref, [[new0, new1]]))
+        self.assertTrue(idmap.is_tomb(e["cause_refs"][1]["ref"]), "판 사진에 없던 옛 이름 참조는 그대로 지나가지 않고 묘비")
         ie, _r = follow.catch_up(docs[idmap.IE], idmap.IE, P)
         fmea, _r = follow.catch_up(docs[idmap.FMEA], idmap.FMEA, P)
         latent, _r = follow.catch_up(docs[idmap.LATENT], idmap.LATENT, P)
@@ -120,8 +114,7 @@ class RenameTest(RenameCase):
     def test_r4_unconfirming_the_number_follows_back_to_the_temporary_name(self):
         a = self.numbered("SNP-M-101", "pdf")
         before, old = self.made(a)
-        with opened():
-            self.assertTrue(tb.unconfirm(P, a, ["drawing_number"], BY, ver=self.row(a)["ver"])["ok"])
+        self.assertTrue(tb.unconfirm(P, a, ["drawing_number"], BY, ver=self.row(a)["ver"])["ok"])
         new = self.sheet(a)["graph_id"]
         self.assertEqual(new, "graph-%s-p0" % a)
         self.assertEqual(self.followed(before, old, new)["state"], "confirmed")
@@ -129,8 +122,7 @@ class RenameTest(RenameCase):
     def test_r5_changing_the_number_follows(self):
         a = self.numbered("SNP-M-101", "drawio")
         before, old = self.made(a)
-        with opened():
-            self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-555"})["ok"])
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-555"})["ok"])
         self.assertEqual(self.followed(before, old, "graph-SNP-M-555")["state"], "confirmed")
 
     def test_r11_two_files_swapping_numbers_each_keep_their_own_segment(self):
@@ -142,9 +134,8 @@ class RenameTest(RenameCase):
         pg = project_ctx.project_graph(P)
         second = nodes.load(pg)["nodes"][1]
         data.set_graph_listener(None)   # 확정마다 이어서 하던 판 이전을 하지 않음(집합을 읽지 않음)
-        with opened():
-            for mid, number in ((a, "SNP-M-999"), (b, "SNP-M-101"), (a, "SNP-M-102")):
-                self.assertTrue(self.confirm(mid, {"drawing_number": number})["ok"], number)
+        for mid, number in ((a, "SNP-M-999"), (b, "SNP-M-101"), (a, "SNP-M-102")):
+            self.assertTrue(self.confirm(mid, {"drawing_number": number})["ok"], number)
         self.assertEqual(self.stored()["graph_version"], pg["graph_version"], "시험 전제: 그사이 집합을 쓰지 않음")
         pg = project_ctx.project_graph(P)
         got = {n["node_id"]: n for n in nodes.load(pg)["nodes"]}
@@ -162,7 +153,7 @@ class RenameTest(RenameCase):
         ns.pop("graph_member_sheets")
         store_io.write_json(self.set_path(), ns, store_io.ANY, sort_keys=False)
         data.set_graph_listener(None)
-        with opened():
+        with mock.patch.object(tb, "_guard_number", lambda *a, **k: ([], [], {}, [])):   # 가드는 이 경우를 막는다(test_sheet_guard R16): 엔진만 본다
             self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         _pg, n = self.node()
         self.assertEqual((n["members"], len(n.get("lost") or [])), ([], len(before["members"])))
@@ -175,8 +166,7 @@ class InterruptTest(RenameCase):
         a = self.add("SNP-M-101", "pdf")
         before, old = self.made(a)
         data.set_graph_listener(None)   # 판 이전 전에 끊김: 확정·다시 추출은 끝났고 집합은 옛 판
-        with opened():
-            self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         return before, old
 
     def _blocked_before_catch_up(self, before, old):
@@ -234,7 +224,7 @@ class InterruptTest(RenameCase):
 
         def killed(_path):
             raise KeyboardInterrupt
-        with opened(), self.assertRaises(KeyboardInterrupt):
+        with self.assertRaises(KeyboardInterrupt):
             self.confirm(a, {"drawing_number": "SNP-M-101"}, extract=killed)
         _pg, n = self.node()
         self.assertEqual((n["members"], len(n.get("lost") or [])), ([], len(before["members"])), "시험 전제: 시트가 빠져 묘비")

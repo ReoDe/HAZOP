@@ -72,6 +72,15 @@ class SheetCase(Base):
         """SNP-M-102 도면인데 쪽 이름을 SNP-M-101로 바꾼 drawio(기본 쪽 이름 'Page-1'이 겹치는 것과 같은 꼴)."""
         return self.copy_in("SNP-M-102", "drawio", "in-same-page", lambda t: t.replace('name="SNP-M-102"', 'name="SNP-M-101"', 1))
 
+    def judge_in_kg(self, graph_id):
+        """그 도면을 가리키는 사람이 판단한 지식그래프 연결 후보 한 줄(번호를 바꿀 때 옮기지 못하는 기록)."""
+        from hazop.kg import link
+        folder = paths.folder("knowledge-graph", paths.safe_name(P, "project"))
+        os.makedirs(folder, exist_ok=True)
+        r = {c: "" for c in link.CANDIDATE_COLUMNS}
+        r.update(candidate_key="k1", target_graph_id=graph_id, target_tag="T", target_ref=graph_id + ":T", link_status="confirmed", reviewed_by=BY)
+        link.write_candidates(os.path.join(folder, link.CANDIDATES_CSV), [r])
+
     def collided(self, kind):
         """이 단위 전 앱으로 두 도면이 한 시트 이름을 나눠 쓴 채 저장된 프로젝트를 만든다. 첫 도면 구간은 둘째 도면 때문에 이미 잃었다."""
         with mock.patch("hazop.graph.sources.sheet_name", legacy_name, create=True),                 mock.patch("hazop.app.data.settle_sheets", lambda *a, **k: None, create=True):
@@ -160,9 +169,10 @@ class SheetGidPathTest(SheetCase):
         self.assertEqual(self.sheet(b)["graph_id"], "graph-SNP-M-102")
 
     def test_refusal_names_the_drawing_by_file_not_by_its_temporary_name(self):
-        """구간이 있는 번호 미확정 도면의 번호 확정은 막되, 안내에 임시 이름(graph-material-…)이 아니라 파일 이름·쪽이 나온다."""
+        """옮기지 못하는 기록(지식그래프 판단)이 있는 번호 미확정 도면의 번호 확정은 막되, 안내에 임시 이름(graph-material-…)이 아니라 파일 이름·쪽이 나온다."""
         a = self.add("SNP-M-101", "drawio")
         self.make_nodes(a)
+        self.judge_in_kg(self.sheet(a)["graph_id"])
         out = self.confirm(a, {"drawing_number": "SNP-M-101"})
         self.assertFalse(out["ok"])
         reason = out["refused"][0]["reason"]

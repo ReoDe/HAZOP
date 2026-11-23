@@ -157,20 +157,19 @@ class GuardCountsTest(GuardCase):
 
 
 class GuardOwnerTest(GuardCase):
-    """그 이름의 지금 주인일 때만 참조를 센다. 주인이 아닌 자료는 남의 기록 때문에 갇히지 않고, 주인은 지금처럼 막힌다."""
+    """그 이름의 지금 주인일 때만 참조를 센다. 주인이 아닌 자료는 남의 기록 때문에 갇히지 않고, 주인의 구간은 이름 바뀜을 따라간다(U5)."""
 
-    def test_guard_blocks_title_block_number_change_and_unconfirm_with_a_node(self):
-        """P0 가드 고정: 구간이 있는 도면은 표제란 확정(번호 바꾸기)과 확정 취소 모두 막히고 구간은 그대로다."""
+    def test_number_change_and_unconfirm_with_a_node_follow_the_name(self):
+        """P0(U5에서 뒤집음): 구간이 있는 도면의 번호 바꾸기와 확정 취소는 허락하고, 구간은 같은 자료의 새 이름을 따라간다."""
         mid = self.numbered("SNP-M-101", "pdf")
         _pg, ns = self.make_nodes(mid)
         members = ns["nodes"][0]["members"]
-        row = self.refused(self.confirm(mid, {"drawing_number": "SNP-M-555"}))
-        self.assertEqual((row["code"], row["reason_code"]), ("rule", tb.HAS_RECORDS))
-        self.assertIn("구간", row["reason"])
-        undo = tb.unconfirm(P, mid, ["drawing_number"], BY, ver=self.row(mid)["ver"])
-        self.assertFalse(undo["ok"], "확정 취소로 이름이 바뀌는 것도 막음")
+        self.assertTrue(self.confirm(mid, {"drawing_number": "SNP-M-555"})["ok"])
         _pg, n = self.node()
-        self.assertEqual((n["members"], n.get("lost") or []), (members, []))
+        self.assertEqual((n["members"], n.get("lost") or []), ([m.replace("graph-SNP-M-101/", "graph-SNP-M-555/") for m in members], []))
+        self.assertTrue(tb.unconfirm(P, mid, ["drawing_number"], BY, ver=self.row(mid)["ver"])["ok"])
+        _pg, n = self.node()
+        self.assertEqual((n["members"], n.get("lost") or []), ([m.replace("graph-SNP-M-101/", "graph-%s-p0/" % mid) for m in members], []))
 
     def test_other_file_with_the_same_number_can_change_its_number(self):
         """같은 번호의 다른 형식 파일(고르기 전에는 쓰이지 않음)은 주인 도면의 구간 때문에 번호를 고치거나 취소하지 못하던 길."""
@@ -185,8 +184,9 @@ class GuardOwnerTest(GuardCase):
         _pg, n = self.node()
         self.assertEqual((n["members"], n.get("lost") or []), (members, []), "주인 도면 구간은 그대로")
         self.assertEqual(self.gids(), ["graph-SNP-M-101", "graph-SNP-M-102"])
-        self.assertEqual(self.refused(self.confirm(a, {"drawing_number": "SNP-M-555"}))["reason_code"], tb.HAS_RECORDS,
-                         "주인은 지금처럼 막힘")
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-555"})["ok"], "주인은 구간을 데리고 번호를 바꿈")
+        _pg, n = self.node()
+        self.assertEqual((n["members"], n.get("lost") or []), ([m.replace("graph-SNP-M-101/", "graph-SNP-M-555/") for m in members], []))
 
     def test_another_file_can_take_a_number_in_use_and_the_first_file_stays(self):
         """같은 번호의 다른 형식 파일에 번호를 확정하면, 지금 그 번호를 쓰는 파일을 주인으로 붙박고(먼저 있던 파일이 남음) 허락한다.
@@ -215,49 +215,22 @@ class GuardOwnerTest(GuardCase):
         shutil.rmtree(os.path.join(paths.output_root("graph"), self.sheet(a)["name"]))
         row = self.refused(self.confirm(b, {"drawing_number": "SNP-M-101"}))
         self.assertEqual(row["reason_code"], tb.HAS_RECORDS)
-        self.assertIn("새 번호의 도면(SNP-M-101)을 가리키는 기록이 있어(구간 1개)", row["reason"])
+        self.assertIn("새 번호의 도면(SNP-M-101)을 가리키는 기록", row["reason"])
+        self.assertIn("(구간 1개)", row["reason"])
 
     def test_removing_the_segment_lets_the_number_be_confirmed(self):
-        """번호 미확정 PDF에 구간을 만들었다가 지우면 번호를 확정할 수 있다. 앞서는 되돌리기 묶음(batches)의 지난 구성원까지 세어
-        '그 기록을 먼저 정리하세요'대로 해도 풀리지 않았다(구간 1개가 '구간 12곳'). 거절 글의 수는 구간 수다."""
+        """되돌리기 묶음(batches)의 지난 구성원은 세지 않는다(앞서는 '그 기록을 먼저 정리하세요'대로 해도 풀리지 않았다). 옮길 구간 수는 구간 수다."""
         a = self.add("SNP-M-101", "pdf")
         self.make_nodes(a)
-        row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-101"}))
-        self.assertIn("(구간 1개)", row["reason"])
+        self.assertEqual(self.confirm(a, {"drawing_number": "SNP-M-101"}, dry=True)["carries"], {"구간": 1})
         self.remove_node()
+        self.assertEqual(self.confirm(a, {"drawing_number": "SNP-M-101"}, dry=True)["carries"], {})
         out = self.confirm(a, {"drawing_number": "SNP-M-101"})
         self.assertTrue(out["ok"], out)
 
-    def _undo_after_rename(self, a, new_number, then=None):
-        _pg, before = self.make_nodes(a)
-        old = self.sheet(a)["graph_id"]
-        batch = self.remove_node()
-        self.assertTrue(self.confirm(a, {"drawing_number": new_number})["ok"])
-        if then:
-            then()
-        self.nodes_cmd("undo", {"batch_id": batch})
-        pg, n = self.node()
-        ids = {x["entity_id"] for x in pg["nodes"]}
-        want = sorted(m.replace(old + "/", "graph-%s/" % new_number, 1) for m in before["nodes"][0]["members"])
-        self.assertEqual((sorted(n["members"]), n.get("lost") or []), (want, []), "되돌린 구간이 새 이름의 같은 기호로 돌아옴")
-        self.assertTrue(set(want) <= ids)
-
-    def test_undoing_a_removal_after_the_number_changed_comes_back_on_the_new_name(self):
-        """R6. 번호를 바꾼 뒤 그 앞의 구간 지우기를 되돌리면, 판 이전이 되돌리기 묶음도 같은 자료의 새 이름으로 옮겨 두었으므로 구성원이 새 이름으로 돌아온다
-        (U2에서는 찾지 못한 구성요소로 보였다)."""
-        self._undo_after_rename(self.add("SNP-M-101", "pdf"), "SNP-M-101")
-
-    def test_undo_after_the_old_number_went_to_another_file_follows_its_own_file(self):
-        """R7. 옛 번호를 다른 파일이 받은 뒤 되돌려도(같은 graph_id, entity id도 겹침) 그 파일의 기호로 잇지 않고 제 파일의 새 번호로 돌아온다."""
-        def other_takes_the_old_number():
-            b = self.add("SNP-M-102", "drawio")
-            self.assertTrue(self.confirm(b, {"drawing_number": "SNP-M-101"})["ok"])
-            self.assertIn("graph-SNP-M-101", self.gids())
-        self._undo_after_rename(self.numbered("SNP-M-101", "drawio"), "SNP-M-555", other_takes_the_old_number)
-
     def test_left_out_second_drawing_can_be_numbered(self):
         """이 단위 전에 두 PDF가 한 이름(graph-drawing)을 나눠 쓴 저장본에서(옛 규칙은 가장 새 것을 써서 둘째 B가 주인, 첫 도면 A가 가려짐),
-        가려진 도면은 번호를 확정해 따로 들어온다. 주인 B는 그 이름에 구간 기록이 있어 지금처럼 막힌다."""
+        가려진 도면은 번호를 확정해 따로 들어온다. 주인 B도 번호를 확정하면 그 이름의 구간이 B를 따라간다(U5, 앞서는 막힘)."""
         a, b, seen = self.collided("pdf")
         self.assertEqual(project_ctx.graph_names(P)["graph-drawing"], self.sheet(b)["name"], "시험 전제: 둘째가 주인")
         out = self.confirm(a, {"drawing_number": "SNP-M-101"})
@@ -265,9 +238,13 @@ class GuardOwnerTest(GuardCase):
         self.assertIn("graph-SNP-M-101", self.gids())
         _pg, n = self.node()
         self.assertEqual((n["members"], n.get("lost") or []), (seen["members"], seen.get("lost") or []))
-        row = self.refused(self.confirm(b, {"drawing_number": "SNP-M-102"}))
-        self.assertEqual(row["reason_code"], sheets.CONFIRM_FIRST, row)
-        self.assertIn("(SNP-M-102_", row["reason"], "정착이 붙박은 옛 이름(graph-drawing) 대신 파일 이름")
+        dry = self.confirm(b, {"drawing_number": "SNP-M-102"}, dry=True)
+        self.assertEqual([(r["from"], r["to"]) for r in dry["renames"]], [("graph-drawing", "graph-SNP-M-102")])
+        self.assertTrue(dry["renames"][0]["from_label"].startswith("SNP-M-102_"), "정착이 붙박은 옛 이름(graph-drawing) 대신 파일 이름")
+        self.assertTrue(self.confirm(b, {"drawing_number": "SNP-M-102"})["ok"])
+        _pg, n = self.node()
+        self.assertEqual((n["members"], n.get("lost") or []),
+                         ([m.replace("graph-drawing/", "graph-SNP-M-102/") for m in seen["members"]], seen.get("lost") or []))
 
     def test_unconfirm_before_settle_uses_the_settled_name(self):
         """정착 전 프로젝트에서 확정 취소의 새 이름을 옛 규칙(graph-drawing)으로 예측하면, 그 이름을 쓰는 다른 도면의 구간 때문에
@@ -309,9 +286,10 @@ class DryTest(GuardCase):
         self.assertTrue(chat_edits._tb_dry(eng, item, self.row(a))["ok"])
         self.assertEqual(work_files(), files, "dry·채팅 제안은 아무것도 쓰지 않음")
         self.assertFalse(sources.load_seats(P)[1], "정착은 사람이 승인한 확정에서")
-        row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-101"}))
-        self.assertEqual(row["reason_code"], sheets.CONFIRM_FIRST, "실제 확정은 정착 뒤 모든 검사를 함")
-        self.assertTrue(sources.load_seats(P)[1])
+        out = self.confirm(a, {"drawing_number": "SNP-M-101"})
+        self.assertTrue(out["ok"], out)
+        self.assertTrue(sources.load_seats(P)[1], "실제 확정은 정착한 뒤 검사함")
+        self.assertEqual([r["to"] for r in out["renames"]], ["graph-SNP-M-101"])
 
     def test_settle_failure_is_told_in_plain_words(self):
         with mock.patch("hazop.graph.sources.sheet_name", legacy_name, create=True), \
@@ -397,18 +375,124 @@ class NumberRuleTest(GuardCase):
         self.assertEqual(same["outcome"], "new_version", "번호를 안 바꾸는 다시 등록은 그대로 됨")
 
 
+class RenameGuardTest(GuardCase):
+    """U5 가드: 같은 자료의 1:1 이름 바뀜은 옮김 자리(구간·분석 결과·초기사건·FMEA·잠재 후보 판단)를 판 이전에 맡기고 허락한다.
+    막음 자리(지식그래프 판단, 저장하지 못한 AI 답, 옛 도면별 파일, 번호로 적는 기록, 다른 도면과의 연결 구간)가 있거나 짝을 증명하지 못하면 막고,
+    거절 글에 막는 자리와 할 일을 적는다."""
+
+    def write(self, path, doc):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, ensure_ascii=False)
+
+    def temp_with_node(self):
+        a = self.add("SNP-M-101", "pdf")
+        _pg, ns = self.make_nodes(a)
+        return a, self.sheet(a)["graph_id"], ns
+
+    def test_r15_dry_tells_what_moves_and_matches_the_real_result(self):
+        """dry는 아무것도 쓰지 않고 옮길 기록 수(carries)와 이름 바뀜(renames)을 돌려준다. 실제 확정 뒤 옮겨진 수와 같다."""
+        from hazop.ie import store as ie_store
+        from hazop.study import follow, idmap
+        a, old, ns = self.temp_with_node()
+        refs = [ns["graph_member_refs"][m] for m in ns["nodes"][0]["members"][:2]]
+        self.write(ie_store.store_path(P), {"headings": {"h1": {"targets": refs}},
+                                            "ref_versions": {ns["graph_id"]: {"graph_version": ns["graph_version"], "step": 0}}})
+        files = work_files()
+        dry = self.confirm(a, {"drawing_number": "SNP-M-101"}, dry=True)
+        self.assertEqual(work_files(), files, "dry는 아무것도 쓰지 않음")
+        self.assertEqual(dry["carries"], {"구간": 1, "초기사건": 2})
+        self.assertEqual([(r["from"], r["to"], r["to_label"]) for r in dry["renames"]], [(old, "graph-SNP-M-101", "SNP-M-101")])
+        self.assertNotIn("material-", dry["renames"][0]["from_label"])
+        out = self.confirm(a, {"drawing_number": "SNP-M-101"})
+        self.assertTrue(out["ok"], out)
+        self.assertEqual((out["carries"], out["renames"]), (dry["carries"], dry["renames"]))
+        pg, n = self.node()
+        moved_nodes = sum(1 for x in nodes.load(pg)["nodes"] if x["members"] and all(m.startswith("graph-SNP-M-101/") for m in x["members"]))
+        with open(ie_store.store_path(P), encoding="utf-8") as fh:
+            ie, _r = follow.catch_up(json.load(fh), idmap.IE, P)
+        moved_refs = sum(1 for r in ie["headings"]["h1"]["targets"] if r.startswith("graph-SNP-M-101#"))
+        self.assertEqual({"구간": moved_nodes, "초기사건": moved_refs}, dry["carries"])
+
+    def test_r14_node_review_proposals_do_not_block(self):
+        """구간 AI 검토 제안은 판이 바뀌면 낡음 처리되는 파생물이라 세지 않는다(앞서는 AI 검토를 받은 도면이 늘 막혔다)."""
+        from hazop.study import node_review
+        a, old, ns = self.temp_with_node()
+        self.write(node_review.store_path(P, ns["graph_id"]), {"proposals": [{"members": ns["nodes"][0]["members"]}]})
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
+
+    def test_r12_taking_a_number_another_file_uses_is_still_refused(self):
+        a, _old, _ns = self.temp_with_node()
+        self.numbered("SNP-M-101", "drawio")
+        row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-101"}))
+        self.assertEqual(row["reason_code"], sheets.CONFIRM_FIRST)
+        self.assertIn("다른 번호를 쓰거나", row["reason"])
+
+    def test_r12_knowledge_graph_judgement_is_refused_with_what_to_do(self):
+        from hazop.kg import link
+        a, old, _ns = self.temp_with_node()
+        folder = paths.folder("knowledge-graph", paths.safe_name(P, "project"))
+        os.makedirs(folder, exist_ok=True)
+        r = {c: "" for c in link.CANDIDATE_COLUMNS}
+        r.update(candidate_key="k1", target_graph_id=old, target_tag="RC-V101", target_ref=old + ":RC-V101", link_status="confirmed", reviewed_by=BY)
+        link.write_candidates(os.path.join(folder, link.CANDIDATES_CSV), [r])
+        row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-101"}))
+        self.assertEqual(row["reason_code"], sheets.CONFIRM_FIRST)
+        self.assertIn("지식그래프 판단 2곳", row["reason"], "대상 칸 둘(target_graph_id·target_ref)")
+        self.assertIn("candidate로 되돌리고", row["reason"])
+        self.assertNotIn("구간", row["reason"].split("(")[1].split(")")[0], "옮기는 구간은 막는 자리로 적지 않음")
+        for word in ("graph-", "material-"):
+            self.assertNotIn(word, row["reason"])
+
+    def test_r12_unsaved_ai_answer_and_old_per_drawing_files_are_refused(self):
+        from hazop.study import results
+        a, old, ns = self.temp_with_node()
+        unsaved = os.path.join(os.path.dirname(results.store_path(P, ns["graph_id"])), "unsaved", "x.json")
+        self.write(unsaved, {"cells": [{"entries": [{"cause_refs": [{"ref": ns["graph_member_refs"][ns["nodes"][0]["members"][0]]}]}]}]})
+        row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-101"}, dry=True))
+        self.assertIn("저장하지 못한 AI 답 1곳", row["reason"])
+        os.remove(unsaved)
+        legacy = nodes.store_path(P, "graph-legacy")
+        self.write(legacy, {"kind": nodes.KIND, "nodes": [{"members": [ns["nodes"][0]["members"][0]]}]})
+        row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-101"}, dry=True))
+        self.assertIn("옛 도면별 구간 1개", row["reason"])
+        os.remove(legacy)
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"}, dry=True)["ok"])
+
+    def test_r12_number_change_with_a_drawing_link_or_exclusion_is_refused(self):
+        a = self.numbered("SNP-M-101", "drawio")
+        self.make_nodes(a)
+        nodes.set_excluded(P, "SNP-M-101", True, BY, "범례 도면")
+        row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-555"}))
+        self.assertEqual(row["reason_code"], tb.HAS_RECORDS)
+        self.assertIn("구간 제외 표시 1곳", row["reason"])
+        self.assertIn("구간 제외를 풀고", row["reason"])
+
+    def test_r16_snapshot_without_materials_is_refused(self):
+        a, _old, _ns = self.temp_with_node()
+        path = nodes.store_path(P, "project-" + P)
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc.pop("graph_member_sheets")
+        self.write(path, doc)
+        row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-101"}, dry=True))
+        self.assertEqual(row["reason_code"], sheets.CONFIRM_FIRST)
+        self.assertIn("도면 변경 반영하기", row["reason"])
+
+
 class RefusalWordsTest(GuardCase):
     def test_refusals_carry_a_code_and_plain_words(self):
         """거절 글에 내부 말(graph-, material-, 판 사진 등)이 없고 모든 가드 거절에 사유 코드가 있다."""
         a = self.add("SNP-M-101", "pdf")
         self.make_nodes(a)
+        self.judge_in_kg(self.sheet(a)["graph_id"])
         rows = [self.refused(self.confirm(a, {"drawing_number": "SNP-M-101"})),
                 self.refused(self.confirm(a, {"drawing_number": RESERVED}))]
         for row, words in zip(rows, (("graph-", "material-", "그래프 ID", "묘비", "판 사진"), ("graph-", "그래프 ID"))):
             self.assertIn(row["reason_code"], tb.REASON_CODES)
             for word in words + ("쪽를", "drawing)"):
                 self.assertNotIn(word, row["reason"])
-        self.assertEqual(rows[0]["reason_code"], sheets.CONFIRM_FIRST, "번호 미확정 도면에 구간이 먼저 생긴 경우")
+        self.assertEqual(rows[0]["reason_code"], sheets.CONFIRM_FIRST, "번호 미확정 도면에 옮기지 못하는 기록이 먼저 생긴 경우")
 
 
 
