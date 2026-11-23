@@ -239,6 +239,8 @@ class Engine:
 
     def changed(self, topic, rev=None):
         self._emit({"t": "changed", "topic": topic, "rev": rev})
+        if topic in NEXT_SOURCES:            # 영역이 바뀌면 '다음에 할 일'도 다시 읽게 한다(api_next)
+            self._emit({"t": "changed", "topic": "next", "rev": None})
 
     # ------------------------------------------------------------ 설정·상태
     def save_settings(self):
@@ -355,6 +357,17 @@ class Engine:
         with self._lock:
             return [v.get("kind") or "register" for v in self._jobs.values() if v["state"] == "running"]
 
+    def job_progress(self):
+        """도는 작업마다 {kind, label, text, done, total}(마지막 진행 알림). '다음에 할 일' 줄이 읽는다."""
+        with self._lock:
+            return [{"kind": v.get("kind") or "register", "label": v.get("label"), "text": v.get("text"), "done": v.get("done"), "total": v.get("total")}
+                    for v in self._jobs.values() if v["state"] == "running"]
+
+    def catching(self, project_id):
+        """그 프로젝트의 자동 판 이전이 AI 작업이 끝나기를 기다리는 중인가(그동안의 낡은 구간은 실패가 아니다)."""
+        with self._lock:
+            return project_id in self._catching
+
     def stop_jobs(self):
         """돌고 있는 작업에 멈추라고 알린다. 작업은 진행을 알리는 자리(등록 -> 추출 -> AI 검토 사이, AI 검토는 도면마다)에서 멈춘다.
         단계 한가운데(추출 호출 하나)는 끊지 않는다: 반쯤 쓰인 자료를 남기지 않으려는 것이다."""
@@ -412,6 +425,8 @@ class Engine:
             def progress(text, done=None, total=None):
                 if self._stop.is_set():
                     raise JobStopped("중지했습니다")
+                with self._lock:
+                    self._jobs[job_id].update(text=text, done=done, total=total)
                 self.emit("job.progress", {"id": job_id, "label": label, "state": "running", "text": text, "done": done, "total": total})
             try:
                 result = fn(progress)
@@ -631,7 +646,8 @@ CORE_TOPICS = ("state", "drawings", "connection", "chat", "icons", "examples", "
 PROJECT_BOUND_CORE = ("chat.action.", "sheet.")
 
 # 영역별 모듈(등록 규약은 hazop/shell/README.md). 새 영역은 이 튜플에 모듈 이름 하나를 더하는 것이 전부다.
-MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "api_kg", "api_actionlog", "api_aireview", "api_docs", "api_titleblock", "api_settings", "api_corrections", "clean_items")
+MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "api_kg", "api_actionlog", "api_aireview", "api_docs", "api_titleblock", "api_settings", "api_corrections", "clean_items",
+           "api_next")
 
 TOPIC_OWNER = {}          # 토픽 -> 읽기 모듈
 LOADED = {}               # 모듈 이름 -> 모듈 (읽지 못한 것은 없다)
@@ -678,6 +694,7 @@ def _load_modules():
 
 
 PROJECT_BOUND = _load_modules()
+NEXT_SOURCES = frozenset(getattr(LOADED.get("api_next"), "SOURCES", ()))      # 바뀌면 next도 알리는 영역 토픽
 
 
 # ---------------------------------------------------------------- 읽기 API
