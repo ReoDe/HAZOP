@@ -309,7 +309,11 @@ def _split_refs(project_id, graph_id, stale=None):
         if n:
             have = out.get(name, (0, unit))
             out[name] = (have[0] + n, have[1])
-    followed = _followed_docs(project_id)
+    try:
+        followed = _followed_docs(project_id)
+    except Exception:  # noqa: BLE001 - 따라갈 문서 목록을 못 얻으면 모두 원문으로 센다(가드가 덜 막는 쪽으로 틀리지 않게)
+        LOG.warning("가드가 따라갈 문서 목록을 얻지 못해 원문으로 셈: %s", project_id, exc_info=True)
+        followed = {}
     for name, files, rule in _places(project_id):
         for f in files:
             try:
@@ -336,7 +340,7 @@ def _split_refs(project_id, graph_id, stale=None):
 def _followed_docs(project_id):
     """{파일 경로(normcase): 종류} 판 이전을 읽을 때 메모리에서 따라가는 프로젝트 문서(초기사건·FMEA·잠재 후보 판단, hazop.study.follow)."""
     from hazop.study import follow
-    return {os.path.normcase(os.path.abspath(path)): kind for kind, path, _problems in follow._docs(project_id)}
+    return {os.path.normcase(os.path.abspath(path)): kind for kind, path, _problems in follow.documents(project_id)}
 
 
 def _as_read(text, kind, project_id):

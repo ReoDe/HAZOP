@@ -28,6 +28,10 @@ from hazop.ie import model, store as ie_store
 from hazop.study import migrate, nodes
 
 
+class Crash(BaseException):
+    """앱이 죽은 것을 흉내 낸다(확정 길의 except Exception이 잡지 못함)."""
+
+
 class SeatRegressTest(SheetCase):
     def owner(self, gid):
         return next((s["material_id"] for s in project_ctx.project_graph(P)["sheets"] if s["graph_id"] == gid), None)
@@ -84,7 +88,6 @@ class SeatRegressTest(SheetCase):
         self.assertEqual(self.sheet(a)["graph_id"], "graph-SNP-M-101", "형식을 고르며 고른 파일을 내려놓자 옛 이름 붙박기도 풀림")
         self.assertEqual(self.owner("graph-SNP-M-101"), b)
 
-
     def test_e5_guard_the_owner_confirming_its_own_name_keeps_it_while_its_graph_is_set_aside(self):
         """시드 14·16·29: 확정 길은 그 쪽 앞 그래프를 비켜 둔 뒤 다시 추출한다. 그 사이 디스크로는 같은 번호를 원하는 b가 주인으로 보이지만
         추출이 그것을 붙박으면 이름을 쓰던 a가 자리를 잃는다."""
@@ -92,6 +95,21 @@ class SeatRegressTest(SheetCase):
         self.assertEqual(self.owner("graph-SNP-M-101"), a, "시험 전제: 옛 자리 주인 a가 이름을 씀")
         self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         self.assertEqual(self.owner("graph-SNP-M-101"), a, "같은 이름의 번호를 확정한 a가 비켜 둔 사이 b에게 붙박혀 이름을 잃음")
+
+    def test_e5_guard_a_plain_reextract_after_a_crashed_confirm_keeps_the_owner(self):
+        """확정 중 다시 추출하다 앱이 죽어(비켜 둔 앞 그래프가 되돌려지지 않음) 사람이 그냥 다시 추출한다. 디스크로는 b가 주인으로 보이지만
+        a는 비켜 두기 직전까지 그 이름을 쓰던 주인이다."""
+        a, b = self.legacy_pair()
+        _pg, before = self.make_nodes(a)
+
+        def crash(_path):
+            raise Crash()
+        with self.assertRaises(Crash):
+            self.confirm(a, {"drawing_number": "SNP-M-101"}, extract=crash)
+        self.reextract(a)
+        self.assertEqual(self.owner("graph-SNP-M-101"), a, "죽은 확정 뒤 그냥 다시 추출하자 a의 이름이 b에게 붙박힘")
+        _pg, n = self.node()
+        self.assertEqual((n["members"], n.get("lost") or []), (before["nodes"][0]["members"], []))
 
 class DocLogRegressTest(SheetCase):
     def test_e4_a_past_loss_in_a_documents_move_log_does_not_block_the_number(self):

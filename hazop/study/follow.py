@@ -348,7 +348,7 @@ def catch_up(doc, kind, project_id, at=None):
 
 
 
-def _docs(project_id):
+def documents(project_id):
     """[(종류, 파일 경로, 모양 검사)] 판 이전을 따르는 프로젝트 문서."""
     from hazop.ie import fmea, model, store
     from hazop.kg import expect
@@ -373,7 +373,7 @@ def write_after(node_set, label, at=None):
     if not any(s is node_set for s in followed(pid, node_set)):
         return []
     out = []
-    for kind, path, problems in _docs(pid):
+    for kind, path, problems in documents(pid):
         try:
             data, fp = store_io.read_bytes(path)
             if data is None:
