@@ -8,6 +8,7 @@ import { Icon } from "./ui/icon.js";
 import { Btn, Notice } from "./ui/parts.js";
 import { openCompare } from "./compare.js";
 import { ReviewChip } from "./review/review.js";      // 도면별 AI 검토 칩(칩 줄 맨 앞, HZ-DSN-06 §3.7)
+import { fixFor } from "./fix_actions.js";
 
 export const conf = createStore({ byGraph: {}, open: false, busy: false, error: null });
 
@@ -60,6 +61,26 @@ async function run(command, gid, extra) {
 
 export const compare = (gid, mode) => run("compare", gid, { mode });
 export const confirm = (gid) => run("confirm", gid);
+
+/** 견줌 기록과 확정을 한 흐름으로(U8: 쪽 확정 8 → 3클릭). 지금 있는 명령 sheet.compare → sheet.confirm을 차례로 부른다(견줌을 건너뛰는 길은 없다).
+ *  견줌만 되고 확정이 막히면(조건이 그새 바뀜) 견줌 기록은 남고 까닭을 돌려준다. → {ok, step: "compare"|"confirm", error}. */
+export async function compareAndConfirm(gid, mode) {
+  const c = await run("compare", gid, { mode });
+  if (!c) return { ok: false, step: "compare", error: conf.get().error };
+  const st = conf.get().byGraph[gid];
+  if (st && st.state === "confirmed") return { ok: true, step: "confirm" };
+  const r = await run("confirm", gid);
+  return r ? { ok: true, step: "confirm" } : { ok: false, step: "confirm", error: conf.get().error };
+}
+
+/** 이 쪽의 다음 할 일 열기(다음에 할 일 '쪽 확정' 단추): 조건이 다 찼고 아직 안 견줬으면 견주기 화면을 바로, 아니면 조건 카드. */
+export async function openNext(gid) {
+  const st = await load(gid);
+  const left = st && st.available ? (st.unconfirmed_total || 0) + (st.unplaced_total || 0) + (st.leftovers === null ? 1 : 0) : 1;
+  if (st && st.available && !left && !st.compared && !st.record_error && st.state !== "confirmed") { conf.set({ open: false }); openCompare(gid, st.read_method); return "compare"; }
+  conf.set({ open: true, error: null });
+  return "card";
+}
 export const unconfirm = (gid) => run("unconfirm", gid, {});
 
 let wired = false;
@@ -81,12 +102,24 @@ export function chipOf(st) {
   return { label: "확정 조건 " + left + "개 남음", kind: "warn", left };
 }
 
-function Conditions({ st }) {
+/** 남은 미확인 갈래마다 그것을 푸는 단추(표제란 확정·AI 후보 검토하기·도면 고치기). 같은 단추는 한 번만(HZ-DSN-06 §3.1, U8). */
+export function fixesOf(st) {
+  const seen = new Set(), out = [];
+  for (const u of st.unconfirmed || []) {
+    const f = fixFor(u.reason);
+    if (f && !seen.has(f.label)) { seen.add(f.label); out.push(f); }
+  }
+  return out;
+}
+
+function Conditions({ st, gid }) {
   const byReason = {};
   for (const u of st.unconfirmed || []) byReason[u.reason] = (byReason[u.reason] || 0) + 1;
   const rows = Object.entries(byReason);
+  const fixes = fixesOf(st);
   return html`<ul class="tight conf-list" aria-label="남은 조건">
-    <li class=${st.unconfirmed_total ? "bad" : "good"}>미확인 ${st.unconfirmed_total}곳${rows.length ? html`<span class="muted small"> — ${rows.map(([k, n]) => reasonText(k) + " " + n).join(" · ")}${st.unconfirmed_total > st.unconfirmed.length ? " …" : ""}</span>` : null}</li>
+    <li class=${st.unconfirmed_total ? "bad" : "good"}>미확인 ${st.unconfirmed_total}곳${rows.length ? html`<span class="muted small"> — ${rows.map(([k, n]) => reasonText(k) + " " + n).join(" · ")}${st.unconfirmed_total > st.unconfirmed.length ? " …" : ""}</span>` : null}
+      ${fixes.length ? html`<div class="acts-row">${fixes.map((f) => html`<${Btn} sm=${true} key=${f.label} label=${f.label} onClick=${() => { conf.set({ open: false }); f.run(gid); }}>${f.label}<//>`)}</div>` : null}</li>
     <li class=${st.unplaced_total ? "bad" : "good"}>위치 없는 구성요소 ${st.unplaced_total}개${st.unplaced_total ? html`<span class="muted small"> — 위치를 주거나 도면에 없음으로 지워야 합니다</span>` : null}</li>
     <li class=${st.leftovers === null ? "bad" : "good"}>원본에 남은 것 ${st.leftovers === null ? "— 이 방법으로 읽은 도면은 원본에 남은 것을 셀 수 없어 확정할 수 없습니다" : st.leftovers.total + "개(확정을 막지 않습니다)"}</li>
     <li class=${st.compared ? "good" : "todo"}>원본과 견줌 ${st.compared ? st.compared.by + " · 기록됨" : "— 아직"}</li></ul>`;
@@ -102,13 +135,13 @@ function Card({ gid, st }) {
       <span class="acts"><${Btn} sm=${true} kind="ghost" icon="x" label="쪽 확정 닫기" onClick=${() => conf.set({ open: false })} /></span></div>
     ${st.state === "confirmed" ? html`<${Notice} kind="info" icon="circle-check">${st.confirmed.by}가 확정했습니다. 도면 자료가 바뀌면 확정이 풀립니다.<//>` : null}
     ${(st.released || []).length ? html`<${Notice} kind="warn" icon="alert-triangle">도면 자료가 바뀌어 이전 견줌·확정이 풀렸습니다.<//>` : null}
-    <${Conditions} st=${st} />
+    <${Conditions} st=${st} gid=${gid} />
     ${st.record_error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">확정 기록을 읽을 수 없습니다: ${st.record_error}</span><br />'확정 해제'를 누르면 깨진 기록을 버리고 새 기록을 시작합니다. 견줌·확정은 그 뒤에 다시 합니다.<//>` : null}
     ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error}<//>` : null}
     <div class="acts-row">
       ${st.state === "confirmed" ? html`<${Btn} sm=${true} label="확정 취소" disabled=${busy} onClick=${() => unconfirm(gid)}>확정 취소<//>` : html`
-        <${Btn} sm=${true} label="견주기 화면 열기" disabled=${busy || conditions > 0 || !!st.compared || !!st.record_error} title=${st.record_error ? "깨진 확정 기록부터 해제하세요" : conditions ? "남은 조건을 먼저 채우세요" : st.compared ? "이미 견줌을 기록했습니다" : "원본과 정리된 보기를 나란히 보고 견줍니다"} onClick=${() => { conf.set({ open: false }); openCompare(gid, st.read_method); }}>견주기 화면 열기<//>
-        <${Btn} sm=${true} kind="primary" label="이 쪽 확정" disabled=${busy || !!why} title=${why || "이 쪽 확정"} onClick=${() => confirm(gid)}>이 쪽 확정<//>
+        ${!st.compared ? html`<${Btn} sm=${true} kind="primary" label="원본과 견주고 확정" disabled=${busy || conditions > 0 || !!st.record_error} title=${st.record_error ? "깨진 확정 기록부터 해제하세요" : conditions ? "남은 조건을 먼저 채우세요" : "원본과 정리된 보기를 나란히 보고 견준 뒤 그 자리에서 확정합니다"} onClick=${() => { conf.set({ open: false }); openCompare(gid, st.read_method); }}>원본과 견주고 확정<//>`
+          : html`<${Btn} sm=${true} kind="primary" label="이 쪽 확정" disabled=${busy || !!why} title=${why || "이 쪽 확정"} onClick=${async () => { if (await confirm(gid)) conf.set({ open: false }); }}>이 쪽 확정<//>`}
         ${st.compared || st.record_error ? html`<${Btn} sm=${true} kind="ghost" label=${st.record_error ? "확정 해제" : "견줌 취소"} disabled=${busy} onClick=${() => unconfirm(gid)}>${st.record_error ? "확정 해제" : "견줌 취소"}<//>` : null}`}</div>
     ${why && st.state !== "confirmed" ? html`<div class="muted small" role="status">${why}</div>` : null}</div>`;
 }

@@ -9,7 +9,8 @@ import { read } from "./bridge.js";
 import { clean, setView, useClean } from "./canvas/clean_ui.js";
 import { Icon } from "./ui/icon.js";
 import { Btn, Notice } from "./ui/parts.js";
-import { compare as saveCompare, conf } from "./sheet_confirm.js";
+import { compare as saveCompare, compareAndConfirm, conf } from "./sheet_confirm.js";
+const toast = (text) => store.set({ toast: { text } });
 
 const cssHref = new URL("compare.css", import.meta.url).href;
 if (typeof document !== "undefined" && !document.querySelector("link[data-compare-css]")) {
@@ -172,6 +173,13 @@ export function CompareCard() {
     const r = await saveCompare(c.gid, c.mode);
     if (r) closeCompare(); else setError(conf.get().error || "견줌을 기록하지 못했습니다.");
   };
+  const doneAndConfirm = async () => {      // 견줌 기록과 확정을 한 번에(U8). 끝나면 견주기 화면과 쪽 확정 카드가 저절로 닫힌다
+    setError("");
+    const r = await compareAndConfirm(c.gid, c.mode);
+    if (r.ok) { closeCompare(); conf.set({ open: false }); toast("쪽을 확정했습니다."); }
+    else if (r.step === "confirm") { closeCompare(); conf.set({ open: true }); }      // 견줌은 기록됨: 확정을 막은 까닭을 카드에 보인다
+    else setError(r.error || "견줌을 기록하지 못했습니다.");
+  };
   const it = items[c.idx];
   return html`<div class="float cmpcard" role="dialog" aria-label="견주기 화면">
     <div class="nd-h"><b>원본과 견주기</b>
@@ -188,7 +196,8 @@ export function CompareCard() {
     ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error}<//>` : null}
     <label class="check"><input type="checkbox" checked=${c.agreed} disabled=${!viewed || (!dexpi && !counted)} onChange=${(e) => cmp.set({ agreed: e.target.checked })} />
       빠진 구성요소가 없음을 원본과 견주어 확인했습니다</label>
-    <div class="acts-row"><${Btn} sm=${true} kind="primary" label="견줌 완료" disabled=${busy || !viewed || !c.agreed || (!dexpi && !counted)} onClick=${done}>견줌 완료<//></div></div>`;
+    <div class="acts-row"><${Btn} sm=${true} kind="primary" label="견줌 기록하고 이 쪽 확정" disabled=${busy || !viewed || !c.agreed || (!dexpi && !counted)} onClick=${doneAndConfirm}>견줌 기록하고 확정<//>
+      <${Btn} sm=${true} kind="ghost" label="견줌만 기록" disabled=${busy || !viewed || !c.agreed || (!dexpi && !counted)} onClick=${done}>견줌만 기록<//></div></div>`;
 }
 
 function useConfBusy() {

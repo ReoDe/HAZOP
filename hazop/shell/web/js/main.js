@@ -25,8 +25,7 @@ setGo("panel:drawings#sheetconf", async (t) => {
   store.set({ panel: null });
   if (t && store.get().sheet !== t) openSheet(t);
   const c = await import("./sheet_confirm.js");
-  c.conf.set({ open: true, error: null });
-  c.load(t || store.get().sheet);
+  c.openNext(t || store.get().sheet);      // 조건이 다 찼으면 견주기 화면을 바로(견줌 기록하고 확정까지 한 흐름, U8)
 });
 setGo("panel:drawings#sources", () => {      // 같은 번호 자리의 파일·형식 고르기 카드로(도면 패널 안)
   store.set({ panel: "drawings" });

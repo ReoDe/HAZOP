@@ -1,6 +1,7 @@
 // 정리된 보기의 화면 쪽(규격 §10.4·§10.5): 원본|정리 단추(키 O), '미확인 n곳' 칩(키 N·Shift+N), 못 읽은 곳의 원본 조각 말풍선, 기본 보기 규칙.
 // 보기 선택은 앱을 닫을 때까지만 기억한다(프로젝트 파일에 저장하지 않음). SheetHost가 `useCleanCanvas(sheet)`의 props를 <Sheet>에 펼치고
 // `<CleanOverlay />`를 도면 자리 안에 그린다. 도면·모델에서 온 글(태그)은 htm이 이스케이프하는 텍스트로만 넣는다.
+import { fixFor, noFragmentText } from "../fix_actions.js";      // 미확인 곳을 푸는 단추(U8)
 import { html } from "../ui/html.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { createStore, store as shell, useStore } from "../store.js";
@@ -151,7 +152,8 @@ function Bubble({ gid }) {
     <div class="cp-h"><b>${REASON_TEXT[b.reason] || "못 읽은 곳"}</b>${total && cursor >= 0 ? html`<${Chip}>${cursor + 1} / ${total}<//>` : null}
       <button type="button" class="btn ghost sm icon" aria-label="닫기" title="닫기 (Esc)" onClick=${closeBubble}><${Icon} name="x" size=${15} /></button></div>
     ${f ? html`<div class="cp-frag" aria-label="원본의 그 자리"><svg viewBox=${f.box.x + " " + f.box.y + " " + f.box.w + " " + f.box.h} width="100%" preserveAspectRatio="xMidYMid meet">
-      <image href=${f.href} x="0" y="0" width=${f.size[0]} height=${f.size[1]} /></svg><div class="muted small">원본에서 그 자리 둘레(사방 24 단위)</div></div>` : html`<div class="muted small">원본 조각이 없습니다.</div>`}
+      <image href=${f.href} x="0" y="0" width=${f.size[0]} height=${f.size[1]} /></svg><div class="muted small">원본에서 그 자리 둘레(사방 24 단위)</div></div>` : html`<div class="muted small">${noFragmentText(b.reason)}</div>`}
+    ${fixFor(b.reason) ? html`<div class="acts-row"><button type="button" class="btn sm primary" aria-label=${fixFor(b.reason).label} onClick=${() => { closeBubble(); fixFor(b.reason).run(gid); }}>${fixFor(b.reason).label}</button></div>` : null}
     <div class="acts-row"><button type="button" class="btn sm" aria-label="앞 미확인" onClick=${() => stepUnconfirmed(gid, -1)}>앞 <kbd>Shift+N</kbd></button>
       <button type="button" class="btn sm" aria-label="다음 미확인" onClick=${() => stepUnconfirmed(gid, 1)}>다음 <kbd>N</kbd></button></div></div>`;
 }
