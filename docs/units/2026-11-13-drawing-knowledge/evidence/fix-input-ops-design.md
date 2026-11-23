@@ -299,3 +299,49 @@ def reader_version() -> str
 5. **AI split 후보의 남은 결함.** 후보 하나를 정하면 덩어리 전체를 다시 묻지 않는 문제(backlog)는 따로 고쳐야 수락 흐름이 쓸모 있다.
 6. **합성 묶음의 대표성.** 2.3의 표는 AI 답이 아니라 닿음 묶음으로 잰 것이다.
 7. **사용자 자료.** 이미 수락된 split `add_node`가 사용자 작업 루트에 있는지 보지 않았다. U2가 이전 스크립트를 넣고 실제 자료에서 센다.
+
+## 11. U2 엔진 구현(2026-11-23, `feat/input-ops-u2`)
+
+사용자 결정(2026-11-23)대로 읽기 수치를 올리는 일이 아니라, 사람이 수락한 나누기가 다시 추출로 살아남고 대기열에서 수락마다 다시 추출을 기다리지 않게 하는 엔진 몫이다. 셸(`hazop/shell/*`, 웹)은 s-viewer 몫이라 건드리지 않았다. 측정 스크립트와 기록은 시험 폴더 `fixflow/iu2/impl`에 있다.
+
+### 11.1 바뀐 것
+
+| 몫 | 내용 | 파일 |
+| --- | --- | --- |
+| 캐시 열쇠 | 분석 캐시 열쇠의 문턱을 기본값과 합친 꼴로 만든다. 기준 추출(설정 72개를 넘김)과 AI 실행·미리보기(None을 넘김)가 같은 분석을 함께 쓴다 | `pdf_vector.analyze_bytes` |
+| 쪽 읽기 캐시 | `object_shapes`를 (sha256, 쪽, 읽기 판) 열쇠로 프로세스 안에 둔다. 분석이 쪽을 읽을 때도 채운다 | `pdf_vector.object_shapes` |
+| split 수락 | split 후보 수락이 `split` 입력 연산(대상 = 덩어리)이 된다. 연산은 기준 추출에 대고 만들되, 원본에 있는 덩어리면 원본에 댄다(나뉜 뒤 기준 추출에서는 덩어리 번호가 바뀐다). 이미 나눈 부분과 겹치면 받지 않는다 | `ai_review.accept`·`_op_for` |
+| 결정 단위 | 후보 하나의 결정이 덩어리를 닫지 않는다. 덩어리는 그 split 후보가 모두 정해졌을 때만 닫는다. 수락 뒤 같은 덩어리의 남은 제안은 오래됨(`stale_candidates`)이고, 다시 물은 답은 개체 집합으로 가려 정한 묶음은 다시 넣지 않고 겹치는 오래된 제안만 뺀다 | `ai_review.decided_targets`·`stale_candidates`·`merge_run` |
+| 되돌리기 | `revert`가 `corrections.dependents`로 기댄 고침까지 한 번에 빼고 빠진 op_id를 돌려준다. `revert_preview`가 미리 알린다. 되돌린 후보를 다시 수락하면 지운 연산을 그대로 되살려 같은 op_id·같은 나눈 기호 id가 된다(검토구간의 묘비 되찾기와 맞물림). 기록 동작 이름은 `ai_accept`·`ai_revert` | `ai_review.revert`·`revert_preview`·`_restorable`, `corrections.SAVE_ACTIONS` |
+| 기다리는 동안 | `resolve`의 상태 none·ready·partial·pending, `waiting`(아직 안 든 입력)·`waiting_on`(대기 입력에 기댄 고침, 적용 불가에서 뺌). 기준 추출 파일에 입력을 뺀 열쇠(`env`)와 든 입력(`built`)을 적어, 지금 입력의 일부로 지은 파일이면 버리지 않고 쓴다. 지운 입력이 든 파일은 쓰지 않는다. ready 결과의 꼴은 그대로다 | `corrections.resolve`·`_find_base` |
+| 화면 값 | `pending_inputs`(대기 입력의 상자 `[x, y, 너비, 높이]`·개체 수·후보 id, PDF를 읽지 않음), `input_items`(대기열 항목: state·사유 코드·사람용 글·기댄 입력) | `corrections` |
+| 짓기 | `ensure_base(should_stop=)`: 짓기 전·쓰기 전에 더 새 판이 들어왔으면 버린다. 분석 도중에는 멈추지 않는다 | `corrections.ensure_base` |
+| GIL 몫 | 기호 사전 판을 프로세스에서 한 번만 계산하고 PDF sha256을 (경로, 수정 시각, 크기)로 둔다 | `corrections._library_version`·`file_sha256` |
+| 부르는 곳 | 확정 판정·앱 읽기·그래프 짓기가 `resolve`를 쓴다(배치 `build_graph` main만 그 자리에서 짓는다). 반영 전 나누기는 확정의 미확인 사유 `input_waiting`. 읽기 품질 검사의 AI split 값은 수락과 같은 나누기 입력 연산으로 잰다 | `confirmation.py`, `hazop/app/data.py`, `scripts/build_graph.py`, `scripts/check_read_quality.py` |
+
+### 11.2 측정
+
+| 값 | 앞 | 뒤 | 조건 |
+| --- | --- | --- | --- |
+| 134쪽, AI 실행처럼 분석을 데운 뒤 첫 나누기 짓기 | 42.4~51.3초(중앙 50.8, `analyze` 2번), `ba5c2f4` | 22.2~30.3초(중앙 22.2, `analyze` 1번), `96acb15` | 3회, CPU 49~73%(다른 세션 시험 2~10개) |
+| 134쪽 캐시 없음 | 40.9~46.5초 | 39.8~53.3초 | 같음. `analyze` 2번으로 바뀌지 않음 |
+| 030쪽 데운 뒤 | 19.0~22.8초 | 11.9~13.0초 | 같음 |
+| 134쪽 첫 수락 기록(`ai_review.accept`) | 0.55초(사전 조사) | 0.05~0.07초 | `e655ae3`, 2회 |
+| 134쪽 기준 추출이 있을 때 수락 | | 0.11~0.19초(중앙 0.17) | 5회, CPU 94→48% |
+| 134쪽 같은 프로세스에서 짓는 동안 수락 | 2.68초(사전 조사) | 0.50~3.04초(중앙 2.89) | 5회. 그 가운데 기호 사전 판 계산 1.6~2.3초(파일 I/O마다 GIL 대기). 고친 뒤 값은 11.4 |
+
+### 11.3 셸 몫(이 단위에서 하지 않음)
+
+1. `ensure_base`를 도면 잠금 밖에서 짓고, 그래프·지식그래프 다시 만들기만 잠금 안에서 한다.
+2. 도면마다 짓기 작업 하나, 도는 중 수락은 '한 번 더' 표시, 작업 줄.
+3. `api_aireview._decide_locked`의 수락·되돌리기 뒤 즉시 `refresh`를 뒤 작업으로.
+4. `api_queue`·`sheet_refresh`·`api_aireview`·`api_corrections`·`ai_image_flow`·`hazop/app/screens/ai_review_panel.py`를 `resolve`로 옮기고 `apply_saved`를 지운다. 다시 묻기는 `inputs.state`가 ready일 때만.
+5. `hazop/app/screens/viewer.py`의 `make_op`에 기준 추출을 넘긴다.
+6. 되돌리기 전 `revert_preview`, 대기열에 `input_items`·`pending_inputs`, `api_corrections._depends`를 `corrections.dependents`로.
+7. 옛 판에서 `add_node`로 수락된 split의 이전(사용자 자료 세기 포함). 옛 것은 `manual-` 노드로 그대로 읽힌다.
+
+### 11.4 남은 위험
+
+- 짓기를 따로 프로세스로 두지 않았다(총괄 판정). GIL 몫을 고친 뒤 짓는 동안의 수락 기록 시간은 조용할 때 다시 재서 총괄에 보고한다.
+- 기준 추출 파일은 도면 확정의 지문 세 파일에 들지 않는다. 코드·사전이 바뀌어 기준 추출이 낡으면 `input_waiting`이 생기지만 확정 기록의 지문은 그대로다.
+- `should_stop`은 분석 도중에 멈추지 않는다(134쪽 한 번 짓기 약 20초는 끝까지 돈다).
