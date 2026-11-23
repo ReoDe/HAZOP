@@ -12,6 +12,8 @@ AI 후보와 찾지 못한 구성요소를 같은 항목 꼴로 한 줄에 세�
 묶음 수락(Shift+A)은 도면·할 일마다 `aireview.accept_bulk`를 부르고(묶음은 엔진이 다시 센다), 되돌리기는 바뀐 후보를 `aireview.revert`로 돌린다.
 그래서 항목마다 그 명령에 실을 판을 함께 낸다: AI 후보는 도면별 `ver`, 찾지 못한 구성요소는 `set_rev`와 구간의 `target`(rev·state).
 
+AI 후보 대기열은 도면별이다(사용자 결정 2026-11-23): `queue/ai?graph_id=…`이면 그 도면의 후보만 담는다(없으면 모든 도면).
+
 꼴: {"kind", "ver", "total", "items": [...], "bulk": [{graph_id, task, count}], "threshold"}
 - 항목 `label`은 도면에서 보이는 이름(태그, 없으면 종류)이다. 묘비 id·로컬 id는 화면 글자로 쓰지 않는다(`local_id`는 도면 확대에만 쓴다).
 - `state`는 늘 "open"이다. 판정한 것은 다음 읽기에서 빠진다. 수락·거절·건너뜀은 화면이 대기열을 연 동안 들고 있다.
@@ -51,12 +53,12 @@ def _value_text(field, value):
     return value or ""
 
 
-def _ai_items(engine):
+def _ai_items(engine, graph_id=None):
     from hazop.extract import corrections
     from hazop.shell import api_aireview
     items, bulk, vers = [], [], []
     for row in api_aireview.overview(engine)["drawings"]:
-        if not row.get("proposed"):
+        if not row.get("proposed") or (graph_id and row["graph_id"] != graph_id):
             continue
         gid = row["graph_id"]
         view = api_aireview.candidates(engine, gid)
@@ -122,10 +124,10 @@ def _lost_items(engine):
 
 
 # ---------------------------------------------------------------- 읽기
-def summary(engine, kind):
+def summary(engine, kind, graph_id=None):
     if kind == "ai":
-        items, bulk, vers = _ai_items(engine)
-        out = {"kind": "ai", "items": items, "bulk": bulk, "threshold": ai_review.DEFAULT_THRESHOLD}
+        items, bulk, vers = _ai_items(engine, graph_id)
+        out = {"kind": "ai", "graph_id": graph_id, "items": items, "bulk": bulk, "threshold": ai_review.DEFAULT_THRESHOLD}
     else:
         items, set_rev, vers = _lost_items(engine)
         out = {"kind": "lost", "items": items, "bulk": [], "set_rev": set_rev, "project_id": engine.project_id()}
@@ -136,5 +138,5 @@ def summary(engine, kind):
 
 def read(engine, parts, query):
     if len(parts) == 2 and parts[0] == "queue" and parts[1] in KINDS:
-        return _api()._json(summary(engine, parts[1]))
+        return _api()._json(summary(engine, parts[1], (query or {}).get("graph_id") or None))
     return None

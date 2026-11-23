@@ -144,8 +144,105 @@ def _legend_text(info):
     return "범례판: " + ai_image_flow.LEGEND_LABELS.get(value, ai_image_flow.UNKNOWN_LEGEND)
 
 
+# ---------------------------------------------------------------- 도면별 AI 검토 상태(HZ-DSN-06 §3.7)
+# 시작한 도면은 aireview.run 작업 안에서 '기다림 → 묻는 중'을 적어 둔다(엔진에만, 파일은 쓰지 않는다). 끝나면 지우고, 오류로 끝나면 failed에 남긴다.
+import threading  # noqa: E402
+
+_LIVE_LOCK = threading.Lock()
+
+
+def _live(engine):
+    d = getattr(engine, "_review_live", None)
+    if d is None:
+        d = engine._review_live = {"seq": 0, "names": {}, "failed": {}}
+    return d
+
+
+def _mark_waiting(engine, names):
+    with _LIVE_LOCK:
+        live = _live(engine)
+        live["seq"] += 1
+        token = live["seq"]
+        for n in names:
+            live["names"][n] = {"state": "waiting", "seq": token, "done": None, "total": None}
+            live["failed"].pop(n, None)
+    return token
+
+
+def _mark_running(engine, token, name, done, total):
+    with _LIVE_LOCK:
+        names = _live(engine)["names"]
+        for n, v in names.items():
+            if v["seq"] == token and v["state"] == "running" and n != name:
+                v["state"] = "finished"             # 같은 실행에서 앞 도면은 끝났다(자리에서 빼기 전까지 다시 세지 않음)
+        if name in names and names[name]["seq"] == token:
+            was = names[name]["state"]
+            names[name].update(state="running", done=done, total=total)
+            return was != "running"
+        return False
+
+
+def _mark_ended(engine, token, names, error=None):
+    with _LIVE_LOCK:
+        live = _live(engine)
+        for n in names:
+            if live["names"].get(n, {}).get("seq") == token:
+                del live["names"][n]
+            if error:
+                live["failed"][n] = error
+
+
+def _after_extract(name, runs):
+    """마지막 검토 기록이 지금 추출본보다 앞인가(다시 추출하면 검토 기록이 새 판과 맞지 않는다)."""
+    import datetime
+    import os
+    from hazop.app import data
+    try:
+        at = datetime.datetime.fromisoformat(str(runs[-1].get("at")).replace("Z", "+00:00")).timestamp()
+        return os.path.getmtime(data.extraction_path(name)) <= at + 1
+    except (OSError, ValueError, TypeError, AttributeError):
+        return True
+
+
+def _left(engine, name):
+    """지금 물을 곳 수와 예상 호출 수(도면당 상한 기준). 못 읽으면 (None, None)."""
+    try:
+        cap = int(engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP)
+        est, _mode = ai_image_flow.estimate_pages([(name, _original(name))], cap, ai_review.RUN_CAP, ai_image_flow.enabled(engine))
+        return sum(p["items"] for p in est["pages"]), est["calls"]
+    except (OSError, ValueError, TypeError, KeyError):
+        return None, None
+
+
+def _review_state(engine, name, doc, proposed):
+    with _LIVE_LOCK:
+        live = _live(engine)
+        mine = dict(live["names"].get(name) or {})
+        others = [dict(v) for n, v in live["names"].items() if n != name and v["state"] in ("waiting", "running")]
+        failed = live["failed"].get(name)
+    out = {"review": None, "calls": None, "left": None, "ahead": None, "progress": None}
+    if mine.get("state") == "running":
+        return dict(out, review="running", progress={"done": mine.get("done") or 0, "total": mine.get("total")})
+    if mine.get("state") == "waiting" or (not mine and name in getattr(engine, "_reviewing", ())):
+        # 앞 도면: 먼저 시작한 실행의 도면, 같은 실행에서 지금 묻는 도면
+        ahead = sum(1 for v in others if v["seq"] < mine["seq"] or (v["seq"] == mine["seq"] and v["state"] == "running")) if mine else None
+        return dict(out, review="waiting", ahead=ahead)
+    if proposed:
+        last = ((doc or {}).get("runs") or [{}])[-1]
+        return dict(out, review="candidates", calls=last.get("calls"), left=last.get("left"))
+    if failed:
+        return dict(out, review="failed")
+    runs = (doc or {}).get("runs") or []
+    if runs and _after_extract(name, runs):
+        left = int(runs[-1].get("left") or 0)
+        return dict(out, review="partial" if left > 0 else "done", calls=runs[-1].get("calls"), left=left)
+    items, calls = _left(engine, name)
+    return dict(out, review="not_run" if (calls or 0) > 0 else "nothing", calls=calls, left=items)
+
+
 def overview(engine):
-    """도면별 후보 수(목록). 후보 파일이 없는 도면도 0으로 넣는다."""
+    """도면별 후보 수와 AI 검토 상태(목록, HZ-DSN-06 §3.7). 후보 파일이 없는 도면도 0으로 넣는다.
+    review: not_run·nothing·waiting·running·candidates·partial·failed·done. ahead는 waiting일 때 앞 도면 수, progress는 running일 때 {done, total}."""
     rows = []
     for gid, name in sorted(engine.graph_names().items(), key=lambda kv: kv[1]):
         try:
@@ -153,9 +250,11 @@ def overview(engine):
         except (OSError, ValueError):
             doc = None
         cands = (doc or {}).get("candidates") or []
-        rows.append({"graph_id": gid, "drawing_number": (doc or {}).get("drawing_number") or name,
-                     "proposed": sum(1 for c in cands if c["status"] == "proposed"), "total": len(cands),
-                     "accepted": sum(1 for c in cands if c["status"] == "accepted"), "ran": bool((doc or {}).get("runs"))})
+        row = {"graph_id": gid, "drawing_number": (doc or {}).get("drawing_number") or name,
+               "proposed": sum(1 for c in cands if c["status"] == "proposed"), "total": len(cands),
+               "accepted": sum(1 for c in cands if c["status"] == "accepted"), "ran": bool((doc or {}).get("runs"))}
+        row.update(_review_state(engine, name, doc, row["proposed"]))
+        rows.append(row)
     return {"drawings": rows, "cap": int(engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP), "run_cap": ai_review.RUN_CAP,
             "seconds_per_call": ai_review.SECONDS_PER_CALL, "images": ai_image_flow.enabled(engine)}
 
@@ -314,7 +413,7 @@ def accept_bulk(engine, graph_id, task, ver, by=None):
         return _decide_locked(engine, graph_id, ids, "accept", ver, by)
 
 
-def run_review(engine, graph_ids, cap, progress):
+def run_review(engine, graph_ids, cap, progress, token=None):
     """고른 도면에 AI 검토를 돌린다(작업 스레드). 도면당 cap, 한 번 실행은 RUN_CAP까지. 사람이 고친 자리는 묻지 않는다.
     → {"drawings": [{graph_id, candidates, calls, left, halted}], "calls", "capped"}."""
     from hazop.shell import api_settings
@@ -329,10 +428,12 @@ def run_review(engine, graph_ids, cap, progress):
         names = engine.graph_names()                             # 도면은 차례를 잡은 뒤 읽는다: 기다리는 동안 다시 추출됐으면 새 판으로 묻는다
         pages = [(names[g], _original(names[g])) for g in graph_ids if g in names]
         est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, ai_image_flow.enabled(engine))
+        if pages and token is not None and _mark_running(engine, token, pages[0][0], 0, est["pages"][0]["calls"] if est["pages"] else None):
+            engine.changed("aireview", None)                     # 차례를 잡았다: 첫 도면은 이제 묻는 중
         progress("AI 검토 준비 중(호출 %d회 안팎)" % est["calls"], 0, est["calls"] or None)
         to_gid = {v: k for k, v in names.items()}
         done, images = ai_image_flow.run_pages(engine, pages, client, cap, ai_review.RUN_CAP,
-                                               lambda name, d, t, left: progress("AI 검토 %s" % name, d, t), engine.stop_requested)
+                                               lambda name, d, t, left: _progress(engine, token, progress, name, d, t), engine.stop_requested)
     used = images.used if images is not None else {}
     failed = list(images.failed) if images is not None else []
     engine.changed("aireview", None)
@@ -340,6 +441,21 @@ def run_review(engine, graph_ids, cap, progress):
                           "halted": bool(st.get("halted")), "images": n in used, "legend_source": used.get(n)} for n, count, st in done],
             "calls": sum(st.get("calls", 0) for _n, _c, st in done), "estimate": est["calls"], "capped": est["capped"],
             "image_failed": failed}
+
+
+def _progress(engine, token, progress, name, done, total):
+    """실행 진행: 작업 진행 줄과 도면별 상태(묻는 중, 호출 n/m회). 도면이 묻는 중으로 바뀔 때 목록을 다시 읽게 알린다."""
+    started = token is not None and _mark_running(engine, token, name, done, total)
+    progress("%s AI 검토 중 · 호출 %s/%s회" % (_number(engine, name), done or 0, total or "?") if total else "AI 검토 %s" % name, done, total)
+    if started:
+        engine.changed("aireview", None)
+
+
+def _number(engine, name):
+    try:
+        return (_original(name).get("drawing") or {}).get("drawing_number") or name
+    except (OSError, ValueError):
+        return name
 
 
 BUSY_TEXT = "이 도면은 AI 검토가 이미 돌고 있거나 차례를 기다리고 있습니다. 끝난 뒤 다시 실행하세요."
@@ -381,11 +497,22 @@ def _h_run(engine, a):
     if not held:
         raise api.CommandError("busy", BUSY_TEXT)
 
+    token = _mark_waiting(engine, held)
+    engine.changed("aireview", None)
+
     def work(progress):
+        error = None
         try:
-            return run_review(engine, gids, cap, progress)
+            return run_review(engine, gids, cap, progress, token)
+        except api.JobStopped:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 도면별 상태에 '마치지 못함'을 남기고 작업 오류로 그대로 올린다
+            error = str(exc)[:200] or "오류"
+            raise
         finally:
+            _mark_ended(engine, token, held, error)
             engine.release_review(held)
+            engine.changed("aireview", None)
     try:
         job = engine.start_job("AI 검토", work, kind="ai_review")
     except Exception:

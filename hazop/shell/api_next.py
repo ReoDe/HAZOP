@@ -19,6 +19,7 @@ TOPICS = ("next",)
 # 이 영역들이 바뀌었다고 알리면 엔진이 next도 바뀌었다고 알린다(api.Engine.changed)
 SOURCES = ("titleblock", "aireview", "nodes", "results", "ie", "drawings", "sheetconf", "sources", "links", "state")
 
+UNREVIEWED = ("not_run", "partial", "failed")     # 'AI 검토 시작'을 기다리는 도면(§3.7. nothing·waiting·running은 세지 않는다)
 RUNNING_TEXT = {"register": "도면을 읽고 있습니다", "ai_review": "AI가 도면을 검토하고 있습니다", "analysis": "AI 분석을 하고 있습니다",
                 "graph_refresh": "도면 연결 정보를 갱신하고 있습니다", "export": "내보내고 있습니다"}
 
@@ -49,6 +50,13 @@ def facts(engine):
     f["titleblock_first"] = next((r.get("material_id") for r in (tb or {}).get("rows") or [] if r.get("state") != "confirmed"), None)
     ar = _safe(lambda: api_aireview.overview(engine), "AI 검토")
     f["ai_candidates"] = sum(r["proposed"] for r in ar["drawings"]) if ar else None
+    with_cands = [r for r in (ar or {}).get("drawings") or [] if r["proposed"]]
+    f["ai_candidates_first"] = with_cands[0]["graph_id"] if with_cands else None
+    f["ai_candidates_sheet"] = (with_cands[0]["drawing_number"], with_cands[0]["proposed"], len(with_cands)) if with_cands else None
+    todo = [r for r in (ar or {}).get("drawings") or [] if r.get("review") in UNREVIEWED]
+    f["ai_unreviewed"] = len(todo) if ar else None
+    f["ai_unreviewed_first"] = todo[0]["graph_id"] if todo else None
+    f["ai_unreviewed_sheet"] = todo[0]["drawing_number"] if todo else None
     sc = _safe(lambda: api_drawings.exportable(engine), "쪽 확정")
     f["sheet_confirm"] = sum(1 for r in sc["drawings"] if r.get("state") != "confirmed") if sc else None
     f["sheets_confirmed"] = sum(1 for r in sc["drawings"] if r.get("state") == "confirmed") if sc else None
@@ -102,8 +110,12 @@ RULES = (
     # 시트 정체(r3b U1·U4)가 정해지면 여기에: 같은 번호 자리의 다른 파일 고르기, 여러 쪽 자료 등록 보류('먼저 표제란을 확정하세요')
     ("titleblock", lambda f: _n(f, "titleblock"),
      lambda f, n: "표제란을 확정하지 않은 도면이 %d장 있습니다" % n, "표제란 확정", "panel:drawings#titleblock", ""),
+    ("ai_unreviewed", lambda f: _n(f, "ai_unreviewed"),
+     lambda f, n: ("%s는 아직 AI 검토를 하지 않았습니다" % f["ai_unreviewed_sheet"]) if n == 1 and f.get("ai_unreviewed_sheet") else "AI 검토를 하지 않은 도면이 %d장 있습니다" % n,
+     "AI 검토 시작", "confirm:aireview.run", ""),
     ("ai_candidates", lambda f: _n(f, "ai_candidates"),
-     lambda f, n: "AI 후보 %d건을 확인해 주세요" % n, "검토 시작", "queue:ai", ""),
+     lambda f, n: ("%s의 AI 후보 %d건을 확인해 주세요" % f["ai_candidates_sheet"][:2]) if f.get("ai_candidates_sheet") else "AI 후보 %d건을 확인해 주세요" % n,
+     "검토하기", "queue:ai", ""),
     ("sheet_confirm", lambda f: _n(f, "sheet_confirm") if not _n(f, "titleblock") else 0,
      lambda f, n: "원본과 견주어 확정할 쪽이 %d장 있습니다" % n, "쪽 확정", "panel:drawings#sheetconf", ""),
     ("nodes_none", lambda f: 1 if _n(f, "sheets_confirmed") and f.get("nodes_total") == 0 else 0,
@@ -118,7 +130,8 @@ RULES = (
      lambda f, n: "초기사건 초안 %d그룹을 확인해 주세요" % n, "초안 보기", "panel:ie#draft", ""),
 )
 # 단추가 바로 갈 자리(화면이 그 도면·자료·구간을 연다). 없으면 그 패널만 연다
-TARGET = {"titleblock": "titleblock_first", "sheet_confirm": "sheet_confirm_first"}
+TARGET = {"titleblock": "titleblock_first", "sheet_confirm": "sheet_confirm_first", "ai_unreviewed": "ai_unreviewed_first",
+          "ai_candidates": "ai_candidates_first"}
 
 NONE_ITEM = {"kind": "none", "count": 0, "text": "지금 할 일이 없습니다", "detail": None,
              "action": {"label": "Excel로 내보내기", "go": "confirm:results.export_excel"}, "tone": "quiet"}
@@ -130,9 +143,17 @@ def items(f):
     for kind, count, text, label, go, tone in RULES:
         n = count(f)
         if n:
-            out.append({"kind": kind, "count": n, "text": text(f, n), "detail": _lost_detail(f) if kind == "recheck" else None,
+            out.append({"kind": kind, "count": n, "text": text(f, n), "detail": _detail(f, kind),
                         "action": {"label": label, "go": go, "target": _target(f, kind)}, "tone": tone})
     return out or [dict(NONE_ITEM)]
+
+
+def _detail(f, kind):
+    if kind == "recheck":
+        return _lost_detail(f)
+    if kind == "ai_candidates" and f.get("ai_candidates_sheet") and f["ai_candidates_sheet"][2] > 1:
+        return "도면 %d장에 모두 %d건" % (f["ai_candidates_sheet"][2], f["ai_candidates"])
+    return None
 
 
 def _target(f, kind):

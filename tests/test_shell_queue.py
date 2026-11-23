@@ -50,6 +50,13 @@ class AiQueueTest(TA.Base):
         for w in BANNED:
             self.assertNotIn(w, text)
 
+    def test_the_queue_can_hold_one_drawing_only(self):
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        one = json.loads(api_queue.read(self.engine, ["queue", "ai"], {"graph_id": self.gid}).body.decode("utf-8"))
+        self.assertEqual((one["graph_id"], one["total"]), (self.gid, 1))
+        other = json.loads(api_queue.read(self.engine, ["queue", "ai"], {"graph_id": "graph-없음"}).body.decode("utf-8"))
+        self.assertEqual(other["total"], 0)
+
     def test_reading_the_queue_writes_no_correction(self):
         self.seed([self.tag(1, self.valves[0], "V901")])
         self.queue()

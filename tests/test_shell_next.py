@@ -20,7 +20,7 @@ from tests.test_screen_words import BANNED  # noqa: E402
 from tests.test_shell_auto_catch_up import Base as AutoBase  # noqa: E402
 from tests.test_shell_catch_up import PID  # noqa: E402
 
-SPEC_ORDER = ["apply_failed", "no_sheets", "recheck", "titleblock", "ai_candidates", "sheet_confirm", "nodes_none", "nodes_draft",
+SPEC_ORDER = ["apply_failed", "no_sheets", "recheck", "titleblock", "ai_unreviewed", "ai_candidates", "sheet_confirm", "nodes_none", "nodes_draft",
               "nodes_unrun", "results_unjudged", "ie_draft"]
 GO = re.compile(r"^(panel:[a-z]+(#[a-z_]+)?|queue:(ai|lost)|confirm:[a-z_]+\.[a-z_]+)$")
 
@@ -31,7 +31,7 @@ class RulesTest(unittest.TestCase):
 
     def test_everything_at_once_comes_in_that_order(self):
         f = {"apply_failed": True, "sheets": 0, "running": [], "lost_members": 2, "lost_refs": 1, "lost_nodes": ["S1"], "titleblock": 1,
-             "ai_candidates": 3, "sheet_confirm": 2, "sheets_confirmed": 1, "nodes_total": 0, "nodes_draft": 2, "nodes_unrun": 1,
+             "ai_unreviewed": 2, "ai_candidates": 3, "sheet_confirm": 2, "sheets_confirmed": 1, "nodes_total": 0, "nodes_draft": 2, "nodes_unrun": 1,
              "results_unjudged": 4, "ie_draft": 1}
         kinds = [i["kind"] for i in api_next.items(f)]
         self.assertEqual(kinds, [k for k in SPEC_ORDER if k != "sheet_confirm"], "표제란이 남으면 쪽 확정은 아직 띄우지 않는다")
@@ -48,7 +48,7 @@ class RulesTest(unittest.TestCase):
         self.assertNotIn("no_sheets", [i["kind"] for i in api_next.items({"sheets": 0, "running": [{"kind": "register"}]})])
 
     def test_texts_are_screen_words_and_targets_are_well_formed(self):
-        f = {k: 1 for k in ("titleblock", "ai_candidates", "nodes_draft", "nodes_unrun", "results_unjudged", "ie_draft", "lost_members")}
+        f = {k: 1 for k in ("titleblock", "ai_unreviewed", "ai_candidates", "nodes_draft", "nodes_unrun", "results_unjudged", "ie_draft", "lost_members")}
         f.update(apply_failed=True, sheets=0, running=[], sheets_confirmed=1, nodes_total=0)
         for i in api_next.items(f) + [api_next.NONE_ITEM]:
             for w in BANNED:
