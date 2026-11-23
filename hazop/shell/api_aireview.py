@@ -23,7 +23,8 @@ TOPICS = ("aireview",)
 PROJECT_PREFIXES = ("aireview.",)
 MAX_IDS = 500
 FIELD_LABELS = {"kind": "종류", "tag": "태그", "normal_position": "정상 위치", "fail_position": "고장 위치", "connection": "연결",
-                "to_system": "연결 계통"}
+                "to_system": "연결 계통", "split": "덩어리 나누기"}
+SPLIT_CURRENT = "한 덩어리"     # 나누기 후보의 지금 값: 여러 기호가 한 덩어리로 읽힌 자리(종류 이름이 아니다)
 STATUS_LABELS = {"proposed": "제안", "accepted": "수락", "rejected": "거절"}
 
 
@@ -103,7 +104,7 @@ def _row(c, shown):
             "local_id": local_of(c, shown), "bulk_ok": block is None, "bulk_block": block if c["status"] == "proposed" else None,
             "decided_by": c.get("decided_by"), "script_value": c.get("script_value"), "match": c.get("match") if match else None,
             "match_label": match[0] if match else None, "match_hint": match[1] if match else None,
-            "current_text": _show(c["field"], _current(shown, c)), "values_text": [_show(c["field"], v) for v in list(c["values"])[:3]],
+            "current_text": SPLIT_CURRENT if c["field"] == "split" else _show(c["field"], _current(shown, c)), "values_text": [_show(c["field"], v) for v in list(c["values"])[:3]],
             "script_text": _show(c["field"], c.get("script_value"))}
 
 

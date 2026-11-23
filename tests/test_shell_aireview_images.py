@@ -143,6 +143,15 @@ class ImageRunTest(PdfBase):
         self.assertFalse(row["bulk_ok"])
         self.assertEqual(self.view()["bulk"], [])
 
+    def test_split_row_reads_as_plain_words(self):
+        node = self.valves[0]
+        cand = ar.make_candidate("split:%s:x" % node["source_object_id"], "split", dict(node, bbox=[0, 0, 1, 1]), "split",
+                                 ["manual_valve"], 0.9, "수동 밸브 칸과 같은 모양", {"match": "legend", "pdf_objects": ["pdf-path-0001"]})
+        self.seed([cand])
+        row = next(r for g in self.view()["groups"] for r in g["items"] if r["task"] == "split")
+        self.assertEqual((row["field_label"], row["current_text"]), ("덩어리 나누기", "한 덩어리"), "내부 이름 split·종류 없음 대신 사람 말")
+        self.assertNotIn("manual_valve", row["values_text"])
+
     def test_auto_review_after_extraction_uses_the_same_picture_input(self):
         from hazop.app import data
         from hazop.shell import register_flow
