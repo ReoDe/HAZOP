@@ -103,6 +103,7 @@ def rebuild(name):
                 data.build_project_kg(graph["project_id"])
             except (OSError, ValueError, KeyError) as exc:
                 raise RuntimeError("지식그래프를 다시 만들지 못함: %s" % str(exc)[:120]) from exc
+            data.notify_graph_changed(graph["project_id"])   # 그래프 판이 바뀌었으니 검토구간 판 이전을 이어서 한다(재확인 안내가 낡은 상태를 말하지 않게 그 앞에서)
         return [], project_recheck(graph.get("project_id")) if graph.get("project_id") else []
 
 

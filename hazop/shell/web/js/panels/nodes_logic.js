@@ -23,6 +23,13 @@ export function catchUpText(r) {
 /** 확정한 구간이 잃은 구성요소를 둔 채 확정됐다면 그 글(confirmed.lost). */
 export const confirmedLostText = (n) => (n && n.confirmed && n.confirmed.lost ? "잃은 구성요소 " + n.confirmed.lost + "개를 둔 채 확정함" : "");
 
+/** 다시 추출 뒤 찾지 못한 구성요소가 있을 때의 알림 글: '도면이 바뀌어 n곳을 다시 확인해야 합니다'. info {sections, members}. 확인할 곳이 없으면 빈 글. */
+export function lostNoticeText(info) {
+  const n = (info && info.sections) || 0, m = (info && info.members) || 0;
+  if (!n && !m) return "";
+  return "도면이 바뀌어 " + (n || 1) + "곳을 다시 확인해야 합니다" + (m ? "(찾지 못한 구성요소 " + m + "개)" : "") + ".";
+}
+
 /** 구간 하나의 확인 필요 글: '찾지 못한 구성요소 n개 · 참조 확인 필요 m건'(없는 것은 뺀다). 묘비 id는 쓰지 않는다. */
 export function lostText(lost, lostRefs) {
   return [lost ? "찾지 못한 구성요소 " + lost + "개" : null, lostRefs ? "참조 확인 필요 " + lostRefs + "건" : null].filter(Boolean).join(" · ");

@@ -544,7 +544,11 @@ class RegisteredPathTest(unittest.TestCase):
             r = AC.apply_edit(self.engine, self.gid, "set_tag", node_lid, {"tag": "REG-TAG-1"}, AC.view(self.engine, self.gid)["ver"])      # 채팅 길: 같은 스레드에서 끝까지
         self.assertTrue(r["ok"], r)
         self.assertTrue(kg.called, "등록된 도면이면 지식그래프를 다시 만든다")
-        self.assertTrue(any(t.startswith("④ 검토구간이 고치기 전 도면 기준입니다") and "S1" in t for t in r["recheck"]), r["recheck"])
+        # 그래프 판이 바뀌면 앱이 검토구간 판 이전을 이어서 한다: 같은 구성요소(태그만 바뀜)는 따라가고 확정은 그대로라 재확인 안내가 없다
+        self.assertEqual(r["recheck"], [])
+        from hazop.shell import api_nodes
+        row = api_nodes.summary(self.engine)["nodes"][0]
+        self.assertEqual((row["state"], row["lost"], api_nodes.summary(self.engine)["stale"]), ("confirmed", 0, False))
         d = self.edit("delete_node", node_lid)                                            # 기기와 함께 지워지는 배관이 확정 구간 S1에 든다
         self.assertEqual(d["error"]["code"], "needs_confirm")
         self.assertIn("S1", d["error"]["message"])
@@ -565,7 +569,8 @@ class RegisteredPathTest(unittest.TestCase):
         self.assertTrue(u["ok"], u)
         from hazop.shell import api_nodes
         row = api_nodes.summary(self.engine)["nodes"][0]
-        self.assertEqual(row["broken"], 1)                                                # 구간 화면에 '끊긴 구성원'으로 보인다
+        # 앱이 판 이전을 이어서 해 지운 노드는 '끊긴 구성원'이 아니라 '찾지 못한 구성요소'(묘비)로 구간 화면에 보인다
+        self.assertEqual((row["broken"], row["lost"]), (0, 1))
 
 
 if __name__ == "__main__":

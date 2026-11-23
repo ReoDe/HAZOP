@@ -13,7 +13,7 @@ import { resetAreas } from "./areas.js";
 import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
-import { checkText } from "./panels/nodes_logic.js";
+import { Notices, addNotice, lostNotice, refreshLostNotice } from "./notices.js";
 
 const toast = (text, kind) => store.set({ toast: { text, kind } });
 
@@ -99,6 +99,7 @@ function wireEvents() {
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));
   on("app.notice", (d) => toast(d.text));
+  on("study.lost", (d) => { const n = lostNotice(d); if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
   const job = (state) => (d) => store.set((s) => ({ jobs: Object.assign({}, s.jobs, { [d.id]: Object.assign({}, s.jobs[d.id], d, { state }) }) }));
   on("job.progress", job("running"));
   on("job.done", (d) => {
@@ -110,6 +111,7 @@ function wireEvents() {
   onChanged((topic) => {
     if (topic === "drawings") loadDrawings().catch(() => {});
     if (topic === "state") loadState().catch(() => {});
+    if (topic === "nodes") refreshLostNotice();       // 확인을 마쳐 없어졌으면 알림도 사라진다
   });
 }
 
@@ -208,19 +210,13 @@ function App() {
     <${Rail} />
     <main class="center"><${TopBar} /><${SheetHost} />
       ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
-      <${Toast} /></main>
+      <${Notices} /><${Toast} /></main>
     <${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />
   </div>`;
 }
 
 /** 프로젝트를 연 뒤 검토구간에 찾지 못한 구성요소(묘비)·확인할 참조가 있으면 토스트 한 줄. 읽기 실패는 조용히 넘어간다. */
-async function checkLost() {
-  try {
-    const l = await read("nodes");
-    const text = l && l.check && l.check.needs_check ? checkText(l.check) : "";
-    if (text) toast(text);
-  } catch (e) { /* 알림은 덤이다 */ }
-}
+const checkLost = refreshLostNotice;      // 닫을 수 있는 알림 줄(notices.js): 처리돼 없어지면 사라진다
 
 async function boot() {
   holdReads();      // 도면 목록이 뜰 때까지 큰 프로젝트에서 오래 걸리는 읽기(구간·결과·지식그래프 등)는 미룬다(bridge.js)

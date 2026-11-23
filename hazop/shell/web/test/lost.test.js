@@ -1,5 +1,7 @@
 // 확인 필요 알림 글(찾지 못한 구성요소·참조 확인 필요): 엔진이 센 값으로만 만들고 묘비 id를 글에 쓰지 않는다.
-import { catchUpText, checkText, confirmedLostText, lostText } from "../js/panels/nodes_logic.js";
+import { catchUpText, checkText, confirmedLostText, lostNoticeText, lostText } from "../js/panels/nodes_logic.js";
+import { store } from "../js/store.js";
+import { addNotice, clearNotice, dismissNotice, lostNotice } from "../js/notices.js";
 
 export const tests = [
   { name: "확인 필요: 구간 행 글은 '찾지 못한 구성요소 n개 · 참조 확인 필요 m건'이고 없는 것은 뺀다", run(assert) {
@@ -27,5 +29,26 @@ export const tests = [
     assert.equal(confirmedLostText({ confirmed: { lost: 2 } }), "잃은 구성요소 2개를 둔 채 확정함");
     assert.equal(confirmedLostText({ confirmed: { by: "a" } }), "");
     assert.equal(confirmedLostText({}), "");
+  } },
+  { name: "알림: 다시 추출 뒤 글은 '도면이 바뀌어 n곳을 다시 확인해야 합니다'이고 확인할 곳이 없으면 비어 있다", run(assert) {
+    const t = lostNoticeText({ sections: 3, members: 5 });
+    assert(t.startsWith("도면이 바뀌어 3곳을 다시 확인해야 합니다") && t.includes("찾지 못한 구성요소 5개"), t);
+    assert.equal(lostNoticeText({ sections: 0, members: 0 }), "");
+    assert(!/lost:|묘비|판 이전|stale/.test(t), "내부 말이 없다");
+  } },
+  { name: "알림: 그 자리로 단추가 있고, 닫으면 사라지며 같은 글은 다시 띄우지 않는다(글이 바뀌면 새 알림)", run(assert) {
+    store.set({ notices: [] });
+    const n = lostNotice({ sections: 2, members: 2, first_node: "S1" });
+    assert.equal(n.action.label, "그 자리로");
+    addNotice(n);
+    assert.equal(store.get().notices.length, 1);
+    dismissNotice("lost");
+    assert.equal(store.get().notices.length, 0);
+    addNotice(n);
+    assert.equal(store.get().notices.length, 0, "닫은 글은 다시 띄우지 않는다");
+    addNotice(lostNotice({ sections: 3, members: 4, first_node: "S1" }));
+    assert.equal(store.get().notices.length, 1, "글이 바뀌면 새 알림");
+    clearNotice("lost");
+    assert.equal(store.get().notices.length, 0, "처리돼 없어지면 사라진다");
   } },
 ];

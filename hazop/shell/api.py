@@ -164,6 +164,56 @@ class Engine:
         from hazop.shell import ai_gate
         self.ai_gate = ai_gate.Gate()    # 일괄 AI 작업(AI 검토·추출 뒤 자동 검토·AI 분석)의 구독 호출 차례
         self._reviewing = set()          # AI 검토가 돌거나 차례를 기다리는 도면(추출 이름)
+        self._catching = set()           # 검토구간 판 이전을 기다리는 프로젝트
+        from hazop.app import data
+        data.set_graph_listener(self._on_graph_changed)   # 그래프 판이 바뀐 길(다시 추출·다시 짓기)이 끝나면 판 이전을 이어서 한다
+
+    # ------------------------------------------------------------ 다시 추출 뒤 판 이전(INTENT §3.8: 엔진 사정을 사용자에게 시키지 않는다)
+    def _on_graph_changed(self, project_id):
+        if project_id == self.project_id():
+            self.auto_catch_up(project_id)
+
+    def _ai_busy(self):
+        """일괄 AI 작업이 차례를 잡았거나 기다리거나 AI 분석이 도는 중인가(그 사이에 구간 집합·결과 판을 옮기지 않는다)."""
+        return bool(self.ai_gate.waiting()) or bool(self.analysis.running)
+
+    def auto_catch_up(self, project_id):
+        """그래프 판이 바뀐 뒤 검토구간 판 이전을 이어서 한다. AI 작업이 도는 중이면 끝난 뒤에(다른 스레드에서). → 지금 끝냈으면 True."""
+        if not self._ai_busy():
+            return self._catch_up_now(project_id)
+        with self._lock:
+            if project_id in self._catching:
+                return False
+            self._catching.add(project_id)
+
+        def later():
+            import time
+            try:
+                end = time.monotonic() + 3600
+                while self._ai_busy() and not self.stop_requested() and time.monotonic() < end:
+                    time.sleep(0.3)
+                if not self.stop_requested():
+                    self._catch_up_now(project_id)
+            finally:
+                with self._lock:
+                    self._catching.discard(project_id)
+        threading.Thread(target=later, name="auto-catch-up", daemon=True).start()
+        return False
+
+    def _catch_up_now(self, project_id):
+        from hazop.app import data
+        res = data.catch_up_study(project_id)
+        if not res or res.get("error") or not res.get("changed"):
+            return False                 # 할 것이 없거나 실패(막음과 판 이전 지금 하기 단추가 안전망으로 남는다)
+        for topic in ("nodes", "results", "ie", "kg"):
+            self.changed(topic)
+        if res.get("new_lost"):          # 잃은 것이 조용히 지나가지 않게: 알림 하나와 그 자리로 가는 단추가 열 구간
+            self.emit("study.lost", {"sections": len(res["lost_members"]), "members": sum(res["lost_members"].values()), "first_node": res.get("first_node")})
+        return True
+
+    def catch_up_on_open(self):
+        """앱을 열었을 때(프로젝트를 정했을 때) 이미 낡은 프로젝트를 같은 길로 한 번 맞춘다. → 판 이전을 했으면 True."""
+        return self.auto_catch_up(self.project_id())
 
     # ------------------------------------------------------------ 보내기
     def emit(self, name, data=None):
@@ -411,6 +461,7 @@ def _h_set_project(engine, a):
     if engine.chat is not None:
         engine.chat.check_project()      # 프로젝트가 바뀌면 대화를 끝낸다
     engine.current_sheet = None
+    threading.Thread(target=engine.catch_up_on_open, name="catch-up-on-open", daemon=True).start()      # 이미 낡은 프로젝트면 한 번 맞춘다(읽기를 붙잡지 않게 뒤에서)
     engine.emit("project.changed", {"project_id": pid})      # 웹이 구간·결과·초기사건 상태를 모두 비우고 다시 읽는다
     for topic in ("drawings", "state") + tuple(TOPIC_OWNER):      # 등록된 영역 모두(구간·결과·초기사건 …)
         engine.changed(topic)

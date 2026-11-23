@@ -475,20 +475,14 @@ def _catch_up(eng, a):
     if not nodes.is_stale(ns, pg):
         info = idmap.needs_check(ns)
         return {"changed": False, "matched": 0, "tombstones": info["tombstones"], "lost_members": info["lost_members"]}
-    with node_commands.project_lock(pg.get("project_id")):
-        try:
-            got, _fp = nodes.load_fp(pg)
-        except (OSError, ValueError, store_io.Conflict) as exc:
-            raise api.CommandError("failed", "판 이전을 저장하지 못했습니다(%s). 파일은 그대로입니다. 다시 눌러 주세요." % str(exc)[:120])
-    if got is None or got.get("read_only"):
-        raise api.CommandError("failed", "판 이전을 할 수 없습니다: %s" % ((got or {}).get("read_only") or "구간 파일이 없음"))
-    if nodes.is_stale(got, pg):
-        raise api.CommandError("failed", "판 이전을 마치지 못했습니다. 다시 눌러 주세요.")
-    row = next((h.get("detail") or {} for h in reversed(got.get("history") or []) if isinstance(h, dict) and h.get("op") == "migrate_version"), {})
-    info = idmap.needs_check(got)
+    from hazop.app import data
+    try:
+        out = data.migrate_study(pg)
+    except (OSError, ValueError, store_io.Conflict) as exc:
+        raise api.CommandError("failed", "판 이전을 저장하지 못했습니다(%s). 파일은 그대로입니다. 다시 눌러 주세요." % str(exc)[:120])
     for topic in ("nodes", "results", "ie", "kg"):
-        eng.changed(topic, got.get("set_rev") if topic == "nodes" else None)
-    return {"changed": True, "matched": int(row.get("matched") or 0), "tombstones": info["tombstones"], "lost_members": info["lost_members"]}
+        eng.changed(topic)
+    return {"changed": True, "matched": out["matched"], "tombstones": out["tombstones"], "lost_members": out["lost_members"]}
 
 
 def _migrate(eng, a):

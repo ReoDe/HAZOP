@@ -177,7 +177,82 @@ def prepared_for_reextract(project_id):
         _PREPARED.on = before
 
 
+_LISTENER = [None]                  # 그래프 판이 바뀐 뒤 앱(엔진)이 이어서 할 일(검토구간 판 이전). 마지막으로 만든 엔진 하나가 꽂는다
+_CATCHING = threading.local()      # 판 이전 안에서 다시 판 이전을 부르지 않는다(프로젝트 그래프 짓기가 낡은 그래프를 다시 만들며 이 길을 되부름)
+
+
+def set_graph_listener(fn):
+    """fn(project_id): 그래프 판이 바뀐 길(다시 추출, 사람 수정 뒤 다시 짓기)이 끝나면 불린다. 앱의 엔진이 꽂는다(없으면 아무 일 없음)."""
+    _LISTENER[0] = fn
+
+
+def notify_graph_changed(project_id):
+    """그래프 판이 바뀌었다고 알린다. 듣는 쪽의 실패는 알리는 길을 막지 않는다."""
+    fn = _LISTENER[0]
+    if fn is None or not project_id:
+        return
+    try:
+        fn(project_id)
+    except Exception:  # noqa: BLE001 - 판 이전은 덤이다: 실패해도 다시 추출·다시 짓기는 끝난 대로다(막음·단추가 안전망)
+        LOG.warning("그래프가 바뀐 뒤 이어서 할 일이 실패함(%s)", project_id, exc_info=True)
+
+
+def _has_study_sets(project_id):
+    folder = os.path.join(study_nodes.store_dir(), paths.safe_name(project_id))
+    try:
+        return os.path.isdir(folder) and any(n.endswith(".json") for n in os.listdir(folder))
+    except OSError:
+        return False
+
+
+def migrate_study(pg):
+    """프로젝트 그래프 pg 기준으로 검토구간 집합의 판 이전만 한다(프로젝트 잠금 안, nodes.load_fp가 집합과 ⑤ 결과 이음을 쓴다). 쓰다 실패하면 OSError·ValueError·
+    store_io.Conflict를 올리고 옛 파일은 그대로다. 같은 판이거나 집합이 없거나 0.1 파일이면 아무것도 쓰지 않는다.
+    → {changed, matched(이어진 구성요소), new_lost(이번에 새로 찾지 못한 구성요소), tombstones(되찾지 못한 묘비 합계), lost_members {구간: 수}, first_node}."""
+    from hazop.study import idmap, node_commands
+    ns = study_nodes.read_as_is(pg)
+    quiet = {"changed": False, "matched": 0, "new_lost": 0}
+    if ns is None or (ns.get("schema_version") or study_nodes.LEGACY_SCHEMA_VERSION) == study_nodes.LEGACY_SCHEMA_VERSION \
+            or not study_nodes.is_stale(ns, pg):
+        info = idmap.needs_check(ns or {})
+        return dict(quiet, tombstones=info["tombstones"], lost_members=info["lost_members"], first_node=next(iter(info["lost_members"]), None))
+    with node_commands.project_lock(pg.get("project_id")):
+        got, _fp = study_nodes.load_fp(pg)
+    if got is None or got.get("read_only"):
+        raise ValueError("판 이전을 할 수 없습니다: %s" % ((got or {}).get("read_only") or "구간 파일이 없음"))
+    if study_nodes.is_stale(got, pg):
+        raise ValueError("판 이전을 마치지 못했습니다")
+    row = next((h.get("detail") or {} for h in reversed(got.get("history") or []) if isinstance(h, dict) and h.get("op") == "migrate_version"), {})
+    info = idmap.needs_check(got)
+    return {"changed": True, "matched": int(row.get("matched") or 0), "new_lost": len(row.get("lost") or {}), "tombstones": info["tombstones"],
+            "lost_members": info["lost_members"], "first_node": next(iter(info["lost_members"]), None)}
+
+
+def catch_up_study(project_id):
+    """그래프 판이 바뀐 뒤 앱이 이어서 하는 판 이전. 집합이 없으면 아무것도 안 하고(그래프도 짓지 않는다) None. 실패하면 {"error": 글}을 돌려주고 예외를 올리지 않는다."""
+    if not project_id or getattr(_CATCHING, "on", False) or not _has_study_sets(project_id):
+        return None
+    _CATCHING.on = True
+    try:
+        from hazop.app import project_ctx
+        return migrate_study(project_ctx.project_graph(project_id))
+    except Exception as exc:  # noqa: BLE001 - 실패하면 막음과 '판 이전 지금 하기' 단추가 그대로 남는다
+        LOG.warning("자동 판 이전에 실패함(%s)", project_id, exc_info=True)
+        return {"error": str(exc)[:160]}
+    finally:
+        _CATCHING.on = False
+
+
 def extract_and_graph(registration_path, progress=None):
+    """등록정보 → 추출 → 그래프 → 지식그래프(아래 _extract_and_graph). 끝나면 그래프 판이 바뀌었다고 알려 앱이 검토구간 판 이전을 이어서 하게 한다(실패하면 알리지 않음)."""
+    ctx = {}
+    out = _extract_and_graph(registration_path, progress, ctx)
+    from hazop.graph import project as graph_project
+    notify_graph_changed(graph_project.project_id_of({"project_id": ctx.get("project")}))
+    return out
+
+
+def _extract_and_graph(registration_path, progress=None, ctx=None):
     """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one 또는 PDF면
     scripts/extract_pdf.run_pages로 등록된 모든 쪽, 그리고 scripts/build_graph.build_one) → 프로젝트 지식그래프 다시 빌드.
     출력 폴더 이름은 두 형식이 같다.
@@ -187,6 +262,8 @@ def extract_and_graph(registration_path, progress=None):
     ex = script_module("extract_drawio")
     bg = script_module("build_graph")
     record, original = registry.load_for_extraction(registration_path)
+    if ctx is not None:
+        ctx["project"] = record.get("project_id")
     if not getattr(_PREPARED, "on", False):
         prepare_reextract(record.get("project_id"))     # 추출 결과를 덮어쓰기 전에 검토구간 표지를 채운다
     if raster_scan.is_scan_record(record, original):  # 스캔 PDF·PNG·JPG(HZ-PLN-23 §8): 쪽마다 20초 안팎이라 progress로 알린다
@@ -494,6 +571,7 @@ def save_corrections(name, ops, by, expect=store_io.ANY):
     original = read_json(extraction_path(name))
     path, fp = corrections.save_fp(name, ops, by, drawing_number=original["drawing"].get("drawing_number"), expect=expect)
     graph, _ = script_module("build_graph").build_one(extraction_path(name), paths.output_root("graph"))
+    notify_graph_changed(graph.get("project_id"))
     out = {"path": path, "fingerprint": fp, "graph": graph}
     if graph.get("project_id"):
         _with_kg(out, graph["project_id"])
