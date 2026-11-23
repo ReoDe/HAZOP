@@ -6,7 +6,7 @@ import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore, store } from "../store.js";
 import { cmd, read } from "../bridge.js";
 
-const START = { open: false, kind: null, items: [], i: 0, undo: [], busy: false, error: null, note: null, editing: null, ask: null,
+const START = { open: false, kind: null, gid: null, items: [], i: 0, undo: [], busy: false, error: null, note: null, editing: null, ask: null,
   bulkAsk: false, done: false, setRev: null, projectId: null, bulk: [] };
 export const q = createStore(Object.assign({}, START));
 
@@ -35,19 +35,19 @@ export const bulkItems = (s = q.get()) => s.items.filter((x) => x.state === "ope
 
 // ---------------------------------------------------------------- 열기·다시 읽기
 let seq = 0;
-async function fetchQueue(kind) { return read("queue/" + kind); }
+async function fetchQueue(kind, gid) { return read("queue/" + kind + (gid ? "?graph_id=" + encodeURIComponent(gid) : "")); }
 
-/** 대기열을 연다. 열 항목이 없으면 열지 않고 false. */
-export async function openQueue(kind) {
+/** 대기열을 연다. AI 후보는 도면별이다(gid가 있으면 그 도면의 후보만). 열 항목이 없으면 열지 않고 false. */
+export async function openQueue(kind, gid = null) {
   const mine = ++seq;
   let d = null;
-  try { d = await fetchQueue(kind); } catch (e) { d = null; }
+  try { d = await fetchQueue(kind, gid); } catch (e) { d = null; }
   if (mine !== seq) return false;
   if (!d || !d.items || !d.items.length) {
     store.set({ toast: { text: kind === "ai" ? "확인할 AI 후보가 없습니다." : "다시 확인할 구성요소가 없습니다." } });
     return false;
   }
-  q.set(Object.assign({}, START, { open: true, kind, items: d.items.map((x) => Object.assign({}, x)), setRev: d.set_rev ?? null,
+  q.set(Object.assign({}, START, { open: true, kind, gid, items: d.items.map((x) => Object.assign({}, x)), setRev: d.set_rev ?? null,
     projectId: d.project_id || null, bulk: d.bulk || [] }));
   store.set({ panel: null });
   show();
@@ -59,7 +59,7 @@ export async function fresh() {
   const s = q.get();
   if (!s.open) return;
   let d = null;
-  try { d = await fetchQueue(s.kind); } catch (e) { return; }
+  try { d = await fetchQueue(s.kind, s.gid); } catch (e) { return; }
   const by = new Map((d.items || []).map((x) => [x.qid, x]));
   q.set((cur) => ({ setRev: d.set_rev ?? cur.setRev, bulk: d.bulk || [],
     items: cur.items.map((x) => (by.has(x.qid) ? Object.assign({}, by.get(x.qid), { state: x.state }) : x)) }));

@@ -7,6 +7,7 @@ import { cmd, onChanged, read } from "./bridge.js";
 import { Icon } from "./ui/icon.js";
 import { Btn, Notice } from "./ui/parts.js";
 import { openCompare } from "./compare.js";
+import { ReviewChip } from "./review/review.js";      // 도면별 AI 검토 칩(칩 줄 맨 앞, HZ-DSN-06 §3.7)
 
 export const conf = createStore({ byGraph: {}, open: false, busy: false, error: null });
 
@@ -112,7 +113,7 @@ export function SheetConfirm() {
   if (!gid) return null;
   const st = byGraph[gid];
   const chip = chipOf(st);
-  return html`<div class="float confbar"><button type="button" class=${"chip " + chip.kind} aria-label=${"쪽 확정: " + chip.label} aria-expanded=${open ? "true" : "false"} title="쪽 확정 조건 보기"
+  return html`<div class="float confbar"><${ReviewChip} gid=${gid} /><button type="button" class=${"chip " + chip.kind} aria-label=${"쪽 확정: " + chip.label} aria-expanded=${open ? "true" : "false"} title="쪽 확정 조건 보기"
       onClick=${() => { conf.set({ open: !open, error: null }); if (!open) load(gid); }}><${Icon} name=${chip.kind === "ok" ? "circle-check" : chip.kind === "warn" ? "alert-triangle" : "check"} size=${14} /> ${chip.label}</button>
     ${open && st && st.available ? html`<${Card} gid=${gid} st=${st} />` : null}
     ${open && st && !st.available ? html`<div class="float confcard"><${Notice} kind="warn">${st.reason}<//></div>` : null}</div>`;

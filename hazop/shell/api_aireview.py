@@ -291,7 +291,8 @@ def read(engine, parts, query):
             cap = max(1, min(200, int(query.get("cap") or engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP)))
         except ValueError:
             cap = ai_review.DEFAULT_CAP
-        return api._json(estimate(engine, cap))
+        gid = query.get("graph_id") or None            # 도면 하나의 확인 창(§3.7): 실행 상한을 다른 도면과 나누지 않고 센다
+        return api._json(estimate(engine, cap, [gid] if gid else None))
     if len(parts) == 2:
         data = candidates(engine, parts[1])
         if not data["ok"] and data["code"] == "not_found":

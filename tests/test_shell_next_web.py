@@ -1,6 +1,7 @@
 """'다음에 할 일' 한 줄이 실제 화면(오프스크린 웹, 1366×768)의 위 막대에 엔진 값대로 뜨고 잘리지 않는지(HZ-DSN-06 G1 (1)(6)).
 실행: python -m unittest tests.test_shell_next_web"""
 
+import json
 import unittest
 
 from tests.test_shell_web import ShellBase, wait_for
@@ -56,6 +57,34 @@ class QueueCardTest(ShellBase):
         self.js(win, "document.querySelector('aside.chat.queue .chat-h .btn').click()")
         self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.chat-input') && !document.querySelector('aside.chat.queue')"), 10),
                         "채팅으로 돌아오지 않음")
+
+
+class ReviewFlowTest(ShellBase):
+    """도면별 AI 검토 한 바퀴(HZ-DSN-06 G7): 도면 위 'AI 검토 시작' → 확인 창 → 시작 → 끝 알림 → 검토하기 → 그 도면 대기열. 가짜 구독 클라이언트."""
+
+    def test_start_on_the_drawing_then_review_the_queue(self):
+        from tests.test_ai_review import StubClient
+        from tests.test_shell_aireview import FakeAi, kind_answers
+        win = self.window((1366, 768))
+        win.engine.ai = FakeAi(StubClient(kind_answers))
+        gid = self.js(win, "window.__hz.store.get().drawings.drawings[0].graph_id")
+        self.js(win, "window.__hz.store.set({ sheet: '%s', panel: null })" % gid)
+        chip = ".confbar .chip.review.act"
+        self.assertTrue(wait_for(lambda: "AI 검토 시작" in (self.js(win, "(document.querySelector('%s') || {}).textContent || ''" % chip) or ""), 20),
+                        "도면 위 칩이 뜨지 않음")
+        self.js(win, "document.querySelector('%s').click()" % chip)
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.rv-modal .btn.primary') && !document.querySelector('.rv-modal .btn.primary').disabled"), 15),
+                        "확인 창의 검토 시작이 켜지지 않음: %s" % self.js(win, "(document.querySelector('.rv-modal') || {}).textContent"))
+        self.js(win, "document.querySelector('.rv-modal .btn.primary').click()")
+        notice = "[...document.querySelectorAll('.notice-row')].find((x) => x.textContent.includes('AI 검토가 끝났습니다'))"
+        self.assertTrue(wait_for(lambda: self.js(win, "!!" + notice), 60), "끝 알림이 뜨지 않음")
+        self.assertTrue(wait_for(lambda: "AI 후보" in (self.js(win, "(document.querySelector('%s') || {}).textContent || ''" % ".confbar .chip.review") or ""), 15))
+        self.js(win, "%s.querySelector('button').click()" % notice)
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('aside.chat.queue .qacts')"), 20), "대기열이 열리지 않음")
+        line = self.js(win, "document.querySelector('.topbar .next .txt').textContent")
+        self.assertIn("AI 후보 검토", line)
+        sheets = json.loads(self.js(win, "JSON.stringify([...new Set(window.__hz.queue.get().items.map((x) => x.graph_id))])"))
+        self.assertEqual(sheets, [gid], "대기열은 그 도면의 후보만")
 
 
 if __name__ == "__main__":

@@ -84,12 +84,12 @@ export function NextLine() {
   const line = running
     ? html`<div class="line info" role="status"><${Icon} name="loader-2" size=${15} /><span class="txt">${running.label}${running.total ? " · " + running.total + " 중 " + (running.done || 0) : ""}</span>
         ${running.total ? html`<span class="bar"><i style=${"width:" + Math.round(100 * (running.done || 0) / running.total) + "%"}></i></span>` : null}
-        ${items.length && top.kind !== "none" ? html`<button type="button" class="more" aria-expanded=${open} onClick=${(e) => { e.stopPropagation(); next.set({ open: !open }); }}>남은 일 ${items.length}건 <${Icon} name="chevron-down" size=${14} /></button>` : null}</div>`
+        ${items.length && top.kind !== "none" ? html`<button type="button" class="more" aria-label="남은 일 보기" aria-expanded=${open} onClick=${(e) => { e.stopPropagation(); next.set({ open: !open }); }}>남은 일 ${items.length}건 <${Icon} name="chevron-down" size=${14} /></button>` : null}</div>`
     : html`<div class=${"line " + (top.tone === "warn" ? "warn" : top.kind === "none" ? "calm" : "")}>
         <${Icon} name=${ICON[top.kind] || "info-circle"} size=${15} /><span class="txt" title=${top.detail || top.text}>${top.text}</span>
         <button type="button" class=${"btn sm" + (top.kind === "none" ? "" : " primary")} aria-keyshortcuts=${top.kind === "none" ? null : "Control+J"}
           title=${top.kind === "none" ? null : top.action.label + " (Ctrl+J)"} onClick=${() => go(top.action)}>${top.action.label}</button>
-        ${rest > 0 ? html`<button type="button" class="more" aria-expanded=${open} onClick=${(e) => { e.stopPropagation(); next.set({ open: !open }); }}>그 밖에 ${rest}건 <${Icon} name="chevron-down" size=${14} /></button>` : null}</div>`;
+        ${rest > 0 ? html`<button type="button" class="more" aria-label=${"그 밖에 " + rest + "건 보기"} aria-expanded=${open} onClick=${(e) => { e.stopPropagation(); next.set({ open: !open }); }}>그 밖에 ${rest}건 <${Icon} name="chevron-down" size=${14} /></button>` : null}</div>`;
   return html`<div class="next" id="next">${line}
     ${open ? html`<div class="next-list" role="menu" aria-label="남은 일"><div class="h"><span>남은 일 · 앞에 있는 것부터</span><span>Ctrl+J = 맨 위 것 하기</span></div>
       ${items.map((it, j) => html`<button type="button" role="menuitem" key=${it.kind} class=${"item" + (j === 0 ? " top" : "") + (it.tone === "warn" ? " warn" : "")} onClick=${() => go(it.action)}>

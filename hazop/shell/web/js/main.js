@@ -17,6 +17,7 @@ import { Notices, addNotice, demotedNotice, lostNotice, refreshLostNotice } from
 import { NextLine, next as nextStore, setGo } from "./next/next.js";
 import { closeQueue, openQueue, q as queueStore, useQueue, wire as wireQueue } from "./queue/queue.js";
 import { QueueCard, QueueLine } from "./queue/card.js";
+import { ReviewConfirm, setOpeners as setReviewOpeners, startReview, wire as wireReview } from "./review/review.js";
 
 // '다음에 할 일' 단추가 가는 자리(엔진 next의 go). 도면 위 자리로 갈 때는 열린 패널을 닫는다(가리지 않게). 패널 모듈은 누를 때 읽는다
 setGo("panel:drawings#titleblock", async (t) => { const m = await import("./panels/titleblock.js"); if (t) m.focusMaterial(t); else store.set({ panel: "titleblock" }); });
@@ -29,7 +30,8 @@ setGo("panel:drawings#sheetconf", async (t) => {
 });
 setGo("panel:nodes#pick", async () => { store.set({ panel: null }); const N = await import("./panels/nodes_state.js"); N.setMode("pick"); });
 setGo("queue:lost", () => openQueue("lost"));
-setGo("queue:ai", () => openQueue("ai"));
+setGo("queue:ai", (t) => openQueue("ai", t));
+setGo("confirm:aireview.run", (t) => startReview(t || store.get().sheet));
 setGo("confirm:nodes.catch_up", async () => { store.set({ panel: "nodes" }); const N = await import("./panels/nodes_state.js"); N.catchUp(); });
 setGo("panel:results#run", async () => { store.set({ panel: "results" }); const R = await import("./panels/results_state.js"); R.planRun("all"); });
 setGo("confirm:results.export_excel", async () => { const R = await import("./panels/results_state.js"); R.exportExcel("all"); });
@@ -232,7 +234,7 @@ function App() {
     <${Rail} />
     <main class="center"><${TopBar} /><${SheetHost} />
       ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
-      <${Notices} /><${Toast} /></main>
+      <${Notices} /><${Toast} /><${ReviewConfirm} /></main>
     ${queueOpen ? html`<${QueueCard} onChat=${() => { closeQueue(); if (store.get().chatCollapsed) toggleChat(); }} />`
       : html`<${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />`}
   </div>`;      // 오른쪽 칸은 채팅 또는 대기열 카드 하나(HZ-DSN-06 §3.5)
@@ -246,6 +248,8 @@ async function boot() {
   connect();
   wireEvents();
   wireQueue();
+  setReviewOpeners(openQueue, openSheet);
+  wireReview();
   render(html`<${App} />`, document.getElementById("app"));
   loadPanelCss();
   await loadIcons();

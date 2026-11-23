@@ -244,3 +244,18 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .qdone svg { color: var(--ok); }
 .qkeys { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px; }
 .chat.queue .small { font-size: var(--fs-xs); }
+
+/* ── 도면별 AI 검토(HZ-DSN-06 §3.7, web/js/review/review.js): 칩과 확인 창 ───────── */
+.chip.review.act { cursor: pointer; }
+.chip.review.act b { font-weight: 700; color: var(--accent-ink); }
+.chip.review.act:hover { border-color: var(--accent); }
+.rv-back { position: fixed; inset: 0; z-index: 30; background: rgba(15, 20, 25, .28); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.rv-modal { width: 460px; max-width: 100%; max-height: 90vh; overflow: auto; box-sizing: border-box; padding: 18px 20px; border-radius: var(--r-lg); background: var(--surface); color: var(--ink); box-shadow: var(--sh-2); display: flex; flex-direction: column; gap: 10px; }
+.rv-modal h3 { margin: 0; font-size: var(--fs-lg, 16px); }
+.rv-modal dl { display: grid; grid-template-columns: 92px 1fr; gap: 8px 10px; margin: 0; font-size: var(--fs-sm); }
+.rv-modal dt { color: var(--muted); }
+.rv-modal dd { margin: 0; }
+.rv-modal input[type=number] { width: 64px; height: 26px; }
+.rv-modal .acts { display: flex; gap: 8px; justify-content: flex-end; }
+.rv-modal .small, .qdone .small { font-size: var(--fs-xs); }
+.qnext { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); width: 100%; box-sizing: border-box; }

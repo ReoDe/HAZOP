@@ -58,11 +58,11 @@ class SheetConfirmFlowTest(W.ShellBase):
         gid = gid or self.gid
         self.js(win, "window.__hz.store.set({sheet: %s, panel: null})" % json.dumps(gid))
         win.engine.dispatch("sheet.open", {"graph_id": gid})
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.confbar .chip') !== null") is True, 20), "쪽 확정 칩이 없음")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.confbar .chip:not(.review)') !== null") is True, 20), "쪽 확정 칩이 없음")
         pump(0.8)
 
     def chip(self, win):
-        return self.js(win, "document.querySelector('.confbar .chip').textContent.trim()")
+        return self.js(win, "document.querySelector('.confbar .chip:not(.review)').textContent.trim()")
 
     def make_clean(self, path, leftovers=()):
         with open(path, encoding="utf-8") as fh:
@@ -81,7 +81,7 @@ class SheetConfirmFlowTest(W.ShellBase):
         return self.js(win, "(() => { const b = %s; return !!b && !b.disabled; })()" % self.btn(label))
 
     def open_compare(self, win):
-        self.assertTrue(self.click(win, ".confbar .chip"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
         self.assertTrue(wait_for(lambda: self.enabled(win, "견주기 화면 열기") is True, 10), self.text(win)[-300:])
         self.assertTrue(self.click(win, "button[aria-label='견주기 화면 열기']"))
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard') !== null") is True, 10), "견주기 화면이 열리지 않음")
@@ -92,7 +92,7 @@ class SheetConfirmFlowTest(W.ShellBase):
         self.locate(win)
         self.open_sheet(win)
         self.assertTrue(wait_for(lambda: "확정 조건" in self.chip(win), 10), self.chip(win))
-        self.assertTrue(self.click(win, ".confbar .chip"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.confcard').length") or 0) == 1, 10))
         text = self.text(win)
         self.assertIn("미확인", text)
@@ -119,7 +119,7 @@ class SheetConfirmFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: "확정만 남음" in self.chip(win), 10), self.chip(win))
         self.assertEqual(cf.sheet_confirmation(self.name)["compared"]["mode"], "side_by_side", "사람이 본 방식 한 가지만 적는다")
         self.assertEqual(self.js(win, "document.querySelector('.cmpcard') === null"), True, "견줌을 마치면 견주기 화면이 닫힌다")
-        self.assertTrue(self.click(win, ".confbar .chip"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
         self.assertTrue(wait_for(lambda: self.enabled(win, "이 쪽 확정") is True, 10))
         self.assertTrue(self.click(win, "button[aria-label='이 쪽 확정']"))
         self.assertTrue(wait_for(lambda: "쪽 확정됨" in self.chip(win), 10), self.chip(win))
@@ -168,7 +168,7 @@ class SheetConfirmFlowTest(W.ShellBase):
         pump(0.8)
         self.assertIsNone(cf.sheet_confirmation(name_b)["compared"], "A에서 켠 체크가 B에 견줌을 남기지 않는다")
         self.assertIsNone(cf.sheet_confirmation(name_a)["compared"])
-        self.assertTrue(self.click(win, ".confbar .chip"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
         self.assertTrue(wait_for(lambda: self.enabled(win, "견주기 화면 열기") is True, 10), self.text(win)[-300:])
         self.assertTrue(self.click(win, "button[aria-label='견주기 화면 열기']"))
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard input[type=checkbox]') !== null") is True, 10))
@@ -184,7 +184,7 @@ class SheetConfirmFlowTest(W.ShellBase):
             fh.write("{깨진 json")
         self.open_sheet(win)
         self.assertTrue(wait_for(lambda: "확정 기록 깨짐" in self.chip(win), 10), self.chip(win))
-        self.assertTrue(self.click(win, ".confbar .chip"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
         self.assertTrue(wait_for(lambda: "확정 기록을 읽을 수 없습니다" in self.text(win), 10), self.text(win)[-300:])
         self.assertEqual(self.js(win, "%s.disabled" % self.btn("견주기 화면 열기")), True)
         self.assertEqual(self.js(win, "%s.disabled" % self.btn("이 쪽 확정")), True)
@@ -238,7 +238,7 @@ class AiEstimateFlowTest(W.ShellBase):
         self.assertTrue(win.engine.dispatch("extract.set_ai_review", {"enabled": True, "cap": 20}, project=win.engine.project_id(), via_web=True)["ok"])
         self.js(win, "window.__hz.store.set((s) => ({app: Object.assign({}, s.app, {ai_review: true, ai_review_cap: 20})}))")
         self.assertTrue(wait_for(lambda: "예상 호출" in self.text(win), 15), self.text(win)[-300:])
-        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.row .chip.ai').length") or 0) >= 1, 10), "도면 행마다 호출 수 칩")
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.row .chip.review').length") or 0) >= 1, 10), "도면 행마다 AI 검토 칩(예상 호출 수는 그 칩의 확인 창에)")
         win.engine.dispatch("extract.set_ai_review", {"enabled": False}, project=win.engine.project_id(), via_web=True)
 
 

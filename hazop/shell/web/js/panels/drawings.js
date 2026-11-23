@@ -7,7 +7,8 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice, Switch } from "../ui/parts.js";
 import { SourceConflicts } from "./drawings_sources.js";
 import { focusSheet as openTitleblock } from "./titleblock.js";
-import { DrawingExclude, DrawingExcludedChip } from "./nodes_screen.js";      // 범례·기호표 도면을 분석에서 빼고 다시 넣는 부품(구간 쪽)
+import { DrawingExclude, DrawingExcludedChip } from "./nodes_screen.js";
+import { ReviewChip, summaryText as reviewSummary, useReview } from "../review/review.js";      // 도면별 AI 검토 상태·시작(HZ-DSN-06 §3.7)      // 범례·기호표 도면을 분석에서 빼고 다시 넣는 부품(구간 쪽)
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
@@ -71,6 +72,7 @@ function useAiEstimate(on, cap) {
 
 export function DrawingsPanel({ onOpen, onClose }) {
   const data = useStore((s) => s.drawings);
+  const reviewLine = useReview((s) => reviewSummary(s.rows));
   const sheet = useStore((s) => s.sheet);
   const app = useStore((s) => s.app);
   const jobs = useStore((s) => s.jobs);
@@ -78,7 +80,6 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const conn = useStore((s) => s.conn);
   const running = Object.entries(jobs);
   const est = useAiEstimate(!!app.ai_review, app.ai_review_cap);
-  const estOf = (gid) => (est && est.pages ? est.pages.find((p) => p.graph_id === gid) : null);
 
   const pick = () => cmd("register.pick").catch(toastError);
   const setReview = (patch) => cmd("extract.set_ai_review", patch).then((r) => store.set((s) => ({
@@ -102,13 +103,13 @@ export function DrawingsPanel({ onOpen, onClose }) {
             onChange=${(e) => setReview({ cap: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 20)) })} /></div>` : null}
         ${app.ai_review ? html`<div class="muted small ai-send-auto">${app.ai_review_images ? "추출 뒤에는 도면 조각 그림도 보냅니다(구독 연결로만 보냅니다)." : "추출 뒤에는 글만 보냅니다. 도면 조각 그림은 AI 검토 패널에서 켜면 보냅니다."}</div>` : null}
         ${app.ai_review && !conn.can_start ? html`<${Notice} kind="warn" icon="alert-triangle">AI 연결이 준비되지 않아 검토는 건너뜁니다.<//>` : null}</div>
-      <div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">도면 ${data.drawings.length}장${data.project_id ? " · 프로젝트 " + data.project_id : ""}</div>
+      <div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">도면 ${data.drawings.length}장${data.project_id ? " · 프로젝트 " + data.project_id : ""}${reviewLine ? " · " + reviewLine : ""}</div>
         ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 위 자리에 도면 파일을 끌어 놓으면 등록하고 읽습니다.<//>` : html`<div class="list">
           ${data.drawings.map((d) => html`<${Fragment} key=${d.graph_id}><div class=${"row drow" + (d.graph_id === sheet ? " on" : "")}>
             <div class="thumb" aria-hidden="true"></div>
             <div class="main"><b>${d.drawing_number || d.name}</b><span>${d.title || "표제란 확인 전"}</span></div>
             ${d.unknowns ? html`<${Chip} kind="warn" title="추출에서 읽지 못한 항목">미확인 ${d.unknowns}<//>` : html`<${Chip} kind="ok" icon="check">읽음<//>`}
-            ${estOf(d.graph_id) ? html`<${Chip} kind="ai" title="AI 검토를 돌리면 이 도면에서 부를 호출 수(예상)">호출 ${estOf(d.graph_id).calls}<//>` : null}
+            <${ReviewChip} gid=${d.graph_id} />
             <${DrawingExcludedChip} graphId=${d.graph_id} />
             <${Btn} sm=${true} kind="ghost" label=${(d.drawing_number || d.name) + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//>
             <${Btn} sm=${true} label=${(d.drawing_number || d.name) + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>

@@ -14,8 +14,9 @@ import { tests as lostTests } from "./lost.test.js";
 import { tests as nextTests } from "./next.test.js";
 import { tests as queueTests } from "./queue.test.js";
 import { tests as chipTests } from "./chips.test.js";
+import { tests as reviewTests } from "./review.test.js";
 
-const all = [...storeTests, ...bridgeTests, ...cardTests, ...nodesTests, ...tableTests, ...cleanTests, ...editTests, ...resultsDetailTests, ...aiReviewTests, ...cleanDashedTests, ...lostTests, ...nextTests, ...queueTests, ...chipTests];
+const all = [...storeTests, ...bridgeTests, ...cardTests, ...nodesTests, ...tableTests, ...cleanTests, ...editTests, ...resultsDetailTests, ...aiReviewTests, ...cleanDashedTests, ...lostTests, ...nextTests, ...queueTests, ...chipTests, ...reviewTests];
 const results = [];
 
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assert 실패"); }

@@ -2,6 +2,7 @@
 import { html } from "../ui/html.js";
 import { Icon } from "../ui/icon.js";
 import * as Q from "./queue.js";
+import { go as goNext, useNext } from "../next/next.js";
 
 const TITLE = { "ai": "AI 후보 검토", "lost": "다시 확인" };
 
@@ -13,7 +14,7 @@ export function QueueLine() {
   const n = s.items.length, c = Q.counts(s);
   return html`<div class="next" id="next"><div class="line info" role="status">
     <${Icon} name=${s.kind === "ai" ? "sparkles" : "alert-triangle"} size=${15} />
-    <span class="txt">${TITLE[s.kind]} · ${s.done ? "끝" : n + "건 중 " + (s.i + 1) + "번째"}</span>
+    <span class="txt">${s.gid && s.items[0] ? s.items[0].sheet + " " : ""}${TITLE[s.kind]} · ${s.done ? "끝" : n + "건 중 " + (s.i + 1) + "번째"}</span>
     <span class="bar"><i style=${"width:" + pct(c, n) + "%"}></i></span>
     <button type="button" class="btn sm" aria-keyshortcuts="Escape" onClick=${Q.closeQueue}>끝내기 Esc</button></div></div>`;
 }
@@ -64,10 +65,13 @@ function BulkBox({ s }) {
 
 function Done({ s }) {
   const c = Q.counts(s);
+  const top = useNext((x) => x.items[0] || null);
   return html`<div class="qdone"><${Icon} name="circle-check" size=${28} /><b>모두 봤습니다</b>
     <div>수락 ${c.accepted} · 거절 ${c.rejected} · 건너뜀 ${c.skipped}</div>
     ${c.skipped ? html`<button type="button" class="btn" onClick=${Q.reviewSkipped}>건너뛴 ${c.skipped}건 다시 보기</button>` : null}
-    <button type="button" class="btn primary" onClick=${Q.closeQueue}>끝내기</button>
+    ${top && top.kind !== "none" && !c.skipped ? html`<div class="qnext"><span class="muted small">다음에 할 일</span><span>${top.text}</span>
+      <button type="button" class="btn primary" onClick=${() => { Q.closeQueue(); goNext(top.action); }}>${top.action.label}</button></div>` : null}
+    <button type="button" class=${"btn" + (top && top.kind !== "none" && !c.skipped ? "" : " primary")} onClick=${Q.closeQueue}>끝내기</button>
     ${s.undo.length ? html`<div class="muted small">Z를 누르면 바로 앞 판정을 되돌립니다.</div>` : null}</div>`;
 }
 

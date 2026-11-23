@@ -301,7 +301,7 @@ class ShellWindowTest(ShellBase):
 
     def test_open_a_drawing_from_the_list(self):
         win = self.window()
-        self.assertTrue(self.click(win, ".panel .row button", 1))
+        self.assertTrue(self.click(win, ".panel .row button[aria-label$=' 열기']"))
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().sheet") is not None, 10))
         pump(0.5)
         self.assertTrue(self.js(win, "window.__hz.store.get().panel === null"))
