@@ -248,7 +248,7 @@ async function boot() {
   connect();
   wireEvents();
   wireQueue();
-  setReviewOpeners(openQueue, openSheet);
+  setReviewOpeners(openQueue, openSheet, (gid) => queueStore.get().open && queueStore.get().kind === "ai" && queueStore.get().gid === gid);
   wireReview();
   render(html`<${App} />`, document.getElementById("app"));
   loadPanelCss();

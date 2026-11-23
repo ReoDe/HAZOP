@@ -1,5 +1,6 @@
 // 검토 대기열의 오른쪽 칸 카드와 위 막대 진행 줄(규격 HZ-DSN-06 §3.3). 대기열을 연 동안 채팅 자리에 이 카드가 오고, 닫으면 채팅이 그대로 돌아온다.
 import { html } from "../ui/html.js";
+import { useEffect, useRef } from "../../vendor/hooks.module.js";
 import { Icon } from "../ui/icon.js";
 import * as Q from "./queue.js";
 import { go as goNext, useNext } from "../next/next.js";
@@ -27,6 +28,10 @@ function Progress({ s }) {
 }
 
 function AiBody({ it, s }) {
+  const box = useRef(null);
+  const editing = s.editing !== null;
+  // E: 입력칸으로 포커스를 옮긴다(autofocus 속성은 다른 단추가 포커스를 쥐고 있으면 먹지 않는다. 실제 창 결함 1)
+  useEffect(() => { if (editing && box.current) { box.current.focus(); box.current.select(); } }, [editing, it.qid]);
   return html`<div class="qbody">
     <div class="chips"><span class="chip ai">AI 후보</span><span class="chip">${it.task}</span>${it.match_label ? html`<span class="chip">범례 일치 ${it.match_label}</span>` : null}</div>
     <div class="target"><b>${it.label}</b><span class="muted">${it.sheet} · ${it.field_label}</span></div>
@@ -34,7 +39,7 @@ function AiBody({ it, s }) {
     <div class="conf">확신 ${Math.round((it.confidence || 0) * 100)}%</div>
     ${it.why ? html`<div class="why"><span class="muted">AI가 본 것</span>${it.why}</div>` : null}
     ${s.editing !== null ? html`<div class="edit">
-      <input type="text" class="qedit" value=${s.editing} aria-label=${it.field_label + " 고쳐 쓰기"} autofocus
+      <input type="text" class="qedit" ref=${box} value=${s.editing} aria-label=${it.field_label + " 고쳐 쓰기"}
         onInput=${(e) => Q.setEditing(e.target.value)}
         onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); Q.saveEdit(); } if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); Q.cancelEdit(); } }} />
       ${s.ask ? html`<div class="ask">${s.ask} 그래도 저장하려면 Enter를 한 번 더 누르세요.</div>` : html`<div class="muted small">Enter 저장 · Esc 취소</div>`}</div>` : null}
@@ -79,7 +84,7 @@ function Done({ s }) {
 export function QueueCard({ onChat }) {
   const s = Q.useQueue((x) => x);
   const it = Q.current(s);
-  return html`<aside class="chat queue" aria-label=${TITLE[s.kind] + " 대기열"}>
+  return html`<aside class="chat queue" tabindex="-1" aria-label=${TITLE[s.kind] + " 대기열"}>
     <div class="chat-h"><${Icon} name=${s.kind === "ai" ? "sparkles" : "alert-triangle"} /><b>${TITLE[s.kind]}</b>
       <span class="acts"><button type="button" class="btn ghost icon" title="채팅으로 (Ctrl+K)" aria-label="채팅으로" onClick=${onChat}><${Icon} name="message-circle" size=${16} /></button></span></div>
     <div class="qwrap">

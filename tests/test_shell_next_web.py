@@ -4,7 +4,7 @@
 import json
 import unittest
 
-from tests.test_shell_web import ShellBase, wait_for
+from tests.test_shell_web import ShellBase, pump, wait_for
 
 LONGEST = "도면이 바뀌어 3곳을 다시 확인해야 합니다"
 
@@ -85,6 +85,54 @@ class ReviewFlowTest(ShellBase):
         self.assertIn("AI 후보 검토", line)
         sheets = json.loads(self.js(win, "JSON.stringify([...new Set(window.__hz.queue.get().items.map((x) => x.graph_id))])"))
         self.assertEqual(sheets, [gid], "대기열은 그 도면의 후보만")
+
+
+class QueueFocusTest(ShellBase):
+    """실제 창 결함 1(2026-11-23 real-window-check): 도면 위 칩으로 연 대기열에서 E를 누르면 입력칸에 포커스가 가야 하고,
+    Enter가 칩을 다시 눌러 대기열을 처음부터 다시 열면 안 된다. 클릭 흉내는 포커스를 옮기지 않으므로 칩에 포커스를 두고 진짜 키(QTest)를 보낸다."""
+
+    def key(self, win, k, text=""):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        target = win.view.focusProxy() or win.view
+        QTest.keyClick(target, getattr(Qt, "Key_" + k), Qt.NoModifier)
+        pump(0.3)
+
+    def test_e_moves_focus_into_the_field_and_enter_saves_not_reopens(self):
+        from hazop.app import data
+        from hazop.extract import ai_review as ar
+        win = self.window((1366, 768))
+        win.activateWindow()
+        win.view.setFocus()
+        gid = self.js(win, "window.__hz.store.get().drawings.drawings[0].graph_id")
+        name = win.engine.graph_names()[gid]
+        ex = data.read_json(data.extraction_path(name))
+        valves = [n for n in ex["nodes"] if n.get("kind") and n.get("kind") != "tee"][:2]
+        doc = ar.new_doc(name, ex)
+        ar.merge_run(doc, {"candidates": [ar.make_candidate("t-%d" % i, "tag", n, "tag", ["V90%d" % i], 0.95, "주변 글자") for i, n in enumerate(valves)],
+                           "stats": {"calls": 1, "left": 0}})
+        ar.save_doc(doc)
+        win.engine.changed("aireview", None)
+        self.js(win, "window.__hz.store.set({ sheet: '%s', panel: null })" % gid)
+        chip = ".confbar .chip.review.act"
+        self.assertTrue(wait_for(lambda: "검토하기" in (self.js(win, "(document.querySelector('%s') || {}).textContent || ''" % chip) or ""), 20))
+        self.js(win, "document.querySelector('%s').focus()" % chip)
+        self.key(win, "Return")                                    # 진짜 Enter로 칩을 누른다(포커스가 칩에 남는 길)
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('aside.chat.queue .qacts')"), 15), "대기열이 열리지 않음")
+        self.assertTrue(wait_for(lambda: self.js(win, "!(document.activeElement && document.activeElement.closest && document.activeElement.closest('.confbar'))"), 5),
+                        "대기열이 열린 뒤에도 포커스가 칩에 남음")
+        self.key(win, "E")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.activeElement && document.activeElement.classList.contains('qedit')"), 5),
+                        "E 뒤 포커스: %s" % self.js(win, "document.activeElement && document.activeElement.className"))
+        self.js(win, "document.querySelector('.qedit').focus()")
+        before = self.js(win, "window.__hz.queue.get().undo.length")
+        self.key(win, "Return")
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.queue.get().undo.length") == before + 1, 15), "Enter가 고친 값을 저장하지 않음")
+        self.assertEqual(self.js(win, "window.__hz.queue.get().open"), True)
+        # 대기열이 열린 동안 칩에 포커스가 돌아가도 Enter가 대기열을 다시 열지 않는다
+        self.js(win, "document.querySelector('%s') && document.querySelector('%s').focus()" % (chip, chip))
+        self.key(win, "Return")
+        self.assertEqual(self.js(win, "window.__hz.queue.get().undo.length"), before + 1, "대기열이 처음부터 다시 열림")
 
 
 if __name__ == "__main__":

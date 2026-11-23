@@ -259,3 +259,4 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .rv-modal .acts { display: flex; gap: 8px; justify-content: flex-end; }
 .rv-modal .small, .qdone .small { font-size: var(--fs-xs); }
 .qnext { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); width: 100%; box-sizing: border-box; }
+.chat.queue:focus { outline: none; }

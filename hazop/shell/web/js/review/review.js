@@ -64,13 +64,14 @@ const soon = (ms = 150) => { clearTimeout(timer); timer = setTimeout(load, ms); 
 // ---------------------------------------------------------------- 누르기
 let openQueue = null;
 let openSheet = null;
-/** main.js가 이어 준다(순환 가져오기를 피하려고). */
-export function setOpeners(q, s) { openQueue = q; openSheet = s; }
+let queueOpen = null;
+/** main.js가 이어 준다(순환 가져오기를 피하려고). isOpen(gid): 그 도면 대기열이 열려 있는가. */
+export function setOpeners(q, s, isOpen) { openQueue = q; openSheet = s; queueOpen = isOpen || null; }
 
 export function press(gid) {
   const v = reviewView(rowOf(gid));
   if (!v || !v.action) return;
-  if (v.action === "queue") { if (openQueue) openQueue("ai", gid); return; }
+  if (v.action === "queue") { if (openQueue && !(queueOpen && queueOpen(gid))) openQueue("ai", gid); return; }      // 이미 그 대기열이 열려 있으면 다시 열지 않는다
   startReview(gid);
 }
 

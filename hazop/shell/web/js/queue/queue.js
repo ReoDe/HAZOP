@@ -50,6 +50,7 @@ export async function openQueue(kind, gid = null) {
   q.set(Object.assign({}, START, { open: true, kind, gid, items: d.items.map((x) => Object.assign({}, x)), setRev: d.set_rev ?? null,
     projectId: d.project_id || null, bulk: d.bulk || [] }));
   store.set({ panel: null });
+  takeFocus();
   show();
   return true;
 }
@@ -63,6 +64,14 @@ export async function fresh() {
   const by = new Map((d.items || []).map((x) => [x.qid, x]));
   q.set((cur) => ({ setRev: d.set_rev ?? cur.setRev, bulk: d.bulk || [],
     items: cur.items.map((x) => (by.has(x.qid) ? Object.assign({}, by.get(x.qid), { state: x.state }) : x)) }));
+}
+
+/** 대기열 카드로 포커스를 옮긴다. 대기열을 연 단추(도면 위 칩 등)에 포커스가 남으면 Enter가 그 단추를 다시 눌러
+ *  대기열을 처음부터 다시 열었다(실제 창 결함 1). 카드가 그려진 뒤에 옮긴다. */
+function takeFocus() {
+  const a = document.activeElement;
+  if (a && a !== document.body && a.blur) a.blur();
+  setTimeout(() => { const el = document.querySelector("aside.chat.queue"); if (el) el.focus(); }, 0);
 }
 
 export function closeQueue() {
@@ -281,6 +290,8 @@ export function wire() {
     if (!s.open) return;
     const tag = (e.target && e.target.tagName) || "";
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;       // 고치기 입력칸은 자기 Enter·Esc를 쓴다
+    // 대기열 밖 단추(도면 위 칩 등)에 포커스가 있어도 Enter·Space가 그 단추를 누르지 않게 한다(Space는 아래에서 건너뛰기)
+    if (e.key === "Enter" && !s.bulkAsk && !(e.target && e.target.closest && e.target.closest("aside.chat.queue"))) { e.preventDefault(); e.stopImmediatePropagation(); return; }
     const k = e.key, low = k.length === 1 ? k.toLowerCase() : k;
     let hit = true;
     if (s.bulkAsk) {
