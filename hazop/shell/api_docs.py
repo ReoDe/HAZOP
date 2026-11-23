@@ -54,8 +54,9 @@ def _read_doc(e):
         return None
     p = os.path.join(data.doc_root(), name, auto.DOC_FILE)
     try:
-        with open(p, encoding="utf-8") as fh:
-            d = json.load(fh)
+        with open(p, "rb") as fh:          # 한 번에 읽고 닫은 뒤 푼다(쥔 채 풀면 다른 스레드의 저장 교체가 Windows에서 접근 거부로 막힌다, e6080f4와 같은 꼴)
+            raw = fh.read()
+        d = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError):
         return None
     return d if isinstance(d, dict) else None

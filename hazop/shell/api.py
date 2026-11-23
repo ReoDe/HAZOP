@@ -309,8 +309,9 @@ class Engine:
 
     def ui_state(self):
         try:
-            with open(self.ui_state_path(), encoding="utf-8") as fh:
-                state = json.load(fh)
+            with open(self.ui_state_path(), "rb") as fh:          # 한 번에 읽고 닫은 뒤 푼다(쥔 채 풀면 다른 스레드의 저장 교체가 Windows에서 접근 거부로 막힌다, e6080f4와 같은 꼴)
+                raw = fh.read()
+            state = json.loads(raw.decode("utf-8"))
             return state if isinstance(state, dict) else {}
         except (OSError, ValueError):
             return {}
@@ -909,8 +910,9 @@ class ReadApi:
             return None
         try:
             svg_path = viewer_build._svg_path(al["svg_file"], [paths.work_root(), paths.store_root()])
-            with open(svg_path, encoding="utf-8") as fh:
-                text = viewer_build.prepare_svg(fh.read())
+            with open(svg_path, "rb") as fh:          # 한 번에 읽고 닫은 뒤 푼다(쥔 채 풀면 다른 스레드의 저장 교체가 Windows에서 접근 거부로 막힌다, e6080f4와 같은 꼴)
+                raw = fh.read()
+            text = viewer_build.prepare_svg(raw.decode("utf-8"))
         except (OSError, ValueError):
             return None
         return scheme.Response(200, "image/svg+xml", text.encode("utf-8"))
