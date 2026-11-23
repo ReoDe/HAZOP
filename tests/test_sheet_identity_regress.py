@@ -13,8 +13,8 @@ E5 (퍼즈가 시드 232에서 찾음) 먼저 등록하고 번호를 받았지�
    셈한 임시 이름으로 센다. 그래서 옮길 구간을 0개로 알리고 허락한 뒤 구간을 묘비로 만들거나(214·246), 이름이 그대로인 확정을 자기 구간 때문에 거절한다(155).
 되찾기(R3 검토가 찾음) 다른 파일을 골랐다가 옛 자리 주인 a를 다시 추출하거나 제목만 확정하면 a가 임시 이름으로 옮겨 가 고르기 줄에서 사라지고,
    다시 고를 길이 없어 a의 묘비가 영구히 남는다. 고르기는 이제 붙박기를 풀지 않는다.
-E6 (알려진 결함, 고치지 않음: hazop/study/idmap.compute) 같은 기호(같은 자료·쪽·파일 id)가 두 이름에서 묘비가 되면(옛 이름에서 한 번, 그 쪽이 잠시 보이던
-   임시 이름에서 한 번) 다시 고를 때 두 묘비가 한 구성요소를 다퉈 둘 다 되찾지 못한다. expectedFailure 시험 셋이 그 재현이고, 고치면 '뜻밖의 통과'로 알린다.
+E6 같은 기호(같은 자료·쪽·파일 id)가 두 이름에서 묘비가 되면(옛 이름에서 한 번, 그 쪽이 잠시 보이던 임시 이름·다른 번호에서 한 번) 다시 고를 때
+   두 묘비가 한 구성요소를 다퉈 둘 다 되찾지 못했다(hazop/study/idmap.compute). 이제 한 기호임을 증명하면(idmap._one_symbol) 둘 다 되찾고 묘비 기록도 둘 다 닫는다.
 실행: python -m unittest tests.test_sheet_identity_regress
 """
 
@@ -41,6 +41,11 @@ class Crash(BaseException):
 class SeatRegressTest(SheetCase):
     def owner(self, gid):
         return next((s["material_id"] for s in project_ctx.project_graph(P)["sheets"] if s["graph_id"] == gid), None)
+
+    def open_tombs_of(self, mid):
+        """그 파일에서 잃고 아직 되찾지 못한 묘비 기록 수(다시 고른 뒤 같은 기호의 두 이름 기록이 모두 닫혀야 0)."""
+        ns = nodes.load(project_ctx.project_graph(P))
+        return sum(1 for r in (ns.get("tombstones") or {}).values() if r.get("material") == mid and r.get("found") is None)
 
     def test_e1_a_file_that_returns_to_a_number_does_not_take_it_from_the_file_using_it(self):
         a, b = self.add("SNP-M-101", "drawio"), self.add("SNP-M-102", "drawio")
@@ -116,6 +121,7 @@ class SeatRegressTest(SheetCase):
         sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
         _pg, n = self.node()
         self.assertEqual((len(n["members"]), n.get("lost") or []), (6, []), "같은 자료로 돌아온 a의 묘비가 되돌아오지 않음")
+        self.assertEqual(self.open_tombs_of(a), 0, "같은 기호를 두 이름에서 잃은 묘비 기록이 열린 채 남음")
 
     def test_choose_guard_counts_the_segment_on_the_name_the_sheet_uses_now(self):
         """시드 214·246: 붙박기가 풀린 a를 다시 고르면 a는 옛 이름 그대로 보이는데, 가드는 규칙이 셈한 임시 이름으로 세어 옮길 구간을 0개로 알리고
@@ -184,6 +190,7 @@ class SeatRegressTest(SheetCase):
         sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
         _pg, n = self.node()
         self.assertEqual((n["members"], n.get("lost") or []), (before["nodes"][0]["members"], []), "다시 고른 a의 구성요소가 묘비로 남음")
+        self.assertEqual(self.open_tombs_of(a), 0, "같은 기호를 두 이름에서 잃은 묘비 기록이 열린 채 남음")
 
     def test_choosing_back_after_confirming_only_the_title_restores_its_segment(self):
         def title(a):
@@ -267,6 +274,7 @@ class SeatRegressTest(SheetCase):
         sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
         _pg, n = self.node()
         self.assertEqual((n["members"], n.get("lost") or []), (before["nodes"][0]["members"], []), "다시 고른 a의 구성요소가 묘비로 남음")
+        self.assertEqual(self.open_tombs_of(a), 0, "같은 기호를 두 이름에서 잃은 묘비 기록이 열린 채 남음")
 
 
 class DocLogRegressTest(SheetCase):

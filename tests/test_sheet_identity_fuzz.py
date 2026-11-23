@@ -27,7 +27,7 @@ V10 끊김 수렴: 쓰기 직전·직후에 끊기거나 다시 추출이 실패
    중간에 화면이 읽어도 틀린 대상이 보이지 않는다.
 V11 되찾기: 이름의 주인 a를 두고 다른 파일을 골랐다가 a를 다시 추출하거나 제목만 확정해도 a는 그 이름의 고르기 후보로 남고, a를 다시 고르면
    고르기 전에 살아 있던 a의 구간 구성요소가 모두 돌아온다(화면 카드의 '다시 고르면 바로 되돌아옵니다'). 같은 기호의 묘비가 두 이름에 있어 서로 다투는
-   꼴(알려진 결함 E6, hazop/study/idmap.compute)은 위반으로 세지 않고 known_E6으로 센다.
+   꼴(E6)도 위반이다.
 X  예외: 연산이 예상 밖 예외를 올리지 않는다.
 
 '깨끗한 구간'은 만든 뒤 사람이 파일을 바꿔 고른 적(고르기)이 없고 정착 전에 가려진 시트에 걸치지 않았으며 쓰는 중에 프로세스가 죽은 적(끊김 ③)이
@@ -583,23 +583,10 @@ class World:
             got = sorted(x for x in back.segs.get(nid, {}).get("syms") or () if x is not None)
             if got == syms:
                 continue
-            if self.twin_tombs(back.ns, nid, owner[0]):
-                self.stats["known_E6"] += 1
-                continue
             fail("V11", "%s의 %s를 다시 골랐는데 구간 %s의 구성요소 %d개 가운데 %d개만 돌아옴" % (gid, key, nid, len(syms), len(got)))
         self.stats["recovered"] += 1
         self.stats["recovered_with_segment"] += 1 if keep else 0
         return True
-
-    @staticmethod
-    def twin_tombs(ns, nid, mid):
-        """E6: 그 구간의 묘비가 모두 같은 자료·같은 파일 id의 다른 묘비(다른 이름에서 잃은 같은 기호)와 다투는가. 하나라도 짝 없는 묘비가 있으면 E6이 아니다."""
-        tombs = (ns or {}).get("tombstones") or {}
-        node = next((n for n in (ns or {}).get("nodes") or () if n["node_id"] == nid), {})
-        live = collections.Counter(r["ref"].partition("#")[2] for r in tombs.values()
-                                   if isinstance(r, dict) and r.get("found") is None and r.get("material") == mid and r.get("ref"))
-        lost = node.get("lost") or ()
-        return bool(lost) and all(live[(tombs.get(t) or {}).get("ref", "").partition("#")[2]] > 1 for t in lost)
 
     # ---------------------------------------------------------------- 관측 판정
     @staticmethod

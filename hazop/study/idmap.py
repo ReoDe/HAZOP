@@ -24,7 +24,8 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
   하나뿐으로 다시 나오면 되찾는다(found). source 구성요소의 묘비는 표시 대신 겉모습(look: 종류·도면·기호 종류·태그)을 지문에
   넣어 두고, 같은 참조의 source 구성요소가 하나뿐으로 다시 나오고 겉모습이 같으면(기록에 태그가 없으면 태그는 보지 않음)
   되찾는다(나누기를 되돌렸다 다시 하면 같은 나눈 id가 돌아온다). 같은 참조가 다른 종류로 돌아오면 다른 기호라 묘비로 둔다.
-  되찾기는 기록의 지문이 묘비 id와 맞는 것만 한다(기록에 없는 묘비 id는 풀지 않음).
+  되찾기는 기록의 지문이 묘비 id와 맞는 것만 한다(기록에 없는 묘비 id는 풀지 않음). 묘비 둘 이상이 한 구성요소를 다투면 모두 못 찾는다.
+  단 한 기호를 여러 이름에서 잃은 묘비들(잃을 때 자료·쪽·파일 id가 같고 옛 entity_id나 표시도 같음, _one_symbol)은 모두 되찾는다.
 - 구간(members를 가진 사전)은 members에 지금 판의 살아 있는 id만 두고 잃은 것은 lost(묘비 id)에 둔다. 실행 취소 기록의
   before·after와 조각 기록도 같은 규칙이라 되돌려도 묘비는 묘비다. 사람이 확인하고 버린 묘비는 lost에서 discarded로
   옮긴다(hazop.study.nodes.discard_lost). 지금 구간 어디에도 lost로 남지 않고 버려진 묘비(discarded_tombs)는 되찾지 않는다.
@@ -571,8 +572,10 @@ def compute(node_set, graph, at=None):
         if len(hits) == 1:
             claims.setdefault(hits[0], []).append(t)
     for e, ts in claims.items():
-        if len(ts) == 1:  # 묘비 둘이 한 구성요소를 다투면 둘 다 못 찾는다
-            table["found"][ts[0]] = [e, new_ref[e]]
+        # 묘비 둘 이상이 한 구성요소를 다투면 한 기호를 여러 이름에서 잃은 것으로 증명될 때만 모두 되찾고, 아니면 모두 못 찾는다
+        if len(ts) == 1 or _one_symbol([tombs[t] for t in ts], page_of.get(by_id[e].get("sheet")) or 0):
+            for t in ts:
+                table["found"][t] = [e, new_ref[e]]
     for m, r in old_refs.items():
         if r is None:
             continue
@@ -585,6 +588,31 @@ def compute(node_set, graph, at=None):
                                | ({gid} if gid else set()))
     table["unnamed"] = sorted(set(table["unnamed"]))
     return table
+
+
+def _one_symbol(recs, page):
+    """한 구성요소를 다투는 묘비 기록들이 한 기호를 여러 이름에서 잃은 것인가(옛 이름에서 한 번, 그 쪽이 잠시 보이던 임시 이름·다른 번호에서
+    한 번). 기록마다 그 구성요소로 되찾는 증명은 이미 통과했다. 그에 더해 잃을 때의 자료·쪽·파일 id가 같고, 옛 entity_id(시트 이름을 뺀 것)나
+    표시(종류·태그·상자, source는 겉모습)도 같아야 한다. 판이 다르면 순번 파일 id만으로는 같은 기호가 아니다. 쪽을 모르는 기록(번호 이름의
+    drawio 참조)은 되찾을 시트의 쪽 page로 본다(묘비가 하나일 때 되찾는 증명과 같은 가정)."""
+    def sheet(rec):
+        return rec["mark"][1] if valid_mark(rec.get("mark")) else drawing_of(rec.get("ref"))
+
+    def key(rec):
+        s, r = sheet(rec), rec.get("ref")
+        p = _page_of(s, r)
+        return (rec.get("material") or _temp_material(s), page if p is None else p,
+                r.partition("#")[2] if "#" in r else r, valid_mark(rec.get("mark")))
+
+    def shown(rec):
+        return _renamed_sheet(rec["mark"] if valid_mark(rec.get("mark")) else rec["look"], None)
+    if any(not isinstance(rec.get("ref"), str) for rec in recs):
+        return False
+    first = recs[0]
+    if first.get("material") is None and _temp_material(sheet(first)) is None or any(key(r) != key(first) for r in recs):
+        return False
+    return (len({str(r.get("entity_id")).rpartition("/")[2] for r in recs}) == 1
+            or all(_same_mark(shown(first), shown(r)) for r in recs))
 
 
 def _drop_contested(link):
