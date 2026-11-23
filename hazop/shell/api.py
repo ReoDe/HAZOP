@@ -165,7 +165,10 @@ class Engine:
         self.ai_gate = ai_gate.Gate()    # 일괄 AI 작업(AI 검토·추출 뒤 자동 검토·AI 분석)의 구독 호출 차례
         self._reviewing = set()          # AI 검토가 돌거나 차례를 기다리는 도면(추출 이름)
         self._catching = set()           # 검토구간 판 이전을 기다리는 프로젝트
-        self._study_lock = threading.Lock()   # 판 이전과 ⑤ AI 분석 시작을 가른다(분석이 도는 동안 판 이전을 하지 않고, 판 이전 중에는 분석을 시작하지 않는다)
+        # 판 이전과 ⑤ AI 분석 시작을 가른다(분석이 도는 동안 판 이전을 하지 않고, 판 이전 중에는 분석을 시작하지 않는다). 같은 스레드가 다시 잡을 수 있다:
+        # 분석 시작 검사가 이 잠금 안에서 프로젝트 그래프를 지으면 낡은 도면을 다시 만들고 그 끝의 알림이 같은 스레드에서 판 이전을 한다(그러면 검사가 판이
+        # 바뀐 것을 보고 시작하지 않는다)
+        self._study_lock = threading.RLock()
         from hazop.app import data
         data.set_graph_listener(self._on_graph_changed)   # 그래프 판이 바뀐 길(다시 추출·다시 짓기)이 끝나면 판 이전을 이어서 한다
 
@@ -218,9 +221,12 @@ class Engine:
             return False
         for topic in ("nodes", "results", "ie", "kg"):
             self.changed(topic)
-        if res.get("new_lost") and project_id == self.project_id():      # 지금 보는 프로젝트의 것만 알린다(그 자리로 단추가 다른 프로젝트로 가지 않게)
-            self.emit("study.lost", {"project_id": project_id, "graph_version": res.get("graph_version"), "sections": len(res["lost_members"]),
-                                     "members": sum(res["lost_members"].values()), "first_node": res.get("first_node")})
+        # 잃은 것이나 확정을 푼 구간이 조용히 지나가지 않게 알린다. 지금 보는 프로젝트의 것만(그 자리로 단추가 다른 프로젝트로 가지 않게)
+        if (res.get("new_lost") or res.get("demoted")) and project_id == self.project_id():
+            self.emit("study.lost", {"project_id": project_id, "graph_version": res.get("graph_version"),
+                                     "sections": len(res["lost_members"]) if res.get("new_lost") else 0,
+                                     "members": sum(res["lost_members"].values()) if res.get("new_lost") else 0,
+                                     "first_node": res.get("first_node"), "demoted": res.get("demoted") or []})
         return True
 
     def catch_up_on_open(self):
@@ -480,6 +486,12 @@ def _h_set_project(engine, a):
     return {"project_id": pid}
 
 
+def _h_open_check(engine, a):
+    """앱을 켠 뒤 웹이 한 번 부른다: 지금 프로젝트가 이미 낡았으면(앱을 끈 사이 도면이 다시 읽힘) 같은 길로 맞춘다. 읽기를 붙잡지 않게 뒤에서."""
+    threading.Thread(target=engine.catch_up_on_open, name="catch-up-on-open", daemon=True).start()
+    return {"started": True}
+
+
 def _h_set_default_shell(engine, a):
     engine.settings["ui_shell"] = a["enabled"]
     engine.save_settings()
@@ -593,6 +605,7 @@ COMMANDS = {
     "ui.save": Command({"state": (v_json_text(MAX_UI_STATE_CHARS), True)}, _h_ui_save, "웹의 보기 상태(마지막 도면·채팅 접힘 등)를 맡긴다"),
     "sheet.open": Command({"graph_id": (v_str(1, 200), True)}, _h_open_sheet, "보는 도면이 바뀌었음을 알린다(채팅의 지금 화면 문맥)"),
     "project.set": Command({"project_id": (v_str(1, 60), True)}, _h_set_project, "프로젝트를 정하거나 바꾼다(끌어 놓아 등록할 때 쓰는 프로젝트 ID)"),
+    "project.open_check": Command({}, _h_open_check, "앱을 켠 뒤 지금 프로젝트의 검토구간을 도면 변경에 맞춘다(뒤에서)"),
     "settings.set_default_shell": Command({"enabled": (v_bool(), True)}, _h_set_default_shell, "시작할 때 새 화면을 쓸지(설정 ui_shell)"),
     "settings.set_reviewer": Command({"name": (v_str(1, 60), True)}, _h_set_reviewer, "검토자 이름"),
     "conn.check": Command({}, _h_conn_check, "AI 연결을 다시 확인한다"),

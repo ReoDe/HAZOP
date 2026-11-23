@@ -137,6 +137,8 @@ def _choose_source(engine, a):
     except ValueError as exc:
         engine.changed("sources", None)
         raise api.CommandError("failed", str(exc)[:300])
+    from hazop.app import data
+    data.notify_graph_changed(engine.project_id())      # 쓸 원본이 바뀌면 프로젝트 그래프 판도 바뀐다: 검토구간을 이어서 맞춘다
     engine.changed("sources", None)
     engine.changed("drawings", None)
     return {"chosen": {"drawing_number": a["drawing_number"], "format": record["format"]}}

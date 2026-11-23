@@ -13,7 +13,7 @@ import { resetAreas } from "./areas.js";
 import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
-import { Notices, addNotice, lostNotice, refreshLostNotice } from "./notices.js";
+import { Notices, addNotice, demotedNotice, lostNotice, refreshLostNotice } from "./notices.js";
 
 const toast = (text, kind) => store.set({ toast: { text, kind } });
 
@@ -99,7 +99,7 @@ function wireEvents() {
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));
   on("app.notice", (d) => toast(d.text));
-  on("study.lost", (d) => { const n = lostNotice(d); if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
+  on("study.lost", (d) => { for (const n of [lostNotice(d), demotedNotice(d)]) if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
   const job = (state) => (d) => store.set((s) => ({ jobs: Object.assign({}, s.jobs, { [d.id]: Object.assign({}, s.jobs[d.id], d, { state }) }) }));
   on("job.progress", job("running"));
   on("job.done", (d) => {
@@ -234,6 +234,7 @@ async function boot() {
   else store.set({ panel: "drawings" });   // 열 도면이 없거나 여럿이면 도면 패널을 먼저 보인다
   if (!s.reviewer) { store.set({ panel: "settings" }); toast("검토자 이름을 입력하세요. 승인·확정 기록에 남습니다."); }   // 처음 실행할 때 묻는 것은 그대로
   if (s.debug) window.__hz = { store, cmd, read, ui, clean };
+  cmd("project.open_check").catch(() => {});      // 앱을 끈 사이 도면이 다시 읽혔으면 검토구간을 뒤에서 맞춘다(잃은 것이 있으면 알림이 온다)
   checkLost();        // 다시 추출 뒤 찾지 못한 구성요소가 있으면 한 줄로 알린다(읽기는 뒤에서, 화면을 붙잡지 않는다)
   await loadChat();   // 채팅 예시 질문은 프로젝트 그래프를 읽어 큰 프로젝트에서 수 초 걸린다. 도면 목록이 먼저 보이게 맨 끝에서 읽는다
 }

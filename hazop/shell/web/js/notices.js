@@ -5,18 +5,20 @@ import { store, useStore } from "./store.js";
 import { read } from "./bridge.js";
 import { Icon } from "./ui/icon.js";
 import { focusNode } from "./panels/nodes_state.js";
-import { lostNoticeText } from "./panels/nodes_logic.js";
+import { demotedNoticeText, lostNoticeText } from "./panels/nodes_logic.js";
 
-const closed = new Set();       // 닫은 알림(id|글). 글이 바뀌면 새 알림이다
+// 닫은 알림(id|판|글). 글이 바뀌거나, 같은 글이라도 도면이 다시 읽혀 판(key)이 바뀌면 새 알림이다(같은 수를 새로 잃어도 다시 알린다)
+const closed = new Set();
+const keyOf = (n) => n.id + "|" + (n.key || "") + "|" + n.text;
 
 export function addNotice(n) {
-  if (closed.has(n.id + "|" + n.text)) return;
+  if (closed.has(keyOf(n))) return;
   store.set((s) => ({ notices: s.notices.filter((x) => x.id !== n.id).concat(n) }));
 }
 
 export function dismissNotice(id) {
   const n = store.get().notices.find((x) => x.id === id);
-  if (n) closed.add(n.id + "|" + n.text);
+  if (n) closed.add(keyOf(n));
   store.set((s) => ({ notices: s.notices.filter((x) => x.id !== id) }));
 }
 
@@ -27,7 +29,15 @@ export function clearNotice(id) { store.set((s) => ({ notices: s.notices.filter(
 export function lostNotice(info) {
   const text = lostNoticeText(info);
   if (!text) return null;
-  return { id: "lost", kind: "warn", text, action: { label: "그 자리로", run: () => { store.set({ panel: "nodes" }); if (info.first_node) focusNode(info.first_node); } } };
+  return { id: "lost", key: info.graph_version || "", kind: "warn", text, action: { label: "그 자리로", run: () => { store.set({ panel: "nodes" }); if (info.first_node) focusNode(info.first_node); } } };
+}
+
+/** 확정을 푼 구간 알림(study.lost 사건의 demoted). 첫 구간으로 가는 단추. */
+export function demotedNotice(info) {
+  const ids = (info && info.demoted) || [];
+  const text = demotedNoticeText(ids);
+  if (!text) return null;
+  return { id: "demoted", key: info.graph_version || "", kind: "warn", text, action: { label: "그 자리로", run: () => { store.set({ panel: "nodes" }); focusNode(ids[0]); } } };
 }
 
 /** 읽어 온 확인 필요(구간 목록의 check)로 알림을 맞춘다: 있으면 띄우고(닫은 글은 빼고) 없어졌으면 지운다. 읽기 실패는 조용히 넘어간다. */
@@ -35,7 +45,9 @@ export async function refreshLostNotice() {
   try {
     const l = await read("nodes");
     const c = l && l.check;
-    const info = c && c.needs_check ? { sections: Object.keys(c.lost_members || {}).length, members: Object.values(c.lost_members || {}).reduce((a, b) => a + b, 0), first_node: Object.keys(c.lost_members || {})[0] || null } : null;
+    const lm = (c && c.lost_members) || {};
+    const info = c && c.needs_check ? { sections: Object.keys(lm).length, members: Object.values(lm).reduce((a, b) => a + b, 0), first_node: Object.keys(lm)[0] || null,
+      generic: !Object.keys(lm).length, graph_version: l.graph_version || "" } : null;      // 찾지 못한 것 없이 확인만 필요하면(옛 판 이전 기록 등) 일반 안내
     const n = info ? lostNotice(info) : null;
     if (n) addNotice(n); else clearNotice("lost");
   } catch (e) { /* 알림은 덤이다 */ }

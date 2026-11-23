@@ -208,7 +208,8 @@ def _has_study_sets(project_id):
 def migrate_study(pg):
     """프로젝트 그래프 pg 기준으로 검토구간 집합의 판 이전만 한다(프로젝트 잠금 안, nodes.load_fp가 집합과 ⑤ 결과 이음을 쓴다). 쓰다 실패하면 OSError·ValueError·
     store_io.Conflict를 올리고 옛 파일은 그대로다. 같은 판이거나 집합이 없거나 0.1 파일이면 아무것도 쓰지 않는다.
-    → {changed, matched(이어진 구성요소), new_lost(이번에 새로 찾지 못한 구성요소), tombstones(되찾지 못한 묘비 합계), lost_members {구간: 수}, first_node}."""
+    → {changed, matched(이어진 구성요소), new_lost(이번에 새로 찾지 못한 구성요소), tombstones(되찾지 못한 묘비 합계), lost_members {구간: 수}, first_node,
+    graph_version, demoted(이번 판 이전이 확정을 푼 구간 id 목록)}."""
     from hazop.study import idmap, node_commands
     ns = study_nodes.read_as_is(pg)
     quiet = {"changed": False, "matched": 0, "new_lost": 0}
@@ -225,7 +226,8 @@ def migrate_study(pg):
     row = next((h.get("detail") or {} for h in reversed(got.get("history") or []) if isinstance(h, dict) and h.get("op") == "migrate_version"), {})
     info = idmap.needs_check(got)
     return {"changed": True, "matched": int(row.get("matched") or 0), "new_lost": len(row.get("lost") or {}), "tombstones": info["tombstones"],
-            "lost_members": info["lost_members"], "first_node": next(iter(info["lost_members"]), None), "graph_version": got.get("graph_version")}
+            "lost_members": info["lost_members"], "first_node": next(iter(info["lost_members"]), None), "graph_version": got.get("graph_version"),
+            "demoted": list(row.get("demoted") or [])}
 
 
 def catch_up_study(project_id):
@@ -571,12 +573,12 @@ def save_corrections(name, ops, by, expect=store_io.ANY):
     original = read_json(extraction_path(name))
     path, fp = corrections.save_fp(name, ops, by, drawing_number=original["drawing"].get("drawing_number"), expect=expect)
     graph, _ = script_module("build_graph").build_one(extraction_path(name), paths.output_root("graph"))
-    notify_graph_changed(graph.get("project_id"))
     out = {"path": path, "fingerprint": fp, "graph": graph}
     if graph.get("project_id"):
         _with_kg(out, graph["project_id"])
     else:
         out["kg_error"] = "프로젝트에 등록되지 않은 도면이라 지식그래프를 다시 만들지 않음"
+    notify_graph_changed(graph.get("project_id"))       # 지식그래프까지 다시 만든 뒤에 알린다(판 이전 뒤 화면이 옛 지식그래프를 읽지 않게)
     recheck = []
     try:  # 도면별 저장본은 바꾸지 않고 읽는다(0.1 변환·판 이전은 그 집합을 여는 화면이 함. 옛 도면별 파일을 건드리지 않게)
         node_set = study_nodes.read_as_is(graph)

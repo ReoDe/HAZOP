@@ -1,7 +1,7 @@
 // 확인 필요 알림 글(찾지 못한 구성요소·다시 확인할 곳): 엔진이 센 값으로만 만들고 묘비 id를 글에 쓰지 않는다.
-import { catchUpText, checkText, confirmedLostText, lostNoticeText, lostText } from "../js/panels/nodes_logic.js";
+import { catchUpText, checkText, confirmedLostText, demotedNoticeText, lostNoticeText, lostText } from "../js/panels/nodes_logic.js";
 import { store } from "../js/store.js";
-import { addNotice, clearNotice, dismissNotice, lostNotice } from "../js/notices.js";
+import { addNotice, clearNotice, demotedNotice, dismissNotice, lostNotice } from "../js/notices.js";
 
 export const tests = [
   { name: "확인 필요: 구간 행 글은 '찾지 못한 구성요소 n개 · 다시 확인할 곳 m건'이고 없는 것은 뺀다", run(assert) {
@@ -50,5 +50,31 @@ export const tests = [
     assert.equal(store.get().notices.length, 1, "글이 바뀌면 새 알림");
     clearNotice("lost");
     assert.equal(store.get().notices.length, 0, "처리돼 없어지면 사라진다");
+  } },
+  { name: "알림: 닫은 기억은 판까지 묶는다(다시 추출해 같은 수를 새로 잃으면 다시 알린다)", run(assert) {
+    store.set({ notices: [] });
+    const v1 = lostNotice({ sections: 1, members: 1, first_node: "S1", graph_version: "v-1" });
+    addNotice(v1);
+    dismissNotice("lost");
+    addNotice(lostNotice({ sections: 1, members: 1, first_node: "S1", graph_version: "v-1" }));
+    assert.equal(store.get().notices.length, 0, "같은 판의 같은 글은 다시 띄우지 않는다");
+    addNotice(lostNotice({ sections: 1, members: 1, first_node: "S1", graph_version: "v-2" }));
+    assert.equal(store.get().notices.length, 1, "새 판이면 같은 글도 다시 알린다");
+    clearNotice("lost");
+  } },
+  { name: "알림: 찾지 못한 것 없이 확인만 필요하면 일반 안내를 띄운다", run(assert) {
+    const t = lostNoticeText({ sections: 0, members: 0, generic: true });
+    assert(t.includes("확인이 필요한 것이 있습니다"), t);
+    assert(!/lost:|묘비|판 이전|그래프 판/.test(t), "내부 말이 없다");
+  } },
+  { name: "알림: 도면 변경 반영이 확정을 푼 구간은 따로 알리고 그 자리로 간다", run(assert) {
+    assert.equal(demotedNoticeText([]), "");
+    const t = demotedNoticeText(["S1", "S3"]);
+    assert(t.includes("S1, S3") && t.includes("다시 확정해 주세요"), t);
+    assert(demotedNoticeText(["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]).includes("외 2개"));
+    const n = demotedNotice({ demoted: ["S3"], graph_version: "v-2" });
+    assert.equal(n.id, "demoted");
+    assert.equal(n.action.label, "그 자리로");
+    assert.equal(demotedNotice({ demoted: [] }), null);
   } },
 ];

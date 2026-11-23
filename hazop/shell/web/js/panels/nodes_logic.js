@@ -26,8 +26,15 @@ export const confirmedLostText = (n) => (n && n.confirmed && n.confirmed.lost ? 
 /** 다시 추출 뒤 찾지 못한 구성요소가 있을 때의 알림 글: '도면이 바뀌어 n곳을 다시 확인해야 합니다'. info {sections, members}. 확인할 곳이 없으면 빈 글. */
 export function lostNoticeText(info) {
   const n = (info && info.sections) || 0, m = (info && info.members) || 0;
-  if (!n && !m) return "";
+  if (!n && !m) return info && info.generic ? "다시 추출한 도면과 저장된 구간·분석 결과를 이은 기록 가운데 확인이 필요한 것이 있습니다." : "";
   return "도면이 바뀌어 " + (n || 1) + "곳을 다시 확인해야 합니다" + (m ? "(찾지 못한 구성요소 " + m + "개)" : "") + ".";
+}
+
+/** 도면 변경 반영이 확정을 푼 구간(엔진 migrate의 demoted) → 한 줄 알림. 없으면 빈 글. */
+export function demotedNoticeText(ids) {
+  if (!ids || !ids.length) return "";
+  const shown = ids.slice(0, 6).join(", ") + (ids.length > 6 ? " 외 " + (ids.length - 6) + "개" : "");
+  return "도면이 바뀌어 확정했던 구간 " + shown + "의 확정을 풀었습니다. 구성요소를 확인하고 다시 확정해 주세요.";
 }
 
 /** 구간 하나의 확인 필요 글: '찾지 못한 구성요소 n개 · 참조 확인 필요 m건'(없는 것은 뺀다). 묘비 id는 쓰지 않는다. */

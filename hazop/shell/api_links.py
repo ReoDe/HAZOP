@@ -286,6 +286,8 @@ def _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done, dry=Fa
             project.save_manual(pid, new_ops, who, at, expect=fp, note=note)
         except store_io.Conflict:
             raise Refused("stale", "다른 곳에서 도면 연결 지정이 바뀌었습니다. 카드를 다시 열었으니 확인하고 다시 하세요.")
+    from hazop.app import data
+    data.notify_graph_changed(pid)       # 도면 연결은 프로젝트 그래프 판에 든다: 검토구간을 이어서 맞춘다
     for topic in ("links", "nodes", "drawings"):
         engine.changed(topic, None)
     recheck = sheet_refresh.project_recheck(pid)

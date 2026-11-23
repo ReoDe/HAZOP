@@ -49,7 +49,13 @@ class AutoCatchUpTest(Base):
     def test_when_nothing_is_lost_nothing_is_said(self):
         self.re_extract()
         data.notify_graph_changed(PID)
-        self.assertEqual(self.lost_events(), [])
+        got = self.lost_events()
+        # 잃은 구성요소는 없다. 다만 구성요소가 자리를 옮겨 판 이전이 확정을 푼 구간은 조용히 넘기지 않고 그것만 알린다
+        self.assertTrue(all((e["data"]["sections"], e["data"]["members"]) == (0, 0) for e in got), got)
+        self.assertTrue(all(e["data"]["demoted"] for e in got), got)
+        from hazop.study import nodes as sn
+        held = {n["node_id"] for n in sn.read_as_is(self.g)["nodes"] if n["state"] == "applied"}
+        self.assertLessEqual(set(sum((e["data"]["demoted"] for e in got), [])), held, "알린 구간은 확정이 풀린 구간이다")
 
     def test_when_a_member_is_lost_one_notice_is_sent_with_the_place_to_go(self):
         self.re_extract_losing_v2()
