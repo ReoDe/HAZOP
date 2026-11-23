@@ -7,6 +7,9 @@ AI는 부르지 않는다(ai_cells.run_unit 대역). 본다: 저장이 OSError�
 
 import json
 import os
+import stat
+import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -19,6 +22,10 @@ from tests.test_shell_results import Base, FakeAi, fake_run_unit
 class SaveFailedTest(Base):
     def setUp(self):
         super().setUp()
+        self.appdata = os.path.join(self.tmp, "appdata")             # 둘째 자리(설정 폴더 쪽)도 임시 폴더로
+        p = mock.patch.dict(os.environ, {"APPDATA": self.appdata})
+        p.start()
+        self.addCleanup(p.stop)
         self.engine.ai = FakeAi()
         p = mock.patch.object(analysis_run, "contexts", lambda units, ns, pg, intent_of: {u["node_id"]: {} for u in units})
         p.start()
@@ -72,12 +79,92 @@ class SaveFailedTest(Base):
         self.assertEqual(ended["name"], "job.done", ended["data"])
         self.check_kept(seen, ended["data"]["result"])
 
+    def last(self):
+        return self.engine.analysis.last
+
+    def test_non_os_errors_while_saving_keep_the_answer(self):
+        """결과를 읽거나 합치다 ValueError(새 판 파일·깨진 JSON·결과에 없는 칸)가 나도 그 답을 남기고 멈춘다."""
+        for target, patch_at in ((res, "load_fp"), (analysis_run.ai_cells, "apply_unit")):
+            self.events.items.clear()
+            seen, run = self.calls()
+            real = getattr(target, patch_at)
+
+            def failing(*a, _real=real, **k):
+                if len(seen) >= 2:
+                    raise ValueError("결과 파일을 읽을 수 없음")
+                return _real(*a, **k)
+            with mock.patch.object(target, patch_at, failing):
+                self.run_with(run)
+            ended = self.ended()
+            self.assertEqual(ended["name"], "job.done", (patch_at, ended["data"]))
+            done = ended["data"]["result"]
+            self.assertEqual((done["reason"], len(seen), len(done["unsaved"])), ("save_failed", 2, 1), patch_at)
+            self.assertEqual((done["ok_calls"], done["failed_calls"]), (1, 1), "저장하지 못한 단위는 반영한 수에 세지 않는다")
+
+    def test_a_failing_final_read_still_reports_save_failed(self):
+        seen, run = self.calls()
+        real = res.load_fp
+
+        def load_fp(*a, **k):
+            if seen:
+                raise OSError("읽을 수 없음")
+            return real(*a, **k)
+        with mock.patch.object(res, "load_fp", load_fp):
+            self.run_with(run)
+        ended = self.ended()
+        self.assertEqual(ended["name"], "job.done", ended["data"])
+        self.assertEqual(self.last()["reason"], "save_failed")
+        self.assertEqual(len(self.last()["unsaved"]), 1)
+
+    def test_kept_answer_falls_back_to_the_settings_folder(self):
+        seen, run = self.calls()
+        real = store_io.write_json
+        results_root = os.path.dirname(res.store_path(self.project, self.ns["graph_id"]))
+
+        def write_json(path, *a, **k):
+            if path.startswith(os.path.join(results_root, "unsaved")):
+                raise OSError(28, "디스크 공간이 부족합니다")
+            return real(path, *a, **k)
+        with mock.patch.object(res, "save_fp", side_effect=OSError(28, "디스크 공간이 부족합니다")),                 mock.patch.object(store_io, "write_json", write_json):
+            self.run_with(run)
+        done = self.ended()["data"]["result"]
+        self.assertEqual(done["reason"], "save_failed")
+        self.assertEqual(done["unsaved_where"], ["settings"])
+        self.assertTrue(done["unsaved"][0].startswith(os.path.join(self.appdata, "HAZOP")), done["unsaved"])
+        with open(done["unsaved"][0], encoding="utf-8") as fh:
+            kept = json.load(fh)
+        self.assertEqual(kept["project_id"], self.project)
+        self.assertEqual(kept["set_rev"], self.ns.get("set_rev") or 0)
+        self.assertTrue(kept["prompt_sha"])
+        self.assertFalse({"key", "api_key", "token", "authorization"} & {k.lower() for k in kept}, "키·토큰은 남기지 않는다")
+
+    def test_save_failed_and_halted_together_keep_the_limit(self):
+        seen = []
+        inner = fake_run_unit(kind="limit_reached", limit={"resets_at": "2026-11-24T09:00:00Z"})
+
+        def run(client, unit, ctx, devs, at):
+            seen.append(1)
+            return inner(client, unit, ctx, devs, at)
+        with mock.patch.object(res, "save_fp", side_effect=PermissionError(13, "액세스가 거부되었습니다")):
+            self.run_with(run)
+        done = self.ended()["data"]["result"]
+        self.assertEqual((done["reason"], done["halted"], done["error_kind"]), ("save_failed", True, "limit_reached"), done)
+        self.assertEqual(done["limit"], {"resets_at": "2026-11-24T09:00:00Z"})
+
+    def test_test_runs_keep_answers_beside_the_test_file(self):
+        ur = fake_run_unit()(None, {"unit_id": "u1", "node_id": "S1", "deviation_ids": ["D01"]}, {}, [], "2026-11-23T00:00:00Z")
+        path, where = analysis_run._keep_unsaved(self.ns, self.project, ur, True, why=analysis_run.SAVE_FAILED_WHY)
+        self.assertEqual(where, "results")
+        test_dir = os.path.dirname(res.test_store_path(self.project, self.ns["graph_id"]))
+        self.assertTrue(path.startswith(os.path.join(test_dir, "unsaved")), path)
+        self.assertNotEqual(os.path.dirname(res.store_path(self.project, self.ns["graph_id"])), test_dir)
+
     def test_if_keeping_also_fails_the_job_fails_as_before(self):
         seen, run = self.calls()
         real = store_io.write_json
 
         def write_json(path, *a, **k):
-            if os.sep + "unsaved" + os.sep in path:
+            if os.sep + "unsaved" in path:
                 raise PermissionError(13, "액세스가 거부되었습니다")
             return real(path, *a, **k)
         with mock.patch.object(res, "save_fp", side_effect=PermissionError(13, "액세스가 거부되었습니다")), \
@@ -85,6 +172,22 @@ class SaveFailedTest(Base):
             self.run_with(run)
         self.assertEqual(self.ended()["name"], "job.failed")
         self.assertFalse(self.engine.analysis.running)
+
+
+class ReadOnlyTargetTest(unittest.TestCase):
+    """대상 파일이 읽기 전용이면 공유 위반과 같은 WinError 5라도 다시 하지 않고 바로 실패한다."""
+
+    def test_read_only_target_fails_at_once(self):
+        d = tempfile.mkdtemp(prefix="hazop-ro-")
+        path = os.path.join(d, "x.json")
+        store_io.write_json(path, {"n": 0})
+        os.chmod(path, stat.S_IREAD)
+        self.addCleanup(lambda: (os.chmod(path, stat.S_IWRITE | stat.S_IREAD), __import__("shutil").rmtree(d, True)))
+        started = time.monotonic()
+        with self.assertRaises(PermissionError):
+            store_io.write_json(path, {"n": 1})
+        self.assertLess(time.monotonic() - started, 0.5, "읽기 전용 대상을 2초 동안 다시 시도함")
+        self.assertEqual([n for n in os.listdir(d) if n.endswith(".tmp")], [])
 
 
 if __name__ == "__main__":
