@@ -96,7 +96,7 @@ function PickHint() {
   const card = N.useNodes((s) => s.card);
   if (mode !== "pick" || selection.length || card) return null;
   return html`<div class="float selbar pickhint" role="status"><${Icon} name="select" size=${15} />
-    <span>구간에 넣을 구성요소를 도면에서 네모로 끌어 고르세요. 고른 뒤 Enter로 이름을 정하고 Enter로 만듭니다.</span>
+    <span>구간에 넣을 구성요소를 도면에서 네모로 끌어 고르세요. 고른 뒤 Enter를 누르면 바로 만들고, 이름은 만든 뒤 고칠 수 있습니다.</span>
     <${Btn} kind="ghost" sm=${true} label="고르기 그만두기" title="그만두기 (Esc)" onClick=${() => N.setMode("pan")}>그만두기<//></div>`;
 }
 

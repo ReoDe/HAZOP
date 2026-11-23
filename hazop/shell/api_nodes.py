@@ -295,8 +295,9 @@ def suggest(engine, sheet, ids):
     elif majors:
         name = "%s 주변" % majors[0]
     else:
-        from hazop.shell import api_drawings
-        name = "%s 구간" % api_drawings.display(engine, sheet)      # 사람용 도면 이름(임시 이름이 구간 이름에 들어가지 않게)
+        # 큰 기기 태그가 없으면 짧은 기본 이름(실제 창 5차: 번호 없는 도면은 '…drawio · 1쪽 구간'처럼 길었다). 사람이 만든 뒤 카드에서 고친다
+        nums = [int(n["node_id"][1:]) for n in (ns or {}).get("nodes") or [] if str(n.get("node_id", ""))[1:].isdigit()]
+        name = "구간 S%d" % (max(nums, default=0) + 1)
     owners = _owners(ns)
     shared = collections.Counter(o for m in members for o in owners.get(m, ()))
     return {"count": len(members), "asked": len(ids), "name": name, "majors": majors[:MAJORS_SHOWN],

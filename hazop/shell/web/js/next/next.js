@@ -37,6 +37,27 @@ export async function load() {
   } catch (e) { /* 안내 한 줄: 읽기 실패는 앞 줄을 그대로 둔다 */ }
 }
 
+/** 구간을 만들거나 확정한 직후 '확정하지 않은 검토구간' 수를 바로 고친다(실제 창 5차: 엔진 다시 읽기가 끝나는 1.5초 동안 한 박자 늦었다).
+ *  엔진의 다음 읽기가 오면 그 값으로 덮인다. delta: 늘어난(+)·줄어든(-) 수. */
+export function adjustDrafts(delta) {
+  next.set((s) => {
+    let items = s.items.slice();
+    const i = items.findIndex((x) => x.kind === "nodes_draft");
+    const make = (n) => ({ kind: "nodes_draft", count: n, text: "확정하지 않은 검토구간이 " + n + "개 있습니다", detail: null,
+      action: { label: "모두 확정", go: "confirm:nodes.confirm", target: null }, tone: "" });
+    if (i >= 0) {
+      const n = items[i].count + delta;
+      if (n > 0) items[i] = Object.assign({}, items[i], make(n));
+      else items.splice(i, 1);
+    } else if (delta > 0) {
+      const at = items.findIndex((x) => x.kind === "nodes_none");
+      if (at >= 0) items[at] = make(delta);
+      else items.push(make(delta));
+    }
+    return { items: items.length ? items : s.items };
+  });
+}
+
 let timer = null, last = 0;
 /** 영역 알림 → 다시 읽기. 첫 알림은 바로 읽고(실제 창 4차: 만든·확정한 직후 수가 한 박자 늦던 것), 잇달아 오는 알림은 120ms 뒤 한 번으로 모은다. */
 function soon() {
@@ -113,6 +134,7 @@ export function NextLine() {
         <${Icon} name=${ICON[top.kind] || "info-circle"} size=${15} /><span class="txt" title=${top.detail || top.text}>${top.text}</span>
         <button type="button" class=${"btn sm" + (top.kind === "none" ? "" : " primary")} aria-keyshortcuts=${top.kind === "none" ? null : "Control+J"}
           title=${top.kind === "none" ? null : top.action.label + " (Ctrl+J)"} onClick=${() => go(top.action)}>${top.action.label}</button>
+        ${top.alt ? html`<button type="button" class="btn sm" aria-label=${top.alt.label} title=${top.alt.label} onClick=${() => go(top.alt)}>${top.alt.label}</button>` : null}
         ${rest > 0 ? html`<button type="button" class="more" aria-label=${"그 밖에 " + rest + "건 보기"} aria-expanded=${open} onClick=${(e) => { e.stopPropagation(); next.set({ open: !open }); }}>그 밖에 ${rest}건 <${Icon} name="chevron-down" size=${14} /></button>` : null}</div>`;
   return html`<div class="next" id="next">${line}
     ${open ? html`<div class="next-list" role="menu" aria-label="남은 일"><div class="h"><span>남은 일 · 앞에 있는 것부터</span><span>Ctrl+J = 맨 위 것 하기</span></div>

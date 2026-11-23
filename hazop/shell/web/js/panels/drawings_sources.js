@@ -36,7 +36,8 @@ export function choicesOf(c) {
     using: f === c.in_use_format && byFormat(f).length < 2,
     recheck: f === c.in_use_format ? (byFormat(f).length < 2 ? 0 : undefined) : (byFormat(f)[0] || {}).recheck }));
   if (c.formats.some((f) => byFormat(f).length > 1) && c.candidates.every((x) => x.material_id)) {
-    out.push(...c.candidates.map((x) => fileChoice(c, x, true)));
+    // 한 형식에 파일이 둘 이상이면 파일 단추만 둔다(실제 창 4·5차: 형식 단추와 파일 단추가 같은 일을 하는 단추로 함께 보였다). 파일 단추에 형식을 적는다
+    return c.candidates.map((x) => fileChoice(c, x, true));
   }
   return out;
 }

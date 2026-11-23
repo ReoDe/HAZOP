@@ -55,6 +55,7 @@ function wire() {
     const carried = (r.carried || []).filter((c) => c.edits || c.ai_review).length;
     const parts = ["확정했습니다(등록 버전 " + r.version + ")."];
     if (r.re_extracted) parts.push("도면을 다시 읽었습니다.");
+    if ((r.renames || []).length) parts.push("도면 이름이 바뀌었습니다: " + r.renames.map((x) => x.from_label + " → " + x.to_label).join(", ") + ".");
     if ((r.carries || []).length) parts.push("구간·분석 결과 등 기록(" + r.carries.map((c) => c.place + " " + c.count + "건").join(", ") + ")을 바뀐 도면 이름으로 옮겼습니다.");
     followRenames(r.renames);
     if (carried) parts.push("사람 수정·AI 후보 기록을 새 버전으로 옮겼습니다.");
@@ -108,7 +109,10 @@ async function send(name, row, args) {
     if (e && e.code === "stale") load();
     return;
   }
-  if (pre && pre.changed !== false && pre.text) { tb.set({ busy: null, ask: { mid: row.material_id, name, row, args, text: pre.text } }); return; }
+  // 옮길 기록이나 잃을 참조가 있을 때만 확인 카드(실제 창 5차: 이름만 바뀌는 첫 번호 확정에도 카드가 떠 한 번 더 눌러야 했다).
+  // 이름만 바뀌면 바로 확정하고 확정 뒤 알림에 이름 바뀜을 적는다
+  const weighty = pre && ((pre.carries || []).length || (pre.lost || []).length);
+  if (pre && pre.changed !== false && weighty) { tb.set({ busy: null, ask: { mid: row.material_id, name, row, args, text: pre.text } }); return; }
   return go(name, row, args);
 }
 
@@ -128,7 +132,8 @@ async function go(name, row, args) {
       tb.set({ jobs: Object.assign({}, tb.get().jobs, { [out.job]: row.material_id }), notice: "저장하고 도면을 다시 읽는 중입니다…" });
       return;
     }
-    tb.set({ busy: null, notice: out && out.changed === false ? "바뀐 값이 없습니다." : "확정했습니다." });
+    const renamed = out && (out.renames || []).length ? " 도면 이름이 바뀌었습니다: " + out.renames.map((x) => x.from_label + " → " + x.to_label).join(", ") + "." : "";
+    tb.set({ busy: null, notice: out && out.changed === false ? "바뀐 값이 없습니다." : "확정했습니다." + renamed });
     if (out) followRenames(out.renames);
     load();
   } catch (e) {
@@ -215,6 +220,7 @@ function AskCard({ row }) {
 }
 
 function Row({ row, onOpen, open, noReviewer }) {
+  const asking = useTb((s) => !!s.ask && s.ask.mid === row.material_id);      // 확인 카드가 떠 있으면 같은 말의 파란 안내는 숨긴다(실제 창 5차)
   const busy = useTb((s) => s.busy) === row.material_id;
   const reason = useTb((s) => s.reasons[row.material_id] || "");
   const [kind, label] = STATE[row.state] || ["plain", row.state];
@@ -231,7 +237,7 @@ function Row({ row, onOpen, open, noReviewer }) {
       ${row.needs_reextract ? html`<${Notice} kind="warn" icon="refresh">확정은 저장했지만 도면을 다시 읽지 못했습니다. 지금 보이는 도면은 앞 값으로 읽은 것입니다.
         <${Btn} sm=${true} label="도면 다시 읽기" disabled=${busy || noReviewer} onClick=${() => rereadRow(row)}>다시 읽기<//><//>` : null}
       ${row.multi_page ? html`<${Notice} kind="warn" icon="alert-triangle">여러 쪽 자료(${row.pages}쪽)는 쪽마다 도면 번호가 달라 자료 하나에 번호를 확정하지 않습니다.<//>` : null}
-      ${row.review_data.length ? html`<${Notice} kind="info" icon="info-circle">이 도면을 가리키는 기록(${row.review_data.join("·")})은 번호를 확정하면 바뀐 도면 이름을 따라 옮겨 갑니다. 확정 전에 무엇을 옮기는지 보입니다.<//>` : null}
+      ${row.review_data.length && !asking ? html`<${Notice} kind="info" icon="info-circle">이 도면을 가리키는 기록(${row.review_data.join("·")})은 번호를 확정하면 바뀐 도면 이름을 따라 옮겨 갑니다. 확정 전에 무엇을 옮기는지 보입니다.<//>` : null}
       <${AskCard} row=${row} />
       <div class="tb-grid">${row.fields.map((f) => html`<${Field} key=${f.field} row=${row} f=${f} locked=${locked} />`)}</div>
       <div class="tb-foot">

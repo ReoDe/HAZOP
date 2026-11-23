@@ -36,6 +36,18 @@ export const tests = [
     assert.equal(sent.map((x) => [x[0], !!x[1].dry]), [["titleblock.confirm", true], ["titleblock.confirm", false]]);
     assert.equal(store.get().sheet, "graph-SNP-M-101", "열린 도면을 새 이름으로");
   } },
+  { name: "표제란(실제 창 5차): 이름만 바뀌고 옮길 기록이 없으면 카드 없이 바로 확정하고, 알림에 이름 바뀜을 적는다", async run(assert) {
+    install();
+    reply = (name, args) => (args.dry ? { ok: true, data: { dry: true, changed: true, text: "도면 이름이 바뀝니다: two.pdf · 1쪽 → SNP-M-101.", carries: [], lost: [],
+      renames: [{ from: "graph-material-m1-p0", to: "graph-SNP-M-101", from_label: "two.pdf · 1쪽", to_label: "SNP-M-101" }] } }
+      : { ok: true, data: { changed: true, renames: [{ from: "graph-material-m1-p0", to: "graph-SNP-M-101", from_label: "two.pdf · 1쪽", to_label: "SNP-M-101" }], row: ROW } });
+    T.tb.set({ drafts: {}, reasons: {}, ask: null, notice: null });
+    T.confirmRow(ROW, true);
+    await tick();
+    assert.equal(sent.map((x) => !!x[1].dry), [true, false], "카드 없이 바로 보냄");
+    assert.equal(T.tb.get().ask, null);
+    assert(T.tb.get().notice.includes("도면 이름이 바뀌었습니다: two.pdf · 1쪽 → SNP-M-101"), T.tb.get().notice);
+  } },
   { name: "표제란: 옮길 것이 없으면 묻지 않고 바로 보내고, 취소하면 보내지 않는다", async run(assert) {
     install();
     reply = (name, args) => (args.dry ? { ok: true, data: { dry: true, changed: true, text: "" } } : { ok: true, data: { changed: true, row: ROW } });
@@ -44,7 +56,7 @@ export const tests = [
     await tick();
     assert.equal(sent.map((x) => !!x[1].dry), [true, false], "바로 보냄");
     install();
-    reply = (name, args) => ({ ok: true, data: { dry: true, changed: true, text: "옮겨 갑니다" } });
+    reply = (name, args) => ({ ok: true, data: { dry: true, changed: true, text: "옮겨 갑니다", carries: [{ place: "구간", count: 1 }] } });
     T.tb.set({ drafts: { m1: { title: "주 배관" } }, ask: null });
     T.confirmRow(ROW, false);
     await tick();

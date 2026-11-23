@@ -182,6 +182,7 @@ export async function submitCard() {
     const made = r.node_ids && r.node_ids[0];
     const after = made ? Object.assign(blankCard({ made, batch: r.batch_id, name: card.name.trim(), intent: card.intent || "", suggest: card.suggest }), { saved: { name: card.name.trim(), intent: card.intent || "" } }) : null;
     nodes.set((s) => (s.selection === selection ? { card: after, selection: [], truncated: false } : { card: after }));
+    if (made) import("../next/next.js").then((m) => m.adjustDrafts(1)).catch(() => {});      // 한 줄의 수를 바로(엔진 읽기가 덮는다)
     await refresh();
     if (made) focusNode(made);
     return r;
@@ -283,6 +284,7 @@ export async function confirmMany(ids, seen) {
     : ok.length + "개 구간을 확정했습니다.";
   shell.set({ toast: { text, kind: failed.length ? "err" : "info" } });
   if (failed.length) nodes.set({ error: text });
+  if (ok.length) import("../next/next.js").then((m) => m.adjustDrafts(-ok.length)).catch(() => {});      // 한 줄의 수를 바로
   return { ok, failed };
 }
 export const unconfirm = (ids) => run("unconfirm", { node_ids: ids }, ids);

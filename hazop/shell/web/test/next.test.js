@@ -81,6 +81,28 @@ export const tests = [
     assert(host.querySelector(".next .line .txt").textContent.includes("검토구간이 2개"), "바로 읽음: " + host.querySelector(".next .line .txt").textContent);
     host.remove();
   } },
+  { name: "다음에 할 일(실제 창 5차): 맨 위 줄에 곁 단추(alt)가 있으면 나란히 보이고 그 자리로 간다", async run(assert) {
+    const host = await mount();
+    const seen = [];
+    setGo("confirm:aireview.run", (t) => seen.push(["ai", t]));
+    served = { items: [item("sheet_confirm", "원본과 견주어 확정할 쪽이 1장 있습니다. 확정 전에 AI 검토를 먼저 돌릴 수도 있습니다", "쪽 확정", "panel:drawings#sheetconf",
+      { alt: { label: "AI 검토 시작", go: "confirm:aireview.run", target: "G1" } })], running: null };
+    await load(); await tick();
+    const btns = [...host.querySelectorAll(".next .line button.btn")];
+    assert.equal(btns.map((b) => b.textContent.trim()), ["쪽 확정", "AI 검토 시작"]);
+    btns[1].click();
+    assert.equal(seen, [["ai", "G1"]]);
+    host.remove();
+  } },
+  { name: "다음에 할 일(실제 창 5차): 구간을 만들거나 확정한 직후 수를 바로 고치고, 엔진 읽기가 그 값을 덮는다", async run(assert) {
+    next.set({ items: [item("nodes_none", "검토구간을 만들 차례입니다", "구간 만들기", "panel:nodes#pick")] });
+    NX.adjustDrafts(1);
+    assert.equal(next.get().items.map((x) => [x.kind, x.count]), [["nodes_draft", 1]], "구간 없음 → 확정 안 한 구간 1개");
+    NX.adjustDrafts(1);
+    assert(next.get().items[0].text.includes("2개"), next.get().items[0].text);
+    NX.adjustDrafts(-2);
+    assert.equal(next.get().items.length, 1, "0개가 되면 줄을 빼되 목록을 비우지 않는다");
+  } },
   { name: "다음에 할 일: 단추와 Ctrl+J가 같은 자리로 가고, 도면 위 자리로 갈 때 패널을 닫는다", async run(assert) {
     const host = await mount();
     const seen = [];

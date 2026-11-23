@@ -42,6 +42,16 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(only_refs["text"], "도면이 바뀌어 분석 결과 4곳을 다시 확인해야 합니다")
         self.assertIn("S1", rc["detail"])
 
+    def test_before_sheet_confirmation_the_line_offers_confirm_first_and_ai_review_beside_it(self):
+        """실제 창 5차 헤맴: 쪽 확정 전 맨 위가 'AI 검토 시작'뿐이라 AI를 안 쓰는 사람이 눌렀다 취소했다. 쪽 확정이 주 단추, AI 검토 시작이 곁 단추."""
+        f = {"sheets": 2, "running": [], "ai_unreviewed": 2, "ai_unreviewed_first": "G1", "sheet_confirm": 2, "sheet_confirm_first": "G1", "nodes_unrun": 1}
+        out = api_next.items(f)
+        self.assertEqual([i["kind"] for i in out], ["sheet_confirm", "nodes_unrun"], "AI 검토 줄은 곁 단추로 들어간다")
+        self.assertEqual((out[0]["action"]["label"], out[0]["alt"]["label"], out[0]["alt"]["go"]), ("쪽 확정", "AI 검토 시작", "confirm:aireview.run"))
+        self.assertIn("AI 검토를 먼저", out[0]["text"])
+        only_ai = api_next.items({"sheets": 2, "running": [], "ai_unreviewed": 1, "ai_unreviewed_first": "G1", "titleblock": 1})
+        self.assertNotIn("alt", only_ai[1] if len(only_ai) > 1 else only_ai[0], "쪽 확정이 없으면(표제란 먼저) 짝짓지 않는다")
+
     def test_nothing_to_do(self):
         out = api_next.items({"sheets": 2, "running": []})
         self.assertEqual([i["kind"] for i in out], ["none"])

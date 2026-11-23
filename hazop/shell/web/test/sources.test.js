@@ -18,11 +18,12 @@ const MIXED = Object.assign({}, FILE_ROW, { kind: "format", reason: "same_number
     { material_id: "m-c", file: "c.pdf", format: "pdf_vector", in_use: true, recheck: 0, modified: "2026-11-23 11:00" }] });
 
 export const tests = [
-  { name: "원본 고르기: 형식 줄에 같은 형식 파일이 둘이면 파일로도 고른다, 미리 알림은 후보마다", async run(assert) {
+  { name: "원본 고르기: 형식 줄에 같은 형식 파일이 둘이면 파일 단추만(형식 단추와 겹치지 않게, 실제 창 5차), 미리 알림은 후보마다", async run(assert) {
     const ch = choicesOf(MIXED);
     const files = ch.filter((x) => x.kind === "file").map((x) => x.args.material_id);
     assert.equal(files, ["m-a", "m-b", "m-c"], "pdf a로 돌아갈 길(검토 지적 1)");
-    assert.equal(ch.filter((x) => x.kind === "format").map((x) => x.args.format), ["drawio", "pdf_vector"]);
+    assert.equal(ch.filter((x) => x.kind === "format").length, 0, "형식 단추는 두지 않는다");
+    assert(ch.every((x) => /\((drawio|PDF)/.test(x.label) || x.label.includes("(")), "파일 단추에 형식을 적는다: " + ch.map((x) => x.label).join(" | "));
     const using = ch.find((x) => x.kind === "file" && x.args.material_id === "m-c");
     assert(previewText(MIXED, using).includes("지금 쓰는 원본"), "지금 쓰는 파일은 다시 확인할 것이 없다(검토 지적 3)");
     assert(previewText(MIXED, ch.find((x) => x.args.material_id === "m-a")).includes("구간 2개"));
@@ -46,7 +47,8 @@ export const tests = [
   } },
   { name: "원본 고르기: 파일 줄은 파일마다, 형식 줄은 형식마다, 정착이 못 들인 줄은 고를 것 없음", async run(assert) {
     assert.equal(choicesOf(FILE_ROW).map((x) => x.args), [{ drawing_number: "graph-SNP-M-101", material_id: "m-a" }, { drawing_number: "graph-SNP-M-101", material_id: "m-b" }]);
-    const fmtRow = Object.assign({}, FILE_ROW, { kind: "format", formats: ["drawio", "pdf_vector"] });
+    const fmtRow = Object.assign({}, FILE_ROW, { kind: "format", formats: ["drawio", "pdf_vector"],      // 형식마다 파일 하나: 형식 단추
+      candidates: [FILE_ROW.candidates[0], Object.assign({}, FILE_ROW.candidates[1], { file: "b.drawio", format: "drawio" })] });
     assert.equal(choicesOf(fmtRow).filter((x) => x.kind === "format").map((x) => x.args.format), ["drawio", "pdf_vector"]);
     assert.equal(choicesOf(Object.assign({}, FILE_ROW, { reason: "settle_rebuild_failed" })), []);
     assert(previewText(FILE_ROW).includes("구간 2개가 다시 확인 대상"), previewText(FILE_ROW));

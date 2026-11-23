@@ -57,6 +57,11 @@ def _released_by_base(engine, sc):
     return out
 
 
+def _ai_ready(engine):
+    from hazop.shell import api_settings
+    return bool(api_settings.run_conn(engine, "ai_review").get("can_start"))
+
+
 def _safe(fn, what):
     try:
         return fn()
@@ -99,6 +104,9 @@ def facts(engine):
     # 'AI 검토 시작'은 물을 곳이 있고(not_run·partial·failed) 사람이 아직 쪽을 확정하지 않은 도면만(실제 창 3차, 총괄 결정)
     confirmed = {r["graph_id"] for r in (sc or {}).get("drawings") or [] if r.get("state") == "confirmed"}
     todo = [r for r in (ar or {}).get("drawings") or [] if r.get("review") in UNREVIEWED and r["graph_id"] not in confirmed]
+    ready = _safe(lambda: _ai_ready(engine), "AI 연결")
+    if ready is False:
+        todo = []                                   # AI 연결이 없으면 'AI 검토 시작'을 권하지 않는다(실제 창 5차)
     f["ai_unreviewed"] = len(todo) if ar else None
     f["ai_unreviewed_first"] = todo[0]["graph_id"] if todo else None
     f["ai_unreviewed_sheet"] = todo[0]["drawing_number"] if todo else None
@@ -211,7 +219,21 @@ def items(f):
         if n:
             out.append({"kind": kind, "count": n, "text": text(f, n), "detail": _detail(f, kind),
                         "action": {"label": label, "go": go, "target": _target(f, kind)}, "tone": tone})
-    return out or [dict(NONE_ITEM)]
+    return _pair_review_and_confirm(out) or [dict(NONE_ITEM)]
+
+
+def _pair_review_and_confirm(out):
+    """맨 위가 'AI 검토 시작'이고 쪽 확정도 남았으면 한 줄에 단추 둘: 쪽 확정이 주 단추, AI 검토 시작이 곁 단추(실제 창 5차 헤맴 2클릭:
+    AI를 안 쓰는 사람이 'AI 검토 시작'을 눌렀다 취소했다). 쪽 확정 줄은 그 자리로 옮기고 AI 검토 줄은 곁 단추로 들어간다."""
+    if not out or out[0]["kind"] != "ai_unreviewed":
+        return out
+    conf = next((i for i in out if i["kind"] == "sheet_confirm"), None)
+    if conf is None:
+        return out
+    ai = out[0]
+    pair = dict(conf, text="원본과 견주어 확정할 쪽이 %d장 있습니다. 확정 전에 AI 검토를 먼저 돌릴 수도 있습니다" % conf["count"],
+                alt=dict(ai["action"]))
+    return [pair] + [i for i in out[1:] if i is not conf]
 
 
 def _detail(f, kind):

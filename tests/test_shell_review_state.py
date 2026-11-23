@@ -161,13 +161,19 @@ class ReviewStateTest(TA.Base):
         self.assertFalse(self.engine.stop_requested(), "엔진 전체 멈춤(등록·분석)을 걸지 않는다")
 
     def test_next_shows_unreviewed_then_candidates(self):
-        items = api_next.summary(self.engine)["items"]
+        from unittest import mock
+        with mock.patch.object(api_next, "_ai_ready", lambda engine: True):      # AI 연결이 있을 때만 'AI 검토 시작'을 권한다(실제 창 5차)
+            items = api_next.summary(self.engine)["items"]
         kinds = [i["kind"] for i in items]
-        un = next(i for i in items if i["kind"] == "ai_unreviewed")
-        self.assertEqual(un["action"], {"label": "AI 검토 시작", "go": "confirm:aireview.run", "target": self.gid})
-        self.assertIn("아직 AI 검토를 하지 않았습니다", un["text"])
-        if "titleblock" in kinds:
-            self.assertLess(kinds.index("titleblock"), kinds.index("ai_unreviewed"))
+        un = next((i for i in items if i["kind"] == "ai_unreviewed"), None)
+        if un is None:                                   # 쪽 확정이 남았으면 그 줄의 곁 단추로 들어간다(실제 창 5차)
+            self.assertEqual(items[0]["kind"], "sheet_confirm", kinds)
+            self.assertEqual(items[0]["alt"], {"label": "AI 검토 시작", "go": "confirm:aireview.run", "target": self.gid})
+        else:
+            self.assertEqual(un["action"], {"label": "AI 검토 시작", "go": "confirm:aireview.run", "target": self.gid})
+            self.assertIn("아직 AI 검토를 하지 않았습니다", un["text"])
+            if "titleblock" in kinds:
+                self.assertLess(kinds.index("titleblock"), kinds.index("ai_unreviewed"))
         self.seed([self.tag(1, self.valves[0], "V901")])
         items = api_next.summary(self.engine)["items"]
         self.assertNotIn("ai_unreviewed", [i["kind"] for i in items])

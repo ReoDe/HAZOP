@@ -83,6 +83,8 @@ class SheetNamesTest(SheetCase):
         if ids:
             sg = api_nodes.suggest(self.engine, gid, ids)
             self.assertNotRegex(sg["name"], TEMP)
+            if not sg["majors"]:                     # 큰 기기 태그가 없으면 짧은 기본 이름(실제 창 5차: 파일 이름이 든 긴 이름이었다)
+                self.assertRegex(sg["name"], r"^구간 S\d+$")
         dx = self.read("dexpi")
         for t in self.shown_text(dx):
             self.assertNotRegex(t, TEMP)
