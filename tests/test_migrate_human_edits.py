@@ -6,14 +6,21 @@
 덧바르는 연산은 기준 추출(번호를 매긴 입력)을 바꾸지 않으므로 순번 id가 그대로다. 지운 기호는 묘비, 남은 기호는 같은 순번 id의 구성요소로 간다.
 """
 
+import glob
+import importlib
 import json
 import os
+import shutil
+import sys
+import tempfile
 import unittest
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests.test_titleblock import BY, P, Base  # noqa: E402
+
+from hazop import paths  # noqa: E402
 
 from hazop.app import project_ctx  # noqa: E402
 from hazop.extract import confirmation, rules  # noqa: E402
@@ -190,6 +197,26 @@ class LegacyVectorPdf(Sheet):
         self.assertEqual(seg.get("lost") or [], [])
         self.assertEqual(self.sids(seg["members"]), sorted(x["source_object_id"] for x in self.picked))
         self.assertEqual([t for t, rec in (ns.get("tombstones") or {}).items() if rec.get("found") is None], [])
+
+
+class CheckGraphRebuild(unittest.TestCase):
+    """scripts/check_graph의 같은 입력 재빌드 비교는 render_one이 덧붙인 base_version을 문제로 보지 않는다."""
+
+    def test_rebuild_check_passes_on_a_graph_with_a_base_version(self):
+        tmp = tempfile.mkdtemp(prefix="hazop-cg-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+        cg = importlib.import_module("check_graph")
+        ex_root, out_root = os.path.join(tmp, "extract"), os.path.join(tmp, "graph")
+        src = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-101*", "*.drawio"))[0]
+        self.assertEqual(cg.extract_drawio.main([src, "--out-root", ex_root]), 0)
+        name = os.listdir(ex_root)[0]
+        graph, _ = cg.build_graph.build_one(os.path.join(ex_root, name, "extraction.json"), out_root)
+        self.assertTrue(graph.get("base_version"), "시험 전제: render_one이 기준 판을 적었다")
+        failures = []
+        with mock.patch.object(cg.build_graph, "DEFAULT_EXTRACT", ex_root), mock.patch.object(cg.build_graph, "DEFAULT_OUT", out_root):
+            cg.check_one(name, failures)
+        self.assertEqual(failures, [])
 
 
 class VectorPdf(HumanEditMigration):
