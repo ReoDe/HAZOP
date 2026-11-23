@@ -62,6 +62,7 @@ function wire() {
     if ((r.released || []).length) parts.push("쪽 확정이 풀렸습니다. 도면을 다시 보고 쪽 확정을 하세요.");
     if ((r.number_conflicts || []).length) parts.push("같은 도면 번호의 다른 형식 원본이 있습니다. 도면 패널에서 분석에 쓸 원본을 고르세요.");
     tb.set({ jobs, notice: parts.join(" "), busy: null });
+    closeAfterConfirm(parts.join(" "));
     load();
   });
   on("job.failed", (d) => {
@@ -89,6 +90,13 @@ function clearDraft(mid) {
   const drafts = Object.assign({}, tb.get().drafts); delete drafts[mid];
   const reasons = Object.assign({}, tb.get().reasons); delete reasons[mid];
   tb.set({ drafts, reasons });
+}
+
+/** 확정이 끝나면 표제란 패널을 닫아 캔버스의 '쪽 확정' 칩이 가려지지 않게 한다(실제 창 6차). 알림은 화면 아래 알림으로 옮긴다.
+ *  옮길 기록 확인 카드가 떠 있거나 오류가 있으면 닫지 않는다. */
+function closeAfterConfirm(text) {
+  if (tb.get().ask || tb.get().error || store.get().panel !== "titleblock") return;
+  store.set({ panel: null, toast: { text, kind: "info" } });
 }
 
 /** 번호 확정·취소로 도면 이름이 바뀌었으면(시트 정체 U5) 지금 열린 도면을 새 이름으로 바꾼다. 고른 구성요소·표시는 비운다(옛 이름의 것). */
@@ -134,6 +142,7 @@ async function go(name, row, args) {
     }
     const renamed = out && (out.renames || []).length ? " 도면 이름이 바뀌었습니다: " + out.renames.map((x) => x.from_label + " → " + x.to_label).join(", ") + "." : "";
     tb.set({ busy: null, notice: out && out.changed === false ? "바뀐 값이 없습니다." : "확정했습니다." + renamed });
+    if (out && out.changed !== false) closeAfterConfirm("확정했습니다." + renamed);
     if (out) followRenames(out.renames);
     load();
   } catch (e) {

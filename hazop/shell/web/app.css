@@ -266,3 +266,6 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .job-line { display: flex; align-items: center; gap: 6px; min-height: 26px; font-size: var(--fs-sm); overflow: hidden; white-space: nowrap; }
 .job-line span { overflow: hidden; text-overflow: ellipsis; }
 .jobs-done summary { cursor: pointer; padding: 2px 0; }
+/* 도면이 많아도 추출 설정(AI 검토 스위치) 줄은 패널 아래에 붙박는다: 목록만 스크롤된다(실제 창 6차) */
+.card.ai-foot { position: sticky; bottom: calc(-1 * var(--sp-4)); z-index: 1; box-shadow: 0 -6px 12px -8px rgba(0,0,0,.25); padding-top: 8px; padding-bottom: 8px; }
+.card.ai-foot h3 { display: none; }

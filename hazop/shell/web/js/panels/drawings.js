@@ -19,9 +19,10 @@ function NumberChip({ d }) {
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
-const STATE_TEXT = { open: "확정 조건 남음", ready: "확정만 남음", confirmed: "확정됨", changed: "내보내는 사이 도면 자료가 바뀜", error: "쪽 확정 기록을 읽지 못함" };
+const STATE_TEXT = { open: "확정 조건 남음", ready: "확정만 남음", confirmed: "확정됨", changed: "내보내는 사이 도면 자료가 바뀜", error: "쪽 확정 기록을 읽지 못함",
+  graph_error: "확정한 자료로 도면 연결 정보를 다시 만들지 못함" };      // 표에 없는 상태는 영문 코드 대신 일반 글(아래 whyNot)
 /** 내보내지 않은 쪽 한 줄: 엔진이 준 사유가 있으면 그것, 없으면 확정 상태의 한글 이름. */
-const whyNot = (x) => x.reason || (STATE_TEXT[x.state] || x.state) + (x.unconfirmed ? ", 남은 미확인 " + x.unconfirmed : "");
+const whyNot = (x) => x.reason || (STATE_TEXT[x.state] || "내보낼 수 없는 상태") + (x.unconfirmed ? ", 남은 미확인 " + x.unconfirmed : "");
 
 /** DEXPI 내보내기(앱 틀 규격 V5, DEXPI 규격 §6.1): 확정된 쪽만 낸다. 저장 폴더는 창이 대화상자로 묻고 웹은 경로를 보내지 않는다. 확정된 쪽이 없으면 단추 대신 안내를 보인다. */
 function DexpiExport() {
@@ -126,8 +127,8 @@ export function DrawingsPanel({ onOpen, onClose }) {
             <${Btn} sm=${true} kind="ghost" label=${d.display + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//>
             <${Btn} sm=${true} label=${d.display + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>
             ${d.graph_id === sheet ? html`<${DrawingExclude} graphId=${d.graph_id} />` : null}<//>`)}</div>`}</div>
-      <div class="card"><h3>추출 설정</h3>
-        <div class="kv"><div class="k"><b>AI 검토</b><span>추출 뒤 AI가 미확인 항목의 후보를 제안합니다(구독 한도를 씁니다). 처음 값은 꺼짐이고, 한 번 실행에 최대 ${app.ai_review_run_cap}회까지 부릅니다.</span></div>
+      <div class="card ai-foot"><h3>추출 설정</h3>
+        <div class="kv"><div class="k" title=${"추출 뒤 AI가 미확인 항목의 후보를 제안합니다(구독 한도를 씁니다). 처음 값은 꺼짐이고, 한 번 실행에 최대 " + app.ai_review_run_cap + "회까지 부릅니다."}><b>AI 검토</b><span>추출 뒤 미확인 항목에 AI 후보(구독 한도, 처음 값 꺼짐)</span></div>
           <${Switch} on=${app.ai_review} label="AI 검토" onChange=${(v) => setReview({ enabled: v })} /></div>
         ${app.ai_review ? html`<div class="kv"><div class="k"><b>도면당 호출 상한</b><span>${app.ai_review_cap}회${est ? " · 지금 도면 전체 예상 호출 " + est.calls + "회, 약 " + Math.max(1, Math.round(est.seconds / 60)) + "분" + (est.capped ? "(한 번 실행 상한 " + est.run_cap + "회에 걸림)" : "") : ""}</span></div>
           <input type="number" min="1" max="200" value=${app.ai_review_cap} aria-label="도면당 호출 상한" style="width:72px;height:30px"
