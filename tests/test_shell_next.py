@@ -120,6 +120,7 @@ class StudyProjectTest(AutoBase):
         self.assertEqual(out["kind"], "recheck")
         self.assertGreaterEqual(out["count"], 1)
         self.assertEqual(out["action"]["go"], "queue:lost")
+        self.assertTrue(out["action"]["target"], "첫 구간으로 간다")
 
     def test_a_failed_automatic_migration_comes_before_everything(self):
         with mock.patch.object(data, "migrate_study", side_effect=OSError("디스크 가득")):
@@ -155,6 +156,7 @@ class RegisteredDrawingTest(unittest.TestCase):
             out = api_next.summary(t.engine)["items"]
             self.assertEqual(out[0]["kind"], "titleblock", out)
             self.assertEqual(out[0]["action"]["go"], "panel:drawings#titleblock")
+            self.assertTrue(out[0]["action"]["target"], "한 장이면 그 자료의 표제란 카드로 바로 간다")
             self.assertNotIn("sheet_confirm", [i["kind"] for i in out], "표제란 전에는 쪽 확정을 띄우지 않는다")
         finally:
             t.doCleanups()

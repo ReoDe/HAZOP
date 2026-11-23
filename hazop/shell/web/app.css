@@ -186,3 +186,30 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .foot { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--muted); }
 .foot .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
 
+
+/* ── 다음에 할 일 한 줄(HZ-DSN-06 §3.1, web/js/next/next.js) ───────── */
+.next { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; }
+.next .line { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 32px; padding: 0 4px 0 10px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--line); }
+.next .line.warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn); }
+.next .line.info { background: var(--accent-weak); border-color: var(--accent-weak); color: var(--accent-ink); }
+.next .line.calm { background: transparent; border-color: transparent; color: var(--muted); }
+.next .line .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.next .line.warn .txt { color: var(--warn); font-weight: 700; }
+.next .line.info .txt { color: var(--accent-ink); }
+.next .line.calm .txt { color: var(--muted); }
+.next .line .btn { height: 26px; padding: 0 10px; font-size: var(--fs-sm); border-radius: var(--r-pill); flex: none; }
+.next .more { all: unset; display: inline-flex; align-items: center; gap: 2px; height: 26px; padding: 0 6px 0 8px; border-radius: var(--r-pill); font-size: var(--fs-sm); color: var(--muted); cursor: pointer; white-space: nowrap; flex: none; }
+.next .more:hover { background: var(--surface-2); color: var(--ink); }
+.next .bar { width: 72px; height: 6px; border-radius: 3px; background: var(--accent-weak); overflow: hidden; flex: none; }
+.next .bar i { display: block; height: 100%; background: var(--accent); }
+.next-list { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: 440px; max-width: 92vw; padding: 6px; z-index: 9; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-2); }
+.next-list .h { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px 6px; font-size: var(--fs-xs); color: var(--muted); }
+.next-list button.item { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--r-sm); cursor: pointer; }
+.next-list button.item:hover, .next-list button.item.top, .next-list button.item:focus-visible { background: var(--surface-2); }
+.next-list .item .n { width: 18px; color: var(--faint); font-size: var(--fs-xs); text-align: right; flex: none; }
+.next-list .item .t { flex: 1; min-width: 0; }
+.next-list .item .t span { display: block; font-size: var(--fs-xs); color: var(--muted); }
+.next-list .item .go { color: var(--accent-ink); font-size: var(--fs-sm); white-space: nowrap; }
+.next-list .item.warn .ic { color: var(--warn); }
+@media (max-width: 1400px) { .search { width: 168px; } }

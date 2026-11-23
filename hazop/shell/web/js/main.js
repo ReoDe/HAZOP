@@ -14,6 +14,22 @@ import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
 import { Notices, addNotice, demotedNotice, lostNotice, refreshLostNotice } from "./notices.js";
+import { NextLine, next as nextStore, setGo } from "./next/next.js";
+
+// '다음에 할 일' 단추가 가는 자리(엔진 next의 go). 도면 위 자리로 갈 때는 열린 패널을 닫는다(가리지 않게). 패널 모듈은 누를 때 읽는다
+setGo("panel:drawings#titleblock", async (t) => { const m = await import("./panels/titleblock.js"); if (t) m.focusMaterial(t); else store.set({ panel: "titleblock" }); });
+setGo("panel:drawings#sheetconf", async (t) => {
+  store.set({ panel: null });
+  if (t && store.get().sheet !== t) openSheet(t);
+  const c = await import("./sheet_confirm.js");
+  c.conf.set({ open: true, error: null });
+  c.load(t || store.get().sheet);
+});
+setGo("panel:nodes#pick", async () => { store.set({ panel: null }); const N = await import("./panels/nodes_state.js"); N.setMode("pick"); });
+setGo("queue:lost", async (t) => { store.set({ panel: "nodes" }); const N = await import("./panels/nodes_state.js"); if (t) N.focusNode(t); });
+setGo("confirm:nodes.catch_up", async () => { store.set({ panel: "nodes" }); const N = await import("./panels/nodes_state.js"); N.catchUp(); });
+setGo("panel:results#run", async () => { store.set({ panel: "results" }); const R = await import("./panels/results_state.js"); R.planRun("all"); });
+setGo("confirm:results.export_excel", async () => { const R = await import("./panels/results_state.js"); R.exportExcel("all"); });
 
 const toast = (text, kind) => store.set({ toast: { text, kind } });
 
@@ -176,9 +192,9 @@ function TopBar() {
   const backTo = useStore((s) => s.backTo);
   const row = d.drawings.find((x) => x.graph_id === sheet);
   return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
-    <button type="button" class="sheet" aria-label="도면 바꾸기" onClick=${() => togglePanel("drawings")}>${row ? (row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
-    ${row && row.title ? html`<span class="title">${row.title}</span>` : null}
-    ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div></header>`;
+    <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => togglePanel("drawings")}>${row ? (row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
+    ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div>
+    <${NextLine} /></header>`;      // 도면 제목은 도면 번호에 마우스를 올리면 보인다(1366 폭에서 다음에 할 일 줄이 잘리지 않게, HZ-DSN-06 §3.1)
 }
 
 function Toast() {
@@ -233,7 +249,7 @@ async function boot() {
   else if (d.drawings.length === 1) openSheet(d.drawings[0].graph_id);
   else store.set({ panel: "drawings" });   // 열 도면이 없거나 여럿이면 도면 패널을 먼저 보인다
   if (!s.reviewer) { store.set({ panel: "settings" }); toast("검토자 이름을 입력하세요. 승인·확정 기록에 남습니다."); }   // 처음 실행할 때 묻는 것은 그대로
-  if (s.debug) window.__hz = { store, cmd, read, ui, clean };
+  if (s.debug) window.__hz = { store, cmd, read, ui, clean, next: nextStore };
   cmd("project.open_check").catch(() => {});      // 앱을 끈 사이 도면이 다시 읽혔으면 검토구간을 뒤에서 맞춘다(잃은 것이 있으면 알림이 온다)
   checkLost();        // 다시 추출 뒤 찾지 못한 구성요소가 있으면 한 줄로 알린다(읽기는 뒤에서, 화면을 붙잡지 않는다)
   await loadChat();   // 채팅 예시 질문은 프로젝트 그래프를 읽어 큰 프로젝트에서 수 초 걸린다. 도면 목록이 먼저 보이게 맨 끝에서 읽는다

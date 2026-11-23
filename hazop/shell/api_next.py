@@ -46,11 +46,13 @@ def facts(engine):
     f["sheets"] = len(names)
     tb = _safe(lambda: api_titleblock.summary(engine), "표제란")
     f["titleblock"] = (tb["totals"]["materials"] - tb["totals"]["confirmed"]) if tb else None
+    f["titleblock_first"] = next((r.get("material_id") for r in (tb or {}).get("rows") or [] if r.get("state") != "confirmed"), None)
     ar = _safe(lambda: api_aireview.overview(engine), "AI 검토")
     f["ai_candidates"] = sum(r["proposed"] for r in ar["drawings"]) if ar else None
     sc = _safe(lambda: api_drawings.exportable(engine), "쪽 확정")
     f["sheet_confirm"] = sum(1 for r in sc["drawings"] if r.get("state") != "confirmed") if sc else None
     f["sheets_confirmed"] = sum(1 for r in sc["drawings"] if r.get("state") == "confirmed") if sc else None
+    f["sheet_confirm_first"] = next((r["graph_id"] for r in (sc or {}).get("drawings") or [] if r.get("state") != "confirmed"), None)
     ns = _safe(lambda: api_nodes.summary(engine), "구간") if names else None
     rs = _safe(lambda: api_results.summary(engine), "분석 결과") if names else None
     if ns and ns.get("available"):
@@ -115,6 +117,9 @@ RULES = (
     ("ie_draft", lambda f: _n(f, "ie_draft"),
      lambda f, n: "초기사건 초안 %d그룹을 확인해 주세요" % n, "초안 보기", "panel:ie#draft", ""),
 )
+# 단추가 바로 갈 자리(화면이 그 도면·자료·구간을 연다). 없으면 그 패널만 연다
+TARGET = {"titleblock": "titleblock_first", "sheet_confirm": "sheet_confirm_first"}
+
 NONE_ITEM = {"kind": "none", "count": 0, "text": "지금 할 일이 없습니다", "detail": None,
              "action": {"label": "Excel로 내보내기", "go": "confirm:results.export_excel"}, "tone": "quiet"}
 
@@ -126,8 +131,14 @@ def items(f):
         n = count(f)
         if n:
             out.append({"kind": kind, "count": n, "text": text(f, n), "detail": _lost_detail(f) if kind == "recheck" else None,
-                        "action": {"label": label, "go": go}, "tone": tone})
+                        "action": {"label": label, "go": go, "target": _target(f, kind)}, "tone": tone})
     return out or [dict(NONE_ITEM)]
+
+
+def _target(f, kind):
+    if kind == "recheck":
+        return (f.get("lost_nodes") or [None])[0]
+    return f.get(TARGET.get(kind, ""))
 
 
 def _running(f):
