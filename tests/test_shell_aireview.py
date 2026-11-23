@@ -350,6 +350,14 @@ class RunTest(Base):
 
 
 class ReadTest(Base):
+    def test_kind_values_are_shown_in_korean_not_internal_names(self):   # 실제 창 확인 2026-11-23: control_valve → manual_valve가 보였다
+        kind = ar.make_candidate("k-x", "kind", self.valves[2], "kind", ["manual_valve", "check_valve"], 0.99, "모양")
+        self.seed([kind])
+        row = next(g for g in self.view()["groups"] if g["task"] == "kind")["items"][0]
+        self.assertEqual(row["values"][0], "manual_valve", "저장·명령에 쓰는 값은 그대로")
+        for v in row["values_text"] + [row["current_text"] or ""]:
+            self.assertNotRegex(v, r"[a-z]_[a-z]", "영문 내부 종류 이름: %s" % v)
+
     def test_no_candidates_yet(self):
         v = self.view()
         self.assertFalse(v["available"])

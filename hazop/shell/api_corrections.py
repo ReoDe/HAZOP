@@ -409,7 +409,7 @@ def _write(engine, graph_id, name, ops, by, src, action, note=None, defer=False)
         engine.start_job("그래프 다시 만들기", refresh_job, kind="graph_refresh")
         _announce(engine, graph_id)
         return {"ok": True, "graph_id": graph_id, "ver": sheet_refresh.ver_of(name), "graph_stale": True, "refreshing": True,
-                "notes": ["저장했습니다. 그래프를 다시 만드는 중입니다."] + notes, "recheck": [], "released": released, "reconciled": reconciled}
+                "notes": ["저장했습니다. 도면 연결 정보를 갱신하는 중입니다."] + notes, "recheck": [], "released": released, "reconciled": reconciled}
     try:
         stale, more, recheck = sheet_refresh.refresh(name)
     except Exception as exc:  # noqa: BLE001

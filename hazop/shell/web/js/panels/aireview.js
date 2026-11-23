@@ -47,20 +47,21 @@ function Bulk({ v }) {
 export function Row({ r }) {
   const busy = A.useAi((s) => s.busy);
   const picked = A.useAi((s) => s.picked);
-  const alt = r.values.slice(1);
+  const vals = r.values_text || r.values;          // 화면 글은 엔진이 한글로 바꾼 값(종류 이름)
+  const alt = vals.slice(1);
   return html`<div class=${"row ai-row" + (picked === r.cand_id ? " on" : "")} role="listitem">
-    <button type="button" class="ai-main" aria-label=${r.field_label + " 후보 " + r.values[0] + " 도면에서 보기"} title="도면에서 이 자리 보기" onClick=${() => A.showOnSheet(r)}>
-      <b>${r.task === "recheck" ? html`다시 확인: ${r.field_label} 스크립트 <span class="ai-cur">${r.script_value || r.current || "없음"}</span> → AI <span class="ai-val">${r.values[0]}</span>`
-        : html`${r.field_label} <span class="ai-cur">${r.current || "없음"}</span> → <span class="ai-val">${r.values[0]}</span>`}${alt.length ? html` <span class="muted small">(차선 ${alt.join(", ")})</span>` : null}</b>
+    <button type="button" class="ai-main" aria-label=${r.field_label + " 후보 " + vals[0] + " 도면에서 보기"} title="도면에서 이 자리 보기" onClick=${() => A.showOnSheet(r)}>
+      <b>${r.task === "recheck" ? html`다시 확인: ${r.field_label} 스크립트 <span class="ai-cur">${r.script_text || r.current_text || "없음"}</span> → AI <span class="ai-val">${vals[0]}</span>`
+        : html`${r.field_label} <span class="ai-cur">${r.current_text || "없음"}</span> → <span class="ai-val">${vals[0]}</span>`}${alt.length ? html` <span class="muted small">(차선 ${alt.join(", ")})</span>` : null}</b>
       <span>${r.reason || "근거 없음"}</span>
       ${r.status === "proposed" && r.bulk_block ? html`<span class="muted small">하나씩 볼 것: ${r.bulk_block}</span>` : null}</button>
     <${Chip} title="AI 확신도">${r.confidence.toFixed(2)}<//>
     ${r.match_label ? html`<${Chip} kind=${r.match === "legend" ? "ok" : ""} title=${r.match_hint}>${r.match_label}<//>` : null}
     <${Chip} kind=${STATUS_KIND[r.status]}>${r.status_label}<//>
     <span class="acts">${r.status === "proposed" ? html`
-      <${Btn} sm=${true} kind="primary" label=${r.field_label + " " + r.values[0] + " 수락"} disabled=${busy} onClick=${() => A.accept(r.cand_id)}>수락<//>
-      <${Btn} sm=${true} label=${r.field_label + " " + r.values[0] + " 거절"} disabled=${busy} onClick=${() => A.reject(r.cand_id)}>거절<//>`
-      : html`<${Btn} sm=${true} icon="arrow-back-up" label=${r.field_label + " " + r.values[0] + " 되돌리기"} disabled=${busy} onClick=${() => A.revert(r.cand_id)}>되돌리기<//>`}</span></div>`;
+      <${Btn} sm=${true} kind="primary" label=${r.field_label + " " + vals[0] + " 수락"} disabled=${busy} onClick=${() => A.accept(r.cand_id)}>수락<//>
+      <${Btn} sm=${true} label=${r.field_label + " " + vals[0] + " 거절"} disabled=${busy} onClick=${() => A.reject(r.cand_id)}>거절<//>`
+      : html`<${Btn} sm=${true} icon="arrow-back-up" label=${r.field_label + " " + vals[0] + " 되돌리기"} disabled=${busy} onClick=${() => A.revert(r.cand_id)}>되돌리기<//>`}</span></div>`;
 }
 
 export function AiReviewPanel({ onClose }) {

@@ -66,6 +66,14 @@ def _current(shown, c):
 MATCH_LABELS = {"legend": ("높음", "범례 견본과 맞는 후보"), "other": ("보통", "범례에 없는 꼴이라 확인이 필요한 후보")}
 
 
+def _show(field, value):
+    """화면에 쓰는 값: 종류는 한글 종류 이름(영문 내부 이름은 보이지 않는다, 실제 창 확인 2026-11-23). 사전에 없는 종류는 '목록에 없는 종류'."""
+    if field in ("kind", "split") and value:
+        from hazop.shell.sheet_items import kind_label
+        return kind_label(value) or "목록에 없는 종류"
+    return value
+
+
 def _row(c, shown):
     block = ai_review.bulk_block(c)
     match = MATCH_LABELS.get(c.get("match")) if isinstance(c.get("match"), str) else None
@@ -74,7 +82,9 @@ def _row(c, shown):
             "reason": (c.get("reason") or "")[:300], "status": c["status"], "status_label": STATUS_LABELS.get(c["status"], c["status"]),
             "local_id": c.get("local_id"), "bulk_ok": block is None, "bulk_block": block if c["status"] == "proposed" else None,
             "decided_by": c.get("decided_by"), "script_value": c.get("script_value"), "match": c.get("match") if match else None,
-            "match_label": match[0] if match else None, "match_hint": match[1] if match else None}
+            "match_label": match[0] if match else None, "match_hint": match[1] if match else None,
+            "current_text": _show(c["field"], _current(shown, c)), "values_text": [_show(c["field"], v) for v in list(c["values"])[:3]],
+            "script_text": _show(c["field"], c.get("script_value"))}
 
 
 def _load(name):

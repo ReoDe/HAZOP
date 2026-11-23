@@ -99,3 +99,5 @@ ul.tight { margin: 0; padding-left: 16px; }
 .app.queue-open .notice-bar { display: none; }
 .notice-row { display: flex; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--warn-line); border-left-width: 4px; border-radius: var(--r-md); padding: 6px 8px 6px 12px; box-shadow: var(--sh-2, 0 2px 8px rgba(0,0,0,.12)); font-size: var(--fs-sm); }
 .notice-row .nt { flex: 1; }
+/* 대기열이 열린 동안 도면 표시의 '지우기 (Esc)'는 숨긴다: Esc는 대기열을 끝낸다(실제 창 결함 8) */
+.app.queue-open .hz-cv-legend button { display: none; }

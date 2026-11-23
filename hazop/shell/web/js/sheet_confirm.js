@@ -12,7 +12,16 @@ import { ReviewChip } from "./review/review.js";      // 도면별 AI 검토 칩
 export const conf = createStore({ byGraph: {}, open: false, busy: false, error: null });
 
 const REASON = { unknown_symbol: "종류를 못 읽은 기호", open_end: "끊긴 연결(열린 끝)", missing_tag: "태그가 없음", ai_candidate: "AI 후보(수락 전)", unresolved_connector: "이어지지 않은 연결",
-  unplaced: "위치 없음", no_position: "위치 없음" };
+  unplaced: "위치 없음", no_position: "위치 없음",
+  // 추출의 미확인 갈래(hazop/extract). 영문 내부 이름이 화면에 나오지 않게 모두 적고, 표에 없는 것은 '그 밖에 확인할 곳'으로 쓴다(실제 창 확인 2026-11-23)
+  registration_unknown: "표제란 확인 전", missing_drawing_number: "도면 번호 없음", not_registered: "등록하지 않은 도면", missing_kind: "종류 없음",
+  unclassified_kind: "종류를 못 읽은 기호", unclassified_element: "못 읽은 요소", ambiguous_symbol: "기호가 둘 이상으로 보임", ambiguous_port: "이을 자리가 둘 이상",
+  missing_port: "이을 자리 없음", missing_geometry: "모양 정보 없음", approximate_geometry: "모양이 어림값", missing_line_type: "선 종류 없음",
+  unknown_line_type: "선 종류를 모름", unknown_flow_direction: "흐름 방향을 모름", invalid_flow_direction: "흐름 방향이 맞지 않음",
+  node_direction_basis_unresolved: "흐름 방향 근거를 못 찾음", unconnected_endpoint: "끊긴 연결(열린 끝)", endpoint_not_node: "기호에 닿지 않은 끝",
+  self_loop: "제자리로 돌아오는 선", dashed_path_no_visible_piece: "점선 조각이 안 보임", position_conflict: "위치 값이 서로 다름",
+  position_kind_mismatch: "종류에 맞지 않는 위치 값", actuated_valve_pending: "구동 밸브 종류 확인 전" };
+const reasonText = (k) => REASON[k] || "그 밖에 확인할 곳";
 const METHOD = { drawio: "읽은 도면 · drawio", dexpi: "변환 도면 · DEXPI", pdf_vector: "PDF에서 읽어 다시 그림", raster: "그림 파일에서 읽음", unknown: "읽은 방법 모름" };
 
 export function useConf(selector) {
@@ -77,7 +86,7 @@ function Conditions({ st }) {
   for (const u of st.unconfirmed || []) byReason[u.reason] = (byReason[u.reason] || 0) + 1;
   const rows = Object.entries(byReason);
   return html`<ul class="tight conf-list" aria-label="남은 조건">
-    <li class=${st.unconfirmed_total ? "bad" : "good"}>미확인 ${st.unconfirmed_total}곳${rows.length ? html`<span class="muted small"> — ${rows.map(([k, n]) => (REASON[k] || k) + " " + n).join(" · ")}${st.unconfirmed_total > st.unconfirmed.length ? " …" : ""}</span>` : null}</li>
+    <li class=${st.unconfirmed_total ? "bad" : "good"}>미확인 ${st.unconfirmed_total}곳${rows.length ? html`<span class="muted small"> — ${rows.map(([k, n]) => reasonText(k) + " " + n).join(" · ")}${st.unconfirmed_total > st.unconfirmed.length ? " …" : ""}</span>` : null}</li>
     <li class=${st.unplaced_total ? "bad" : "good"}>위치 없는 구성요소 ${st.unplaced_total}개${st.unplaced_total ? html`<span class="muted small"> — 위치를 주거나 도면에 없음으로 지워야 합니다</span>` : null}</li>
     <li class=${st.leftovers === null ? "bad" : "good"}>원본에 남은 것 ${st.leftovers === null ? "— 이 방법으로 읽은 도면은 원본에 남은 것을 셀 수 없어 확정할 수 없습니다" : st.leftovers.total + "개(확정을 막지 않습니다)"}</li>
     <li class=${st.compared ? "good" : "todo"}>원본과 견줌 ${st.compared ? st.compared.by + " · 기록됨" : "— 아직"}</li></ul>`;
