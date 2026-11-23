@@ -31,8 +31,9 @@ CHROME = os.environ.get("HAZOP_CHROME", r"C:\Program Files\Google\Chrome\Applica
 OUT = ROOT / "1-guided-flow.html"
 
 SHOTS = [("2-next-step", "home"), ("3-next-list", "list"), ("4-nothing-left", "none"), ("5-queue-ai", "queue_ai"),
-         ("6-queue-lost", "queue_lost"), ("7-queue-done", "done"), ("8-reextract-ok", "reextract_ok"), ("9-reextract-lost", "reextract_lost")]
-SHOTS_1920 = [("5-queue-ai", "queue_ai"), ("9-reextract-lost", "reextract_lost")]
+         ("6-queue-lost", "queue_lost"), ("7-queue-done", "done"), ("8-reextract-ok", "reextract_ok"), ("9-reextract-lost", "reextract_lost"),
+         ("10-ai-before", "ai_before"), ("11-ai-confirm", "ai_confirm"), ("12-ai-running", "ai_running"), ("13-ai-ready", "ai_ready")]
+SHOTS_1920 = [("5-queue-ai", "queue_ai"), ("9-reextract-lost", "reextract_lost"), ("11-ai-confirm", "ai_confirm")]
 
 
 def icon(name):
