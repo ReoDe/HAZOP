@@ -11,6 +11,7 @@ id는 "manual-" + op_id다. 적용할 수 없는 연산은 사유와 함께 건�
 - overlay(그 밖): 지금처럼 apply가 기준 추출 위에 적용한다. 입력 연산이 없으면 기준 추출은 원본 그대로다.
 """
 
+import collections
 import copy
 import functools
 import hashlib
@@ -273,6 +274,7 @@ class _State:
     def __init__(self, doc):
         self.doc = doc
         self.deleted = set()
+        self.lumps = {}  # 나누기 대상 덩어리 id → 첫 나누기 op_id(덩어리가 없어진 사유)
         self.resolved = 0
         self.index = {}
         for n in doc["nodes"]:
@@ -548,13 +550,15 @@ def is_input(op):
 
 # ---------------------------------------------------------------- 지문·연산 만들기·적용
 
-def objs_digest(obj):
-    """대상의 pdf 개체 집합 지문("o-" + sha1 앞 6자리). pdf 개체가 없으면(drawio·분기점·사람이 더한 것) None."""
+def objs_digest(obj, pdf_sha=None):
+    """대상의 pdf 개체 집합 지문("o-" + sha1 앞 6자리). pdf 개체가 없으면(drawio·분기점·사람이 더한 것) None.
+    pdf-path 순번은 그 PDF 안에서만 같은 도형을 가리키므로 원본 PDF의 sha256(pdf_sha)을 함께 넣는다. PDF가 바뀌면 지문이 달라
+    _rematch가 순번만 같은 다른 도형으로 대상을 옮기지 않는다."""
     objs = sorted((obj.get("evidence") or {}).get("pdf_objects") or []) if isinstance(obj.get("evidence"), dict) else []
-    return "o-" + hashlib.sha1(",".join(objs).encode("utf-8")).hexdigest()[:6] if objs else None
+    return "o-" + hashlib.sha1(("%s|" % (pdf_sha or "") + ",".join(objs)).encode("utf-8")).hexdigest()[:6] if objs else None
 
 
-def fingerprint(kind, obj, loc=None):
+def fingerprint(kind, obj, loc=None, pdf_sha=None):
     """base 비교용 대상 지문. 노드 {kind, category, tag, at}, 관계 {kind, ends: 양 끝 노드 source_object_id, at}.
     at = 위치 상자 중심(정수 반올림). PDF 대상 ID는 순번이라 다시 추출하면 같은 ID가 다른 기호를 가리킬 수 있어 위치로 가른다.
     PDF 대상이면 objs(pdf 개체 집합 지문)도 넣는다. 같은 대상인지는 보지 않고(조각 하나가 더 붙어도 같은 기호다),
@@ -564,7 +568,7 @@ def fingerprint(kind, obj, loc=None):
         out = {"kind": obj.get("kind"), "category": obj.get("category"), "tag": obj.get("tag"), "at": at}
     else:
         out = {"kind": obj.get("kind"), "ends": [ep.get("source_object_id") for ep in obj["endpoints"]], "at": at}
-    objs = objs_digest(obj)
+    objs = objs_digest(obj, pdf_sha)
     if objs:
         out["objs"] = objs
     return out
@@ -572,9 +576,10 @@ def fingerprint(kind, obj, loc=None):
 
 def _fingerprints(extraction):
     locs = {loc["local_id"]: loc for loc in extraction["source_locations"]}
-    out = {n["source_object_id"]: fingerprint("node", n, locs.get(n["local_id"])) for n in extraction["nodes"]}
+    sha = (extraction.get("source") or {}).get("sha256")
+    out = {n["source_object_id"]: fingerprint("node", n, locs.get(n["local_id"]), sha) for n in extraction["nodes"]}
     for key in ("relations", "unresolved_connectors"):
-        out.update((r["source_object_id"], fingerprint("relation", r, locs.get(r["local_id"]))) for r in extraction[key])
+        out.update((r["source_object_id"], fingerprint("relation", r, locs.get(r["local_id"]), sha)) for r in extraction[key])
     return out
 
 
@@ -649,15 +654,15 @@ def _apply_one(st, original_fp, op):
 
 
 def _rematch(fp, original_fp):
-    """번호가 밀린 대상을 지문으로 다시 찾는다(기획서/PID-기호사전.md D14). pdf 개체 집합(objs)이 같은 대상이 정확히
-    하나면 그것(같은 도형이다). 아니면 같은 위치(at)·같은 종류의 대상이 정확히 하나일 때만 그 id. 관계의 양 끝(ends)은
-    노드 번호가 같이 밀리므로 보지 않는다. 둘 이상이거나 없으면 None."""
+    """번호가 밀린 대상을 지문으로 다시 찾는다(기획서/PID-기호사전.md D14). 같은 PDF에서 pdf 개체 집합(objs)이 같고
+    종류도 같은 대상이 정확히 하나면 그것(같은 도형이다, objs_digest). 아니면 같은 위치(at)·같은 종류의 대상이 정확히
+    하나일 때만 그 id. 관계의 양 끝(ends)은 노드 번호가 같이 밀리므로 보지 않는다. 둘 이상이거나 없으면 None."""
     if not fp:
         return None
     is_rel = "ends" in fp
     if fp.get("objs"):
         same = [sid for sid, cur in sorted(original_fp.items())
-                if cur and cur.get("objs") == fp["objs"] and ("ends" in cur) == is_rel]
+                if cur and cur.get("objs") == fp["objs"] and ("ends" in cur) == is_rel and cur.get("kind") == fp.get("kind")]
         if len(same) == 1:
             return same[0]
     if fp.get("at") is None:
@@ -701,12 +706,19 @@ def apply(extraction, ops):
     if not ops:
         return doc
     st, original_fp = _State(doc), _fingerprints(extraction)
+    for op in ops:
+        if op.get("op") == "split":
+            st.lumps.setdefault(op.get("target"), op.get("op_id"))
     applied, skipped, retargeted, inputs = [], [], [], []
     for op in ops:
         if is_input(op):
             inputs.append(op.get("op_id"))
             continue
         try:
+            ids = [op.get("target")] + (_refs(op["value"]) if isinstance(op.get("value"), dict) else [])
+            gone = next((i for i in ids if i in st.lumps and i not in st.index), None)
+            if gone:  # 나누기로 없어진 덩어리: 같은 자리의 나눈 기호로 옮겨 붙이지 않는다
+                raise _Skip("나누기 %s로 덩어리가 나뉘어 대상이 없음" % st.lumps[gone])
             op, moved = _retarget(op, original_fp)
             _apply_one(st, original_fp, op)
         except _Skip as exc:
@@ -861,9 +873,12 @@ def _locate(op, shapes, sha, reader):
             moved.append((o, hits[0]))
         else:
             lost += 1
+    what = "나눌" if op["op"] == "split" else "배관"
     if lost:
-        raise _Skip("도면이 바뀌어 %s 개체를 찾지 못함(%d개 중 %d개)"
-                    % ("나눌" if op["op"] == "split" else "배관", len(v["objects"]), lost))
+        raise _Skip("도면이 바뀌어 %s 개체를 찾지 못함(%d개 중 %d개)" % (what, len(v["objects"]), lost))
+    twice = sorted(k for k, n in collections.Counter(found).items() if n > 1)
+    if twice:
+        raise _Skip("도면이 바뀌어 %s 개체 둘 이상이 같은 개체로 짝지어짐(%s)" % (what, ", ".join(twice[:5])))
     return found, moved
 
 
@@ -963,11 +978,31 @@ def code_fingerprint():
     return _compute_code_fingerprint()
 
 
+def _params(original):
+    """원본 추출의 설정(run.settings.params). 없으면(옛 추출) None = 기본 설정."""
+    return ((original.get("run") or {}).get("settings") or {}).get("params")
+
+
+def _pdf_now(original):
+    """(지금 원본 PDF 경로, 쪽, 파일 sha256, 읽기 엔진 판) 또는 (None, 사유)."""
+    from hazop.extract.adapters import pdf_vector
+    where, why = pdf_source(original)
+    if where is None:
+        return None, why
+    with open(where[0], "rb") as fh:
+        sha = hashlib.sha256(fh.read()).hexdigest()
+    return (where[0], where[1], sha, pdf_vector.reader_version()), None
+
+
 def inputs_key(original, inputs):
-    """기준 추출의 열쇠: 원본 추출(sha256·쪽·실행 id)·규칙 판·추출 코드 지문·기호 사전 판·입력 연산(op_id·종류·값·대상)."""
+    """기준 추출의 열쇠: 원본 추출(sha256·쪽·설정·실행 id)·지금 원본 PDF 파일의 sha256·읽기 엔진 판·규칙 판·추출 코드
+    지문·기호 사전 판·입력 연산(op_id·종류·값·대상). 기준 추출 파일에 함께 둔 입력 상태(개체 다시 찾기 결과)도 이 열쇠에만
+    기대므로, 열쇠가 맞으면 다시 찾지 않고 그대로 쓴다."""
     from hazop.extract.adapters import pdf_vector
     src, run = original.get("source") or {}, original.get("run") or {}
-    canon = json.dumps([src.get("sha256"), (run.get("settings") or {}).get("page_index"), original.get("extraction_run_id"),
+    now, _ = _pdf_now(original)
+    canon = json.dumps([src.get("sha256"), (run.get("settings") or {}).get("page_index"), _params(original),
+                        original.get("extraction_run_id"), now and now[2], now and now[3],
                         pdf_vector.RULES_VERSION, code_fingerprint(), _library_version(),
                         [[o.get("op_id"), o.get("op"), o.get("target"), o.get("value")] for o in inputs]],
                        sort_keys=True, ensure_ascii=False, separators=(",", ":"))
@@ -982,51 +1017,81 @@ def base_path(name):
     return os.path.join(paths.output_root("extract"), name, "extraction.inputs.json")
 
 
+PDF_CHANGED = "원본 PDF가 추출한 뒤 바뀜(도면을 다시 추출해야 나누기를 적용함)"
+
+
 def build_base(original, inputs):
-    """입력 연산으로 원본 PDF를 다시 추출한 기준 추출과 입력 상태 {"applied", "not_applicable", "retargeted"}.
-    식별 칸(drawing·source·run 등)은 원본 그대로 두고 내용 칸만 바꾼다. 같은 입력이면 같은 결과다."""
+    """입력 연산으로 원본 PDF를 원래 추출 설정으로 다시 추출한 기준 추출과 입력 상태 {"applied", "not_applicable",
+    "retargeted"}. 식별 칸(drawing·source·run 등)은 원본 그대로 두고 내용 칸만 바꾸며, ① 등록정보 검사 결과는 원본에서
+    옮긴다. 나누기는 요청한 개체를 모두 새 기호로 떼어 냈을 때만 적용된 것이고, 아니면 적용 불가로 빼고 다시 추출한다
+    (적용 불가 연산은 결과에 흔적이 없다). 같은 입력이면 같은 결과다."""
     from hazop.extract.adapters import pdf_vector
     status = {"applied": [], "not_applicable": [], "retargeted": []}
-    where, why = pdf_source(original)
-    if where is None:
-        status["not_applicable"] = [{"op_id": o["op_id"], "reason": why} for o in inputs]
+    now, why = _pdf_now(original)
+    if now is None or now[2] != (original.get("source") or {}).get("sha256"):
+        status["not_applicable"] = [{"op_id": o["op_id"], "reason": why or PDF_CHANGED} for o in inputs]
         return copy.deepcopy(original), status
-    path, page = where
-    with open(path, "rb") as fh:
-        sha = hashlib.sha256(fh.read()).hexdigest()
-    shapes, reader = pdf_vector.object_shapes(path, page), pdf_vector.reader_version()
-    groups, kinds = {}, {}
+    path, page, sha, reader = now
+    shapes = pdf_vector.object_shapes(path, page)
+    todo, claimed, moved_of = [], {}, {}
     for op in inputs:
         try:
             OPS[op["op"]].check(op.get("value") if isinstance(op.get("value"), dict) else {})
             if op["op"] == "pipe":
                 raise _Skip(PIPE_PENDING)
             objs, moved = _locate(op, shapes, sha, reader)
+            hit = next((o for o in objs if o in claimed), None)
+            if hit:
+                raise _Skip("나누기 %s와 개체가 겹침(%s)" % (claimed[hit], hit))
         except ValueError as exc:
             status["not_applicable"].append({"op_id": op.get("op_id"), "reason": "형식 오류: %s" % exc})
             continue
         except _Skip as exc:
             status["not_applicable"].append({"op_id": op.get("op_id"), "reason": str(exc)})
             continue
-        status["retargeted"] += [{"op_id": op["op_id"], "from": a, "to": b} for a, b in moved]
-        groups.setdefault(op.get("target"), []).append({"name": "split-" + op["op_id"], "objects": objs})
-        kinds[op["op_id"]] = op["value"].get("kind")
-    if not groups:
+        claimed.update((o, op["op_id"]) for o in objs)
+        moved_of[op["op_id"]] = moved
+        todo.append((op, objs))
+    while todo:
+        groups = {}
+        for op, objs in todo:
+            groups.setdefault(op.get("target"), []).append({"name": "split-" + op["op_id"], "objects": objs})
+        fresh = pdf_vector.extract(path, page=page, params=_params(original),
+                                   splits=[{"node": None, "groups": g} for g in groups.values()])
+        by_sid = {n["source_object_id"]: n for n in fresh["nodes"]}
+        failed = []
+        for op, objs in todo:
+            node = by_sid.get("pdf-p%d-split-%s" % (page, op["op_id"]))
+            if node is None:
+                failed.append((op, "나눈 개체가 기호가 되지 못함(몸체·선이 없거나 다른 기호에 합쳐짐)"))
+                continue
+            got = set((node.get("evidence") or {}).get("pdf_objects") or ())
+            missing = [o for o in objs if o not in got]
+            if missing:
+                failed.append((op, "나눌 개체 %d개 가운데 %d개를 나누지 못함(%s)" % (len(objs), len(missing), ", ".join(missing[:5]))))
+        if not failed:
+            break
+        status["not_applicable"] += [{"op_id": op["op_id"], "reason": reason} for op, reason in failed]
+        gone = {op["op_id"] for op, _ in failed}
+        todo = [(op, objs) for op, objs in todo if op["op_id"] not in gone]
+    order = {o.get("op_id"): k for k, o in enumerate(inputs)}
+    status["not_applicable"].sort(key=lambda x: order.get(x["op_id"], len(order)))
+    if not todo:
         return copy.deepcopy(original), status
-    fresh = pdf_vector.extract(path, page=page, splits=[{"node": None, "groups": g} for g in groups.values()])
     doc = copy.deepcopy(original)
     for key in CONTENT_KEYS:
         doc[key] = fresh[key]
+    if (original.get("drawing") or {}).get("identification_basis") == "registration_confirmed":
+        doc["validation"] = pdf_vector.carry_registration(fresh["validation"], original["validation"])
     doc["drawing"] = dict(doc.get("drawing") or {}, ignored_objects=(fresh.get("drawing") or {}).get("ignored_objects"))
     by_sid = {n["source_object_id"]: n for n in doc["nodes"]}
-    for oid, kind in kinds.items():
-        node = by_sid.get("pdf-p%d-split-%s" % (page, oid))
-        if node is None:
-            status["not_applicable"].append({"op_id": oid, "reason": "나눈 개체가 기호가 되지 못함(몸체·선이 없거나 다른 기호에 합쳐짐)"})
-            continue
+    for op, _ in todo:
+        kind = op["value"].get("kind")
         if kind:
-            _apply_set_kind(None, "node", node, {"value": {"kind": kind, "category": rules.KIND_CATEGORY[kind]}})
-        status["applied"].append(oid)
+            _apply_set_kind(None, "node", by_sid["pdf-p%d-split-%s" % (page, op["op_id"])],
+                            {"value": {"kind": kind, "category": rules.KIND_CATEGORY[kind]}})
+        status["applied"].append(op["op_id"])
+        status["retargeted"] += [{"op_id": op["op_id"], "from": a, "to": b} for a, b in moved_of[op["op_id"]]]
     doc["summary"] = summarize(doc)
     return doc, status
 

@@ -2,6 +2,7 @@
 저장은 임시 HAZOP_WORK_ROOT 아래에만 한다. 근거: docs/units/2026-11-13-drawing-knowledge/evidence/fix-input-ops-design.md R1~R7."""
 
 import copy
+import hashlib
 import importlib.util
 import json
 import os
@@ -80,8 +81,8 @@ class InputOpsTest(unittest.TestCase):
         with open(self.pdf, "wb") as fh:
             fh.write(data)
 
-    def split_ops(self, groups=GROUPS, kinds=("manual_valve",) * 3):
-        ops = []
+    def split_ops(self, groups=GROUPS, kinds=("manual_valve",) * 3, start=()):
+        ops = list(start)
         for g, kind in zip(groups, kinds):
             ops.append(corrections.make_op(self.original, "split", BLOB,
                                            corrections.input_value(self.original, g, kind=kind), "김고침", at=AT,
@@ -189,7 +190,7 @@ class InputOpsTest(unittest.TestCase):
     def test_r5_objects_are_found_again_by_shape(self):
         ops = self.split_ops()
         self.save(ops)
-        self.write_pdf(page(extra_line=True))
+        self.use_original(page(extra_line=True))
         got = corrections.resolve(NAME, allow_extract=True)
         self.assertEqual(got["inputs"]["applied"], [o["op_id"] for o in ops])
         self.assertEqual(len(got["inputs"]["retargeted"]), 6, "pdf 개체 순번이 바뀌어도 모양으로 다시 찾음")
@@ -197,7 +198,7 @@ class InputOpsTest(unittest.TestCase):
     def test_r5_changed_drawing_is_not_applicable_with_count(self):
         ops = self.split_ops()
         self.save(ops)
-        self.write_pdf(page(blob_dx=3))
+        self.use_original(page(blob_dx=3))
         got = corrections.resolve(NAME, allow_extract=True)
         self.assertEqual(got["inputs"]["not_applicable"],
                          [{"op_id": ops[1]["op_id"], "reason": "도면이 바뀌어 나눌 개체를 찾지 못함(2개 중 2개)"}])
@@ -234,6 +235,193 @@ class InputOpsTest(unittest.TestCase):
         self.assertEqual(got["inputs"]["not_applicable"], [{"op_id": op["op_id"], "reason": corrections.PIPE_PENDING}])
         self.assertEqual(got["base"], got["original"])
 
+    def use_original(self, data, **kw):
+        """원본 PDF를 data로 바꾸고 그 PDF를 다시 추출해 extraction.json으로 쓴다(사용자가 다시 추출한 흐름)."""
+        self.write_pdf(data)
+        self.original = pdf_vector.extract(self.pdf, page=0, repo_root=self.tmp, **kw)
+        with open(os.path.join(paths.output_root("extract"), NAME, "extraction.json"), "w", encoding="utf-8") as fh:
+            json.dump(self.original, fh, ensure_ascii=False)
+
+    def test_split_missing_some_objects_is_not_applicable_and_leaves_no_trace(self):
+        """pdf-path-0001은 배관 선이라 덩어리 기호에 없다. 개체 셋 가운데 둘만 나뉘면 적용된 것이 아니다."""
+        ops = self.split_ops([GROUPS[0] + ["pdf-path-0001"]], kinds=("manual_valve",))
+        self.save(ops)
+        got = corrections.resolve(NAME, allow_extract=True)
+        self.assertEqual(got["inputs"]["applied"], [])
+        self.assertEqual(got["inputs"]["not_applicable"],
+                         [{"op_id": ops[0]["op_id"], "reason": "나눌 개체 3개 가운데 1개를 나누지 못함(pdf-path-0001)"}])
+        self.assertEqual(json.dumps(got["base"], sort_keys=True), json.dumps(self.original, sort_keys=True),
+                         "적용 불가 나누기는 기준 추출에 흔적이 없다")
+
+    def test_overlapping_split_is_not_applicable_and_first_stays_whole(self):
+        ops = self.split_ops([GROUPS[0], ["pdf-path-0005", "pdf-path-0006"]], kinds=("manual_valve",) * 2)
+        self.save(ops)
+        got = corrections.resolve(NAME, allow_extract=True)
+        self.assertEqual(got["inputs"]["applied"], [ops[0]["op_id"]])
+        self.assertEqual(got["inputs"]["not_applicable"],
+                         [{"op_id": ops[1]["op_id"], "reason": "나누기 %s와 개체가 겹침(pdf-path-0005)" % ops[0]["op_id"]}])
+        ev = evidence(got["base"])
+        self.assertEqual(ev["pdf-p0-split-%s" % ops[0]["op_id"]], tuple(GROUPS[0]))
+        self.assertNotIn("pdf-p0-split-%s" % ops[1]["op_id"], ev)
+
+    def test_two_old_objects_found_as_one_new_object_is_not_applicable(self):
+        """덧그린 밸브(같은 모양 두 벌)를 나눈 뒤 덧그림이 없어진 판: 옛 개체 둘이 새 개체 하나로 짝지어지면 안 된다."""
+        lines = [ln(40, 150, 100, 150), ln(160, 150, 220, 150), ln(240, 150, 300, 150), ln(320, 150, 380, 150)]
+        shapes = [bowtie(100, 150), bowtie(120, 150), bowtie(140, 150), bowtie(220, 150), bowtie(300, 150), bowtie(140, 150)]
+        self.use_original(make_pdf(b"\n".join([b"1 w"] + lines + shapes), width=420, height=300))
+        self.assertIn("pdf-path-0014", evidence(self.original)[BLOB])
+        ops = self.split_ops([["pdf-path-0008", "pdf-path-0009", "pdf-path-0014", "pdf-path-0015"]], kinds=("manual_valve",))
+        self.save(ops)
+        self.use_original(page(extra_line=True))
+        got = corrections.resolve(NAME, allow_extract=True)
+        self.assertEqual(got["inputs"]["applied"], [])
+        self.assertEqual(got["inputs"]["not_applicable"],
+                         [{"op_id": ops[0]["op_id"], "reason": "도면이 바뀌어 나눌 개체 둘 이상이 같은 개체로 짝지어짐(pdf-path-0009, pdf-path-0010)"}])
+
+    def test_rebuild_uses_original_extraction_settings(self):
+        params = {"label_gap_max": 16.0}
+        self.use_original(page(), params=params)
+        self.assertEqual(self.original["run"]["settings"]["params"]["label_gap_max"], 16.0)
+        ops = self.split_ops()
+        self.save(ops)
+        real, seen = pdf_vector.extract, []
+
+        def spy(*a, **kw):
+            seen.append(kw.get("params"))
+            return real(*a, **kw)
+
+        with mock.patch.object(pdf_vector, "extract", spy):
+            corrections.resolve(NAME, allow_extract=True)
+        self.assertEqual(seen, [self.original["run"]["settings"]["params"]])
+        other = copy.deepcopy(self.original)
+        other["run"]["settings"]["params"]["label_gap_max"] = 15.0
+        self.assertNotEqual(corrections.inputs_key(other, ops), corrections.inputs_key(self.original, ops))
+
+    def test_cached_base_goes_stale_when_reader_changes(self):
+        ops = self.split_ops()
+        self.save(ops)
+        self.assertEqual(corrections.ensure_base(NAME), "ready")
+        with mock.patch.object(pdf_vector, "reader_version", lambda: "pdfplumber-9.9.9"):
+            self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "pending")
+
+    def test_pdf_changed_without_reextract_is_not_applicable(self):
+        """원본 파일만 바뀌고 extraction.json은 옛 판이면, 낡은 기준 추출을 쓰지도 새 파일 내용을 옛 식별 칸에 섞지도 않는다."""
+        ops = self.split_ops()
+        self.save(ops)
+        self.assertEqual(corrections.ensure_base(NAME), "ready")
+        self.write_pdf(page(blob_dx=3))
+        self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "pending", "파일이 바뀌면 열쇠가 바뀜")
+        got = corrections.resolve(NAME, allow_extract=True)
+        self.assertEqual(got["inputs"]["applied"], [])
+        self.assertEqual({x["reason"] for x in got["inputs"]["not_applicable"]}, {corrections.PDF_CHANGED})
+        self.assertEqual(json.dumps(got["base"], sort_keys=True), json.dumps(self.original, sort_keys=True))
+
+    def test_registration_checks_survive_rebuild(self):
+        sha = pdf_vector.analyze_bytes(open(self.pdf, "rb").read(), 0)[0]
+        for regsha in (sha, "f" * 64):
+            reg = {"status": "registered", "sha256": regsha, "drawing_number": "DWG-1", "design_revision": "0", "title": "T",
+                   "project_id": "P", "material_id": "M", "registration_version": 1,
+                   "documents": [{"document_id": "D1", "page_ids": ["page-1"]}],
+                   "validation": {"status": "passed", "blockers": [], "unknowns": [{"field": "title", "reason": "제목 미확인"}]}}
+            self.use_original(page(), registration=reg)
+            self.save(self.split_ops())
+            base = corrections.resolve(NAME, allow_extract=True)["base"]
+            want = self.original["validation"]
+            self.assertEqual(base["validation"]["status"], want["status"])
+            self.assertEqual([b["check"] for b in base["validation"]["blockers"]], [b["check"] for b in want["blockers"]])
+            reg_unknowns = lambda v: [u for u in v["unknowns"]  # noqa: E731
+                                      if u["check"] in ("registration_unknown", "not_registered", "missing_drawing_number")]
+            self.assertEqual(reg_unknowns(base["validation"]), reg_unknowns(want))
+            self.save([])
+
+    def test_overlay_edit_does_not_follow_pdf_object_ids_into_another_drawing(self):
+        """pdf-path 순번은 PDF가 바뀌면 다른 도형을 가리킨다. 220 밸브를 뺀 판에서 300 밸브가 그 순번을 받아도 태그가 옮겨 붙지 않는다."""
+        tag = corrections.make_op(self.original, "set_tag", "pdf-p0-sym-0002", {"tag": "V-220"}, "김고침", at=AT, name=NAME)
+        lines = [ln(40, 150, 100, 150), ln(160, 150, 220, 150), ln(240, 150, 300, 150), ln(320, 150, 380, 150)]
+        shapes = [bowtie(100, 150), bowtie(120, 150), bowtie(140, 150), bowtie(300, 150)]
+        self.use_original(make_pdf(b"\n".join([b"1 w"] + lines + shapes), width=420, height=300))
+        out = corrections.apply(self.original, [tag])["corrections"]
+        self.assertEqual(out["applied"], [])
+        self.assertTrue(out["not_applicable"][0]["reason"].startswith("대상이 바뀜"), out["not_applicable"])
+
+    def test_edit_on_lump_that_was_split_says_why(self):
+        tag = corrections.make_op(self.original, "set_tag", BLOB, {"tag": "BLOB-1"}, "김고침", at=AT, name=NAME)
+        ops = self.split_ops(start=[tag])[1:]
+        self.save([tag] + ops)
+        got = corrections.resolve(NAME, allow_extract=True)["corrected"]["corrections"]
+        self.assertEqual(got["not_applicable"],
+                         [{"op_id": tag["op_id"], "reason": "나누기 %s로 덩어리가 나뉘어 대상이 없음" % ops[0]["op_id"]}])
+
+    @unittest.expectedFailure  # idmap은 묘비를 표시(mark)로만 되찾는데 source 근거 구성요소의 묘비에는 표시가 없다(판 이전 쪽 몫, 보고함)
+    def test_redo_of_split_brings_tombstoned_member_back(self):
+        ops = self.split_ops()
+        self.save(ops)
+        g2 = build.build_graph(corrections.resolve(NAME, allow_extract=True)["corrected"])
+        made = {"pdf-p0-split-%s" % o["op_id"] for o in ops}
+        ns = sn.confirm(sn.propose(g2, at=AT), g2, "김검토", at=AT)
+        sn.save(ns)
+        held = sorted(m for seg in ns["nodes"] for m in seg["members"]
+                      if next(n for n in g2["nodes"] if n["entity_id"] == m)["source_object_id"] in made)
+        self.assertTrue(held)
+        corrections.save_fp(NAME, [], "김고침", at=AT, action="undo")
+        sn.load(build.build_graph(corrections.resolve(NAME, allow_extract=True)["corrected"]))
+        corrections.save_fp(NAME, ops, "김고침", at=AT, action="redo")
+        g4 = build.build_graph(corrections.resolve(NAME, allow_extract=True)["corrected"])
+        back = sn.load(g4)
+        self.assertEqual(sorted(m for seg in back["nodes"] for m in seg["members"] if m in set(held)), held,
+                         "같은 나눈 id가 돌아오면 묘비를 되찾음")
+        self.assertFalse([t for seg in back["nodes"] for t in seg.get("lost") or ()])
+
+    def test_failed_write_leaves_record_and_base_as_they_were(self):
+        ops = self.split_ops()
+        self.save(ops[:1])
+        self.assertEqual(corrections.ensure_base(NAME), "ready")
+        with open(corrections.base_path(NAME), "rb") as fh:
+            base = fh.read()
+        with mock.patch("os.replace", side_effect=OSError("디스크 가득")):
+            with self.assertRaises(OSError):
+                self.save(ops)
+            self.assertEqual(corrections.load(NAME)["ops"], ops[:1], "수정 기록은 쓰다 실패해도 앞 판 그대로")
+        corrections.save(NAME, ops, "김고침", at=AT)
+        with mock.patch("os.replace", side_effect=OSError("디스크 가득")):
+            with self.assertRaises(OSError):
+                corrections.ensure_base(NAME)
+        with open(corrections.base_path(NAME), "rb") as fh:
+            self.assertEqual(fh.read(), base, "기준 추출 파일은 쓰다 실패해도 앞 판 그대로")
+        self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "pending", "앞 판 기준 추출은 열쇠가 달라 쓰지 않음")
+        corrections.save(NAME, ops[:1], "김고침", at=AT)
+        self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "ready", "되돌리면 같은 열쇠의 기준 추출을 다시 씀")
+
+    def test_record_from_before_input_ops_still_applies(self):
+        """입력 연산이 없던 판(44e0c6e)의 수정 기록 파일: base 지문에 objs가 없고 via도 없다."""
+        fp = {k: v for k, v in corrections._fingerprints(self.original)["pdf-p0-sym-0002"].items() if k != "objs"}
+        old = {"kind": corrections.KIND, "schema_version": "0.1", "extraction_name": NAME, "drawing_number": None,
+               "ops": [{"op_id": "c-0001", "op": "set_tag", "target": "pdf-p0-sym-0002", "base": fp, "refs": {},
+                        "value": {"tag": "V-1"}, "by": "김고침", "at": AT}],
+               "log": [{"at": AT, "by": "김고침", "action": "save", "added": ["c-0001"], "removed": [], "removed_ops": []}]}
+        os.makedirs(os.path.dirname(corrections.store_path(NAME)), exist_ok=True)
+        with open(corrections.store_path(NAME), "w", encoding="utf-8") as fh:
+            json.dump(old, fh, ensure_ascii=False)
+        got = corrections.resolve(NAME)
+        self.assertEqual((got["inputs"]["state"], got["corrected"]["corrections"]["applied"]), ("none", ["c-0001"]))
+        nxt = corrections.make_op(self.original, "split", BLOB, corrections.input_value(self.original, GROUPS[0]), "김고침",
+                                  at=AT, existing_ops=old["ops"], name=NAME)
+        self.assertEqual(nxt["op_id"], "c-0002")
+        corrections.save(NAME, old["ops"] + [nxt], "김고침", at=AT)
+        got = corrections.resolve(NAME, allow_extract=True)
+        self.assertEqual((got["inputs"]["applied"], got["corrected"]["corrections"]["applied"]), (["c-0002"], ["c-0001"]))
+
+    def test_r7_no_input_ops_matches_44e0c6e(self):
+        """연산이 없을 때 결과가 44e0c6e와 같다. 값은 44e0c6e 분리 작업트리에서 같은 합성 PDF로 계산했다."""
+        def h(doc):
+            return hashlib.sha256(json.dumps(doc, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+        tag = {"op_id": "c-0001", "op": "set_tag", "target": "pdf-p0-sym-0002", "refs": {}, "value": {"tag": "V-1"},
+               "base": corrections._fingerprints(self.original)["pdf-p0-sym-0002"], "by": "김고침", "at": AT}
+        with open(self.pdf, "rb") as fh:
+            self.assertEqual(hashlib.sha256(fh.read()).hexdigest()[:16], "01f962bc94902409")
+        self.assertEqual(h(self.original), "80e70aefc3992bb8")
+        self.assertEqual(h(corrections.apply(self.original, [tag])), "6d1a4acc6dee755b")
+
     def test_r7_no_input_ops_is_byte_identical(self):
         tag = corrections.make_op(self.original, "set_tag", "pdf-p0-sym-0002", {"tag": "V-1"}, "김고침", at=AT, name=NAME)
         self.save([tag])
@@ -244,6 +432,84 @@ class InputOpsTest(unittest.TestCase):
         self.assertEqual(got["inputs"]["state"], "none")
         self.assertFalse(os.path.exists(corrections.base_path(NAME)))
         self.assertEqual(pdf_vector.extract(self.pdf, page=0, repo_root=self.tmp), self.original)
+
+
+DUP_PAGE_SHAPES = [(100, 150), (120, 150), (140, 150), (220, 150), (300, 150), (140, 150)]
+
+
+def dup_page():
+    """page()에 가운데에서 셋째 밸브(140)를 한 벌 더 덧그린 판. 덧그린 개체는 pdf-path-0014·0015로 덩어리에 든다."""
+    lines = [ln(40, 150, 100, 150), ln(160, 150, 220, 150), ln(240, 150, 300, 150), ln(320, 150, 380, 150)]
+    return make_pdf(b"\n".join([b"1 w"] + lines + [bowtie(x, y) for x, y in DUP_PAGE_SHAPES]), width=420, height=300)
+
+
+@unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 필요")
+class RealSplitFuzzTest(unittest.TestCase):
+    """실제 나누기 길(make_op·input_value·save·resolve·ensure_base + 합성 PDF)을 무작위로 탄다. 판 이전 퍼즈(test_study_migrate_fuzz)는
+    나눈 id를 모형에서 지으므로 여기서 겹친 짝·겹친 고르기·부분 적용·캐시 무효를 본다. 시드 수는 HAZOP_SPLIT_FUZZ_SEEDS(기본 12)."""
+
+    setUp, tearDown, write_pdf, save, use_original = (InputOpsTest.setUp, InputOpsTest.tearDown, InputOpsTest.write_pdf,
+                                                      InputOpsTest.save, InputOpsTest.use_original)
+    SEEDS = int(os.environ.get("HAZOP_SPLIT_FUZZ_SEEDS") or 12)
+    OUTSIDE = ["pdf-path-0001", "pdf-path-0010"]  # 배관 선, 덩어리 밖 밸브 몸체
+
+    def run_seed(self, seed):
+        import random
+        r = random.Random(seed)
+        dup = r.random() < 0.3
+        self.use_original(dup_page() if dup else page())
+        blob = list(evidence(self.original)[BLOB])
+        ops = []
+        for _ in range(r.randint(1, 3)):
+            objs = r.sample(blob, r.randint(1, 4)) + ([r.choice(self.OUTSIDE)] if r.random() < 0.2 else [])
+            ops.append(corrections.make_op(self.original, "split", BLOB, corrections.input_value(self.original, objs),
+                                           "김고침", at=AT, existing_ops=ops, name=NAME))
+        self.save(ops)
+        change = r.choice(["none", "none", "renumber", "file_only"])
+        if change == "renumber":
+            self.use_original(page(extra_line=True))
+        elif change == "file_only":
+            self.write_pdf(page(extra_line=True))
+        got = corrections.resolve(NAME, allow_extract=True)
+        st, base = got["inputs"], got["base"]
+        ids = [o["op_id"] for o in ops]
+        na = {x["op_id"]: x["reason"] for x in st["not_applicable"]}
+        self.assertEqual(sorted(st["applied"] + list(na)), sorted(ids), "연산마다 적용·적용 불가 가운데 하나")
+        self.assertFalse(set(st["applied"]) & set(na))
+        ev = evidence(base)
+        made = {sid for sid in ev if "-split-" in sid}
+        self.assertEqual(made, {"pdf-p0-split-%s" % i for i in st["applied"]}, "적용 불가 나누기는 흔적이 없음")
+        if change == "file_only":
+            self.assertEqual(set(na.values()), {corrections.PDF_CHANGED})
+        twins = {"pdf-path-0014": "pdf-path-0008", "pdf-path-0015": "pdf-path-0009"}
+        shift = (lambda o: "pdf-path-%04d" % (int(twins.get(o, o)[-4:]) + 1)) if change == "renumber" else (lambda o: o)
+        seen = set()
+        for op in ops:
+            want = [shift(o) for o in op["value"]["objects"]]
+            if op["op_id"] in st["applied"]:
+                got_objs = set(ev["pdf-p0-split-%s" % op["op_id"]])
+                self.assertTrue(set(want) <= got_objs, "적용된 나누기는 요청한 개체를 모두 가짐")
+                self.assertFalse(seen & got_objs, "적용된 나누기끼리 개체가 겹치지 않음")
+                seen |= got_objs
+                self.assertFalse(dup and change == "renumber" and any({a, b} <= set(op["value"]["objects"]) for a, b in twins.items()),
+                                 "덧그림 두 벌이 한 개체로 짝지어진 나누기는 적용되지 않음")
+            outside = [o for o in op["value"]["objects"] if o in self.OUTSIDE]
+            if outside and change != "file_only":
+                self.assertIn(op["op_id"], na, "덩어리 밖 개체를 든 나누기는 다 나눌 수 없음")
+        if not st["applied"]:
+            self.assertEqual(json.dumps(base, sort_keys=True), json.dumps(self.original, sort_keys=True))
+        again = corrections.resolve(NAME)
+        self.assertEqual((again["inputs"]["state"], again["inputs"]["applied"]), ("ready", st["applied"]))
+        with mock.patch.object(pdf_vector, "reader_version", lambda: "pdfplumber-0.0.0"):
+            self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "pending", "읽기 엔진 판이 바뀌면 다시 만듦")
+        if r.random() < 0.3:
+            self.write_pdf(dup_page() if not dup else page(blob_dx=3))
+            self.assertEqual(corrections.resolve(NAME)["inputs"]["state"], "pending", "원본 파일이 바뀌면 다시 만듦")
+
+    def test_real_split_path_invariants(self):
+        for seed in range(self.SEEDS):
+            with self.subTest(seed=seed):
+                self.run_seed(seed)
 
 
 class InputOpCheckTest(unittest.TestCase):

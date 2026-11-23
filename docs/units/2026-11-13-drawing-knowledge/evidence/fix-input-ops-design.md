@@ -66,13 +66,15 @@
 - PDF 바이트. 추출 결과 `source.sha256`이 파일 전체의 sha256이다. 쪽만 따로 해시할 수단은 없고, 등록 원본은 바뀌지 않으므로 파일 sha로 충분하다. 쪽은 `page`로 적는다.
 - pdfplumber·pdfminer 판. 같은 바이트도 판이 바뀌면 개체 순서가 바뀔 수 있다. `reader`에 판을 적는다.
 
-여기에 개체 지문을 더한다. `shapes`는 개체 id마다 `[x0, y0, x1, y1, 점 수, 닫힘]`이다(좌표는 0.1pt 반올림, `pdf_vector.object_shapes`). 노드·관계 지문의 `objs`는 `evidence.pdf_objects`를 정렬해 sha1 앞 6자리로 줄인 값이다.
+여기에 개체 지문을 더한다. `shapes`는 개체 id마다 `[x0, y0, x1, y1, 점 수, 닫힘]`이다(좌표는 0.1pt 반올림, `pdf_vector.object_shapes`). 노드·관계 지문의 `objs`는 추출의 `source.sha256`과 정렬한 `evidence.pdf_objects`를 이어 sha1 앞 6자리로 줄인 값이다. 순번은 그 PDF 안에서만 같은 도형을 가리키므로 PDF가 바뀌면 `objs`도 달라진다(5.1).
 
 적용할 때는 이렇게 본다(`corrections._locate`).
 
 1. `sha256`·`reader`가 지금과 같고, `objects`의 id마다 지금 쪽의 그 id 모양이 `shapes`와 같으면 그대로 쓴다.
-2. 하나라도 다르면 모양으로 다시 찾는다. 지금 쪽 개체 가운데 상자가 0.2pt 안에서 같고 점 수·닫힘이 같은 것이 정확히 하나면 그 id로 바꾼다. 모두 찾으면 적용하고 `retargeted`에 옛 id와 새 id를 남긴다.
-3. 못 찾은 개체가 있으면 그 연산은 적용 불가다. 사유는 "도면이 바뀌어 나눌 개체를 찾지 못함(3개 중 1개)"처럼 몇 개를 못 찾았는지 적는다. 덩어리 노드(`target`)를 못 찾는 것은 적용 불가 사유가 아니다. 나눔 입력은 개체 집합만 쓰고, 다시 추출한 쪽에서 그 개체를 가진 기호를 덩어리로 삼는다(`_carve_splits`의 `node: None`).
+2. 하나라도 다르면 모양으로 다시 찾는다. 지금 쪽 개체 가운데 상자가 0.2pt 안에서 같고 점 수·닫힘이 같은 것이 정확히 하나면 그 id로 바꾼다. 짝은 하나에 하나다. 옛 개체 둘 이상이 같은 새 개체로 짝지어지면(덧그린 도형이 한 벌로 줄어든 판) "도면이 바뀌어 나눌 개체 둘 이상이 같은 개체로 짝지어짐(pdf-path-0009, …)"으로 적용 불가다. 모두 찾으면 적용하고 `retargeted`에 옛 id와 새 id를 남긴다.
+3. 못 찾은 개체가 있으면 그 연산은 적용 불가다. 사유는 "도면이 바뀌어 나눌 개체를 찾지 못함(3개 중 1개)"처럼 몇 개를 못 찾았는지 적는다. 덩어리 노드(`target`)를 못 찾는 것은 적용 불가 사유가 아니다. 나눔 입력은 개체 집합만 쓰고, 다시 추출한 쪽에서 묶음마다 그 개체를 가장 많이 가진 기호 하나를 덩어리로 삼는다(`_carve_splits`의 `node: None`). 그 기호 밖의 개체(배관 선, 다른 기호의 몸체)는 떼지 않는다.
+4. 앞 나누기가 이미 고른 개체를 다시 고른 나누기는 다시 추출 전에 "나누기 c-0001와 개체가 겹침(pdf-path-0005)"으로 적용 불가다(앞 연산이 이긴다).
+5. 다시 추출한 뒤 나누기마다 `pdf-p<쪽>-split-<op_id>` 기호가 요청한 개체를 모두 가졌는지 본다. 기호가 없거나 개체가 빠지면 "나눌 개체 3개 가운데 1개를 나누지 못함(pdf-path-0001)"처럼 적용 불가로 내고, 그 연산을 빼고 다시 추출한다. 그래서 적용 불가 나누기는 기준 추출에 흔적이 없다.
 
 ## 2. 적용 차례와 ID 다시 찾기
 
@@ -90,7 +92,9 @@ resolve(name) =
 ```
 
 - `apply`는 순수 함수로 남긴다. 파일·PDF를 읽는 일은 `resolve`·`ensure_base`만 한다.
-- 기준 추출은 다시 만드는 데 1~26초가 걸리므로(6장) 파일로 둔다. 자리는 `output/extract/<name>/extraction.inputs.json`이고 꼴은 `{"kind": "hazop_input_extraction", "key", "inputs": {"applied", "not_applicable", "retargeted"}, "extraction"}`이다. 열쇠 `inputs_key = sha256(source.sha256, 쪽, extraction_run_id, RULES_VERSION, 추출 코드 지문, 기호 사전 JSON 해시, 입력 연산(op_id·종류·대상·값))`다. 추출 코드 지문(`corrections.code_fingerprint`)은 `FINGERPRINT_MODULES`(pdf_vector 묶음과 import 닫힘, `corrections.py`)와 `hazop/kg/schema/registry.json`의 내용 해시(줄끝 LF 정규화, 프로세스에서 한 번)다. 개발 실행은 소스 파일을, 묶인 실행(PyInstaller는 .py 없이 PYZ 안 코드만 가짐)은 로더가 주는 코드 개체를 해시한다. 그래서 `RULES_VERSION`을 올리지 않고 추출 코드를 고쳐도 옛 기준 추출을 쓰지 않는다. 열쇠가 맞으면 읽고, 다르면 다시 만든다. 같은 입력이면 같은 결과이므로 두 번 만들어도 결과가 같다.
+- 다시 추출은 원본 추출의 설정(`run.settings.params`)으로 한다. 원본이 등록 경로의 추출(`drawing.identification_basis == "registration_confirmed"`)이면 ① 등록정보 검사 결과(차단 `registration_*`, 미확인 `registration_unknown`, 등록 경로에서 빼는 `not_registered`·`missing_drawing_number`)를 원본에서 옮긴다(`pdf_vector.carry_registration`, `apply_registration`과 같은 규칙). 등록정보 원문은 추출 결과에 남지 않기 때문이다.
+- 지금 원본 PDF 파일의 sha256이 `source.sha256`과 다르면(파일만 바뀌고 다시 추출하지 않음) 입력 연산은 모두 "원본 PDF가 추출한 뒤 바뀜(도면을 다시 추출해야 나누기를 적용함)"으로 적용 불가이고 기준 추출은 원본 그대로다. 식별 칸은 옛 판, 내용은 새 파일인 결과를 만들지 않는다.
+- 기준 추출은 다시 만드는 데 1~26초가 걸리므로(6장) 파일로 둔다. 자리는 `output/extract/<name>/extraction.inputs.json`이고 꼴은 `{"kind": "hazop_input_extraction", "key", "inputs": {"applied", "not_applicable", "retargeted"}, "extraction"}`이다. 열쇠 `inputs_key = sha256(source.sha256, 쪽, 설정, extraction_run_id, 지금 원본 PDF 파일의 sha256, 읽기 엔진 판(pdfplumber), RULES_VERSION, 추출 코드 지문, 기호 사전 JSON 해시, 입력 연산(op_id·종류·대상·값))`다. 입력 상태(개체 다시 찾기 결과)는 기준 추출과 함께 두고, 그 결과가 기대는 것(파일 바이트·엔진 판·쪽·연산 값)이 모두 열쇠에 들므로 열쇠가 맞으면 다시 찾지 않는다. 추출 코드 지문(`corrections.code_fingerprint`)은 `FINGERPRINT_MODULES`(pdf_vector 묶음과 import 닫힘, `corrections.py`)와 `hazop/kg/schema/registry.json`의 내용 해시(줄끝 LF 정규화, 프로세스에서 한 번)다. 개발 실행은 소스 파일을, 묶인 실행(PyInstaller는 .py 없이 PYZ 안 코드만 가짐)은 로더가 주는 코드 개체를 해시한다. 그래서 `RULES_VERSION`을 올리지 않고 추출 코드를 고쳐도 옛 기준 추출을 쓰지 않는다. 열쇠가 맞으면 읽고, 다르면 다시 만든다. 같은 입력이면 같은 결과이므로 두 번 만들어도 결과가 같다.
 - 화면 스레드는 다시 추출하지 않는다. `resolve(name)`(기본 `allow_extract=False`)는 파일이 없거나 열쇠가 다르면 `inputs.state = "pending"`으로 표시하고 `extraction.json` 위에 나머지 연산을 적용한 결과를 돌려준다. 다시 추출은 작업(job)과 `scripts/build_graph.build_one`만 한다(`ensure_base(name)` 또는 `allow_extract=True`). `ensure_base`는 다 만든 뒤 수정 기록이 그새 바뀌었으면 한 번 더 만든다.
 - 원본 PDF가 `source.file`에 없거나 `source.format`이 `pdf_vector`가 아니면 입력 연산은 모두 적용 불가("원본 PDF 없음", "벡터 PDF 도면만")다.
 
@@ -98,10 +102,11 @@ resolve(name) =
 
 `corrections.apply`는 기준 추출의 지문표(`_fingerprints`)를 만들고, 연산마다 `_retarget`을 먼저 부른다.
 
-- 대상 지문이 `base`와 다르면 `_rematch`가 다시 찾는다. `objs`가 같은 대상이 정확히 하나면 그것이고, 아니면 같은 `at`·같은 종류·관계 여부가 같은 대상이 정확히 하나일 때만 그 id로 옮긴다. 관계의 `ends`는 노드 번호가 같이 밀리므로 보지 않는다.
+- 대상 지문이 `base`와 다르면 `_rematch`가 다시 찾는다. `objs`(같은 PDF에서만 같다)가 같고 종류도 같은 대상이 정확히 하나면 그것이고, 아니면 같은 `at`·같은 종류·관계 여부가 같은 대상이 정확히 하나일 때만 그 id로 옮긴다. 관계의 `ends`는 노드 번호가 같이 밀리므로 보지 않는다.
 - `_same`은 `category`·`objs`를 보지 않는다(조각 하나가 더 붙어도 같은 기호다). `at`이 있으면 없던 kind·tag가 새로 생긴 것은 같은 대상으로 본다. 물리 연결이 측정 연결로 바뀐 것도 같은 대상이다.
 - `value` 안의 노드 참조(`from`·`to`·`node`)도 `refs` 지문으로 같은 식으로 옮긴다.
 - 연산에 묶인 id(`manual-<op_id>`, `pdf-p<쪽>-split-<op_id>`, `pdf-p<쪽>-ring-<op_id>`)는 다시 찾지 않는다. 그 나누기가 되돌려져 대상이 없으면 "나누기 c-0031이(가) 되돌려져 대상이 없음"으로 적용 불가다(같은 자리의 덩어리로 옮겨 붙지 않는다).
+- 거꾸로, 나누기의 대상 덩어리를 가리키던 연산은 덩어리가 없어지면 "나누기 c-0002로 덩어리가 나뉘어 대상이 없음"으로 적용 불가다. 같은 자리(덩어리 가운데)의 나눈 기호로 옮겨 붙지 않는다.
 
 ### 2.3 실측: 나눔 다시 추출 뒤 기존 수정이 어떻게 붙나
 
@@ -181,6 +186,25 @@ resolve(name) =
 - 고침. U1 첫 판에서는 커밋 두 개(`e992876`·`32017ca`, 검토 차단 고침 `c8740cc`)로 순번 꼴 구성요소에 위치 표시를 남기고 찾지 못한 참조 끝에 `~lost`를 붙였다. 이 방식은 판 이전을 다시 지은 M1~M3로 대체되었다(`migration-map-design.md`). 지금 꼴은 다음과 같다. M1은 그래프 노드에 `id_basis`(sequence·source)를 적는다. M2는 대응표 하나(`idmap.compute`)를 먼저 계산해 등록부 `FIELDS`의 모든 id 자리에 `idmap.apply`로 적용한다. 옛 구성요소는 새 구성요소 하나나 묘비 하나로 가고, 구간의 잃은 자리는 `nodes[].lost`에 둔다. M3는 초기사건 문서·FMEA·잠재 후보 판단을 같은 표로 옮긴다(`hazop/study/follow.py`). 지식 입력 `links.csv`는 사람이 쓴 입력이라 고쳐 쓰지 않고 `kg.link`의 재확인에 맡긴다.
 - 표 숫자는 첫 커밋(종류·태그를 보지 않던 표시) 기준이다. 지금 판 이전은 종류·태그가 달라진 기호도 묘비로 돌리므로 '같은 기호'가 그보다 줄어든다(놓치는 쪽).
 - 옮겨 얹기(`feat/fix-input-ops-2`). U1 본체 두 커밋은 판 이전 코드를 건드리지 않아 충돌 없이 얹혔다. R2 시험이 읽는 이력 detail의 `renamed`는 M2가 그대로 남긴다(`idmap.record`). 나눈 기호가 `source`로 판단되는지, 나누기를 되돌리면 그 자리가 묘비가 되는지를 실제 추출로 확인하는 시험을 `tests/test_corrections_inputs.py`에 더했고, 판 이전 퍼즈(`tests/test_study_migrate_fuzz.py`)에 나누기와 그 되돌림을 넣었다.
+
+### 5.1 검토 반려 고침(2026-11-23, `6ec8d53` 위)
+
+Codex 교차검증과 `hazop-reviewer`가 `6ec8d53`을 반려했다. 차단 지적마다 `tests/test_corrections_inputs.py`에 실패 시험을 먼저 두고(고치기 전 코드에서 실패), 고쳤다.
+
+| 지적 | 재현 시험 | 고치기 전 | 고침 |
+| --- | --- | --- | --- |
+| 일부 개체만 나뉘어도 적용됨, 겹친 나누기 | `test_split_missing_some_objects_…`, `test_overlapping_split_…` | 개체 셋 가운데 둘만 나뉜 나누기가 `applied`. 겹친 둘째는 사유가 '기호가 되지 못함' | 1.3절 4·5. 다 나누지 못하면 적용 불가, 그 연산을 빼고 다시 추출 |
+| 옛 개체 둘이 새 개체 하나로 짝지어짐 | `test_two_old_objects_found_as_one_new_object_…` | 덧그린 밸브 두 벌이 `pdf-path-0009`·`0010` 한 벌로 짝지어져 `applied` | 1.3절 2. 짝은 하나에 하나 |
+| 원래 설정을 버리고 기본 설정으로 다시 추출 | `test_rebuild_uses_original_extraction_settings` | 실제 호출 `params`가 `None` | 원본 `run.settings.params`로 다시 추출, 열쇠에 설정을 넣음 |
+| 캐시 열쇠가 지금 파일·엔진 판을 안 봄 | `test_cached_base_goes_stale_when_reader_changes`, `test_pdf_changed_without_reextract_…` | 엔진 판이 바뀌거나 파일만 바뀌어도 `ready` | 2.1절. 열쇠에 지금 파일 sha256·엔진 판, 파일이 원본과 다르면 적용 불가 |
+| 고친 기록이 순번이 같은 다른 기호로 옮겨 붙음 | `test_overlay_edit_does_not_follow_pdf_object_ids_into_another_drawing` | 220 밸브를 뺀 판에서 V-220이 300 밸브에 붙고 `applied` | `objs`에 원본 PDF sha256을 넣고 종류도 맞아야 옮김(2.2절) |
+| 기준 추출이 ① 등록정보 검사 결과를 잃음 | `test_registration_checks_survive_rebuild` | 해시 불일치 등록이 `blocked`에서 `passed`로 | 2.1절. `carry_registration` |
+
+- 경미 지적도 고쳤다. 덩어리에 한 고침은 나눈 뒤 사유에 나누기를 적는다(`test_edit_on_lump_that_was_split_says_why`, 전에는 같은 자리의 가운데 나눈 기호로 조용히 옮겨 붙었다). R7은 44e0c6e 분리 작업트리에서 계산한 고정값(합성 PDF·추출·고침 적용 해시)과 견준다(`test_r7_no_input_ops_matches_44e0c6e`). 실제 나누기 길을 무작위로 타는 시험(`RealSplitFuzzTest`, 기본 12시드, `HAZOP_SPLIT_FUZZ_SEEDS`)이 겹친 짝·겹친 고르기·부분 적용·캐시 무효를 본다. 80시드에서 적용 41건, 겹침 49건, 파일 바뀜 36건, 기호가 되지 못함 25건, 일부 못 나눔 10건, 겹친 짝 2건이 나왔다.
+- R5 시험 둘은 PDF만 바꾸고 원본을 다시 추출하지 않는 흐름이었다. 이 흐름은 이제 적용 불가이므로, 원본을 다시 추출한 뒤 나누기를 다시 찾게 고쳤다.
+- 원자적 쓰기, 되돌리기, 옛 기록은 결함이 없었다. 수정 기록과 기준 추출 파일은 쓰다 실패해도 앞 판 그대로이고(`test_failed_write_leaves_record_and_base_as_they_were`), 입력 연산이 없던 판의 기록(지문에 `objs`·`via` 없음)도 그대로 적용되며 그 위에 나누기를 더할 수 있다(`test_record_from_before_input_ops_still_applies`).
+- 남은 결함(판 이전 쪽). 나누기를 되돌렸다가 다시 하면 같은 나눈 id가 돌아오지만 구간의 묘비를 되찾지 않는다. `idmap`은 묘비를 표시(mark)로만 되찾는데 `source` 근거 구성요소의 묘비에는 표시가 없다. `test_redo_of_split_brings_tombstoned_member_back`에 `expectedFailure`로 남겼다.
+- 남은 위험. 같은 바이트에서 pdfplumber 판만 바뀌면 `objs` 지문은 같은데 순번이 다른 도형을 가리킬 수 있다. 기준 추출은 열쇠로 다시 만들지만, 덧바르는 고침의 `objs` 다시 찾기는 종류가 같아야 한다는 것만 지킨다.
 
 ## 6. 다시 추출 비용과 화면 흐름
 

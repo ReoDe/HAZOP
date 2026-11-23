@@ -3473,7 +3473,8 @@ def _carve_splits(syms, polys, markers, dashes, splits):
     그 개체를 떼어 새 기호를 만든다. 몸체나 선이 하나도 없는 묶음은 기호가 될 수 없어 건너뛴다. 개체를 떼인 기호는 몸체만 남기고,
     그 노드에 들던 선·화살촉·점선 조각은 놓아 준다(배관 사슬로 다시 읽혀 새 기호끼리 이어진다). 몸체가 남지 않은 기호는 없앤다.
     splits: [{"node": [노드의 pdf 개체 id] 또는 None, "groups": [[id, ...] 또는 {"name", "objects": [id, ...]}]}].
-    node가 None이면 묶음 개체를 가진 기호의 개체 전체가 노드다(사람 연산은 다시 추출한 쪽의 덩어리를 모른다).
+    node가 None이면 묶음마다 그 개체를 가장 많이 가진 기호(같으면 앞 기호)를 골라 그 기호들의 개체 전체가 노드다(사람 연산은
+    다시 추출한 쪽의 덩어리를 모른다). 고른 기호 밖의 개체는 떼지 않는다.
     이름 있는 묶음의 새 기호는 그 이름을 id로 받는다(build_extraction).
     → (기호, 선, 화살촉, 점선 조각). 새 기호는 끝에 붙는다."""
     syms = [s for s in syms if s.alive]
@@ -3482,8 +3483,11 @@ def _carve_splits(syms, polys, markers, dashes, splits):
     for sp in splits:
         groups = [(g.get("name"), list(g["objects"])) if isinstance(g, dict) else (None, list(g)) for g in sp["groups"]]
         if sp.get("node") is None:
-            wanted = {i for _, g in groups for i in g}
-            node = {i for s in syms if s.alive and wanted & set(s.evidence()) for i in s.evidence()}
+            node = set()
+            for _, g in groups:
+                hold = [s for s in syms if s.alive and set(g) & set(s.evidence())]
+                best = max(hold, key=lambda s: len(set(g) & set(s.evidence())), default=None)
+                node |= set(best.evidence()) if best is not None else set()
         else:
             node = set(sp["node"])
         sources = [s for s in syms if s.alive and node & set(s.evidence())]
@@ -4279,6 +4283,21 @@ def words_or_paths(analysis):
     return bool(analysis["blocks"] or cls["bodies"] or cls["polys"] or cls["dashes"])
 
 
+REGISTRATION_BLOCKERS = ("registration_not_completed", "registration_hash_mismatch", "registration_page_mismatch")
+REGISTRATION_UNKNOWN = "registration_unknown"
+UNREGISTERED_UNKNOWNS = ("not_registered", "missing_drawing_number")  # 등록 경로에서는 남기지 않는 미확인
+
+
+def carry_registration(validation, registered):
+    """같은 쪽을 등록정보 없이 다시 추출한 validation에 원본(registered, 등록 경로의 추출)의 ① 등록정보 검사 결과를 옮긴
+    새 validation. apply_registration과 같은 규칙이고, 나누기 같은 입력 연산으로 다시 추출할 때 쓴다(등록정보 원문은 추출
+    결과에 남지 않으므로 원본이 그 검사로 남긴 줄을 그대로 옮긴다)."""
+    blockers = list(validation["blockers"]) + [b for b in registered["blockers"] if b["check"] in REGISTRATION_BLOCKERS]
+    unknowns = [u for u in validation["unknowns"] if u["check"] not in UNREGISTERED_UNKNOWNS]
+    unknowns += [u for u in registered["unknowns"] if u["check"] == REGISTRATION_UNKNOWN]
+    return {"status": "blocked" if blockers else "passed", "blockers": blockers, "unknowns": unknowns}
+
+
 def apply_registration(result, registration):
     """① 등록정보를 추출 결과에 반영한다(drawio.extract의 registration 경로와 같은 규칙).
     식별 값은 ①에서 사람이 확정한 값만 쓰고 표제란 값은 title_block_candidates로만 남긴다."""
@@ -4286,7 +4305,7 @@ def apply_registration(result, registration):
     val = result["validation"]
     # 등록 경로의 식별 값은 등록정보가 정한다(drawio 등록 경로와 같이 표제란 누락은 미확인으로 남기지 않음)
     blockers = val["blockers"]
-    unknowns = [u for u in val["unknowns"] if u["check"] not in ("not_registered", "missing_drawing_number")]
+    unknowns = [u for u in val["unknowns"] if u["check"] not in UNREGISTERED_UNKNOWNS]
     drawing = result["drawing"]
     drawing["identification_basis"] = "registration_confirmed"
     drawing["title_block_candidates"] = {f: drawing.get(f) for f in ("drawing_number", "revision", "title")}
@@ -4295,17 +4314,17 @@ def apply_registration(result, registration):
         drawing[field] = reg.get(reg_field)
     reg_val = reg.get("validation") or {}
     if reg.get("status") != "registered" or reg_val.get("status") != "passed" or reg_val.get("blockers"):
-        _issue(blockers, "registration_not_completed", "등록 완료(registered·passed)가 아닌 등록정보: status=%r"
+        _issue(blockers, REGISTRATION_BLOCKERS[0], "등록 완료(registered·passed)가 아닌 등록정보: status=%r"
                % reg.get("status"), field="status")
     if reg.get("sha256") != result["source"]["sha256"]:
-        _issue(blockers, "registration_hash_mismatch", "입력 파일 해시가 등록정보의 sha256과 다름", field="sha256")
+        _issue(blockers, REGISTRATION_BLOCKERS[1], "입력 파일 해시가 등록정보의 sha256과 다름", field="sha256")
     page_id = result["source_context"]["page_id"]
     registered_pages = [pid for d in reg.get("documents") or [] for pid in d.get("page_ids") or []]
     if page_id not in registered_pages:
-        _issue(blockers, "registration_page_mismatch", "추출한 페이지 %r 가 등록정보 page_ids %r 에 없음"
+        _issue(blockers, REGISTRATION_BLOCKERS[2], "추출한 페이지 %r 가 등록정보 page_ids %r 에 없음"
                % (page_id, registered_pages), field="page_id")
     for u in reg_val.get("unknowns", []):
-        _issue(unknowns, "registration_unknown", "등록 단계 미확인: %s" % u["reason"], field=u["field"])
+        _issue(unknowns, REGISTRATION_UNKNOWN, "등록 단계 미확인: %s" % u["reason"], field=u["field"])
     val["unknowns"] = unknowns
     val["status"] = "blocked" if blockers else "passed"
     result["project_id"] = reg.get("project_id")
