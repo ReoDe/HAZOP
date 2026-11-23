@@ -37,6 +37,7 @@ from hazop.ie import bundle, fmea, mld, model
 from hazop.ie import store as ie_store
 from hazop.study import follow, idmap, nodes
 from hazop.study import results as res
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_ie")
 
@@ -67,7 +68,7 @@ def _context(engine):
     try:
         doc, _fp = R._load(ns)
     except (OSError, ValueError) as exc:
-        return None, "분석 결과 파일을 읽을 수 없습니다(%s)." % str(exc)[:120]
+        return None, "분석 결과 파일을 읽을 수 없습니다(%s)." % errtext.why(exc, 120)
     try:
         ie_doc, ie_fp = ie_store.load(ns.get("project_id"))
     except ie_store.Unreadable as exc:
@@ -275,7 +276,7 @@ def _write(engine, a, fn, keys=None, ask=None, demote_ok=False):
     try:
         out = fn(base, doc, ns, pg, by)
     except ValueError as exc:
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
     new, value = out if isinstance(out, tuple) else (out, None)
     if new is base or new == base:
         return {"ver": _ver(ie_fp), "changed": False, "value": value}
@@ -297,7 +298,7 @@ def _write(engine, a, fn, keys=None, ask=None, demote_ok=False):
     except ie_store.Conflict:
         raise api.CommandError("stale", STALE)
     except (ValueError, OSError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     out = {"ver": fp, "changed": True, "value": value}
     if demoted:
@@ -504,7 +505,7 @@ def _replace_unreadable(engine, a):
     try:
         _doc, fp, saved = ie_store.replace_unreadable(pid)
     except (OSError, ValueError, ie_store.Conflict) as exc:
-        raise api.CommandError("failed", "백업하지 못해 바꾸지 않았습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "백업하지 못해 바꾸지 않았습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     return {"ver": fp, "backup": os.path.basename(saved)}
 
@@ -540,14 +541,14 @@ def _export(engine, a):
     except ie_store.Conflict:
         raise api.CommandError("stale", STALE)
     except (ValueError, OSError) as exc:
-        raise api.CommandError("failed", "초기사건 번호를 저장하지 못해 내보내지 않았습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "초기사건 번호를 저장하지 못해 내보내지 않았습니다(%s)." % errtext.why(exc, 200))
     if synced is not ie_doc:
         engine.changed("ie", None)
     b = _build(doc, ns, pg, synced, now)
     try:
         path, json_path = bundle_xlsx.export(path, b)
     except (OSError, ValueError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % errtext.why(exc, 200))
     return {"path": os.path.basename(path), "json_path": os.path.basename(json_path), "candidates": len(b["candidates"]),
             "groups": len(b["groups"]), "cancelled": False}
 
@@ -650,7 +651,7 @@ def _fmea_write(engine, a, fn, keys=()):
     try:
         new = fn(fdoc, pg, ns, doc, by)
     except ValueError as exc:
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
     new, value = new if isinstance(new, tuple) else (new, None)
     if new is fdoc:
         return {"fver": _ver(ffp), "changed": False, "value": value}
@@ -659,7 +660,7 @@ def _fmea_write(engine, a, fn, keys=()):
     except ie_store.Conflict:
         raise api.CommandError("stale", "FMEA가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
     except (ValueError, OSError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     return {"fver": fp, "changed": True, "value": value}
 
@@ -700,7 +701,7 @@ def _fmea_template(engine, a):
         from hazop.export.study_xlsx import save_workbook
         save_workbook(fmea.template_workbook(fdoc, ec_rows), path)
     except (OSError, ValueError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % errtext.why(exc, 200))
     return {"cancelled": False, "path": os.path.basename(path), "rows": len(fdoc["rows"])}
 
 
@@ -711,7 +712,7 @@ def _fmea_import(engine, a):
     try:
         got, problems = fmea.read_rows(path)
     except Exception as exc:  # noqa: BLE001 - 깨진 Excel은 이유만 알린다
-        raise _api().CommandError("failed", "Excel을 읽지 못했습니다(%s)." % str(exc)[:160])
+        raise _api().CommandError("failed", "Excel을 읽지 못했습니다(%s)." % errtext.why(exc, 160))
     if not got:
         raise _api().CommandError("failed", "가져올 행이 없습니다. %s" % " ".join(problems)[:200])
     name = os.path.basename(path)
@@ -797,7 +798,7 @@ def _mld_write(engine, a, fn, keys=()):
     try:
         new = fn(mdoc, by)
     except ValueError as exc:
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
     if new is mdoc:
         return {"mver": _ver(mfp), "changed": False}
     try:
@@ -805,7 +806,7 @@ def _mld_write(engine, a, fn, keys=()):
     except ie_store.Conflict:
         raise api.CommandError("stale", "MLD가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
     except (ValueError, OSError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     return {"mver": fp, "changed": True}
 
@@ -817,7 +818,7 @@ def _mld_import(engine, a):
     try:
         data = mld.read_file(path)
     except (OSError, ValueError) as exc:
-        raise _api().CommandError("failed", "MLD 파일을 읽지 못했습니다(%s)." % str(exc)[:200])
+        raise _api().CommandError("failed", "MLD 파일을 읽지 못했습니다(%s)." % errtext.why(exc, 200))
     codes = {c["code"] for c in res.ie_category_table()["categories"]}
     name = os.path.basename(path)
     out = _mld_write(engine, a, lambda mdoc, by: mld.import_mld(mdoc, data, name, by, codes))
@@ -864,7 +865,7 @@ def _side_replace(engine, a, which):
     try:
         fp, saved = ie_store.replace_side_unreadable(pid, which)
     except (OSError, ValueError, ie_store.Conflict) as exc:
-        raise api.CommandError("failed", "백업하지 못해 바꾸지 않았습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "백업하지 못해 바꾸지 않았습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     return {"changed": True, "backup": os.path.basename(saved), "ver": fp}
 

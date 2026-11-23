@@ -14,6 +14,7 @@ import logging
 import os
 
 from hazop.extract import confirmation
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_drawings")
 MAX_ROWS = 200
@@ -94,7 +95,7 @@ def status(engine, graph_id):
     except FileNotFoundError:
         return {"available": False, "reason": "이 도면의 추출 결과가 없습니다."}
     except (OSError, ValueError) as exc:
-        return {"available": False, "reason": "쪽 자료를 읽을 수 없습니다(%s)." % str(exc)[:120]}
+        return {"available": False, "reason": "쪽 자료를 읽을 수 없습니다(%s)." % errtext.why(exc, 120)}
     out = {k: v for k, v in st.items() if k not in ("unconfirmed", "unplaced", "files", "released")}
     out.update(available=True, graph_id=graph_id, ver=st["fingerprint"], unconfirmed=_trim(st["unconfirmed"]), unconfirmed_total=len(st["unconfirmed"]),
               unplaced=_trim(st["unplaced"]), unplaced_total=len(st["unplaced"]),
@@ -255,7 +256,7 @@ def _choose_source(engine, a):
         raise api.CommandError("stale", "다른 곳에서 선택이 바뀌었습니다. 목록을 다시 읽었으니 한 번 더 골라 주세요.")
     except ValueError as exc:
         engine.changed("sources", None)
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
     from hazop.app import data
     data.notify_graph_changed(engine.project_id())      # 쓸 원본이 바뀌면 프로젝트 그래프 판도 바뀐다: 검토구간을 이어서 맞춘다
     engine.changed("sources", None)
@@ -318,7 +319,7 @@ def _export(engine, a):
     except dexpi_export.ExportError as exc:
         raise api.CommandError("failed", "\n".join(exc.reasons)[:900])
     except OSError as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:160])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 160))
     to_gid = {v: k for k, v in by_gid.items()}
     lb = labels(engine)
     not_exported = [{"graph_id": to_gid.get(x["name"]), "display": display(engine, to_gid.get(x["name"]), lb), "drawing_number": x.get("drawing_number"), "state": x.get("state"),

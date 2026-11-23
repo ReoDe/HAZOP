@@ -24,6 +24,7 @@ import logging
 
 from hazop.study import apikey, claude_http
 from hazop.study.ai_settings import NOTICE_NO_SUBSCRIPTION
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_settings")
 TOPICS = ("aisettings",)
@@ -431,7 +432,7 @@ def _keyop(engine, fn, what=None):
     except KeyError:
         raise Refused("not_found", "없는 키입니다.")
     except ValueError as exc:
-        raise Refused("bad_args", str(exc)[:120])
+        raise Refused("bad_args", errtext.why(exc, 120))
     except OSError as exc:
         raise Refused("failed", _masked(conn, "설정 파일에 쓰지 못했습니다(%s)." % exc)[:200])
     return _done(engine)
@@ -474,7 +475,7 @@ def locate_cli(engine):
     try:
         conn.prefs.set_cli_path(path)
     except OSError as exc:
-        raise Refused("failed", "설정 파일에 쓰지 못했습니다(%s)." % str(exc)[:120])
+        raise Refused("failed", "설정 파일에 쓰지 못했습니다(%s)." % errtext.why(exc, 120))
     conn.check("subscription", done=lambda _st: engine.changed("aisettings", None))
     return _done(engine, {"set": True})
 

@@ -16,6 +16,7 @@ from hazop import store_io
 from hazop.extract import ai_review, corrections
 from hazop.shell import ai_image_flow
 from hazop.shell.sheet_refresh import ensure_graph, lock, refresh, ver_of  # noqa: F401  (ver_of는 채팅·시험도 이 이름으로 부른다)
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_aireview")
 TOPICS = ("aireview",)
@@ -137,7 +138,7 @@ def candidates(engine, graph_id):
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     except (OSError, ValueError) as exc:
-        return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
+        return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % errtext.why(exc, 120)}
     from hazop.shell import api_drawings
     base = {"ok": True, "graph_id": graph_id, "drawing_number": api_drawings.display(engine, graph_id),      # 사람용 도면 이름(임시 이름·폴더 이름이 아님)
             "ver": ver, "graph_stale": stale, "graph_notes": stale_notes}
@@ -466,7 +467,7 @@ def _decide_locked(engine, graph_id, cand_ids, action, ver, by=None, confirm=Non
         return {"ok": False, "code": "stale", "message": STALE_TEXT}
     except (OSError, ValueError) as exc:
         LOG.exception("AI 후보 %s 실패", action)
-        return {"ok": False, "code": "failed", "message": "저장하지 못했습니다(%s)." % str(exc)[:160]}
+        return {"ok": False, "code": "failed", "message": "저장하지 못했습니다(%s)." % errtext.why(exc, 160)}
     # 여기부터는 저장이 끝났다. 어떤 예외도 '저장 안 됨'으로 알리지 않는다
     after = {c["cand_id"]: c["status"] for c in doc["candidates"]}
     changed = [i for i in ids if after.get(i) != before[i]]
@@ -523,7 +524,7 @@ def accept_bulk(engine, graph_id, task, ver, by=None):
         try:
             doc, _original_ex = _load(name)
         except (OSError, ValueError) as exc:
-            return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
+            return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % errtext.why(exc, 120)}
         if not ver or ver != ver_of(name):
             return {"ok": False, "code": "stale", "message": STALE_TEXT if ver else "화면에서 본 후보 목록을 함께 보내지 않아 저장하지 않았습니다. 후보 목록을 다시 열어 주세요."}
         ids = _bulk(doc, task)
@@ -662,7 +663,7 @@ def _h_run(engine, a):
         except api.JobStopped:
             raise
         except Exception as exc:  # noqa: BLE001 - 도면별 상태에 '마치지 못함'을 남기고 작업 오류로 그대로 올린다
-            error = str(exc)[:200] or "오류"
+            error = errtext.why(exc, 200)
             raise
         finally:
             _mark_ended(engine, token, held, error)

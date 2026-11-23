@@ -23,6 +23,7 @@ import os
 
 from hazop import gcpause, paths
 from hazop.kg import expect, screen
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_kg")
 TOPICS = ("kg",)
@@ -105,11 +106,11 @@ def _context(engine, study=False):
     try:
         judgements = expect.load_judgements(path, pid, graph=pg)
     except (OSError, expect.ExpectError) as exc:
-        judgements, judge_problem = {}, "잠재 후보 판단 파일을 읽을 수 없어 판단을 저장하지 않습니다(%s)." % str(exc)[:160]
+        judgements, judge_problem = {}, "잠재 후보 판단 파일을 읽을 수 없어 판단을 저장하지 않습니다(%s)." % errtext.why(exc, 160)
     try:
         expectations = expect.evaluate_cached(pg, kg, judgements)
     except expect.ExpectError as exc:
-        expectations, judge_problem = None, "잠재 후보를 계산하지 못했습니다(%s)." % str(exc)[:160]
+        expectations, judge_problem = None, "잠재 후보를 계산하지 못했습니다(%s)." % errtext.why(exc, 160)
     items = (expectations or {}).get("items") or ()
     exp_fp = hashlib.sha256("\n".join("%s %s %s" % (i["id"], i["digest"], i["state"]) for i in items).encode("utf-8")).hexdigest()
     key = (pid, pg.get("graph_version"), len(pg.get("nodes") or ()), (kg or {}).get("kg_version"), ver, exp_fp, judge_problem)
@@ -185,7 +186,7 @@ def _read_base(pg):
     try:
         ns = study_nodes.load(pg)
     except (OSError, ValueError) as exc:
-        return {"node_set": None, "full": None, "results": None, "note": "검토구간 파일을 읽을 수 없습니다(%s)." % str(exc)[:160]}
+        return {"node_set": None, "full": None, "results": None, "note": "검토구간 파일을 읽을 수 없습니다(%s)." % errtext.why(exc, 160)}
     if not ns or not study_nodes.active_nodes(ns) or study_nodes.is_stale(ns, pg):
         return {"node_set": None, "full": None, "results": None, "note": "확정된 검토구간이 없거나 지금 도면과 맞지 않습니다."}
     from hazop.shell import api_results
@@ -193,7 +194,7 @@ def _read_base(pg):
     try:
         doc = study_results.load(ns)
     except (OSError, ValueError) as exc:
-        return {"node_set": scoped, "full": ns, "results": None, "note": "분석 결과를 읽을 수 없습니다(%s)." % str(exc)[:160]}
+        return {"node_set": scoped, "full": ns, "results": None, "note": "분석 결과를 읽을 수 없습니다(%s)." % errtext.why(exc, 160)}
     if doc is not None:
         doc, problems, _bad = study_results.partition(doc, ns)
         if problems:
@@ -475,9 +476,9 @@ def judge(engine, expectation_id, action, digest, state, reason="", evidence="",
             raise api.CommandError("stale", STALE_TEXT)
         expect.save_judgement(ctx["path"], ctx["pid"], rec)
     except expect.ExpectError as exc:
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
     except OSError as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 200))
     engine.changed("kg")
     return {"ver": _ver(ctx["pid"], ctx["path"]), "state": rec["state"], "state_label": expect.STATES[rec["state"]]}
 

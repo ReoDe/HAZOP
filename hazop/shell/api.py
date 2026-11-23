@@ -18,7 +18,7 @@ import threading
 
 from hazop import paths, store_io
 from hazop.extract import ai_review
-from hazop.shell import scheme
+from hazop.shell import errtext, scheme
 
 LOG = logging.getLogger("hazop.shell.api")
 MAX_UI_STATE_CHARS = 4096
@@ -262,7 +262,7 @@ class Engine:
                 except Exception as exc:  # noqa: BLE001 - 열 때 한 번의 덤: 실패해도 앱은 열리고 다음 추출이 다시 한다
                     LOG.exception("열 때 시트 정착 실패: %s", pid)
                     self.emit("app.notice", {"text": "도면 목록을 새 이름 규칙으로 정리하지 못했습니다(%s). 파일은 그대로이고, 다음에 도면을 읽을 때 다시 합니다."
-                                             % (str(exc)[:80] or type(exc).__name__)})
+                                             % errtext.why(exc, 80)})
                     return None
         finally:
             self._settle_gate.release()
@@ -505,8 +505,7 @@ class JobStopped(Exception):
 
 
 def _one_line(exc):
-    text = " ".join(str(exc).split())
-    return text[:200] or type(exc).__name__
+    return errtext.why(exc, 200)      # 작업 실패 글: 영문 예외는 사람 말로(원래 글은 앱 기록에)
 
 
 # ---------------------------------------------------------------- 명령 표

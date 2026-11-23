@@ -253,6 +253,25 @@ class ScreenWordsTest(unittest.TestCase):
             self.assertNotIn(w, follow.STALE)
         self.assertIn("도면 변경 반영하기", follow.STALE)
 
+    def test_error_texts_put_people_words_in_place_of_raw_exceptions(self):
+        """오류 때만 뜨는 글(실제 창 6차 ④): 영문 예외 글·파일 경로를 화면에 싣지 않는다. 엔진이 한글로 쓴 사유는 그대로."""
+        import glob
+        import re
+        from hazop import store_io
+        from hazop.shell import errtext
+        path = os.path.join("C:" + os.sep, "work", "data", "results.json")
+        cases = [PermissionError(13, "Permission denied", path), FileNotFoundError(2, "No such file", path),
+                 OSError(28, "No space left on device"), store_io.Conflict("changed"), RuntimeError("boom")]
+        for exc in cases:
+            got = errtext.why(exc)
+            self.assertTrue(got and not re.search(r"[A-Za-z]{3,}", got), (exc, got))
+        self.assertEqual(errtext.why(ValueError("구간 이름이 비었습니다")), "구간 이름이 비었습니다")
+        shell = os.path.join(REPO, "hazop", "shell")
+        raw = [(os.path.basename(p), i + 1) for p in glob.glob(os.path.join(shell, "*.py"))
+               for i, line in enumerate(open(p, encoding="utf-8")) if re.search(r"str\(exc\)\[:\d+\]", line)
+               and "type(exc).__name__" not in line]      # AI 실행 기록 줄(record)은 원인 그대로 남긴다
+        self.assertEqual(raw, [], "화면 글에 예외 글을 그대로 싣지 말고 errtext.why(exc)로")
+
 
 if __name__ == "__main__":
     unittest.main()

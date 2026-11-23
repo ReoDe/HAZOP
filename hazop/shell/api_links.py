@@ -22,6 +22,7 @@ import uuid
 from hazop import store_io
 from hazop.graph import project
 from hazop.shell import sheet_refresh
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_links")
 CANDIDATE_LIMIT = 60
@@ -43,7 +44,7 @@ def _pg(engine):
     try:
         return pid, project_ctx.project_graph(pid)
     except ValueError as exc:
-        raise Refused("not_found", "도면을 먼저 읽어야 합니다(%s)." % str(exc)[:120])
+        raise Refused("not_found", "도면을 먼저 읽어야 합니다(%s)." % errtext.why(exc, 120))
 
 
 def _manual(pid):
@@ -204,7 +205,7 @@ def view(engine, graph_id, local_id, q=None):
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     except (OSError, ValueError) as exc:
-        return {"ok": False, "code": "failed", "message": "도면 연결 지정을 읽지 못했습니다(%s)." % str(exc)[:160]}
+        return {"ok": False, "code": "failed", "message": "도면 연결 지정을 읽지 못했습니다(%s)." % errtext.why(exc, 160)}
     cands, total = _candidates(pg, n, by_id, q)
     point = _point(pg, n, by_id, ops)
     return {"ok": True, "graph_id": graph_id, "ver": _ver(fp, pg), "point": point, "candidates": cands, "more": max(0, total - len(cands)),
@@ -308,7 +309,7 @@ def _guard(fn):
         return out
     except (OSError, ValueError) as exc:
         LOG.exception("도면 연결 지정 실패")
-        return {"ok": False, "code": "failed", "message": "도면 연결 지정을 저장하지 못했습니다(%s)." % str(exc)[:160]}
+        return {"ok": False, "code": "failed", "message": "도면 연결 지정을 저장하지 못했습니다(%s)." % errtext.why(exc, 160)}
 
 
 def pair(engine, graph_id, local_id, peer_graph_id, peer_local_id, ver, reason="", base=None, confirm=None, by=None, dry=False):

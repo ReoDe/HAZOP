@@ -16,6 +16,7 @@ from hazop import store_io
 
 from hazop.chat import view as chatview
 from hazop.study import idmap, node_commands, node_tools, nodes
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_nodes")
 MEMBERS_SHOWN = 200        # 상세에 보이는 구성요소 수(나머지는 개수만)
@@ -58,7 +59,7 @@ def _peek(pg):
     try:
         doc = nodes.read_as_is(pg)
     except (OSError, ValueError) as exc:
-        raise _api().CommandError("failed", "검토구간 파일을 읽을 수 없습니다(%s)." % str(exc)[:120])
+        raise _api().CommandError("failed", "검토구간 파일을 읽을 수 없습니다(%s)." % errtext.why(exc, 120))
     if doc is None:
         return nodes.new_set(pg), False
     if (doc.get("schema_version") or nodes.LEGACY_SCHEMA_VERSION) == nodes.LEGACY_SCHEMA_VERSION:
@@ -334,7 +335,7 @@ def drawings_view(engine):
         marked = nodes.load_excluded(pid)
         problem = None
     except (OSError, ValueError) as exc:
-        marked, problem = {}, "도면 빼기 표시를 읽지 못했습니다(%s)." % str(exc)[:120]
+        marked, problem = {}, "도면 빼기 표시를 읽지 못했습니다(%s)." % errtext.why(exc, 120)
     keys = {nodes.drawing_key(k): v for k, v in marked.items()}
     texts = {nodes.drawing_key(k): v for k, v in _drawing_texts().items()}
     from hazop.graph import sheets as sheet_names
@@ -516,7 +517,7 @@ def _catch_up(eng, a):
             out = exc
     if isinstance(out, Exception):
         exc = out
-        raise api.CommandError("failed", "도면 변경을 반영하지 못했습니다(%s). 저장된 구간은 그대로입니다. 다시 눌러 주세요." % str(exc)[:120])
+        raise api.CommandError("failed", "도면 변경을 반영하지 못했습니다(%s). 저장된 구간은 그대로입니다. 다시 눌러 주세요." % errtext.why(exc, 120))
     for topic in ("nodes", "results", "ie", "kg"):
         eng.changed(topic)
     return {"changed": True, "matched": out["matched"], "tombstones": out["tombstones"], "lost_members": out["lost_members"]}
@@ -529,7 +530,7 @@ def _migrate(eng, a):
     try:
         ns = nodes.load(pg)
     except (OSError, ValueError) as exc:
-        raise _api().CommandError("failed", "구간 파일을 바꾸지 못했습니다(%s)." % str(exc)[:120])
+        raise _api().CommandError("failed", "구간 파일을 바꾸지 못했습니다(%s)." % errtext.why(exc, 120))
     eng.changed("nodes", (ns or {}).get("set_rev"))
     return {"set_rev": (ns or {}).get("set_rev") or 0, "read_only": (ns or {}).get("read_only")}
 

@@ -27,6 +27,7 @@ import logging
 from hazop import store_io
 from hazop.extract import corrections, rules
 from hazop.shell import sheet_refresh
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_corrections")
 TOPICS = ("edit", "links")          # links: 도면 연결 짝 지정(api_links)
@@ -183,7 +184,7 @@ def view(engine, graph_id):
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     except (OSError, ValueError) as exc:
-        return {"ok": False, "code": "failed", "message": "도면 수정 기록을 읽지 못했습니다(%s)." % str(exc)[:160]}
+        return {"ok": False, "code": "failed", "message": "도면 수정 기록을 읽지 못했습니다(%s)." % errtext.why(exc, 160)}
     ops, corrected = src["ops"], src["corrected"]
     by_sid = {sid_local[0]: sid_local[1] for sid_local in _sid_local(corrected)}
     ai_ops = _ai_ops(src["ops"])
@@ -261,7 +262,7 @@ def item(engine, graph_id, local_id):
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     except (OSError, ValueError) as exc:
-        return {"ok": False, "code": "failed", "message": "도면 수정 기록을 읽지 못했습니다(%s)." % str(exc)[:160]}
+        return {"ok": False, "code": "failed", "message": "도면 수정 기록을 읽지 못했습니다(%s)." % errtext.why(exc, 160)}
     corrected = src["corrected"]
     idx = _index(corrected)
     hit = idx.get(local_id)
@@ -462,7 +463,7 @@ def _run(fn):
         return {"ok": False, "code": "stale", "message": STALE_TEXT}
     except (OSError, ValueError) as exc:
         LOG.exception("도면 고치기 실패")
-        return {"ok": False, "code": "failed", "message": "저장하지 못했습니다(%s)." % str(exc)[:160]}
+        return {"ok": False, "code": "failed", "message": "저장하지 못했습니다(%s)." % errtext.why(exc, 160)}
 
 
 def _ask(confirm, text, detail=None):
