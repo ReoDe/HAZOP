@@ -23,11 +23,11 @@ docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md.
   시트별 자료(graph_member_sheets {시트 graph_id: material_id})를 남기고, 옛 사진과 새 그래프의 자료가 다른 시트의 source 구성요소는
   참조로 잇지 않는다(표시로 증명하지 못하면 묘비). 그 칸이 없는 옛 사진은 전처럼 참조로 잇는다.
 - 시트 이름 바뀜(표제란 번호 확정·확정 취소·번호 바꾸기): 옛 사진과 새 그래프 양쪽에 같은 자료가 한 시트씩 있고 이름만 다르면 그 두 이름을
-  짝으로 본다(sheet_pairs). 짝의 새 이름이 짝 없이 남는 옛 이름과 겹치면(그 이름을 다른 자료가 쓰다가 넘김) 짝을 모두 버린다. 짝은 기록하지
+  짝으로 본다(sheet_pairs). 짝의 새 이름이 짝 없이 남는 옛 이름과 겹치면(그 이름을 다른 자료가 쓰다가 넘김) 그 짝을 버린다(다른 자료의 짝은 남김). 짝은 기록하지
   않고 두 상태에서 매번 셈한다(끊긴 뒤 다시 해도 같은 짝). 맞추기에 쓰는 옛 값(참조·표시·겉모습·끝의 시트 칸, 시트별 자료)만 새 이름으로
   한꺼번에 바꾸고, 대응표의 열쇠·새 묘비 기록은 옛 값 그대로다. 짝이 없으면 전과 같다(옛 이름의 구성요소는 묘비).
 - 새 묘비 기록에는 잃을 때의 시트 자료(material)를 적는다. 묘비를 되찾을 때 기록의 시트가 새 그래프에 없으면, 그 자료가 새 그래프에
-  한 시트로만 있을 때 그 시트로 옮겨 맞춘다(material이 없는 옛 기록은 임시 이름 graph-<자료>-p<쪽>에서 자료를 읽음).
+  한 시트로만 있고 쪽이 같을 때 그 시트로 옮겨 맞춘다(material이 없는 옛 기록은 임시 이름 graph-<자료>-p<쪽>에서 자료를 읽음).
 - 등록되지 않은 자리에서 옛 판 id를 만나면 report["unregistered"]에 경로를 적는다(시험에서는 비어 있어야 한다).
 - 경로의 `[]`는 목록의 항목, `{}`는 ID를 열쇠로 쓰는 사전의 값이다. 경로가 `{}`로 끝나면 그 사전의 열쇠를 옮긴다(키 다시
   짓기). 옮긴 열쇠가 다른 항목의 열쇠와 겹치면 뒤 항목은 묘비 열쇠로 둔다(어느 쪽이 맞는지 모르므로 덮지 않음). 값이 자기
@@ -250,7 +250,8 @@ def sheet_materials(graph):
     return {graph["graph_id"]: mid} if mid and graph.get("graph_id") else {}
 
 
-_TEMP_SHEET = re.compile(r"^graph-(material-[0-9a-f]{12})-p\d+$")
+_TEMP_SHEET = re.compile(r"^graph-(material-[0-9a-f]{12})-p(\d+)$")
+_PDF_PAGE = re.compile(r"#pdf-p(\d+)-")
 
 
 def _temp_material(sheet):
@@ -258,9 +259,19 @@ def _temp_material(sheet):
     return m.group(1) if m else None
 
 
+def _page_of(sheet, ref=None):
+    """묘비 기록이 가리키던 쪽(임시 이름의 -p<쪽>, PDF 순번 참조의 #pdf-p<쪽>-). 모르면 None."""
+    m = _TEMP_SHEET.match(sheet or "")
+    if m:
+        return int(m.group(2))
+    m = _PDF_PAGE.search(ref or "")
+    return int(m.group(1)) if m else None
+
+
 def sheet_pairs(node_set, graph):
     """같은 자료의 1:1 시트 이름 바뀜 {옛 시트 graph_id: 새 시트 graph_id}. 옛 판 사진(graph_member_sheets)과 새 그래프에 그 자료가 한 시트씩
-    있고 이름만 다를 때. 짝의 새 이름이 짝 없이 남는 옛 이름(사진의 시트·참조의 도면)과 겹치면 어느 쪽 기록인지 모르므로 {}."""
+    있고 이름만 다를 때. 짝의 새 이름이 짝 없이 남는 옛 이름(사진의 시트·참조의 도면)과 겹치면 어느 쪽 기록인지 모르므로 그 짝을 버린다.
+    버린 짝의 옛 이름도 짝 없이 남는 이름이 되므로 더 버릴 것이 없을 때까지 되풀이한다. 겹치지 않는 다른 자료의 짝은 남긴다."""
     old, new = node_set.get("graph_member_sheets") or {}, sheet_materials(graph)
 
     def once(d):
@@ -269,7 +280,11 @@ def sheet_pairs(node_set, graph):
     o, n = once(old), once(new)
     pairs = {o[m]: n[m] for m in o if m in n and o[m] != n[m]}
     known = set(old) | {drawing_of(r) for r in (node_set.get("graph_member_refs") or {}).values()}
-    return {} if set(pairs.values()) & (known - set(pairs)) else pairs
+    while True:
+        clash = set(pairs.values()) & (known - set(pairs))
+        if not clash:
+            return pairs
+        pairs = {a: b for a, b in pairs.items() if b not in clash}
 
 
 def _renamed_ref(r, pairs):
@@ -398,18 +413,23 @@ def compute(node_set, graph, at=None):
     # 옛 사진에 그 시트의 자료가 없으면(이 칸 전에 저장) 그 이름을 다른 자료도 원하는 시트에서는 자료가 바뀌었는지 알 수 없다: 파일 id를 믿지 않는다
     moved |= {s["graph_id"] for s in graph.get("sheets") or () if s.get("contested") and not seen_sheets.get(s["graph_id"])}
     sheets_of = {}
+    page_of = {x["graph_id"]: x.get("page_index") for x in graph.get("sheets") or ()}
     for s, mid in now_sheets.items():
         sheets_of.setdefault(mid, []).append(s)
 
-    def relocated(sheet, material):
-        """묘비 기록의 시트 → 지금 그 기호를 찾을 시트. 짝이면 새 이름. 그 이름이 새 그래프에 없으면 잃을 때 자료의 시트(하나뿐일 때).
-        그 이름을 다른 자료가 쓰고 있으면 옮기지 않는다(그 묘비는 자료 검사가 막아 다른 파일 기호에 붙지 않는다)."""
+    def relocated(sheet, material, ref=None):
+        """묘비 기록의 시트 → 지금 그 기호를 찾을 시트. 짝이면 새 이름. 그 이름이 새 그래프에 없으면 잃을 때 자료의 시트(하나뿐이고 쪽이 같을 때).
+        쪽은 기록에서 읽고(임시 이름, PDF 순번 참조), 모르면 첫 쪽(또는 쪽 없음)의 시트만 받는다: 여러 쪽 자료의 한 쪽이 빠졌을 때 남은 다른 쪽으로
+        옮겨 찾지 않는다. 그 이름을 다른 자료가 쓰고 있으면 옮기지 않는다(그 묘비는 자료 검사가 막아 다른 파일 기호에 붙지 않는다)."""
         if not sheet:   # 도면 그래프의 구성요소는 시트 칸이 비어 있다
             return sheet
         s = pairs.get(sheet, sheet)
         mid = material or _temp_material(sheet)
         if mid and s not in now_sheets and len(sheets_of.get(mid) or ()) == 1:
-            return sheets_of[mid][0]
+            target = sheets_of[mid][0]
+            page = _page_of(sheet, ref)
+            if (page_of.get(target) or 0) == (page or 0):
+                return target
         return s
 
     def material_of(m):
@@ -478,16 +498,16 @@ def compute(node_set, graph, at=None):
             continue
         if valid_mark(rec.get("mark")):
             was = rec["mark"][1]
-            sheet = relocated(was, rec.get("material"))
+            sheet = relocated(was, rec.get("material"), rec.get("ref"))
             hits = mark_hits(_renamed_sheet(rec["mark"], sheet))
         elif rec.get("basis") == ids.SOURCE and rec.get("ref") and valid_look(rec.get("look")):
             lost_in = rec.get("material") or _temp_material(drawing_of(rec["ref"]))   # 잃을 때의 시트 자료
             was = drawing_of(rec["ref"])
-            sheet = relocated(was, lost_in)
+            sheet = relocated(was, lost_in, rec["ref"])
             if (sheet in moved) if lost_in is None else now_sheets.get(sheet, lost_in) != lost_in:
                 continue                        # 시트 자료가 다르면 같은 파일 id·같은 겉모습도 같은 기호가 아니다
             ref = rec["ref"] if sheet == was else sheet + "#" + rec["ref"].partition("#")[2]   # 연결 구간 참조에는 도면이 없다
-            look = _renamed_sheet(rec["look"], relocated(rec["look"][1], lost_in))
+            look = _renamed_sheet(rec["look"], relocated(rec["look"][1], lost_in, rec["ref"]))
             hits = [e for e in by_ref.get(ref) or () if new_basis[e] == ids.SOURCE and _same_look(look, look_of(by_id[e]))]
         else:
             continue

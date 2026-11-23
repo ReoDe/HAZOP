@@ -124,9 +124,9 @@ TODO = {"지식그래프 판단": "지식그래프 연결 후보(link_candidates
         "저장하지 못한 AI 답": "분석(⑤) 화면에서 남은 AI 답을 이어서 실행으로 결과에 합치거나 지운 뒤 다시 확정하세요",
         "옛 도면별 구간": "옛 화면의 도면별 구간 파일은 옮기지 않으니 그 구간을 정리한 뒤 다시 확정하세요",
         "옛 도면별 분석 결과": "옛 화면의 도면별 분석 결과 파일은 옮기지 않으니 그 결과를 정리한 뒤 다시 확정하세요",
-        "도면 연결 지정": "도면 연결에서 이 번호로 지정한 연결을 풀고, 번호를 바꾼 뒤 다시 지정하세요",
-        "구간 제외 표시": "구간 패널에서 이 도면의 구간 제외를 풀고, 번호를 바꾼 뒤 다시 표시하세요",
-        "다른 도면과의 연결 구간이 든 구간": "그 구간에서 다른 도면과의 연결 구간을 빼고, 번호를 바꾼 뒤 다시 넣으세요"}
+        "도면 연결 지정": "도면 연결에서 이 번호로 지정한 연결을 풀고, 번호 확정·취소를 마친 뒤 다시 지정하세요",
+        "구간 제외 표시": "구간 패널에서 이 도면의 구간 제외를 풀고, 번호 확정·취소를 마친 뒤 다시 표시하세요",
+        "다른 도면과의 연결 구간이 든 구간": "그 구간에서 다른 도면과의 연결 구간을 빼고, 번호 확정·취소를 마친 뒤 다시 넣으세요"}
 XLINK_PLACE = "다른 도면과의 연결 구간이 든 구간"
 
 
@@ -135,7 +135,7 @@ def _places(project_id):
     (study-nodes/<프로젝트>/project-<프로젝트>.json)에 두고 구성원을 '<그래프 ID>/<엔터티 ID>'로 적으므로, 도면 파일 이름이 아니라
     파일 안의 참조를 센다. 옮김(CARRY)은 판 이전이 같은 자료의 이름 바뀜을 따라 옮기는 자리(프로젝트 구간·분석 결과, 초기사건·FMEA·잠재
     후보 판단), 막음(BLOCK)은 옮기지 않는 자리(옛 도면별 파일, 저장하지 못한 AI 답, 지식그래프 판단 CSV). 다시 만드는 자리(구간 AI 검토 제안,
-    명령 복구 옆 파일 .pending)는 세지 않는다. 도면 번호로 적는 기록(도면 연결 지정의 끝, 구간 제외 표시)은 _number_refs가 센다."""
+    명령 복구 옆 파일 .pending, 채팅 도구의 구간 후보 캐시 candidates/)는 세지 않는다. 도면 번호로 적는 기록(도면 연결 지정의 끝, 구간 제외 표시)은 _number_refs가 센다."""
     from hazop.graph import project
     from hazop.ie import store as ie_store
     from hazop.kg import expect
@@ -150,11 +150,11 @@ def _places(project_id):
         return out
 
     def split(folder, keep):
-        """(프로젝트 파일, 옛 도면별 파일, unsaved 아래 파일). keep(이름)이 거짓인 파일은 뺀다."""
+        """(프로젝트 파일, 옛 도면별 파일, unsaved 아래 파일). keep(이름)이 거짓인 파일과 candidates/ 아래(구간 후보 캐시)는 뺀다."""
         mine, old, unsaved = [], [], []
         for f in files(folder):
             name = os.path.basename(f)
-            if not keep(name):
+            if not keep(name) or os.path.relpath(f, folder).split(os.sep)[0] == "candidates":
                 continue
             if os.path.basename(os.path.dirname(f)) == "unsaved":
                 unsaved.append(f)
@@ -268,9 +268,13 @@ def _live(x):
 NOWHERE = "\0"   # 어떤 그래프 ID와도 같지 않은 값(연결 구간만 셀 때)
 
 
-def _json_refs(text, graph_id, links=frozenset()):
+STALE = "\1stale"   # _json_refs 줄 이름: 판 사진에 없어 판 이전이 묘비로 할 참조 수
+
+
+def _json_refs(text, graph_id, links=frozenset(), known=None):
     """[(이름 또는 None, 수, 단위)]. 검토구간 집합은 구간 수, 다른 기록은 지금 값 안의 참조 수. 이 도면에 닿는 도면 연결 구간(links)은 이름이
-    XLINK_PLACE인 줄로 따로 센다(이름 바뀜이 옮기지 못함). 이름 None은 그 파일 자리의 이름이다."""
+    XLINK_PLACE인 줄로 따로 센다(이름 바뀜이 옮기지 못함). 이름 None은 그 파일 자리의 이름이다. known(구간 저장본 판 사진의 참조·id)을 주면
+    그 안에 없는 참조 수를 STALE 줄로 더 낸다(같은 수가 None 줄에도 들어 있다)."""
     from hazop.study import nodes
     try:
         doc = json.loads(text)
@@ -279,18 +283,26 @@ def _json_refs(text, graph_id, links=frozenset()):
     if isinstance(doc, dict) and doc.get("kind") == nodes.KIND:
         return [(None, _live_nodes(doc, graph_id), "개"), (XLINK_PLACE, _live_nodes(doc, NOWHERE, links), "개")]
     live = text if doc is None else json.dumps(_live(doc), ensure_ascii=False)
-    own = len(re.findall(r'"%s(?=["/#:])' % re.escape(graph_id), live))
-    return [(None, own, "곳"), (XLINK_PLACE, sum(len(re.findall(r'"%s(?="|-[ab]")' % re.escape(l), live)) for l in sorted(links)), "곳")]
+    own = re.findall(r'"(%s(?:[/#:][^"]*)?)"' % re.escape(graph_id), live)
+    stale = 0 if known is None else sum(1 for v in own if v.split("|")[0] not in known)
+    return [(None, len(own), "곳"), (STALE, stale, "곳"),
+            (XLINK_PLACE, sum(len(re.findall(r'"%s(?="|-[ab]")' % re.escape(l), live)) for l in sorted(links)), "곳")]
 
 
-def _split_refs(project_id, graph_id):
+def _split_refs(project_id, graph_id, stale=None):
     """그 도면을 지금 가리키는 사람 기록 ({옮김 이름: (수, 단위)}, {막음 이름: (수, 단위)})(0인 것은 뺀다). JSON 안의 "<그래프 ID>"·"<그래프 ID>/…"·
     "<그래프 ID>#…"와 그 도면에 닿는 도면 연결 구간 id(_links, 막음), CSV 칸(_csv_refs), 도면 번호로 적는 기록(_number_refs, 막음).
-    지난 일의 기록(되돌리기 묶음·이력·판 사진)은 세지 않는다."""
+    지난 일의 기록(되돌리기 묶음·이력·판 사진)은 세지 않는다. stale(사전)을 주면 옮김 자리 참조 가운데 구간 저장본 판 사진에 없어 판 이전이
+    묘비로 할 것의 수를 {이름: 수}로 채운다(옮김 수에도 들어 있다)."""
     carry, block = {}, {}
     if not graph_id:
         return carry, block
     links = _links(project_id, graph_id)
+    known = None
+    if stale is not None:
+        ns = _stored_set(project_id) or {}
+        refs = ns.get("graph_member_refs") or {}
+        known = set(refs) | {r for r in refs.values() if r}
 
     def add(out, name, n, unit):
         if n:
@@ -303,10 +315,14 @@ def _split_refs(project_id, graph_id):
                     add(block if rule == BLOCK else carry, name, _csv_refs(f, graph_id), "곳")
                     continue
                 with open(f, encoding="utf-8") as fh:
-                    rows = _json_refs(fh.read(), graph_id, links)
+                    rows = _json_refs(fh.read(), graph_id, links, known if rule == CARRY else None)
             except (OSError, UnicodeDecodeError, ValueError):
                 continue
             for place, n, unit in rows:
+                if place == STALE:
+                    if n:
+                        stale[name] = stale.get(name, 0) + n
+                    continue
                 add(block if place or rule == BLOCK else carry, place or name, n, unit)
     for name, n in _number_refs(project_id, graph_id).items():
         add(block, name, n, "곳")
@@ -342,9 +358,13 @@ def _pairs_after(project_id, material_id, old, new):
     if ns is None:
         return None
     try:
-        now = project_ctx.project_graph(project_id).get("sheets") or []
+        pg = project_ctx.project_graph(project_id)
     except (OSError, ValueError):
         return None
+    now = pg.get("sheets") or []
+    if "graph_member_sheets" not in ns and ns.get("graph_version") == pg.get("graph_version"):
+        # 판이 같으면 확정 길(_reextract의 prepared_for_reextract)이 비키기 전에 이 칸을 지금 그래프의 자료로 채운다
+        ns = dict(ns, graph_member_sheets=idmap.sheet_materials(pg))
     sheets = [{"graph_id": s["graph_id"], "material_id": s.get("material_id")} for s in now if s.get("graph_id") not in (old, new)]
     return idmap.sheet_pairs(ns, {"sheets": sheets + [{"graph_id": new, "material_id": material_id}]})
 
@@ -499,6 +519,7 @@ def _records_refusal(what, gid, sheet, refs, why=None):
 
 
 NO_PROOF = "구간 저장본이 지금 판에 맞춰지지 않아 같은 파일임을 증명하지 못합니다. 구간 패널에서 '도면 변경 반영하기'를 누른 뒤 다시 확정하세요."
+NO_SET = "검토구간 저장본이 없어 이 기록을 새 이름으로 옮길 길이 없습니다. 그 기록을 정리하거나 검토구간을 먼저 저장한 뒤 다시 확정하세요."
 NOT_OWNER = "그 번호를 이미 다른 파일이 써서 이 파일은 고르기 전에는 도면 목록에 쓰이지 않으므로 기록을 옮길 곳이 없습니다. 다른 번호를 쓰거나 도면 목록에서 원본을 먼저 고르세요."
 
 
@@ -515,23 +536,26 @@ def _guard_number(project_id, record, sheets, new_number, store_root, names=True
       참조를 센다. 아무도 쓰지 않는 새 이름의 참조(지운 도면의 기록)는 늘 센다. 다만 그 이름이 같은 판 이전에서 다른 자료의 짝으로 옮겨 가면
       (아직 옮기지 않은 맞바꿈) 옮김 자리의 참조는 그 자료를 따라가므로 세지 않는다.
     names가 False면(정착 전 프로젝트의 dry) 이름으로 셈하는 검사를 건너뛴다(옛 이름으로 셈하면 정착 뒤에는 없을 거절이 나온다).
-    -> (붙박을 새 이름 목록, 알림 글 목록, 옮길 기록 {자리: 수}, 이름 바뀜 [{from, to, from_label, to_label}])."""
+    다시 추출이 실패한 뒤 같은 확정을 다시 하는 길(등록정보 번호는 이미 new_number, 시트는 옛 이름)도 시트의 지금 이름 → 새 이름을 같은 규칙으로 본다.
+    -> (붙박을 새 이름 목록, 알림 글 목록, 옮길 기록 {자리: 수}, 이름 바뀜 [{from, to, from_label, to_label}],
+        판 사진에 없어 판 이전이 묘비로 할 옮김 자리 참조 {자리: 수})."""
     from hazop.graph import sources
-    if record.get("drawing_number") == new_number:
-        return [], [], {}, []
+    retry = record.get("drawing_number") == new_number
+    if retry and all(s.get("graph_id") == _gid(new_number, s, project_id) for s in sheets):
+        return [], [], {}, [], {}
     problem = sheet_rules.number_problem(new_number, _page_count(record))
     if problem:
         raise Refused("drawing_number", "rule", problem["text"], problem["code"])
     old_number = record.get("drawing_number")
-    if old_number is not None and old_number in sources.load_choices(project_id):
+    if not retry and old_number is not None and old_number in sources.load_choices(project_id):
         raise Refused("drawing_number", "rule", "도면 번호 %s에는 사람이 고른 원본 형식 선택이 걸려 있어 번호를 바꾸지 않습니다. "
                       "그 선택은 새 번호로 옮겨지지 않습니다." % old_number, CHOICE_PINNED)
     if not names:
-        return [], [], {}, []
+        return [], [], {}, [], {}
     targets = [(s.get("graph_id"), _gid(new_number, s, project_id), s) for s in sheets]
     if not sheets and new_number is not None:
         targets = [(None, "graph-%s" % new_number, None)]
-    keep, notes, carries, renames = [], [], {}, []
+    keep, notes, carries, renames, lost = [], [], {}, [], {}
     for old, new, sheet in targets:
         if old is not None and old != new:
             mine = (sheet.get("material_id"), sheet.get("page") or 0)
@@ -542,12 +566,19 @@ def _guard_number(project_id, record, sheets, new_number, store_root, names=True
             pairs = _pairs_after(project_id, mine[0], old, new) if takes else None
             renames.append({"from": old, "to": new, "from_label": _shown(old, sheet), "to_label": shown_number or _shown(new)})
             if _owns(project_id, old, sheet):
-                carry, block = _split_refs(project_id, old)
-                why = None if not carry else NOT_OWNER if not takes else NO_PROOF if (pairs or {}).get(old) != new else None
-                if block or why:
-                    raise _records_refusal("이 도면", old, sheet, dict(block, **(carry if why else {})), why)
+                stale = {}
+                carry, block = _split_refs(project_id, old, stale)
+                proof = None if not carry else NOT_OWNER if not takes else NO_SET if pairs is None else \
+                    NO_PROOF if pairs.get(old) != new else None
+                refs = dict(block, **(carry if proof else {}))
+                if refs:
+                    where = "연결 구간이 든 구간: %s." % ", ".join(_xlink_nodes(project_id, _links(project_id, old))) if XLINK_PLACE in block else None
+                    raise _records_refusal("이 도면", old, sheet, refs, " ".join(x for x in (proof, where) if x) or None)
                 for k, (n, _unit) in carry.items():
-                    carries[k] = carries.get(k, 0) + n
+                    if n - stale.get(k, 0):
+                        carries[k] = carries.get(k, 0) + n - stale.get(k, 0)
+                for k, n in stale.items():
+                    lost[k] = lost.get(k, 0) + n
             if owner is not None and owner != mine:
                 if takes:
                     refs = _references(project_id, new)
@@ -569,7 +600,14 @@ def _guard_number(project_id, record, sheets, new_number, store_root, names=True
             if _key(gid) == _key(new) and gid != new:
                 raise Refused("drawing_number", "conflict", "다른 자료 %s의 도면 번호(%s)와 글자만 달라 같은 파일을 쓰게 됩니다. 같은 도면이면 "
                               "그 번호를 그대로 쓰고, 다른 도면이면 다른 번호를 쓰세요." % (name, gid[len("graph-"):]), NUMBER_TAKEN)
-    return keep, notes, carries, renames
+    return keep, notes, carries, renames, lost
+
+
+def _xlink_nodes(project_id, links):
+    """그 연결 구간을 구성원으로 둔 구간의 이름 목록(거절 글에 어느 구간인지 밝힌다)."""
+    ns = _stored_set(project_id) or {}
+    return [str(n.get("name") or n.get("node_id")) for n in ns.get("nodes") or [] if isinstance(n, dict)
+            and any(_points_at(m, NOWHERE, links) for m in n.get("members") or [])] or ["?"]
 
 
 def _owner_file(project_id, graph_id):
@@ -666,6 +704,12 @@ def _confirmed_sheets(sheets):
 
 def _reextract(record, registration_path, sheets, extract, progress):
     """sheets를 record(새 등록 버전)로 옮겨 다시 추출한다: 기록 옮겨 쓰기 → 앞 그래프 비켜 두기 → 추출. 실패하면 그래프를 되돌린다."""
+    from hazop.app import data
+    with data.prepared_for_reextract(record.get("project_id")):   # 비켜 두기 전에 검토구간 표지를 채운다(이미 채웠으면 그대로)
+        return _reextract_prepared(record, registration_path, sheets, extract, progress)
+
+
+def _reextract_prepared(record, registration_path, sheets, extract, progress):
     carried, created = _carry(sheets, record)
     moved = _set_aside(sheets, record)
     progress("다시 추출·그래프", 2, 2)
@@ -722,14 +766,12 @@ def _apply(project_id, material_id, by, ver, store_root, change, extract, progre
     behind = [s for s in sheets if s["version"] != record["registration_version"]]
     if make is None and not behind:
         return {"ok": True, "changed": False, "row": row(project_id, material_id, store_root), "refused": []}
-    keep, notes, carries, renames = [], [], {}, []
-    if make is not None:
-        keep, notes, carries, renames = _guard_number(project_id, record, sheets, new_number, store_root,
-                                                      names=not (dry and unsettled and sheets))
+    keep, notes, carries, renames, lost = _guard_number(project_id, record, sheets if make is not None else behind, new_number, store_root,
+                                                        names=not (dry and unsettled and sheets))
     if dry:
         notes += [SETTLE_FIRST_NOTE] if unsettled and sheets else []
         return {"ok": True, "changed": True, "dry": True, "re_extract": bool(sheets), "notes": notes, "carries": carries,
-                "renames": renames, "refused": []}
+                "carries_lost": lost, "renames": renames, "refused": []}
     for gid in keep:
         try:
             sources.keep_owner(project_id, gid, by)
@@ -739,8 +781,8 @@ def _apply(project_id, material_id, by, ver, store_root, change, extract, progre
     if make is None:  # 앞서 다시 추출이 실패한 자료: 새 버전 없이 다시 읽기만
         carried = _reextract(record, path, behind, extract, progress)
         return {"ok": True, "changed": True, "version": record["registration_version"], "re_extracted": True,
-                "carried": carried, "released_sheet_confirmations": released, "conflicts": [], "notes": ["다시 읽기만 함"],
-                "row": row(project_id, material_id, store_root), "refused": []}
+                "carried": carried, "released_sheet_confirmations": released, "conflicts": [], "notes": notes + ["다시 읽기만 함"],
+                "carries": carries, "carries_lost": lost, "renames": renames, "row": row(project_id, material_id, store_root), "refused": []}
     progress("표제란 확정 저장", 1, 2)
     try:
         res = make()
@@ -754,7 +796,7 @@ def _apply(project_id, material_id, by, ver, store_root, change, extract, progre
     carried = _reextract(rec, res["registration_file"], sheets, extract, progress) if sheets else []
     return {"ok": True, "changed": True, "version": rec["registration_version"], "re_extracted": bool(sheets),
             "carried": carried, "released_sheet_confirmations": released, "conflicts": res.get("conflicts") or [],
-            "notes": notes + (res.get("notes") or []), "carries": carries, "renames": renames,
+            "notes": notes + (res.get("notes") or []), "carries": carries, "carries_lost": lost, "renames": renames,
             "row": row(project_id, material_id, store_root), "refused": []}
 
 

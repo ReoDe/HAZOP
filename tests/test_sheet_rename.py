@@ -159,14 +159,16 @@ class RenameTest(RenameCase):
         self.assertEqual((n["members"], len(n.get("lost") or [])), ([], len(before["members"])))
 
     def test_r16_old_snapshot_without_materials_has_no_proof(self):
-        """판 사진에 시트 자료가 없는 옛 집합은 짝을 증명하지 못해 전처럼 묘비다(가드가 막는 경우를 엔진도 지킨다)."""
+        """판이 이미 다르고 판 사진에 시트 자료가 없는 옛 집합은 짝을 증명하지 못해 전처럼 묘비다(가드가 막는 경우를 엔진도 지킨다)."""
         a = self.add("SNP-M-101", "pdf")
         before, _old = self.made(a)
         ns = self.stored()
         ns.pop("graph_member_sheets")
+        ns["graph_version"] = "pv-old"
         store_io.write_json(self.set_path(), ns, store_io.ANY, sort_keys=False)
         data.set_graph_listener(None)
-        with mock.patch.object(tb, "_guard_number", lambda *a, **k: ([], [], {}, [])):   # 가드는 이 경우를 막는다(test_sheet_guard R16): 엔진만 본다
+        with mock.patch.object(tb, "_guard_number", lambda *a, **k: ([], [], {}, [], {})), \
+                mock.patch.object(data, "prepare_reextract", lambda *a, **k: False):   # 가드·표지 채우기가 막거나 메우는 경우(test_sheet_guard R16): 엔진만 본다
             self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         _pg, n = self.node()
         self.assertEqual((n["members"], len(n.get("lost") or [])), ([], len(before["members"])))
@@ -302,9 +304,15 @@ class PairRuleTest(unittest.TestCase):
         self.assertEqual(idmap.sheet_pairs(old, self.graph({"graph-B": "m1", "graph-A": "m2", "graph-C": "m3"})),
                          {"graph-A": "graph-B", "graph-B": "graph-A"})
 
-    def test_new_name_taken_from_a_name_left_without_a_pair_drops_every_pair(self):
+    def test_new_name_taken_from_a_name_left_without_a_pair_drops_only_that_pair(self):
+        """B를 쓰던 자료가 빠진 자리에 A가 B로 들어오면 그 짝만 버린다(B의 기록이 A에 붙지 않게). 같은 판 이전의 다른 자료 짝 X→Y는 남는다."""
         old = {"graph_member_sheets": {"graph-A": "m1", "graph-B": "m2", "graph-X": "m3"}}
-        self.assertEqual(idmap.sheet_pairs(old, self.graph({"graph-B": "m1", "graph-Y": "m3"})), {})
+        self.assertEqual(idmap.sheet_pairs(old, self.graph({"graph-B": "m1", "graph-Y": "m3"})), {"graph-X": "graph-Y"})
+
+    def test_a_dropped_pair_leaves_its_old_name_behind_for_the_next_check(self):
+        """버린 짝의 옛 이름도 짝 없이 남는 이름이라, 그 이름으로 들어오는 다른 짝도 버린다."""
+        old = {"graph_member_sheets": {"graph-A": "m1", "graph-B": "m2", "graph-C": "m3"}}
+        self.assertEqual(idmap.sheet_pairs(old, self.graph({"graph-B": "m1", "graph-A": "m3"})), {})
 
     def test_new_name_seen_only_in_old_refs_drops_the_pairs(self):
         old = {"graph_member_sheets": {"graph-A": "m1"}, "graph_member_refs": {"graph-B/entity-1": "graph-B#x"}}
@@ -313,6 +321,35 @@ class PairRuleTest(unittest.TestCase):
     def test_a_material_on_two_sheets_has_no_pair(self):
         old = {"graph_member_sheets": {"graph-A": "m1", "graph-A2": "m1"}}
         self.assertEqual(idmap.sheet_pairs(old, self.graph({"graph-B": "m1"})), {})
+
+
+class RelocatePageTest(unittest.TestCase):
+    """자료로 옮겨 찾는 묘비(기록의 시트 이름이 사라짐)는 같은 쪽의 시트에서만 찾는다. 여러 쪽 자료의 한 쪽이 빠지면 남은 다른 쪽으로 옮기지 않는다."""
+    MID = "material-aaaaaaaaaaaa"
+
+    def compute(self, page_index):
+        gid, old_sheet = "project-P", "graph-%s-p0" % self.MID
+        mark = ["drawing_object", old_sheet, "pump", "P-1", 0.0, 0.0, 10.0, 10.0]
+        ref, eid = old_sheet + "#pdf-p0-sym-0001", old_sheet + "/entity-node-001"
+        t = idmap.tomb_id(gid, "v1", idmap.tomb_key(gid, "v0", "v1", eid, ref, mark))
+        rec = {"entity_id": eid, "ref": ref, "mark": mark, "basis": "sequence", "lost_from": "v0", "lost_at": "v1", "at": None,
+               "legacy_key": None, "found": None}
+        ns = {"graph_id": gid, "graph_version": "v1", "graph_member_refs": {}, "tombstones": {t: rec},
+              "nodes": [{"node_id": "S1", "members": [], "lost": [t]}]}
+        sheet = "graph-SNP-M-101"
+        graph = {"graph_id": gid, "graph_version": "v2", "edges": [],
+                 "sheets": [{"graph_id": sheet, "material_id": self.MID, "page_index": page_index}],
+                 "nodes": [{"entity_id": sheet + "/entity-node-001", "source_object_id": "pdf-p%d-sym-0001" % page_index, "id_basis": "sequence",
+                            "node_type": "drawing_object", "sheet": sheet, "kind": "pump", "tag": "P-1", "bbox": [0, 0, 10, 10]}]}
+        return t, idmap.compute(ns, graph)
+
+    def test_same_page_is_found(self):
+        t, table = self.compute(0)
+        self.assertEqual(table["found"][t][0], "graph-SNP-M-101/entity-node-001")
+
+    def test_another_page_of_the_same_material_is_not_found(self):
+        _t, table = self.compute(1)
+        self.assertEqual(table["found"], {})
 
 
 if __name__ == "__main__":
