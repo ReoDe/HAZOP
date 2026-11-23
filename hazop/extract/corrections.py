@@ -17,6 +17,7 @@ import functools
 import hashlib
 import importlib.util
 import json
+import logging
 import math
 import os
 import re
@@ -29,6 +30,8 @@ from hazop.extract.drawio import summarize
 from hazop.extract.ids import MANUAL_PREFIX
 from hazop.kg.schema import REGISTRY
 from hazop.study.nodes import now_utc
+
+LOG = logging.getLogger(__name__)
 
 KIND = "hazop_drawing_corrections"
 SCHEMA_VERSION = "0.1"
@@ -117,8 +120,8 @@ def _stamp_old_graph(name):
     try:
         from hazop.app import data
         data.stamp_base_version(name)
-    except Exception:  # noqa: BLE001 - 찍기는 덤이다
-        pass
+    except Exception:  # noqa: BLE001 - 찍기는 덤이다. 다만 조용히 꺼지지 않게(앱 층을 못 불러와도) 기록에 남긴다
+        LOG.warning("기준 판을 찍지 못하고 고침을 저장함: %s", name, exc_info=True)
 
 
 PROVENANCE = ("by", "at", "accepted_by", "accepted_at")   # 연산의 누가·언제. 같은 op_id를 되살릴 때 지금 값으로 바꿔도 같은 연산이다
