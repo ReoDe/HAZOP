@@ -161,39 +161,87 @@ class BusyTest(QueueBase):
 
 class SaveRaceTest(Base):
     def test_b_two_saves_of_one_drawing_keep_both_candidates(self):
-        """A가 지문을 확인한 뒤 교체하기 전에 B가 같은 판을 읽고 확인·교체하면, 틈을 막지 않은 쓰기는 B의 후보를 잃는다."""
-        a_at_replace, b_checked = threading.Event(), threading.Event()
+        """A가 지문을 확인한 뒤 교체하기 전에 B가 같은 판을 읽고 저장에 들어온다. A는 B가 확인 지점(잠금이 있으면 잠금 앞)에
+        닿은 것을 사건으로 본 뒤에 교체한다. 틈을 막지 않은 쓰기는 B가 같은 판으로 확인을 통과해 A나 B의 후보를 잃는다."""
+        a_at_replace, b_arrived = threading.Event(), threading.Event()
         real_replace, real_fp = store_io.os.replace, store_io.fingerprint
+        real_lock = getattr(store_io, "_path_lock", None)
         who = threading.local()
+
+        class Announce:
+            def __init__(self, lk):
+                self.lk = lk
+
+            def __enter__(self):
+                b_arrived.set()          # B가 확인 지점 앞(잠금)에 닿음. 잠금이 있으면 A가 놓을 때까지 여기서 기다린다
+                self.lk.acquire()
+
+            def __exit__(self, *exc):
+                self.lk.release()
+
+        def path_lock(path):
+            lk = real_lock(path)
+            return Announce(lk) if getattr(who, "name", None) == "B" else lk
 
         def replace(src, dst):
             if getattr(who, "name", None) == "A" and not a_at_replace.is_set():
                 a_at_replace.set()
-                b_checked.wait(1.0)          # 틈을 막았으면 B가 확인에 들어오지 못해 1초 뒤 그대로 간다
+                self.assertTrue(b_arrived.wait(10), "B가 저장에 닿지 않음")
             return real_replace(src, dst)
 
         def fingerprint(path):
-            out = real_fp(path)
             if getattr(who, "name", None) == "B":
-                b_checked.set()
-            return out
+                b_arrived.set()          # 잠금이 없으면 B는 곧장 지문을 확인한다
+            return real_fp(path)
+
+        errors = []
 
         def save(tag, cand_id):
             who.name = tag
-            cand = ar.make_candidate(cand_id, "tag", self.valves[0], "tag", ["V9" + cand_id[-1]], 0.9, "시험")
-            ar.merge_and_save(self.name, self.ex, {"candidates": [cand], "stats": {"calls": 1}})
+            try:
+                cand = ar.make_candidate(cand_id, "tag", self.valves[0], "tag", ["V9" + cand_id[-1]], 0.9, "시험")
+                ar.merge_and_save(self.name, self.ex, {"candidates": [cand], "stats": {"calls": 1}})
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
 
-        with mock.patch.object(store_io.os, "replace", replace), mock.patch.object(store_io, "fingerprint", fingerprint):
+        patches = [mock.patch.object(store_io.os, "replace", replace), mock.patch.object(store_io, "fingerprint", fingerprint)]
+        if real_lock is not None:
+            patches.append(mock.patch.object(store_io, "_path_lock", path_lock))
+        for p in patches:
+            p.start()
+        try:
             ta = threading.Thread(target=save, args=("A", "t-1"))
             ta.start()
-            self.assertTrue(a_at_replace.wait(5))
+            self.assertTrue(a_at_replace.wait(10))
             tb = threading.Thread(target=save, args=("B", "t-2"))
             tb.start()
-            ta.join(10)
-            tb.join(10)
+            ta.join(20)
+            tb.join(20)
+        finally:
+            for p in patches:
+                p.stop()
+        self.assertFalse(ta.is_alive() or tb.is_alive(), "저장 스레드가 끝나지 않음")
+        self.assertEqual(errors, [])
         doc = ar.load_doc(self.name)
         self.assertEqual(sorted(c["cand_id"] for c in doc["candidates"]), ["t-1:tag", "t-2:tag"])
         self.assertEqual(len(doc["runs"]), 2)
+
+
+class RealWaitTest(unittest.TestCase):
+    """기다림을 대역으로 바꾸지 않고, 실제로 기다리는 동안 멈추기가 바로 먹는지 본다."""
+
+    def test_stop_during_a_real_wait(self):
+        from tests.test_ai_review import ex_fixture
+        client = StubClient(good_answers, errors=["rate_limited"])
+        started = time.monotonic()
+        threading.Timer(0.3, lambda: stop.set()).start()
+        stop = threading.Event()
+        with mock.patch.dict(ar.RETRY_DELAYS, {"rate_limited": (30,)}):
+            st = ar.run(ex_fixture(), client, cap=5, recheck=0, should_stop=stop.is_set)["stats"]
+        took = time.monotonic() - started
+        self.assertLess(took, 3, "30초 기다림이 멈추기에 끊기지 않음")
+        self.assertGreaterEqual(took, 0.25)
+        self.assertEqual((st["calls"], st["retries"], st["stopped"]), (1, 0, True))
 
 
 class RetryTest(unittest.TestCase):
@@ -249,6 +297,39 @@ class RetryTest(unittest.TestCase):
         with mock.patch.object(ar, "_wait", wait):
             st = ar.run(self.ex, client, cap=5, recheck=0, should_stop=lambda: stop["on"])["stats"]
         self.assertEqual((st["calls"], st["retries"], st["stopped"]), (1, 0, True))
+
+    def test_retry_does_not_push_the_next_batch_over_the_cap(self):
+        """다시 묻기로 상한을 다 쓰면 다음 묶음을 부르지 않는다(도면 상한·실행 상한 모두)."""
+        for kw in ({"cap": 2}, {"cap": 20, "budget": 2}):
+            client = StubClient(good_answers, errors=["transient"])
+            st = ar.run(self.ex, client, recheck=0, batch=2, **kw)["stats"]
+            self.assertGreaterEqual(st["planned_calls"], 2, kw)
+            self.assertEqual((st["calls"], len(client.requests), st["retries"]), (2, 2, 1), kw)
+
+    def test_later_passes_stop_at_the_cap_after_retries(self):
+        """첫 묻기 뒤 단계(넓혀 다시 묻기·규칙 다시 확인·나누기·연결 묻기)도 누적 호출로 상한을 지킨다."""
+        from hazop.extract import ai_connect, ai_split
+        for mod in (ai_connect, ai_split):
+            self.assertIn('stats["calls"] >= limit', open(mod.__file__, encoding="utf-8").read(), mod.__name__)
+        import inspect
+        for fn in (ar._wide_pass, ar._recheck_pass):
+            self.assertIn('stats["calls"] >= limit', inspect.getsource(fn), fn.__name__)
+
+    def test_same_error_streak_runs_across_drawings(self):
+        """같은 오류 3번이면 멈춤은 도면이 바뀌어도 이어진다. cap=2 세 도면에서 timeout만 오면 세 번째 호출에서 멈춘다."""
+        from types import SimpleNamespace
+        from hazop.shell import ai_image_flow
+        client = StubClient(good_answers, errors=["timeout"] * 20)
+        engine = SimpleNamespace(settings={ai_image_flow.KEY: False})
+        pages = [("A", self.ex), ("B", self.ex), ("C", self.ex)]
+        with mock.patch.object(ar, "decided_targets", lambda name: set()), mock.patch.object(ar, "merge_and_save", lambda *a, **k: None):
+            done, _ = ai_image_flow.run_pages(engine, pages, client, 2, ar.RUN_CAP, None, None)
+            self.assertEqual(len(client.requests), 3)
+            self.assertTrue(done[-1][2]["halted"])
+            client = StubClient(good_answers, errors=["timeout"] * 20)
+            many = ar.run_many(pages, client, cap=2, save=False)
+            self.assertEqual(len(client.requests), 3)
+            self.assertTrue(many[-1][2]["halted"])
 
     def test_stats_saved_in_runs_hold_no_callables(self):
         st = ar.run(self.ex, StubClient(good_answers, errors=["transient"]), cap=5, recheck=0, should_stop=lambda: False)["stats"]
