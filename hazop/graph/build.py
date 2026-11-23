@@ -91,6 +91,24 @@ def base_version(extraction):
     return "b-" + _graph_version(extraction)[2:]
 
 
+def numbering(resolved, base_ver=None):
+    """벡터 PDF 시트의 sym 번호가 기댄 원본 추출 {"base": 원본의 기준 판, "upto": 원본 sym 끝 번호} 또는 None.
+    resolved는 corrections.resolve 값, base_ver는 이미 셈한 그 기준 추출의 판이다. 기준 추출이 원본 그대로이거나 원본과 같은 뜻의
+    번호로 지은 나눔 기준 추출(inputs.numbering)일 때만 준다. 이 값이 같은 두 판에서 sym-n(n <= upto)은 원본 sym-n이거나 거기서
+    조각을 떼고 남은 몸체다(hazop.study.idmap이 기준 판이 달라도 참조로 잇는 근거). graph_version 입력이 아니다."""
+    original = resolved["original"]
+    if (original.get("source") or {}).get("format") != "pdf_vector":
+        return None
+    nums = [ids.sym_number(n.get("source_object_id")) for n in original.get("nodes") or ()]
+    nums = [k for k in nums if k is not None]
+    if not nums:
+        return None
+    own = base_version(original)
+    if not own or not (resolved["inputs"].get("numbering") or (base_ver or base_version(resolved["base"])) == own):
+        return None
+    return {"base": own, "upto": max(nums)}
+
+
 def build_graph(extraction, extraction_file=None, graph_id=None):
     """extraction dict -> graph dict. graph_id: 시트 이름(없으면 sheets.natural)."""
     import networkx as nx

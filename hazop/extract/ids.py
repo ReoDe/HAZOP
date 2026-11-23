@@ -24,6 +24,15 @@ MANUAL_PREFIX = "manual-"
 # 나누기가 만드는 id의 머리 `pdf-p<쪽>-split-<op>`. 스캔 추출은 `pdf-p0-`를 `img-`로 바꾸므로 `img-split-`도 같다.
 # 연산 id이므로 형식과 무관하게 고정으로 본다
 SPLIT_RE = re.compile(r"^(?:pdf-p\d+|img)-split-")
+# 기호 순번 id `pdf-p<쪽>-sym-<번호>`(스캔은 `img-sym-<번호>`). 나누기로 다시 지은 기준 추출도 원본의 번호를 잇는다(sym_number)
+SYM_RE = re.compile(r"^(?:pdf-p\d+|img)-sym-(\d+)$")
+
+
+def sym_number(soid):
+    """기호 순번 id의 번호. 기호 순번 id가 아니면 None."""
+    m = SYM_RE.match(soid or "")
+    return int(m.group(1)) if m else None
+
 
 # 어댑터가 쓰는 source.format. 벡터 PDF와 스캔·그림은 순번 id, drawio·DEXPI는 파일에 있던 id
 # (DEXPI는 어댑터가 지은 id가 섞이므로 그것만 basis()의 made로 sequence가 된다)

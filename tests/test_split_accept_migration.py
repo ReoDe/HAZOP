@@ -8,6 +8,7 @@
 AI split이 실제로 겨누는 꼴(기호 여럿을 품은 큰 미분류 노드)이다. 공개 표본 SNP-M-101에는 이런 덩어리가 없다.
 
 - 덩어리에서 밸브 하나를 떼어 냄: 몸체가 남은 덩어리와 옆 밸브 둘은 구성원으로 남고 묘비가 없다. 새 조각은 구간에 들지 않는다.
+  기준 추출이 몸체에 덩어리 순번을 잇고(pdf_vector._sym_numbers), 판 이전이 같은 원본에서 매긴 sym 순번을 참조로 잇는다(idmap).
 - 셋을 다 떼어 냄: 덩어리는 없어지니 그 하나만 '찾지 못한 구성요소'로 남고(사람에게 알림), 옆 밸브 둘은 그대로다.
 - 수락을 되돌리면 덩어리가 돌아오고 구성원도 돌아온다.
 """
@@ -100,9 +101,6 @@ class SplitAcceptMigration(Base):
     def pieces(self):
         return [n for n in self.pg()["nodes"] if "-split-" in str(n.get("source_object_id"))]
 
-    # 아래 둘은 엔진 결함 재현이다(2026-11-24): 나누기 일부만 수락하면 기준 추출이 남은 덩어리 몸체에 새 순번(sym-0001 → sym-0004)과
-    # 줄어든 상자를 주어, 판 이전이 참조로도 표시로도 잇지 못하고 그 구성원을 묘비로 만든다. 엔진(id 매기기 또는 idmap)을 고치면 expectedFailure를 뗀다.
-    @unittest.expectedFailure
     def test_one_valve_split_off_keeps_every_member(self):
         ns = self.accept(self.cands[:1])
         seg = ns["nodes"][0]
@@ -112,7 +110,6 @@ class SplitAcceptMigration(Base):
         self.assertEqual(len(got), 1, "떼어 낸 밸브가 새 구성요소 하나가 된다")
         self.assertNotIn(got[0]["entity_id"], seg["members"], "새 조각은 사람이 넣기 전에는 구간에 들지 않는다")
 
-    @unittest.expectedFailure
     def test_two_acceptances_one_after_the_other_keep_every_member(self):
         self.accept(self.cands[:1])
         ns = self.accept(self.cands[1:2])
@@ -145,7 +142,7 @@ class SplitAcceptMigration(Base):
         shown = {n["source_object_id"]: n for n in corrections.resolve(self.name)["corrected"]["nodes"]}
         c = next(x for x in ai_review.load_doc(self.name)["candidates"] if x["cand_id"] == self.cands[1])
         body = next(n for n in shown.values() if set(c["pdf_objects"]) <= set((n.get("evidence") or {}).get("pdf_objects") or ()))
-        self.assertNotIn(BLOB, shown, "시험 전제: 몸체가 새 순번을 받았다")
+        self.assertEqual(body["source_object_id"], BLOB, "몸체가 덩어리 순번을 잇는다")
         self.assertEqual(api_aireview._row(c, shown)["local_id"], body["local_id"], "남은 나누기 후보는 그 개체를 품은 몸체 자리로 다시 찾는다")
 
 

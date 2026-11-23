@@ -356,13 +356,13 @@ class SplitAcceptTest(unittest.TestCase):
                          ("다", "2026-12-01T00:00:00Z", "다", "2026-12-01T00:00:00Z"))
 
     def test_edit_on_the_renumbered_lump_waits_with_its_split(self):
-        """(3) 나뉜 뒤 번호가 바뀐 덩어리 나머지에 단 고침도 기준 추출이 낡으면 대기다."""
+        """(3) 나뉜 뒤 개체가 바뀐 덩어리 나머지(덩어리 번호를 이음)에 단 고침도 기준 추출이 낡으면 대기다."""
         self.accept(self.cands[:1])
         split = self.ops()[0]
         base = corrections.resolve(NAME, allow_extract=True)["base"]
         rest = next(n["source_object_id"] for n in base["nodes"]
                     if set(GROUPS[1]) <= set((n.get("evidence") or {}).get("pdf_objects") or ()))
-        self.assertNotIn(rest, {n["source_object_id"] for n in self.original["nodes"]}, "덩어리 나머지는 새 번호")
+        self.assertEqual(rest, BLOB, "덩어리 나머지는 덩어리 번호를 잇는다")
         kind = corrections.make_op(base, "set_kind", rest, {"kind": "manual_valve", "category": "valve"}, BY, at=AT,
                                    existing_ops=[split], name=NAME)
         corrections.save(NAME, [split, kind], BY, at=AT)

@@ -27,7 +27,7 @@ from typing import Callable
 from hazop import paths, store_io
 from hazop.extract import rules
 from hazop.extract.drawio import summarize
-from hazop.extract.ids import MANUAL_PREFIX
+from hazop.extract.ids import MANUAL_PREFIX, sym_number
 from hazop.kg.schema import REGISTRY
 from hazop.study.nodes import now_utc
 
@@ -778,8 +778,8 @@ def _objs_by_sid(extraction):
 
 def _via(extraction, ids, existing_ops, original=None):
     """ids(대상·참조 노드)가 기댄 입력 연산 op_id 목록. 입력 연산이 만든 노드(pdf-p0-split-<op_id>)이거나, 배관 지정한
-    pdf 개체를 근거로 가진 대상이면 그 연산이다. original(원본 추출)을 주면, 원본에 없는 번호의 대상(나누기로 개체가 바뀌어
-    새 번호를 받은 덩어리 나머지)은 그 개체를 가졌던 원본 덩어리를 나눈 연산에 기댄다."""
+    pdf 개체를 근거로 가진 대상이면 그 연산이다. original(원본 추출)을 주면, 원본에 없거나 원본과 개체가 다른 번호의 대상(나누기로
+    조각을 떼인 덩어리 나머지)은 그 개체를 가졌던 원본 덩어리를 나눈 연산에 기댄다."""
     out = []
     objs_of = _objs_by_sid(extraction)
     pipes = [(o["op_id"], set(o["value"]["objects"])) for o in existing_ops
@@ -791,7 +791,7 @@ def _via(extraction, ids, existing_ops, original=None):
         if m:
             out.append(m.group(2))
         out += [oid for oid, objs in pipes if objs & objs_of.get(sid, set())]
-        if before is not None and not m and not str(sid).startswith(MANUAL_PREFIX) and sid not in before:
+        if before is not None and not m and not str(sid).startswith(MANUAL_PREFIX) and before.get(sid) != objs_of.get(sid):
             out += [o["op_id"] for o in splits if before.get(o.get("target"), set()) & objs_of.get(sid, set())]
     return list(dict.fromkeys(out))
 
@@ -1096,13 +1096,31 @@ def base_path(name):
 PDF_CHANGED = "원본 PDF가 추출한 뒤 바뀜(도면을 다시 추출해야 나누기를 적용함)"
 
 
+def _numbering(original, fresh):
+    """나눔으로 다시 추출할 때 넘기는 sym 번호 기준(pdf_vector._sym_numbers)과, 그 번호가 원본 추출의 번호와 같은 뜻인지.
+    fresh는 지금 코드로 나눔 없이 분석한 기호들의 pdf 개체(pdf_vector.symbol_objects)다. 원본 추출의 sym 노드가 모두 같은 번호
+    자리에서 같은 개체이면(같은 읽기·같은 묶기) 원본 노드의 번호 자리만 남긴 기준을 넘긴다: 기준 추출의 sym-n(원본 끝 번호
+    이하)은 원본 sym-n과 같은 개체이거나 거기서 떼고 남은 몸체다(판 이전의 근거, hazop.graph.build.numbering). 하나라도 다르면
+    fresh를 그대로 넘기고 같은 뜻이라고 하지 않는다. → (기준, 같은 뜻인가)"""
+    table = {}
+    for n in original.get("nodes") or ():
+        k = sym_number(n.get("source_object_id"))
+        if k is not None:
+            table[k] = tuple(sorted((n.get("evidence") or {}).get("pdf_objects") or ()))
+    same = bool(table) and all(k <= len(fresh) and fresh[k - 1] == ev for k, ev in table.items())
+    if not same:
+        return list(fresh), False
+    return [ev if k in table else None for k, ev in enumerate(fresh, 1)], True
+
+
 def build_base(original, inputs):
     """입력 연산으로 원본 PDF를 원래 추출 설정으로 다시 추출한 기준 추출과 입력 상태 {"applied", "not_applicable",
     "retargeted"}. 식별 칸(drawing·source·run 등)은 원본 그대로 두고 내용 칸만 바꾸며, ① 등록정보 검사 결과는 원본에서
     옮긴다. 나누기는 요청한 개체를 모두 새 기호로 떼어 냈을 때만 적용된 것이고, 아니면 적용 불가로 빼고 다시 추출한다
-    (적용 불가 연산은 결과에 흔적이 없다). 같은 입력이면 같은 결과다."""
+    (적용 불가 연산은 결과에 흔적이 없다). 같은 입력이면 같은 결과다. 입력 상태의 numbering은 기준 추출의 sym 번호가 원본과
+    같은 뜻인가(_numbering)이다."""
     from hazop.extract.adapters import pdf_vector
-    status = {"applied": [], "not_applicable": [], "retargeted": []}
+    status = {"applied": [], "not_applicable": [], "retargeted": [], "numbering": False}
     now, why = _pdf_now(original, fresh=True)
     if now is None or now[2] != (original.get("source") or {}).get("sha256"):
         status["not_applicable"] = [{"op_id": o["op_id"], "reason": why or PDF_CHANGED} for o in inputs]
@@ -1110,6 +1128,7 @@ def build_base(original, inputs):
     path, page, sha, reader = now
     shapes = pdf_vector.object_shapes(path, page)
     todo, claimed, moved_of = [], {}, {}
+    numbering = None
     for op in inputs:
         try:
             OPS[op["op"]].check(op.get("value") if isinstance(op.get("value"), dict) else {})
@@ -1129,10 +1148,12 @@ def build_base(original, inputs):
         moved_of[op["op_id"]] = moved
         todo.append((op, objs))
     while todo:
+        if numbering is None:
+            numbering, status["numbering"] = _numbering(original, pdf_vector.symbol_objects(path, page, _params(original)))
         groups = {}
         for op, objs in todo:
             groups.setdefault(op.get("target"), []).append({"name": "split-" + op["op_id"], "objects": objs})
-        fresh = pdf_vector.extract(path, page=page, params=_params(original),
+        fresh = pdf_vector.extract(path, page=page, params=_params(original), numbering=numbering,
                                    splits=[{"node": None, "groups": g} for g in groups.values()])
         by_sid = {n["source_object_id"]: n for n in fresh["nodes"]}
         failed = []
@@ -1255,8 +1276,9 @@ def _waiting_on(ops, waiting, skipped):
 
 def resolve(name, original=None, ops=None, *, allow_extract=False):
     """수정 기록을 적용한 결과 {"original", "base", "corrected", "ops", "inputs"}.
-    inputs: {"key", "state", "applied", "not_applicable", "retargeted", "waiting", "waiting_on", "base_key"}.
+    inputs: {"key", "state", "applied", "not_applicable", "retargeted", "waiting", "waiting_on", "base_key", "numbering"}.
     base_key는 실제로 쓴 기준 추출 파일의 열쇠(없으면 None). 쪽 확정 지문이 이것으로 다시 지은 기준 추출을 알아챈다.
+    numbering은 쓴 기준 추출의 sym 번호가 원본과 같은 뜻인가(build_base, 옛 기준 추출 파일은 False).
     - state none: 입력 연산 없음, base = 원본. ready: 기준 추출 사용. partial: 앞서 지은 기준 추출(지금 입력의 일부)을 쓰고
       나머지 입력은 대기. pending: 쓸 기준 추출이 없어 원본 위에 덮는 연산만 적용하고 입력 연산은 모두 대기.
     - waiting: 아직 기준 추출에 들지 않은 입력 연산 op_id(기록 차례). applied·not_applicable·retargeted는 든 입력의 결과다.
@@ -1270,7 +1292,7 @@ def resolve(name, original=None, ops=None, *, allow_extract=False):
         ops = ((load(name) or {}).get("ops") or [])
     inputs = [o for o in ops if is_input(o)]
     state = {"key": None, "state": "none", "applied": [], "not_applicable": [], "retargeted": [], "waiting": [],
-             "waiting_on": {}, "base_key": None}
+             "waiting_on": {}, "base_key": None, "numbering": False}
     base = original
     if inputs:
         found, built, key = _find_base(name, original, inputs)
@@ -1285,7 +1307,8 @@ def resolve(name, original=None, ops=None, *, allow_extract=False):
         else:
             base = found["extraction"]
             state.update({k: found["inputs"][k] for k in ("applied", "not_applicable", "retargeted")},
-                         state="partial" if state["waiting"] else "ready", base_key=found.get("key"))
+                         state="partial" if state["waiting"] else "ready", base_key=found.get("key"),
+                         numbering=found["inputs"].get("numbering") is True)
     corrected = apply(base, ops)
     if inputs:
         c = corrected.setdefault("corrections", {})

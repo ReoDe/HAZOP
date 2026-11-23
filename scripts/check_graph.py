@@ -86,8 +86,9 @@ def check_one(name, failures):
     if g["input_runs"] != [ex["extraction_run_id"]]:
         f.append("input_runs 불일치")
     rebuilt = build.build_graph(ex, extraction_file=g["source"]["extraction_file"])
-    # base_version은 build_graph.render_one이 기준 추출로 덧붙이는 판 이전 근거라 build_graph 결과에는 없다
-    if json.dumps(rebuilt, sort_keys=True) != json.dumps({k: v for k, v in g.items() if k != "base_version"}, sort_keys=True):
+    # base_version·numbering은 build_graph.render_one이 기준 추출로 덧붙이는 판 이전 근거라 build_graph 결과에는 없다
+    if json.dumps(rebuilt, sort_keys=True) != json.dumps({k: v for k, v in g.items() if k not in ("base_version", "numbering")},
+                                                         sort_keys=True):
         f.append("같은 입력 재빌드 결과가 다름")
     print("  %s: nodes=%d edges=%d 문제 %d건" % (name, len(g["nodes"]), len(g["edges"]), len(f)))
     failures += ["%s: %s" % (name, x) for x in f]

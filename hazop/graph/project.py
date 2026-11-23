@@ -522,9 +522,11 @@ def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None, sou
     # contested: 이 이름을 다른 자료도 원함(hazop.graph.sources). 판 이전이 시트 자료를 모르는 옛 판 사진에서 파일 id를 믿지 않는 근거
     # label: 사람용 이름(hazop.graph.sheets.display_name이 씀)
     # base_version: 순번 id를 매긴 기준 추출의 판(scripts/build_graph.render_one). 판 이전이 순번 구성요소를 참조로 이을지 정한다
+    # numbering: sym 번호가 기댄 원본 추출(scripts/build_graph.render_one). 나누기로 기준 판이 바뀌어도 몸체를 참조로 이을지 정한다
     sheets = [dict(h, material_id=(g.get("source") or {}).get("material_id"), page_index=(g.get("source") or {}).get("page_index"),
                    **({"contested": True} if g["graph_id"] in contested else {}),
                    **({"base_version": g["base_version"]} if g.get("base_version") else {}),
+                   **({"numbering": g["numbering"]} if g.get("numbering") else {}),
                    **({"label": sheet_rules.label(sheet_rules.from_graph(g))} if (g.get("source") or {}).get("material_id")
                       and not h["drawing_number"] else {}))
               for h, g in zip(heads, graphs)]

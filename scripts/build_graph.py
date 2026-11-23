@@ -70,6 +70,9 @@ def render_one(extraction_path, seats=None, out_root=None, extraction=None, allo
     graph = build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path, paths.work_root()), graph_id=gid)
     # 판 이전이 순번 구성요소를 참조로 이을 근거(hazop.study.idmap). graph_version 입력이 아니다
     graph["base_version"] = build.base_version(resolved["base"])
+    num = build.numbering(resolved, graph["base_version"])
+    if num:
+        graph["numbering"] = num
     files = {
         "graph.json": (json.dumps(graph, ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
         "structure_report.md": build.render_report(graph).encode("utf-8"),
