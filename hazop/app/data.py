@@ -57,8 +57,10 @@ def script_module(name):
 
 
 def read_json(path):
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+    """한 번에 읽고 닫은 뒤 푼다(푸는 동안 파일을 쥐고 있으면 다른 스레드의 저장 교체가 Windows에서 접근 거부로 막힌다)."""
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    return json.loads(raw.decode("utf-8"))
 
 
 # ---------------------------------------------------------------- ① 등록 목록
