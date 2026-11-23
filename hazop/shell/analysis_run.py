@@ -125,8 +125,11 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
     reason: done · stopped(멈추라고 함) · halted(구독 한도·초과 사용 등으로 남은 호출을 멈춤) · stale(분석 중에 검토구간이 새 도면 판으로 옮겨짐)
     · save_failed(받은 답을 결과 파일에 저장하지 못함: 저장 오류이거나 충돌이 이어짐).
     stale이면 그 호출의 답을 결과 파일에 합치지 않고(옛 판 참조가 옮긴 참조를 덮지 않게) unsaved 경로의 파일에 따로 남기고 멈춘다. 그 칸은 rest에 든다.
-    save_failed도 같다: 받은 답을 unsaved에 '저장 실패' 사유로 남기고 그 단위의 칸을 rest에 넣어 멈춘다(구독 한도를 쓴 답을 잃지 않게).
-    unsaved에 남기기마저 실패하면 그 오류를 올린다(작업 실패). 남긴 답을 되살리는 길은 아직 없다(이어서 실행이 그 칸을 다시 묻는다).
+    save_failed도 같다: 결과를 읽거나 합치거나 쓰다 난 오류(멈춤 신호 밖의 모든 예외)나 이어진 충돌이면 받은 답을 unsaved에
+    '저장 실패' 사유로 남기고 그 단위의 칸을 rest에 넣어 멈춘다(구독 한도를 쓴 답을 잃지 않게). 그 호출이 한도 멈춤이기도 하면
+    halted·limit·error_kind를 함께 둔다. 저장하지 못한 단위는 ok_calls·cells에 세지 않는다.
+    결과 폴더의 unsaved/에 못 남기면 설정 폴더 쪽(작업 루트 밖)에 한 번 더 남기고(unsaved_where), 그것도 실패하면 그 오류를 올린다(작업 실패).
+    남긴 답을 되살리는 길은 아직 없다(이어서 실행이 그 칸을 다시 묻는다).
     progress(text, done, total)는 호출 사이에 부른다.
     rest: 이어서 실행할 칸 [[node_id, deviation_id]](실패한 단위의 칸 + 부르지 않은 단위의 칸, 순서 유지·중복 없음).
     test: 고정 응답(시험) 실행. 결과를 시험 파일에 저장한다."""
@@ -136,7 +139,7 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
     kinds, ok_calls, ok_cells, limit, halted, last_error = [], 0, 0, None, None, None
     done = 0
     stopped = moved = save_failed = False
-    rest, unsaved = [], []
+    rest, unsaved, where = [], [], []
     for unit in units:
         if should_stop():
             stopped = True
@@ -145,30 +148,39 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
         ur = ai_cells.run_unit(client, unit, ctxs[unit["node_id"]], devs, stamp())
         done += 1
         if _set_moved(ns):           # 분석 중에 검토구간이 새 도면 판으로 옮겨졌다: 옛 판으로 만든 답을 합치지 않는다
-            unsaved.append(_keep_unsaved(ns, project, ur, test))
+            path, at = _keep_unsaved(ns, project, ur, test)
+            unsaved.append(path)
+            where.append(at)
             rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
             moved = True
             break
         kinds.append(ur.get("error_kind"))
         if ur.get("limit"):
             limit = ur["limit"]
+        if ur["status"] != "ok":
+            last_error = ur.get("error")
+        try:
+            saved = _merge_and_save(ns, project, ur, test=test)
+        except _stop_signals():
+            raise
+        except Exception:  # noqa: BLE001 - 읽기(새 판·깨진 파일)·합치기(결과에 없는 칸)·쓰기 어디서 나든 받은 답은 남긴다
+            LOG.exception("결과 파일에 저장하지 못함: %s", ur.get("unit_id"))
+            saved = None
+        if saved is None:            # 저장 오류이거나 충돌이 이어짐: 받은 답을 따로 남기고 멈춘다
+            path, at = _keep_unsaved(ns, project, ur, test, why=SAVE_FAILED_WHY)
+            unsaved.append(path)
+            where.append(at)
+            rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
+            save_failed = True
+            if providers.halts(kinds):
+                halted = ur
+            break
         if ur["status"] == "ok":
             ok_calls += 1
             ok_cells += len(ur["cells"])
             rest += [[unit["node_id"], d] for d, c in (ur.get("cells") or {}).items() if (c or {}).get("status") == "failed"]   # 호출은 됐지만 칸만 실패
         else:
-            last_error = ur.get("error")
             rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
-        try:
-            saved = _merge_and_save(ns, project, ur, test=test)
-        except OSError:
-            LOG.exception("결과 파일에 저장하지 못함: %s", ur.get("unit_id"))
-            saved = None
-        if saved is None:            # 저장 오류이거나 충돌이 이어짐: 받은 답을 따로 남기고 멈춘다
-            unsaved.append(_keep_unsaved(ns, project, ur, test, why=SAVE_FAILED_WHY))
-            rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
-            save_failed = True
-            break
         if on_saved is not None and saved is not None and not test:
             on_saved(ur, saved[0], saved[1])         # 반영한 문서와 새 지문: 화면에 바뀐 칸만 알리려고(시험 파일은 화면 결과가 아니다)
         if providers.halts(kinds):
@@ -178,13 +190,33 @@ def run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, 
         rest += [[unit["node_id"], d] for d in unit["deviation_ids"]]
     seen = set()
     rest = [c for c in rest if not (tuple(c) in seen or seen.add(tuple(c)))]
-    doc, _fp = (res.load_test_fp(ns) if test else res.load_fp(ns))
+    try:
+        doc, _fp = (res.load_test_fp(ns) if test else res.load_fp(ns))
+    except Exception:  # noqa: BLE001 - 사용량 합계만 못 보일 뿐이다. 실행 결과(특히 save_failed 안내)는 그대로 돌려준다
+        LOG.exception("실행을 마친 뒤 결과 파일을 읽지 못함")
+        doc = None
     reason = ("stale" if moved else "save_failed" if save_failed else "halted" if halted is not None
               else "stopped" if stopped else "done")
     return {"calls": done, "planned": len(units), "ok_calls": ok_calls, "failed_calls": done - ok_calls, "cells": ok_cells, "reason": reason,
             "limit": limit, "error_kind": (halted or {}).get("error_kind"), "error": (halted or {}).get("error") or last_error,
             "conn_state": (halted or {}).get("conn_state"), "usage": ai_cells.usage_total(doc) if doc else None, "rest": rest, "test": bool(test),
-            "unsaved": unsaved}
+            "unsaved": unsaved, "unsaved_where": where, "halted": halted is not None}
+
+
+def _stop_signals():
+    """저장 실패로 삼키지 않고 그대로 올릴 것: 작업 멈춤 신호."""
+    from hazop.shell import api
+    return (api.JobStopped,)
+
+
+def _prompt_sha():
+    """분석 프롬프트 판(지시문·질문 머리말·답 꼴의 해시 앞 16자). 남긴 답을 나중에 되살릴 때 같은 판인지 보려는 것."""
+    import hashlib
+    import json
+    parts = (ai_cells.SYSTEM_PROMPT, ai_cells.CONTEXT_PREFIX, ai_cells.USER_PREFIX,
+             json.dumps(ai_cells.RESPONSE_SCHEMA, ensure_ascii=False, sort_keys=True))
+    text = chr(10).join(parts)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def _set_moved(ns):
@@ -201,16 +233,30 @@ SAVE_FAILED_WHY = "결과 파일에 저장하지 못해(저장 오류이거나 �
 
 
 def _keep_unsaved(ns, project, ur, test, why=STALE_WHY):
-    """합치지 못한 호출의 답을 결과 폴더의 unsaved/ 아래에 그대로 남긴다(받은 답을 잃지 않게. 사람이 보거나 이어서 실행으로 다시 받는다). → 쓴 경로."""
+    """합치지 못한 호출의 답을 결과 폴더(시험 실행은 시험 결과 폴더)의 unsaved/ 아래에 그대로 남긴다(받은 답을 잃지 않게.
+    사람이 보거나 이어서 실행으로 다시 받는다). 거기 못 쓰면(디스크·권한) 설정 폴더 쪽(paths.settings_path()의 폴더, 작업 루트 밖)
+    unsaved-analysis/에 한 번 더 쓴다. 그것도 실패하면 첫 오류를 올린다. → (쓴 경로, 'results'|'settings').
+    남기는 것은 run_unit의 답(UnitResult: 칸·사용량·모델·연결 방식·오류 종류)과 되살릴 때 맞출 판 정보뿐이다. 키·토큰은 답에 없다."""
     import os
     from hazop import paths, store_io
-    folder = os.path.join(os.path.dirname(res.store_path(project, ns["graph_id"])), "unsaved")
-    name = paths.safe_name("%s-%s-%s" % (ns["graph_id"], ur.get("unit_id") or "unit", stamp().replace(":", "")))
-    path = os.path.join(folder, name + ".json")
-    store_io.write_json(path, dict(ur, kind="hazop_unsaved_analysis", test=bool(test), set_graph_version=ns.get("graph_version"),
-                                   why=why))
-    LOG.warning("결과에 합치지 않은 답을 남김(%s): %s", why, path)
-    return path
+    store = res.test_store_path(project, ns["graph_id"]) if test else res.store_path(project, ns["graph_id"])
+    name = paths.safe_name("%s-%s-%s" % (ns["graph_id"], ur.get("unit_id") or "unit", stamp().replace(":", ""))) + ".json"
+    body = dict(ur, kind="hazop_unsaved_analysis", test=bool(test), project_id=project, graph_id=ns.get("graph_id"),
+                set_graph_version=ns.get("graph_version"), set_rev=ns.get("set_rev") or 0, prompt_sha=_prompt_sha(), why=why)
+    places = (("results", os.path.join(os.path.dirname(store), "unsaved")),
+              ("settings", os.path.join(os.path.dirname(paths.settings_path()), "unsaved-analysis", paths.safe_name(project or "project"))))
+    first = None
+    for at, folder in places:
+        path = os.path.join(folder, name)
+        try:
+            store_io.write_json(path, body)
+        except OSError as exc:
+            LOG.exception("받은 답을 남기지 못함: %s", path)
+            first = first or exc
+            continue
+        LOG.warning("결과에 합치지 않은 답을 남김(%s): %s", why, path)
+        return path, at
+    raise first
 
 
 def _merge_and_save(ns, project, ur, attempts=3, test=False):

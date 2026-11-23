@@ -58,13 +58,17 @@ function RunState({ run }) {
   if (l.reason === "stale") {          // 분석 중에 도면 변경이 검토구간에 반영됨: 옛 판으로 만든 답은 결과에 합치지 않고 따로 남겼다
     return html`<${Notice} kind="warn" icon="alert-triangle">분석하는 사이 도면이 바뀌어 AI 분석을 멈췄습니다. 마지막으로 받은 답 ${(l.unsaved || []).length}건은 바뀐 도면과 맞지 않아 결과에 넣지 않고 따로 보관했습니다.${resume}<//>`;
   }
-  if (l.reason === "save_failed") {    // 받은 답을 결과에 저장하지 못함: 그 답은 따로 보관했고 그 칸은 이어서 실행할 칸이다
-    return html`<${Notice} kind="warn" icon="alert-triangle">분석 결과를 저장하지 못해 AI 분석을 멈췄습니다. 마지막으로 받은 답 ${(l.unsaved || []).length}건은 결과에 넣지 못해 따로 보관했고, 그 칸은 이어서 실행할 수 있습니다.${test}${resume}<//>`;
+  const at = l.limit && l.limit.resets_at;
+  const when = typeof at === "number" ? new Date(at * 1000).toLocaleString() : at ? String(at).replace("T", " ").replace(/:\d\dZ?$/, "") : "";
+  const reset = when ? " 한도는 " + when + "에 풀립니다." : "";
+  if (l.reason === "save_failed") {    // 받은 답을 결과에 저장하지 못함: 그 답은 따로 보관했다(어디에 두었는지 사람 말로)
+    const kept = (l.unsaved || []).length;
+    const place = (l.unsaved_where || []).includes("settings") ? "결과 폴더에 쓸 수 없어 HAZOP 설정 폴더에" : "결과 폴더 옆에";
+    const again = l.test ? "" : " 그 칸은 이어서 실행할 수 있지만, 같은 칸을 다시 물어 호출을 한 번 더 씁니다.";
+    const limitNote = l.halted ? " 이 호출에서 사용 한도에도 닿아 남은 호출을 멈췄습니다(" + (l.error || l.error_kind) + ")." + reset : "";
+    return html`<${Notice} kind="warn" icon="alert-triangle">분석 결과를 저장하지 못해 AI 분석을 멈췄습니다. 마지막으로 받은 답 ${kept}건은 결과에 넣지 못해 ${place} 따로 보관했습니다.${limitNote}${again}${test}${resume}<//>`;
   }
   if (l.reason === "halted") {
-    const at = l.limit && l.limit.resets_at;
-    const when = typeof at === "number" ? new Date(at * 1000).toLocaleString() : at ? String(at).replace("T", " ").replace(/:\d\dZ?$/, "") : "";
-    const reset = when ? " 한도는 " + when + "에 풀립니다." : "";
     return html`<${Notice} kind="warn" icon="alert-triangle">AI 분석이 ${l.calls}번째 호출에서 멈췄습니다(${l.error || l.error_kind}).${reset} 받은 칸은 저장했습니다.${test}${resume}<//>`;
   }
   return html`<${Notice} kind=${l.reason === "stopped" ? "info" : "ok"} icon="circle-check">AI 분석${l.reason === "stopped" ? "을 멈췄습니다" : "이 끝났습니다"}${l.method_name ? "(" + l.method_name + (l.this_run ? ", 이번 실행만" : "") + ")" : ""}: 호출 ${l.calls}회, ${l.cells}칸 반영${l.failed_calls ? ", 실패 " + l.failed_calls + "회" : ""}.${test}${resume}<//>`;

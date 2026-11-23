@@ -102,12 +102,22 @@ def remove_temps(path, older_than=0):
 
 # Windows에서 교체 대상 파일을 다른 쪽(같은 앱의 읽는 스레드, 백신·탐색기 미리보기)이 잠깐 열고 있으면 os.replace가
 # 접근 거부(WinError 5)나 공유 위반(32)으로 실패한다. 읽기는 한 번에 읽고 닫으므로 곧 풀린다: 짧게 물러났다가 다시 바꾼다.
+# WinError 5는 대상이 읽기 전용일 때도 같은 번호라, 대상에 읽기 전용 속성이 있으면 다시 하지 않고 바로 올린다.
+# 폴더 권한(ACL)이 지우기·바꾸기를 막은 경우는 공유 위반과 가릴 수 없어 2초 동안 다시 한 뒤 올린다(임시 파일은 같은 폴더에
+# 만들었으므로 폴더에 쓸 권한은 있다).
 REPLACE_RETRY_SECONDS = 2.0
 _SHARING_ERRORS = (5, 32)
 
 
+def _read_only(path):
+    try:
+        return not os.access(path, os.W_OK)      # Windows의 os.access는 읽기 전용 속성만 본다
+    except OSError:
+        return False
+
+
 def _replace(tmp, path):
-    """os.replace를 공유 위반일 때만 REPLACE_RETRY_SECONDS 안에서 다시 한다. 그래도 안 되면 마지막 오류를 그대로 올린다
+    """os.replace를 공유 위반일 때만(읽기 전용 대상은 빼고) REPLACE_RETRY_SECONDS 안에서 다시 한다. 그래도 안 되면 마지막 오류를 그대로 올린다
     (원본은 그대로, 임시 파일은 write_bytes가 지운다)."""
     end = time.monotonic() + REPLACE_RETRY_SECONDS
     delay = 0.005
@@ -116,7 +126,8 @@ def _replace(tmp, path):
             os.replace(tmp, path)
             return
         except PermissionError as exc:
-            if getattr(exc, "winerror", None) not in _SHARING_ERRORS or time.monotonic() >= end:
+            if (getattr(exc, "winerror", None) not in _SHARING_ERRORS or time.monotonic() >= end
+                    or (os.path.exists(path) and _read_only(path))):
                 raise
         time.sleep(delay)
         delay = min(delay * 2, 0.1)
