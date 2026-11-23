@@ -80,7 +80,7 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
   return html`<div class="card ndetail" aria-label=${n.node_id + " 상세"}>
     <div class="nd-h"><span class="seg-dot" style=${"background:" + colorOf(list, n.node_id)}></span><b>${n.node_id}</b>
       <${Chip} kind=${chip.kind} icon=${chip.icon}>${chip.label}<//><${Chip}>구성요소 ${n.count}<//>
-      <span class="muted nd-r">판 ${n.rev}</span></div>
+      <span class="muted nd-r">${n.rev > 1 ? "수정 " + (n.rev - 1) + "회" : ""}</span></div>
     ${n.confirmed ? html`<div class="muted small">확정: ${n.confirmed.by} · ${when(n.confirmed.at)}</div>` : null}
     ${n.locked ? html`<div class="muted small">잠금: ${n.locked.by} · ${when(n.locked.at)}</div>` : null}
     <div class="acts-row nd-acts">
@@ -146,13 +146,13 @@ export function NodesPanel({ onClose }) {
       <span class="acts"><${Btn} kind="ghost" icon="x" label="패널 닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
     <div class="panel-b">
       ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span class="errtext">${error}</span> <button type="button" class="linkbtn" onClick=${N.dismissError}>닫기</button><//>` : null}
-      ${list.legacy ? html`<${Notice} kind="warn" icon="alert-triangle">이 도면은 옛 판(0.1) 구간 파일입니다. 읽기만 해서는 바꾸지 않습니다. 새 판으로 바꾸면 한 번 저장합니다.
-        <div class="acts-row"><${Btn} sm=${true} label="새 판으로 바꾸기" disabled=${busy} onClick=${N.migrate}>새 판으로 바꾸기<//></div><//>` : null}
+      ${list.legacy ? html`<${Notice} kind="warn" icon="alert-triangle">이 도면의 구간은 이전 형식으로 저장돼 있습니다. 읽기만 해서는 바꾸지 않습니다. 새 형식으로 바꾸면 한 번 저장합니다.
+        <div class="acts-row"><${Btn} sm=${true} label="새 형식으로 바꾸기" disabled=${busy} onClick=${N.migrate}>새 형식으로 바꾸기<//></div><//>` : null}
       ${list.read_only ? html`<${Notice} kind="warn" icon="lock">이 구간 파일은 읽기 전용이라 고칠 수 없습니다: ${list.read_only}<//>` : null}
       ${list.check && list.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(list.check)}<//>` : null}
-      ${list.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면이 다시 읽혀 바뀌었는데, 저장된 구간에 그 변경을 아직 반영하지 못했습니다. 반영을 마칠 때까지 초기사건(⑥)은 열리지 않고, 분석 결과(⑤)의 실행·Excel 내보내기는 막힙니다.
+      ${list.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면이 다시 읽혀 바뀌었는데, 저장된 구간에 그 변경을 아직 반영하지 못했습니다. 반영을 마칠 때까지 초기사건은 열리지 않고, 분석 결과의 실행·Excel 내보내기는 막힙니다.
         <div class="acts-row"><${Btn} sm=${true} kind="primary" icon="refresh" label="도면 변경 반영하기" disabled=${busy || !!list.read_only} onClick=${N.catchUp}>도면 변경 반영하기<//></div><//>` : null}
-      ${!list.available ? html`<${Notice}>프로젝트 그래프가 아직 없습니다. 도면을 추출하면 구간을 만들 수 있습니다.<//>` : null}
+      ${!list.available ? html`<${Notice}>도면을 먼저 읽어야 합니다. 도면을 읽으면 구간을 만들 수 있습니다.<//>` : null}
       ${list.pending_ai ? html`<${Notice} kind="info" icon="sparkles">채팅이 만든 구간 ${list.pending_ai}개가 아직 확인 전입니다. 이름과 설계 의도는 초안입니다.<//>` : null}
       <div class="acts-row"><div class="seg-toggle" role="group" aria-label="목록 범위">
         <button type="button" class=${scope === "sheet" ? "on" : ""} aria-pressed=${scope === "sheet" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "sheet" })}>이 도면</button>

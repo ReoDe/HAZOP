@@ -112,7 +112,7 @@ if (typeof document !== "undefined" && !document.getElementById("chat-actions-cs
 /** 확인 상자의 '저장될 값'과 대상을 접을 수 있는 한 덩이로: 항목 | 앞값 → 새값 표. 엔진이 지금 상태에서 만든 줄을 빠짐없이, 값은 늘 전문으로 보인다
  * (길면 상자 안에서 스크롤). onSeen(참·거짓): 펼쳐져 있고 끝까지 본 적이 있는지. 접었거나 끝까지 내려 보지 않았으면 '실행'을 끈다. */
 function Fold({ it, onSeen }) {
-  const rows = it.details || [];
+  const rows = (it.details || []).filter((r) => !r.hidden);      // 숨은 줄(대조 기준: 판·지문)은 승인 때 대조에만 쓴다(화면의 사람 말)
   const ops = it.ops || [];
   const tgt = (it.targets || []).length;
   const body = useRef(null);

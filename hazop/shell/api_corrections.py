@@ -42,6 +42,28 @@ DELETES = ("delete_node", "delete_relation")
 STALE_TEXT = "도면 수정 기록이나 AI 후보가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 해 주세요."
 
 
+# 고침을 적용하지 못한 까닭(엔진 corrections의 글 머리) → 사람 말(화면의 사람 말, INTENT §3.8 ④). 엔진 글은 사유 판정에 쓰여 그대로 둔다
+REASON_TEXT = (
+    ("삭제된 노드", "대상 기호를 이미 지웠습니다"), ("삭제된 대상", "대상을 이미 지웠습니다"), ("노드 없음", "대상 기호를 찾지 못했습니다"),
+    ("대상 없음", "대상을 찾지 못했습니다"), ("대상이 바뀜", "도면을 다시 읽어 대상이 바뀌었습니다"), ("노드 좌표 없음", "기호의 자리 정보가 없습니다"),
+    ("흐름 방향의", "흐름 방향으로 고른 기호가 이 연결의 끝이 아닙니다"), ("흐름 방향은 물리 배관에만", "흐름 방향은 공정 배관에만 정할 수 있습니다"),
+    ("이미 열린 끝", "이미 끊긴 연결입니다"), ("이미 있는 id", "이미 있는 항목입니다"), ("연결 대상 기기가 바뀌었거나 없음", "이을 기기가 바뀌었거나 없습니다"),
+    ("나누기 ", "나누기가 바뀌어 대상을 찾지 못했습니다"), ("도면이 바뀌어", "도면 파일이 바뀌어 대상을 찾지 못했습니다"),
+    ("형식 오류", "저장된 고침 내용이 올바르지 않아 적용하지 못했습니다"),
+)
+
+
+def reason_text(raw):
+    """적용하지 못한 까닭의 사람 말. 표에 없으면 그대로(엔진 글에 내부 번호가 섞여 있으면 일반 글)."""
+    if not raw:
+        return raw
+    for head, text in REASON_TEXT:
+        if raw.startswith(head):
+            return text
+    import re
+    return "적용하지 못했습니다" if re.search(r"(pdf-|local-|manual-|split-|[a-z]+_[a-z]+)", raw) else raw
+
+
 class Refused(Exception):
     def __init__(self, code, message, detail=None):
         super().__init__(message)
@@ -138,7 +160,7 @@ def _depends(ops, op_id):
 def _op_row(op, corrected, by_sid):
     c = corrected.get("corrections") or {}
     status = "applied" if op["op_id"] in (c.get("applied") or []) else "not_applicable"
-    reason = next((x["reason"] for x in c.get("not_applicable") or [] if x.get("op_id") == op["op_id"]), None)
+    reason = reason_text(next((x["reason"] for x in c.get("not_applicable") or [] if x.get("op_id") == op["op_id"]), None))
     target = op.get("target")
     if op["op"] in ("add_node", "add_relation"):
         target = corrections.MANUAL_PREFIX + op["op_id"]
@@ -397,12 +419,12 @@ def _write(engine, graph_id, name, ops, by, src, action, note=None, defer=False)
         sheet_refresh.mark_stale(name, "다시 만드는 중")
 
         def refresh_job(progress):
-            progress("그래프 다시 만들기", 1, 1)
+            progress("도면 반영 중", 1, 1)
             with sheet_refresh.lock(name):
                 sheet_refresh.refresh(name)
             _announce(engine, graph_id)
             return {"graph_id": graph_id}
-        engine.start_job("그래프 다시 만들기", refresh_job, kind="graph_refresh")
+        engine.start_job("도면 반영", refresh_job, kind="graph_refresh")
         _announce(engine, graph_id)
         return {"ok": True, "graph_id": graph_id, "ver": sheet_refresh.ver_of(name), "graph_stale": True, "refreshing": True,
                 "notes": ["저장했습니다. 도면 연결 정보를 갱신하는 중입니다."] + notes, "recheck": [], "released": released, "reconciled": reconciled}
@@ -410,7 +432,7 @@ def _write(engine, graph_id, name, ops, by, src, action, note=None, defer=False)
         stale, more, recheck = sheet_refresh.refresh(name)
     except Exception as exc:  # noqa: BLE001
         LOG.exception("그래프 다시 만들기 실패")
-        stale, more, recheck = True, ["저장했지만 그래프를 다시 만들지 못했습니다(%s)." % type(exc).__name__], []
+        stale, more, recheck = True, ["저장했지만 도면 반영은 끝내지 못했습니다. 다음 동작에서 다시 반영합니다."], []
     _announce(engine, graph_id)
     return {"ok": True, "graph_id": graph_id, "ver": sheet_refresh.ver_of(name), "graph_stale": stale, "refreshing": False, "notes": more + notes,
             "recheck": recheck, "released": released, "reconciled": reconciled}
@@ -418,7 +440,7 @@ def _write(engine, graph_id, name, ops, by, src, action, note=None, defer=False)
 
 def _check_ver(src, ver):
     if not ver or ver != src["ver"]:
-        raise Refused("stale", STALE_TEXT if ver else "읽은 판(ver)이 없어 저장하지 않았습니다. 도면을 다시 읽으세요.")
+        raise Refused("stale", STALE_TEXT if ver else "화면에서 본 도면 내용을 함께 보내지 않아 저장하지 않았습니다. 도면을 다시 열어 주세요.")
 
 
 def _who(engine, by):
@@ -533,7 +555,7 @@ def redo(engine, graph_id, ver, by=None, defer=False):
             trial = corrections.resolve(name, src["original"], ops)["corrected"]["corrections"]
             why = next((x["reason"] for x in trial["not_applicable"] if x["op_id"] == op["op_id"]), None)
             if why:
-                raise Refused("bad_args", "다시 할 수 없습니다: %s" % why)
+                raise Refused("bad_args", "다시 할 수 없습니다: %s" % reason_text(why))
             out = _write(engine, graph_id, name, ops, who, src, "redo", defer=defer)
         return dict(out, op_id=op["op_id"], label=OP_LABELS.get(op["op"], op["op"]))
     return _run(go)

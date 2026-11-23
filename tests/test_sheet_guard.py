@@ -467,7 +467,7 @@ class RenameGuardTest(GuardCase):
         row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-101"}))
         self.assertEqual(row["reason_code"], sheets.CONFIRM_FIRST)
         self.assertIn("지식그래프 판단 2곳", row["reason"], "대상 칸 둘(target_graph_id·target_ref)")
-        self.assertIn("candidate로 되돌리고", row["reason"])
+        self.assertIn("'판단 전'으로 되돌리고", row["reason"])
         self.assertNotIn("구간", row["reason"].split("(")[1].split(")")[0], "옮기는 구간은 막는 자리로 적지 않음")
         for word in ("graph-", "material-"):
             self.assertNotIn(word, row["reason"])

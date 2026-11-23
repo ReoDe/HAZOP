@@ -43,7 +43,7 @@ def _pg(engine):
     try:
         return pid, project_ctx.project_graph(pid)
     except ValueError as exc:
-        raise Refused("not_found", "프로젝트 그래프가 없습니다(%s)." % str(exc)[:120])
+        raise Refused("not_found", "도면을 먼저 읽어야 합니다(%s)." % str(exc)[:120])
 
 
 def _manual(pid):
@@ -261,7 +261,7 @@ def _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done, dry=Fa
     dry=True: 같은 검사를 하고 저장하지 않는다 → {ok, dry, confirm(물을 확인 글 또는 None), notes(저장하면 낼 알림)}(채팅 확인 상자가 미리 보인다)."""
     who = _who(engine, by)
     if not ver or not base:          # 채팅 길도 같다: 먼저 view로 읽고 그 판·지문을 함께 보낸다
-        raise Refused("bad_args", "읽은 판(ver)과 연결점 지문(base)을 함께 보내야 합니다. 먼저 연결점을 읽으세요.")
+        raise Refused("bad_args", "화면에서 본 연결점 내용을 함께 보내야 합니다. 먼저 연결점을 읽으세요.")
     pid = engine.project_id()
     with sheet_refresh.lock("drawing-links:" + str(pid)):
         pid, pg = _pg(engine)

@@ -44,7 +44,7 @@ class KgPanelFlowTest(ShellBase):
     def mount(self, win):
         self.js(win, MOUNT)
         self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.kg .kg-canvas canvas')"), 20), "그래프가 그려지지 않음")
-        self.assertTrue(wait_for(lambda: "노드" in (self.js(win, "(document.querySelector('.kg-chips')||{}).innerText") or ""), 10))
+        self.assertTrue(wait_for(lambda: "항목" in (self.js(win, "(document.querySelector('.kg-chips')||{}).innerText") or ""), 10))
 
     def search_and_pick(self, win, text):
         self.js(win, "(() => { const i = document.querySelector('.kg-search input'); i.value = %s; i.dispatchEvent(new Event('input', {bubbles: true})); })()" % json.dumps(text))

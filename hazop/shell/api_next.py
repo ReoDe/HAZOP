@@ -105,7 +105,7 @@ def facts(engine):
     f["sheet_confirm"] = sum(1 for r in sc["drawings"] if r.get("state") != "confirmed") if sc else None
     f["sheets_confirmed"] = sum(1 for r in sc["drawings"] if r.get("state") == "confirmed") if sc else None
     f["sheet_confirm_first"] = next((r["graph_id"] for r in (sc or {}).get("drawings") or [] if r.get("state") != "confirmed"), None)
-    rel = _safe(lambda: _released_by_base(engine, sc), "기준 추출로 풀린 쪽 확정") if sc else None
+    rel = _safe(lambda: _released_by_base(engine, sc), "다시 읽어 풀린 쪽 확정") if sc else None
     if rel is not None:
         f["sheet_released"] = len(rel)
         f["sheet_released_first"] = rel[0] if rel else None

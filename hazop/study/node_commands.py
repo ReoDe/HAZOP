@@ -109,7 +109,7 @@ def _discard_lost(ns, doc, a, by):
         by_key = {idmap.tomb_handle(t): t for t in list(node.get("lost") or []) + list(node.get("discarded") or [])}
         bad = [k for k in a["keys"] if k not in by_key]
         if bad:
-            raise ValueError("%s에 없는 묘비 %d개: %s" % (nid, len(bad), ", ".join(map(str, bad[:3]))))
+            raise ValueError("%s 구간에 없는 찾지 못한 구성요소 %d개" % (nid, len(bad)))
         tombs = [by_key[k] for k in a["keys"]]
     out = nodes.discard_lost(ns, nid, tombs, by=by)
     return out, doc, out["batches"][-1]["batch_id"] if out is not ns else None
@@ -174,9 +174,9 @@ def execute(pg, name, args, *, author, confirmed_by=None, set_rev=None, request=
     if author not in AUTHORS:
         return _refused(name, [("author", "누가 썼는지(author: user 또는 ai)를 넘겨야 함")], code="bad_actor")
     if (author == "user" or name in HUMAN_COMMANDS) and not confirmed_by:
-        return _refused(name, [("confirmed_by", "사람이 한 일·확정·잠금·묘비 버리기에는 누른 사람 이름이 있어야 함")], code="bad_actor")
+        return _refused(name, [("confirmed_by", "사람이 한 일·확정·잠금·찾지 못한 구성요소 버리기에는 누른 사람 이름이 있어야 함")], code="bad_actor")
     if name in HUMAN_COMMANDS and author != "user":
-        return _refused(name, [("author", "확정·확정 해제·잠금·풀기·묘비 버리기는 사람만 함(채팅 규격 §4.2)")], code="bad_actor")
+        return _refused(name, [("author", "확정·확정 해제·잠금·풀기·찾지 못한 구성요소 버리기는 사람만 함(채팅 규격 §4.2)")], code="bad_actor")
     if author == "ai" and set_rev is None:
         return _refused(name, [("set_rev", "AI 동작은 읽은 구간 판(set_rev)을 함께 보내야 함")], code="bad_actor")
     with project_lock(pg.get("project_id")):
@@ -194,7 +194,7 @@ def _execute_locked(pg, name, args, fn, author, confirmed_by, set_rev, request):
     if ns.get("read_only"):
         return _refused(name, [("node_set", "읽기 전용: %s" % ns["read_only"])], ns.get("set_rev"), "read_only")
     if set_rev is not None and set_rev != ns.get("set_rev"):
-        return _refused(name, [("set_rev", "구간이 그 사이 바뀜(읽은 판 %s, 지금 %s)" % (set_rev, ns.get("set_rev")))],
+        return _refused(name, [("set_rev", "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 해 주세요.")],
                         ns.get("set_rev"), "stale")
     try:
         doc, rfp = res.load_fp(ns)

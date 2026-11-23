@@ -59,7 +59,7 @@ function wire() {
     followRenames(r.renames);
     if (carried) parts.push("사람 수정·AI 후보 기록을 새 버전으로 옮겼습니다.");
     if ((r.released || []).length) parts.push("쪽 확정이 풀렸습니다. 도면을 다시 보고 쪽 확정을 하세요.");
-    if ((r.number_conflicts || []).length) parts.push("같은 도면 번호의 다른 형식 원본이 있습니다. 도면 패널에서 그래프에 쓸 쪽을 고르세요.");
+    if ((r.number_conflicts || []).length) parts.push("같은 도면 번호의 다른 형식 원본이 있습니다. 도면 패널에서 분석에 쓸 원본을 고르세요.");
     tb.set({ jobs, notice: parts.join(" "), busy: null });
     load();
   });

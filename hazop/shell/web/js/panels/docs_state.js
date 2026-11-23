@@ -87,13 +87,13 @@ async function start(name, args, label) {
 export const addDocuments = () => start("docs.add", {}, "등록");
 export const extractAgain = (materialId) => start("docs.extract", { material_id: materialId }, "추출 다시 하기");
 /** 같은 문서의 새 판인지 묻는 물음에 답한다: replace(old를 이 문서가 대신) · separate(다른 문서). */
-export const answerRevision = (materialId, answer, old) => start("docs.revision", Object.assign({ material_id: materialId, answer }, old ? { old } : {}), "판 대응");
+export const answerRevision = (materialId, answer, old) => start("docs.revision", Object.assign({ material_id: materialId, answer }, old ? { old } : {}), "개정 대응");
 
 /** 작업 결과 -> 알림 {text, kind}. 지식그래프를 만들지 못했으면 오류로 보인다(문서 행의 '이어짐'을 믿지 않게). */
 export function resultNotice(label, r) {
   const parts = [];
   if (r.skipped) parts.push(r.skipped);
-  else if (r.outcome === "replace") parts.push("새 판으로 지정했습니다. 옛 판의 지식은 지식그래프에서 빠집니다.");
+  else if (r.outcome === "replace") parts.push("새 개정으로 지정했습니다. 이전 개정의 지식은 지식그래프에서 빠집니다.");
   else if (r.outcome === "separate") parts.push("다른 문서로 두었습니다. 두 문서의 지식을 모두 씁니다.");
   else if (r.blocked && r.blocked.length) parts.push(label + ": 추출하지 못했습니다(" + r.blocked.join("; ") + ").");
   else {
@@ -101,10 +101,10 @@ export function resultNotice(label, r) {
     parts.push(label + ": 설정치 " + (c.setpoint || 0) + " · 운전조건 " + (c.condition || 0) + " · 요건 " + (c.requirement || 0) + "개를 뽑았습니다.");
   }
   const v = r.revision;
-  if (v && v.action === "replace" && v.old) parts.push("같은 문서의 옛 판(" + v.old + ")을 대신합니다: " + v.reason + ".");
-  if (v && v.action === "ask") parts.push("같은 문서의 새 판인지 목록에서 확인해 주세요(" + v.reason + ").");
+  if (v && v.action === "replace" && v.old) parts.push("같은 문서의 이전 개정을 대신합니다: " + v.reason + ".");
+  if (v && v.action === "ask") parts.push("같은 문서의 새 개정인지 목록에서 확인해 주세요(" + v.reason + ").");
   (r.kg_notes || []).forEach((n) => parts.push(n));
-  if (r.kg_error) return { kind: "err", text: parts.join(" ") + " 다만 지식그래프를 다시 만들지 못했습니다: " + r.kg_error };
+  if (r.kg_error) return { kind: "err", text: parts.join(" ") + " 다만 지식그래프에 반영하지 못했습니다: " + r.kg_error };
   return { kind: "info", text: parts.join(" ") };
 }
 

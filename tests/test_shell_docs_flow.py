@@ -79,7 +79,7 @@ class DocsPanelFlowTest(ShellBase):
         self.mount(win)
         with mock.patch.object(data, "build_project_kg", side_effect=ValueError("가짜 빌드 실패")):
             self.click(win, ".docs .btn.primary")
-            self.assertTrue(wait_for(lambda: "지식그래프를 다시 만들지 못했습니다" in self.text(win), 60), self.text(win)[-500:])
+            self.assertTrue(wait_for(lambda: "지식그래프에 반영하지 못했습니다" in self.text(win), 60), self.text(win)[-500:])
         self.assertIn("가짜 빌드 실패", self.text(win))
 
     def test_chat_open_event_opens_the_panel_state(self):

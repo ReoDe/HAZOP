@@ -177,7 +177,7 @@ class EditTest(unittest.TestCase):
         self.assertTrue(sn.all_confirmed(sn.confirm(dropped, self.g, "검토자", at=AT)), "v2: 구간 밖이 있어도 확정")
         newer = dict(self.g, graph_version="v-2")
         self.assertTrue(sn.is_stale(self.s, newer))
-        with self.assertRaisesRegex(ValueError, "그래프 판"):
+        with self.assertRaisesRegex(ValueError, "다시 읽혀"):
             sn.confirm(self.s, newer, "검토자", at=AT)
         with self.assertRaises(ValueError):
             sn.confirm(self.s, self.g, "  ", at=AT)

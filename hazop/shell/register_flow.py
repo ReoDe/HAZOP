@@ -28,9 +28,9 @@ def register_and_extract(engine, path, progress):
         reasons = [str(b.get("reason")) for b in blockers[:3] if b.get("reason")]      # 엔진이 주는 사유를 그대로(DEXPI는 형식 판별·안전 검사 사유가 여기 온다)
         cause = "; ".join(reasons) or next(iter(result.get("notes") or []), None) or result["outcome"]
         raise RuntimeError("등록하지 못함: %s" % cause)
-    progress("추출·그래프", 2, 2)
+    progress("도면 읽는 중", 2, 2)
     # 스캔 도면은 쪽마다 20~30초라 extract_and_graph가 progress(끝난 쪽 수, 전체 쪽 수, 문구)를 부른다(벡터·drawio는 부르지 않는다)
-    wants = {"progress": lambda done, total, text=None: progress(text or "추출·그래프", done, total)} if "progress" in inspect.signature(data.extract_and_graph).parameters else {}
+    wants = {"progress": lambda done, total, text=None: progress(text or "도면 읽는 중", done, total)} if "progress" in inspect.signature(data.extract_and_graph).parameters else {}
     out = data.extract_and_graph(result["registration_file"], **wants)
     pages = [(os.path.basename(p["extract_dir"]), p["extraction"]) for p in (out.get("pages") or [out])]
     return {"outcome": result["outcome"], "material_id": rec.get("material_id"), "pages": len(pages),

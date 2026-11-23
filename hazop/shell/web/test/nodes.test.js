@@ -484,17 +484,17 @@ export const tests = [
     store.set({ panel: null });
     host.remove();
   } },
-  { name: "구간 패널(측정 2): 등록·추출 뒤 도면 알림만 와도 '프로젝트 그래프가 아직 없습니다'를 거둔다", async run(assert) {
+  { name: "구간 패널(측정 2): 등록·추출 뒤 도면 알림만 와도 '도면을 먼저 읽어야 합니다'를 거둔다", async run(assert) {
     await setup();
     engine.list = Object.assign({}, engine.list, { available: false, nodes: [], set_rev: 0 });
     await N.refresh();
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
     await tick();
-    assert(host.textContent.includes("프로젝트 그래프가 아직 없습니다"), "시험의 전제");
+    assert(host.textContent.includes("도면을 먼저 읽어야 합니다"), "시험의 전제");
     engine.list = Object.assign({}, engine.list, { available: true, set_rev: 1 });
     deliver(JSON.stringify({ t: "changed", topic: "drawings", rev: null }));      // 등록은 drawings·sources만 알린다
     await tick();
-    assert(!host.textContent.includes("프로젝트 그래프가 아직 없습니다"), "도면이 바뀌면 구간 목록도 다시 읽는다");
+    assert(!host.textContent.includes("도면을 먼저 읽어야 합니다"), "도면이 바뀌면 구간 목록도 다시 읽는다");
     host.remove();
   } },
   { name: "구간 패널(측정 2): 패널을 열 때마다 다시 읽는다(알림을 놓쳤어도 낡은 안내가 남지 않게)", async run(assert) {
@@ -504,7 +504,7 @@ export const tests = [
     engine.list = Object.assign({}, engine.list, { available: true, set_rev: 1 });     // 알림 없이 바뀜
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
     await tick();
-    assert(!host.textContent.includes("프로젝트 그래프가 아직 없습니다"), "열 때 읽은 목록을 보인다");
+    assert(!host.textContent.includes("도면을 먼저 읽어야 합니다"), "열 때 읽은 목록을 보인다");
     host.remove();
   } },
   { name: "구간 패널(측정 7): 열자마자 누른 확정은 열 때 읽는 목록을 기다려 지금 판으로 보낸다", async run(assert) {
@@ -597,15 +597,15 @@ tests.push({ name: "구간 연결: 뺀 선(신호선·계측선)이 있으면 �
   store.set({ toast: null });
 } });
 
-tests.push({ name: "구간 패널: 옛 판(0.1) 파일은 안내와 '새 판으로 바꾸기'를 보이고 누르면 nodes.migrate", async run(assert) {
+tests.push({ name: "구간 패널: 이전 형식 파일은 안내와 '새 형식으로 바꾸기'를 보이고 누르면 nodes.migrate", async run(assert) {
   await setup();
   engine.list = Object.assign({}, engine.list, { legacy: true, nodes: [] });
   await N.refresh();
   const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
   await tick();
-  assert(host.textContent.includes("옛 판(0.1) 구간 파일"), "안내");
+  assert(host.textContent.includes("이전 형식으로 저장돼"), "안내");
   engine.reply = () => ({ ok: true, data: { set_rev: 1, read_only: null } });
-  [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "새 판으로 바꾸기").click();
+  [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "새 형식으로 바꾸기").click();
   await tick();
   assert.equal(lastCmd().name, "nodes.migrate");
   host.remove();

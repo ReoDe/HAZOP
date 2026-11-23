@@ -343,7 +343,7 @@ function ItemCard() {
         <${Btn} sm=${true} icon="arrow-back-up" label="흐름 방향 뒤집기" disabled=${s.busy || !it.flow_allowed} title=${it.flow_allowed ? (it.flow ? "흐름 방향 뒤집기" : "끝(target) → 끝(source)로 정하기") : "물리 배관에만 흐름 방향을 정합니다"}
           onClick=${() => apply("set_flow", it.local_id, { flip: true })}>${it.flow ? "뒤집기" : "방향 정하기"}<//></div></div>
       <div class="field"><label>끝</label>${["source", "target"].map((end) => html`<div class="acts-row">
-        <span class="muted small">${end === "source" ? "시작" : "끝"}: ${it.ends[end].node || "열린 끝"}</span>
+        <span class="muted small">${end === "source" ? "시작" : "끝"}: ${it.ends[end].node || "이어지지 않음"}</span>
         <${Btn} sm=${true} label=${end + " 끝 잇기"} disabled=${s.busy} onClick=${() => { setField({ end }); setTool("endpoint"); }}>잇기<//>
         ${it.ends[end].node ? html`<${Btn} sm=${true} label=${end + " 끝 끊기"} disabled=${s.busy} onClick=${() => apply("clear_endpoint", it.local_id, { end })}>끊기<//>` : null}</div>`)}</div>
       <div class="acts-row"><${Btn} sm=${true} icon="route" label="경로 다시 그리기" disabled=${s.busy} onClick=${() => setTool("path")}>경로 다시 그리기<//></div>` : null}

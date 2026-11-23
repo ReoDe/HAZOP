@@ -116,7 +116,7 @@ def _tb_details(engine):
                          % len(sheets)})
         if row.get("review_data"):
             rows.append({"label": "이 도면을 가리키는 검토 자료", "after": "; ".join(row["review_data"])})
-        rows.append({"label": "등록정보 판", "after": str(row["ver"])[-12:]})
+        rows.append({"label": "대조 기준", "after": str(row["ver"])[-12:], "hidden": True})
         return rows
     return details
 
@@ -381,10 +381,10 @@ def _drawing_details(engine):
                                                if item.action == "drawing.undo" and op else "")})
             ask = _undo_ask(engine, gid, view, op_id) if item.action == "drawing.undo" and op_id else None
         if ask:
-            rows.append({"label": "엔진 확인", "after": ask})
+            rows.append({"label": "확인할 점", "after": ask})
         rows.append({"label": "고친 사람", "after": "%s(확인한 사람)" % _who(engine)})
-        rows.append({"label": "저장 뒤", "after": "그 도면 그래프와 지식그래프를 다시 만듭니다(되돌리기로 뺄 수 있음)."})
-        rows.append({"label": "도면 판", "after": str(view["ver"])[-12:]})
+        rows.append({"label": "저장 뒤", "after": "그 도면을 다시 반영합니다(되돌리기로 뺄 수 있음)."})
+        rows.append({"label": "대조 기준", "after": str(view["ver"])[-12:], "hidden": True})
         return rows
     return details
 
@@ -394,7 +394,7 @@ def _drawing_execute(engine):
         from hazop.shell import api_corrections as ac
         b = call.basis or {}
         if not b.get("ver") or not b.get("graph_id"):
-            return _refused("확인 상자에서 본 도면 판이 없어 저장하지 않았습니다.", "stale")
+            return _refused("확인 상자를 연 뒤 내용이 바뀌어 저장하지 않았습니다. 다시 요청해 주세요.", "stale")
         gid = b["graph_id"]
         if call.action == "drawing.edit":
             out = ac.apply_edit(engine, gid, b["op"], b.get("local_id"), b.get("value") or {}, b["ver"], confirm=b.get("confirm"),
@@ -432,7 +432,7 @@ def _p5(engine, item):
     if item.action in ("ie.fmea_status", "ie.fmea_mark"):
         view = api_ie.fmea_view(engine)
         if view is None:
-            return "⑥ 초기사건을 열 수 없음(구간·결과가 없음)"
+            return "초기사건을 열 수 없음(구간·결과가 없음)"
         if item.action == "ie.fmea_status":
             rows = {r["row_id"]: r for r in view["rows"]}
             missing = [r for r in a["row_ids"] if r not in rows]
@@ -442,7 +442,7 @@ def _p5(engine, item):
         return view, "fver", view["fver"], None
     view = api_ie.mld_view(engine)
     if view is None or not view.get("loaded"):
-        return "주논리도(MLD)를 아직 가져오지 않음(⑥ 패널에서 파일을 고른다)"
+        return "주논리도(MLD)를 아직 가져오지 않음(초기사건 패널에서 파일을 고른다)"
     br = {x["id"]: x for x in view["branches"]}
     if a["branch_id"] not in br:
         return "없는 MLD 가지: %s" % a["branch_id"]
@@ -510,8 +510,8 @@ def _p5_details(engine):
             rows.append({"label": "MLD 가지 %s" % a["branch_id"], "before": ", ".join(br.get("group_ids") or []) or "(이은 그룹 없음)",
                          "after": ", ".join("%s %s" % (g, names.get(g, "")) for g in a["group_ids"]) or "(잇기 지움)"})
         rows.append({"label": "판정자", "after": "%s(확인한 사람)" % _who(engine)})
-        rows.append({"label": "파일 판", "after": str(ver)[-12:] + ((" · 항목 지문 " + " · ".join(str(v)[-8:] for _k, v in sorted(seen.items())))
-                                                                    if seen else "")})
+        rows.append({"label": "대조 기준", "after": str(ver)[-12:] + ((" · " + " · ".join(str(v)[-8:] for _k, v in sorted(seen.items())))
+                                                                if seen else ""), "hidden": True})
         return rows
     return details
 
@@ -544,12 +544,12 @@ def _rev_ctx(engine, a):
     if row is None:
         return "지금 프로젝트에 없는 설계 문서: %s" % a["material_id"]
     if a["answer"] not in ("replace", "separate"):
-        return "답은 replace(옛 판을 대신) 또는 separate(다른 문서)"
+        return "답은 replace(이전 개정을 대신) 또는 separate(다른 문서)"
     asked = [x["material_id"] for x in row.get("ask_revision") or []]
     if not asked:
-        return "이 문서에는 판 대응 물음이 없음"
+        return "이 문서에는 개정 대응 물음이 없음"
     if a["answer"] == "replace" and a.get("old") not in asked:
-        return "old는 물음에 나온 옛 판 가운데 하나: %s" % ", ".join(asked)
+        return "old는 물음에 나온 이전 개정 가운데 하나: %s" % ", ".join(asked)
     return row, docs
 
 
@@ -570,12 +570,12 @@ def _rev_details(engine):
             return [{"label": "오류", "after": got}]
         row, docs = got
         a = item.args
-        rows = [{"label": "새 문서", "after": "%s (%s)" % (row.get("title") or "", row["material_id"])}]
+        rows = [{"label": "새 문서", "after": row.get("title") or "제목 없는 문서"}]
         if a["answer"] == "replace":
             old = docs.get(a["old"]) or {}
-            rows.append({"label": "대신할 옛 판", "after": "%s (%s). 옛 판은 지식그래프에서 빠집니다." % (old.get("title") or "", a["old"])})
+            rows.append({"label": "대신할 이전 개정", "after": "%s. 이전 개정은 지식그래프에서 빠집니다." % (old.get("title") or "제목 없는 문서")})
         else:
-            rows.append({"label": "답", "after": "다른 문서로 둡니다(옛 판도 그대로 씀)."})
+            rows.append({"label": "답", "after": "다른 문서로 둡니다(이전 개정도 그대로 씀)."})
         rows.append({"label": "정한 사람", "after": "%s(확인한 사람)" % _who(engine)})
         rows.append({"label": "저장 뒤", "after": "프로젝트 지식그래프를 다시 만듭니다."})
         return rows
@@ -589,7 +589,7 @@ def _rev_execute(engine, watcher):
         job = out.get("job")
         if watcher is not None and job:
             watcher.follow(job, call, [args["material_id"]])
-        return _ok("설계 문서 판 대응을 적용하고 있습니다(작업 %s)." % job, topics=["docs"])
+        return _ok("설계 문서 개정 대응을 적용하고 있습니다(작업 %s)." % job, topics=["docs"])
     return run
 
 
@@ -713,10 +713,10 @@ def _links_details(engine):
         except Exception as exc:  # noqa: BLE001
             return [{"label": "오류", "after": getattr(exc, "message", None) or "확인 글을 만들지 못함"}]
         if ask:
-            rows.append({"label": "엔진 확인", "after": ask})
+            rows.append({"label": "확인할 점", "after": ask})
         rows.append({"label": "지정한 사람", "after": "%s(확인한 사람)" % _who(engine)})
-        rows.append({"label": "저장 뒤", "after": "프로젝트 그래프가 이 지정을 먼저 적용합니다. 도면·쪽 확정은 바뀌지 않습니다."})
-        rows.append({"label": "판", "after": "%s · 연결점 지문 %s" % (str(view["ver"])[-8:], pt["base"][-8:])})
+        rows.append({"label": "저장 뒤", "after": "도면 연결이 이 지정을 먼저 따릅니다. 도면·쪽 확정은 바뀌지 않습니다."})
+        rows.append({"label": "대조 기준", "after": "%s · %s" % (str(view["ver"])[-8:], pt["base"][-8:]), "hidden": True})
         return rows
     return details
 
@@ -726,7 +726,7 @@ def _links_execute(engine):
         from hazop.shell import api_links
         b = call.basis or {}
         if not b.get("ver") or not b.get("base"):
-            return _refused("확인 상자에서 본 판·연결점 지문이 없어 저장하지 않았습니다.", "stale")
+            return _refused("확인 상자를 연 뒤 내용이 바뀌어 저장하지 않았습니다. 다시 요청해 주세요.", "stale")
         reason = args.get("reason") or ""
         if call.action == "links.pair":
             out = api_links.pair(engine, b["graph_id"], b["local_id"], b["peer"][0], b["peer"][1], b["ver"], reason, base=b["base"],
@@ -753,7 +753,7 @@ def _excl_row(engine, graph_id):
     from hazop.shell import api_nodes
     view = api_nodes.drawings_view(engine)
     if not view.get("available"):
-        return None, "구간 분석을 열 수 없음(프로젝트 그래프가 없음)"
+        return None, "구간 분석을 열 수 없음(도면을 먼저 읽어야 함)"
     if view.get("problem"):
         return None, view["problem"]
     row = next((r for r in view["drawings"] if r["graph_id"] == graph_id), None)
@@ -811,9 +811,9 @@ def _excl_details(engine):
         if why:
             return [{"label": "오류", "after": why}]
         if ask:
-            rows.append({"label": "엔진 확인", "after": ask})
+            rows.append({"label": "확인할 점", "after": ask})
         rows.append({"label": "누른 사람", "after": "%s(확인한 사람)" % _who(engine)})
-        rows.append({"label": "표시 판", "after": str(row["ver"])[-12:]})
+        rows.append({"label": "대조 기준", "after": str(row["ver"])[-12:], "hidden": True})
         return rows
     return details
 

@@ -56,10 +56,10 @@ def _context(engine):
     R = _results()
     pg = R._pg(engine, strict=False)
     if pg is None:
-        return None, "프로젝트 그래프가 없습니다. 도면을 먼저 추출하세요."
+        return None, "도면을 먼저 읽어야 합니다."
     ns, legacy = R._node_set(pg)
     if legacy:
-        return None, "옛 판 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요."
+        return None, "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요."
     if nodes.is_stale(ns, pg):  # 다시 추출 뒤 판 이전 전: 옛 판 참조를 새 판 그래프로 보거나 고치지 않는다(hazop.study.follow)
         return None, follow.STALE + "."
     if not [n for n in ns["nodes"] if nodes.is_active(n)]:
@@ -371,7 +371,7 @@ def _chat(fn, engine, a):
     """채팅 실행 함수의 공통 길: 판 지문(ver)이 없으면 거절하고, 되물을 일이 있으면 'confirm' 오류로 올린다."""
     api = _api()
     if not a.get("ver"):
-        raise api.CommandError("bad_args", "초기사건 판 지문(ver)을 함께 보내야 합니다(먼저 view_groups로 읽음).")
+        raise api.CommandError("bad_args", "화면에서 본 초기사건 내용을 함께 보내야 합니다(먼저 view_groups로 읽음).")
     out = fn(engine, a)
     if out.get("ask"):
         raise api.CommandError("confirm", "%s (다시 부를 때 confirmed=true, confirm_groups=[%s])"
@@ -735,7 +735,7 @@ def _fmea_status(engine, a):
 def set_fmea_status(engine, a):
     """채팅 실행 함수: {row_ids, status(approved·excluded·imported), fver}. fver 없이는 거절."""
     if not a.get("fver"):
-        raise _api().CommandError("bad_args", "FMEA 판 지문(fver)을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
+        raise _api().CommandError("bad_args", "화면에서 본 FMEA 내용을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
     return _fmea_status(engine, a)
 
 
@@ -750,7 +750,7 @@ def _fmea_mark(engine, a):
 def mark_ec_node(engine, a):
     """채팅 실행 함수: {node_id, mark(include·exclude·빈 글자), fver}."""
     if not a.get("fver"):
-        raise _api().CommandError("bad_args", "FMEA 판 지문(fver)을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
+        raise _api().CommandError("bad_args", "화면에서 본 FMEA 내용을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
     return _fmea_mark(engine, a)
 
 
@@ -842,7 +842,7 @@ def _mld_confirm(engine, a):
 def confirm_mld_branch(engine, a):
     """채팅 실행 함수: {branch_id, on(참·거짓), mver}. 규칙 대조로 맞은 가지를 사람이 확인한다."""
     if not a.get("mver"):
-        raise _api().CommandError("bad_args", "MLD 판 지문(mver)을 함께 보내야 합니다(먼저 view_mld로 읽음).")
+        raise _api().CommandError("bad_args", "화면에서 본 주논리도 내용을 함께 보내야 합니다(먼저 view_mld로 읽음).")
     return _mld_confirm(engine, a)
 
 
@@ -872,7 +872,7 @@ def _side_replace(engine, a, which):
 def link_mld_branch(engine, a):
     """채팅 실행 함수: {branch_id, group_ids, mver}."""
     if not a.get("mver"):
-        raise _api().CommandError("bad_args", "MLD 판 지문(mver)을 함께 보내야 합니다(먼저 view_mld로 읽음).")
+        raise _api().CommandError("bad_args", "화면에서 본 주논리도 내용을 함께 보내야 합니다(먼저 view_mld로 읽음).")
     return _mld_link(engine, a)
 
 
@@ -976,7 +976,7 @@ def _judge(engine, a):
         raise api.CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 판정한 사람으로 남습니다.")
     view = candidate_view(engine, a["iec"])
     if view is None:
-        raise api.CommandError("failed", "인계 묶음에 없는 후보입니다(⑤ 승인이 풀렸거나 없는 ID): %s" % a["iec"])
+        raise api.CommandError("failed", "인계 묶음에 없는 후보입니다(분석 결과 승인이 풀렸거나 없는 후보): %s" % a["iec"])
     if a.get("rver") is None or a["rver"] != view["rver"]:
         raise api.CommandError("stale", STALE_RESULTS)
     if a.get("seen") is not None and a["seen"].get("member:" + a["iec"]) != view["fp"]:
@@ -1014,7 +1014,7 @@ def judge_candidate(engine, a):
     그룹이 있으면 'confirm' 오류로 되묻는다(confirmed=true와 confirm_groups를 붙여 다시 부른다)."""
     api = _api()
     if not a.get("rver"):
-        raise api.CommandError("bad_args", "분석 결과 판 지문(rver)을 함께 보내야 합니다(먼저 view_groups로 읽음).")
+        raise api.CommandError("bad_args", "화면에서 본 분석 결과 내용을 함께 보내야 합니다(먼저 view_groups로 읽음).")
     out = _judge(engine, a)
     if out.get("ask"):
         raise api.CommandError("confirm", "%s (다시 부를 때 confirmed=true, confirm_groups=[%s])"
@@ -1115,10 +1115,10 @@ def v_fmea_fields(v):
 def v_seen(v):
     """화면이 본 항목 지문 {"group:IEG-01": "sha256:…"}."""
     if not isinstance(v, dict) or len(v) > 5000:
-        raise ValueError("항목 지문 객체(최대 5000개)여야 함")
+        raise ValueError("seen은 객체(최대 5000개)여야 함")
     for k, x in v.items():
         if not isinstance(k, str) or len(k) > 80 or not (x is None or (isinstance(x, str) and len(x) <= 100)):
-            raise ValueError("항목 지문 형식 오류")
+            raise ValueError("seen 형식 오류")
     return dict(v)
 
 

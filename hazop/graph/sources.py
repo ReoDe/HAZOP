@@ -36,7 +36,7 @@ SETTLE_SKIPPED = "settle_rebuild_failed"
 REASONS = {
     OTHER_FORMAT: "같은 도면 번호 %(number)s의 원본이 %(formats)s 형식으로 함께 있습니다. 사람이 고르기 전에는 %(in_use)s를 씁니다.",
     OTHER_FILE: "같은 도면 번호 %(number)s의 다른 파일이 들어왔습니다. 그래프에 쓸 파일을 고르세요. 사람이 고르기 전에는 %(in_use)s를 씁니다.",
-    BEFORE_SETTLE: "번호가 없는 도면 %(count)d개가 옛 이름 %(graph_id)s를 나눠 써서 %(in_use)s만 보입니다. 다음 추출·그래프 짓기에서 "
+    BEFORE_SETTLE: "번호가 없는 도면 %(count)d개가 한 자리를 나눠 써서 %(in_use)s만 보입니다. 다음에 도면을 읽을 때 "
                    "도면마다 따로 들어옵니다.",
     SETTLE_SKIPPED: "가려졌던 도면 %(skipped)s를 새 이름으로 다시 짓지 못해 %(in_use)s만 보입니다(%(why)s). 그 도면을 다시 추출하면 따로 들어옵니다.",
 }

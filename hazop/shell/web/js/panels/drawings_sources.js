@@ -63,7 +63,7 @@ export function SourceConflicts() {
   }
   if (!info || !info.conflicts.length) return null;
   return html`<div class="card src-card" aria-label="같은 도면 자리의 원본 고르기"><h3>같은 도면 자리에 원본이 둘 이상 있습니다</h3>
-    <div class="muted small">프로젝트 그래프에 쓸 것을 고르세요. 고르기 전에는 먼저 쓰던 것을 씁니다. 다른 원본의 읽은 결과와 수정 기록은 지우지 않고 그대로 두며, 다시 고르면 바로 되돌아옵니다.</div>
+    <div class="muted small">분석에 쓸 원본을 고르세요. 고르기 전에는 먼저 쓰던 것을 씁니다. 다른 원본의 읽은 결과와 수정 기록은 지우지 않고 그대로 두며, 다시 고르면 바로 되돌아옵니다.</div>
     <div class="list" role="list" aria-label="고를 원본이 있는 도면">${info.conflicts.map((c) => {
       const choices = choicesOf(c);
       const picked = !!(c.chosen_material || c.chosen);       // 사람이 형식이나 파일을 고름

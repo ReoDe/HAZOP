@@ -34,9 +34,9 @@ from hazop.study import idmap, migrate
 TIMES = {idmap.IE: ("history[].at",), idmap.FMEA: ("history[].at", "imports[].at"),
          idmap.LATENT: ("judgements{}.at", "judgements{}.history[].at")}
 
-NO_TIME = "판 표지가 없고 시각이 없는 기록이 있어 어느 판에서 쓴 참조인지 모름"
-MIXED = "판 표지가 없고 문서를 쓰는 사이에 판 이전이 있어 어느 판에서 쓴 참조인지 모름"
-YOUNGER = "판 표지가 없고 집합 이력이 문서보다 늦게 시작해 어느 판에서 쓴 참조인지 모름"
+NO_TIME = "언제 쓴 기록인지 알 수 없어 어느 도면 기준인지 정하지 못함"
+MIXED = "기록을 쓰는 사이에 도면이 다시 읽혀 어느 도면 기준인지 정하지 못함"
+YOUNGER = "구간 이력이 기록보다 늦게 시작해 어느 도면 기준인지 정하지 못함"
 BROKEN = migrate.BROKEN_CHAIN
 
 
@@ -235,7 +235,7 @@ def follow(doc, kind, node_set, at=None):
 
 # ---------------------------------------------------------------- 쓰는 쪽: 쓰는 순간의 그래프 판
 
-STALE = "도면이 다시 읽혀 바뀌었습니다. 검토구간(④) 패널에서 '도면 변경 반영하기'를 눌러 반영을 마친 뒤 하세요"
+STALE = "도면이 다시 읽혀 바뀌었습니다. 검토구간 패널에서 '도면 변경 반영하기'를 눌러 반영을 마친 뒤 하세요"
 
 
 class Stale(ValueError):

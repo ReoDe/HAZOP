@@ -48,7 +48,7 @@ def _pg(engine, strict=True):
         return project_ctx.project_graph(engine.project_id())
     except (OSError, ValueError, KeyError):
         if strict:
-            raise _api().CommandError("failed", "프로젝트 그래프를 만들 수 없습니다. 도면을 먼저 추출하세요.")
+            raise _api().CommandError("failed", "도면을 먼저 읽어야 합니다.")
         return None
 
 
@@ -452,7 +452,7 @@ def _run(name, build):
         pg = _pg(eng)
         ns, legacy = _peek(pg)
         if legacy:
-            raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널의 '새 판으로 바꾸기'를 먼저 눌러 주세요.")
+            raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
         _check_targets(ns, a)
         args, skipped = build(pg, a)
         if name == "remove" and not args.get("archive") and _judged(pg, ns, args["node_id"]):
@@ -501,7 +501,7 @@ def _catch_up(eng, a):
     pg = _pg(eng)
     ns, legacy = _peek(pg)
     if legacy:
-        raise api.CommandError("failed", "옛 판(0.1) 구간 파일입니다. '새 판으로 바꾸기'를 먼저 눌러 주세요.")
+        raise api.CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
     if not nodes.is_stale(ns, pg):
         info = idmap.needs_check(ns)
         return {"changed": False, "matched": 0, "tombstones": info["tombstones"], "lost_members": info["lost_members"]}

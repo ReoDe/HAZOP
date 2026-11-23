@@ -101,10 +101,10 @@ class DiscardLostTest(unittest.TestCase):
         _g1, _g2, ns = lost_world(extra_lost=True)
         s2_tomb = node(ns, "S2")["lost"][0]
         s1_only = [t for t in node(ns, "S1")["lost"] if t not in node(ns, "S2")["lost"]][0]
-        cases = [("S1", ["lost:graph-T:v2:t-000000000000"], "없는 묘비"),
+        cases = [("S1", ["lost:graph-T:v2:t-000000000000"], "없는 찾지 못한 구성요소"),
                  ("S2", [s1_only], "다른 구간"),
                  ("S9", None, "없는 검토구간"),
-                 ("S1", [], "버릴 묘비")]
+                 ("S1", [], "버릴 찾지 못한 구성요소")]
         for nid, tombs, why in cases:
             with self.assertRaises(ValueError, msg=why) as cm:
                 sn.discard_lost(ns, nid, tombs, by="김검토")
@@ -224,7 +224,7 @@ class CommandTest(unittest.TestCase):
         bad = node_commands.execute(g2, "discard_lost", {"node_id": "S1", "keys": ["L-nope"]}, author="user",
                                     confirmed_by="김검토")
         self.assertFalse(bad["ok"])
-        self.assertIn("없는 묘비", bad["refused"][0]["reason"])
+        self.assertIn("없는 찾지 못한 구성요소", bad["refused"][0]["reason"])
         nobody = node_commands.execute(g2, "discard_lost", {"node_id": "S1"}, author="user")
         self.assertEqual(nobody["refused"][0]["code"], "bad_actor")
         disk, _fp = sn.load_fp(g2)

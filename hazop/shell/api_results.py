@@ -33,7 +33,7 @@ def _pg(engine, strict=True):
         return project_ctx.project_graph(engine.project_id())
     except (OSError, ValueError, KeyError):
         if strict:
-            raise _api().CommandError("failed", "프로젝트 그래프를 만들 수 없습니다. 도면을 먼저 추출하세요.")
+            raise _api().CommandError("failed", "도면을 먼저 읽어야 합니다.")
         return None
 
 
@@ -174,14 +174,14 @@ def _rec_rows(doc, ns, only_node=None):
 def summary(engine):
     pg = _pg(engine, strict=False)
     if pg is None:
-        return {"available": False, "reason": "프로젝트 그래프가 없습니다. 도면을 먼저 추출하세요."}
+        return {"available": False, "reason": "도면을 먼저 읽어야 합니다."}
     ns, legacy = _node_set(pg)
     active = scope_rows(ns)
     base = {"available": True, "legacy": legacy, "set_rev": ns.get("set_rev") or 0,
             "stale": nodes.is_stale(ns, pg)}       # 다시 추출로 그래프 판이 바뀌었는데 구간 집합이 아직 판 이전 전이면 True: 옛 참조의 자리를 새 그래프로 확인하지 않는다
     if legacy or not active:
         return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
-                    reason="옛 판 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요." if legacy else "확정한 구간이 아직 없습니다.")
+                    reason="구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요." if legacy else "확정한 구간이 아직 없습니다.")
     try:
         doc, fp = _load(ns)
     except (OSError, ValueError) as exc:
@@ -481,7 +481,7 @@ def _execute(engine, name, a, writes=True):
     pg = _pg(engine)
     ns, legacy = _node_set(pg)
     if legacy:
-        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+        raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
     by = _need_reviewer(engine) if writes else engine.reviewer()
     ver = a.get("ver")
     if writes:
@@ -519,7 +519,7 @@ def _export_excel(engine, a):
     pg = _pg(engine)
     ns, legacy = _node_set(pg)
     if legacy:
-        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+        raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
     _need_current(pg, ns)
     doc, _fp = _load(ns)
     scope = a.get("scope") or "all"
@@ -568,7 +568,7 @@ def _export_ie(engine, a):
     pg = _pg(engine)
     ns, legacy = _node_set(pg)
     if legacy:
-        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+        raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
     from hazop.ie import bundle_xlsx
     path = _save_path(engine, "ie", bundle_xlsx.default_stem(ns.get("project_id"), nodes.now_utc()) + ".xlsx")
     if not path:
@@ -604,7 +604,7 @@ def _plan(engine, a):
     pg = _pg(engine)
     ns, legacy = _node_set(pg)
     if legacy:
-        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+        raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
     _need_current(pg, ns)
     doc, _fp = _load(ns)
     ns = scope_set(ns)                       # 확정·잠금 구간만 호출·요금에 들어간다

@@ -539,7 +539,7 @@ class ReviewFixTest(Env):
         self.assertEqual(s["nodes"], [])
         r = self.create()
         self.assertEqual(r["error"]["code"], "failed")        # 변환 전에는 쓰지 않는다
-        self.assertIn("새 판", r["error"]["message"])
+        self.assertIn("새 형식", r["error"]["message"])
         self.assertEqual(_rb(path), before[1])
         m = self.engine.dispatch("nodes.migrate", {"project_id": self.engine.project_id()})
         self.assertTrue(m["ok"], m)

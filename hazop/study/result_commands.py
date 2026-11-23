@@ -147,7 +147,7 @@ def execute(graph, name, args, by, fingerprint, set_rev=None, pg=None):
     if writes:
         node = next((n for n in ns["nodes"] if n["node_id"] == a.get("node_id")), None)
         if set_rev is not None and set_rev != rev:
-            return _refused(name, "set_rev", "구간이 그 사이 바뀜(읽은 판 %s, 지금 %s)" % (set_rev, rev), fp, rev, "stale")
+            return _refused(name, "set_rev", "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 해 주세요.", fp, rev, "stale")
         if a.get("node_rev") is not None and (node or {}).get("rev") != a["node_rev"]:
             return _refused(name, "node_rev", "%s 구간이 그 사이 바뀜(읽은 rev %s, 지금 %s)"
                             % (a.get("node_id"), a["node_rev"], (node or {}).get("rev")), fp, rev, "stale")

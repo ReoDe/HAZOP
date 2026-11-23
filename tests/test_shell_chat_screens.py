@@ -161,7 +161,7 @@ class AiReviewTest(AiReviewBase):
             self.approve(self.one("aireview.accept", graph_id="graph-SNP-M-101", cand_ids=["c1"]))
         done = self.events.of("chat.action.result")[-1]["item"]
         self.assertEqual(done["status"], "applied")
-        self.assertIn("그래프를 다시 만들지 못해", done["text"])
+        self.assertIn("도면 반영은 끝내지 못해", done["text"])
         self.assertIn("재확인이 필요합니다", done["text"])
 
     def test_goto_aireview_with_a_drawing(self):
@@ -293,7 +293,7 @@ class IeTest(IeBase):
             self.approve(self.one("ie.reopen_group", group_id="IEG-02"))
         done = self.events.of("chat.action.result")[-1]["item"]
         self.assertEqual(done["status"], "rejected")
-        self.assertIn("⑥ 초기사건 패널에서", done["reason"])
+        self.assertIn("초기사건 패널에서", done["reason"])
         self.assertEqual(self.last_record("ie.reopen_group")["result"], "rejected")
 
     def test_groups_losing_confirmation_are_shown_and_passed_as_seen(self):

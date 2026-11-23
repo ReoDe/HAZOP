@@ -40,7 +40,7 @@ export function useClean(selector) {
 }
 
 export const REASON_TEXT = {
-  unknown_symbol: "종류를 못 읽은 기호", open_end: "끊긴 연결(열린 끝)", missing_tag: "태그가 없음", ai_candidate: "AI 후보(수락 전)",
+  unknown_symbol: "종류를 못 읽은 기호", open_end: "끊긴 연결", missing_tag: "태그가 없음", ai_candidate: "AI 후보(수락 전)",
 };
 
 /** 지금 이 도면의 보기. 사람이 바꾼 것이 먼저, 없으면 읽은 방법에 따른 기본(drawio·dexpi는 정리, PDF는 원본). 정리 자료가 없으면 원본. */
@@ -141,7 +141,7 @@ function ViewSwitch({ gid }) {
     ${open && data ? html`<div class="float viewmenu" role="menu" aria-label="보기 설정">
       <div class=${"vm-info" + (fmt === "unknown" ? " warn" : "")} title="읽은 방법">${FORMAT_LABEL[fmt] || fmt}</div>
       ${unplaced ? html`<div class="vm-info warn" title="좌표가 없어 도면에 그리지 못한 것. 확정 전에 위치를 주거나 도면에 없음으로 정해야 합니다">위치 없음 ${unplaced}</div>` : null}
-      ${count ? check(ov.unconfirmed, "속성 미확인 보기", "호박색 점선 네모: 읽지 못한 것이 아니라 속성만 확인되지 않은 곳(포트·흐름 방향·고장 위치 등)을 도면에 보입니다. 읽지 못한 기호·열린 끝은 늘 보입니다",
+      ${count ? check(ov.unconfirmed, "속성 미확인 보기", "호박색 점선 네모: 읽지 못한 것이 아니라 속성만 확인되지 않은 곳(포트·흐름 방향·고장 위치 등)을 도면에 보입니다. 읽지 못한 기호·끊긴 연결은 늘 보입니다",
         () => toggleOverlay("unconfirmed")) : null}
       ${lo && lo.counted ? check(ov.leftovers, "원본에 남은 것 " + lo.n, "원본에서 어느 구성요소에도 쓰이지 않은 것을 겹쳐 봅니다 (L)", () => toggleOverlay("leftovers"))
         : (lo ? html`<div class="vm-info warn" title="이 방법으로 읽은 도면은 원본에 남은 선·글자를 셀 수 없습니다. 쪽을 확정하기 전에 원본과 견주어야 합니다">원본에 남은 것: 셀 수 없음</div>` : null)}

@@ -228,7 +228,7 @@ def _set_moved(ns):
     return (now or {}).get("graph_version") != ns.get("graph_version")
 
 
-STALE_WHY = "분석 중에 검토구간이 새 도면 판으로 옮겨져 이 답을 결과에 합치지 않았다(옛 판 참조)"
+STALE_WHY = "분석 중에 도면이 다시 읽혀 검토구간이 옮겨져서 이 답을 결과에 합치지 않았다(바뀌기 전 도면 기준)"
 SAVE_FAILED_WHY = "결과 파일에 저장하지 못해(저장 오류이거나 다른 쪽 저장과 계속 겹침) 이 답을 결과에 넣지 못했다"
 
 

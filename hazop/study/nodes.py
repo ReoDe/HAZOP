@@ -677,12 +677,12 @@ def discard_lost(node_set, node_id, tombs=None, by=None, at=None):
     else:
         picked = list(dict.fromkeys(tombs))
         if not picked:
-            raise ValueError("버릴 묘비를 고르지 않음")
+            raise ValueError("버릴 찾지 못한 구성요소를 고르지 않음")
         bad = [t for t in picked if t not in have and t not in done]
         if bad:
             other = sorted({n["node_id"] for n in node_set["nodes"] for t in bad if t in (n.get("lost") or [])})
-            where = "다른 구간(%s)의 묘비" % ", ".join(other) if other else "없는 묘비"
-            raise ValueError("%s에 없는 묘비 %d개: %s" % (node_id, len(bad), where))
+            where = "다른 구간(%s)의 찾지 못한 구성요소" % ", ".join(other) if other else "없는 찾지 못한 구성요소"
+            raise ValueError("%s 구간에 없는 찾지 못한 구성요소 %d개: %s" % (node_id, len(bad), where))
         picked = [t for t in picked if t in have]
     if not picked:
         return node_set
@@ -723,7 +723,7 @@ def confirm_nodes(node_set, graph, node_ids, reviewer, at=None):
     if not reviewer:
         raise ValueError("검토자 이름 필요")
     if is_stale(node_set, graph):
-        raise ValueError("그래프 판이 바뀜(%s -> %s): 검토구간을 다시 확인해야 함"
+        raise ValueError("도면이 다시 읽혀 바뀌었습니다(%s → %s). 검토구간을 다시 확인해야 합니다"
                          % (node_set.get("graph_version"), graph.get("graph_version")))
     wanted = list(dict.fromkeys(node_ids))
     if not wanted:
@@ -966,7 +966,7 @@ def load_view(graph):
             r_doc = None
         doc = convert.convert(doc, r_doc if r_doc and r_doc.get("schema_version", "0.1") == "0.1" else None,
                               res.load_deviations())[0]
-        reason = "옛 판(0.1) 검토구간 파일: 열면 0.2로 바꿈(원본은 .v0.1.bak.json으로 보관)"
+        reason = "이전 형식의 검토구간 파일입니다. 열면 새 형식으로 바꾸고 원본은 따로 보관합니다"
         return dict(doc, read_only=reason), dict(info, needs_open=True, reason=reason)
     if version not in (SCHEMA_VERSION, PRE_TOMB_SCHEMA_VERSION):
         raise ValueError("이 앱보다 새 검토구간 파일(%s)이라 읽지 않음: %s" % (version, path))

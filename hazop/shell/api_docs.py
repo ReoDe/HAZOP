@@ -301,9 +301,9 @@ def extract_document(engine, pid, material_id, progress):
 
 def answer_revision(engine, pid, material_id, answer, old, progress):
     """사람의 답: replace(old를 이 문서가 대신) · separate(다른 문서). 답을 적고 지식그래프를 다시 만든다."""
-    progress("판 대응 적용", 1, 1)
+    progress("개정 대응 적용", 1, 1)
     if answer == "replace":
-        doc_revisions.record_replace(pid, old, material_id, "human", "사람이 같은 문서의 새 판으로 지정", engine.reviewer(), registry_now())
+        doc_revisions.record_replace(pid, old, material_id, "human", "사람이 같은 문서의 새 개정으로 지정", engine.reviewer(), registry_now())
     else:
         doc_revisions.record_separate(pid, material_id)
     return _done(engine, pid, material_id, answer, revision={"action": answer, "kg_error": _rebuild(pid)})
@@ -362,8 +362,8 @@ def _h_revision(engine, a):
     if a["material_id"] not in names or (a["answer"] == "replace" and a.get("old") not in names):
         raise api.CommandError("not_found", "등록한 문서를 찾지 못했습니다")
     if a["answer"] == "replace" and a["old"] == a["material_id"]:
-        raise api.CommandError("bad_args", "같은 문서를 자기 옛 판으로 지정할 수 없습니다")
-    return {"job": engine.start_job("문서 판 대응", lambda progress: answer_revision(engine, pid, a["material_id"], a["answer"], a.get("old"), progress))}
+        raise api.CommandError("bad_args", "같은 문서를 자기 이전 개정으로 지정할 수 없습니다")
+    return {"job": engine.start_job("문서 개정 대응", lambda progress: answer_revision(engine, pid, a["material_id"], a["answer"], a.get("old"), progress))}
 
 
 def open_panel(engine):

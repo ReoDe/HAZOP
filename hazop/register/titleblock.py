@@ -120,8 +120,8 @@ def _key(graph_id):
 
 CARRY, BLOCK = "carry", "block"
 # 막음 자리마다 사람이 할 일(거절 글). 옮김 자리는 판 이전이 옮기므로 할 일이 없다
-TODO = {"지식그래프 판단": "지식그래프 연결 후보(link_candidates.csv)에서 이 도면 행의 판단을 candidate로 되돌리고, 번호를 확정한 뒤 지식그래프를 다시 만들어 다시 판단하세요",
-        "저장하지 못한 AI 답": "분석(⑤) 화면에서 남은 AI 답을 이어서 실행으로 결과에 합치거나 지운 뒤 다시 확정하세요",
+TODO = {"지식그래프 판단": "지식그래프 화면의 연결 후보에서 이 도면의 판단을 '판단 전'으로 되돌리고, 번호를 확정한 뒤 지식그래프를 다시 만들어 다시 판단하세요",
+        "저장하지 못한 AI 답": "분석 결과 화면에서 남은 AI 답을 이어서 실행으로 결과에 합치거나 지운 뒤 다시 확정하세요",
         "옛 도면별 구간": "옛 화면의 도면별 구간 파일은 옮기지 않으니 그 구간을 정리한 뒤 다시 확정하세요",
         "옛 도면별 분석 결과": "옛 화면의 도면별 분석 결과 파일은 옮기지 않으니 그 결과를 정리한 뒤 다시 확정하세요",
         "도면 연결 지정": "도면 연결에서 이 번호로 지정한 연결을 풀고, 번호 확정·취소를 마친 뒤 다시 지정하세요",
@@ -712,7 +712,7 @@ def _reextract(record, registration_path, sheets, extract, progress):
 def _reextract_prepared(record, registration_path, sheets, extract, progress):
     carried, created = _carry(sheets, record)
     moved = _set_aside(sheets, record)
-    progress("다시 추출·그래프", 2, 2)
+    progress("도면 다시 읽는 중", 2, 2)
     try:
         extract(registration_path)
     except Exception as exc:  # noqa: BLE001 - 어떤 실패든 앞 그래프와 옮겨 쓴 기록을 되돌리고 사유를 알린다
@@ -755,7 +755,7 @@ def _apply(project_id, material_id, by, ver, store_root, change, extract, progre
     if ver is not None and ver != store_io.fingerprint(path):
         raise Refused("ver", "stale", "본 뒤 등록정보가 바뀜(다시 보고 확정할 것)")
     if record.get("status") != "registered":
-        raise Refused("material_id", "rule", "등록이 끝나지 않은 자료라 확정할 수 없음(status %s)" % record.get("status"))
+        raise Refused("material_id", "rule", "등록이 끝나지 않은 자료라 확정할 수 없음")
     from hazop.graph import sources
     make, new_number = change(record)
     renaming = make is not None and new_number != record.get("drawing_number")

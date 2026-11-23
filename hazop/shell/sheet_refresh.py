@@ -125,13 +125,13 @@ def project_recheck(project_id):
         return out
     if study_nodes.is_stale(ns, pg):
         held = [n["node_id"] for n in ns["nodes"] if study_nodes.node_state(n) != "applied"]
-        out.append("④ 검토구간이 고치기 전 도면 기준입니다. 구간 패널에서 재확인하세요%s." % ("(확정·잠금 " + ", ".join(held[:8]) + ")" if held else ""))
+        out.append("검토구간이 고치기 전 도면 기준입니다. 구간 패널에서 재확인하세요%s." % ("(확정·잠금 " + ", ".join(held[:8]) + ")" if held else ""))
         try:
             doc, _fp = study_results.load_fp(ns)
         except (OSError, ValueError, KeyError):
             doc = None
         if doc and doc.get("cells"):
-            out.append("⑤ 분석 결과가 고치기 전 도면 기준입니다. 재확인이 필요합니다.")
+            out.append("분석 결과가 고치기 전 도면 기준입니다. 재확인이 필요합니다.")
     return out
 
 
@@ -143,7 +143,7 @@ def rebuild(name):
             try:
                 data.build_project_kg(graph["project_id"])
             except (OSError, ValueError, KeyError) as exc:
-                raise RuntimeError("지식그래프를 다시 만들지 못함: %s" % str(exc)[:120]) from exc
+                raise RuntimeError("지식그래프에 반영하지 못함: %s" % str(exc)[:120]) from exc
             data.notify_graph_changed(graph["project_id"])   # 그래프 판이 바뀌었으니 검토구간 판 이전을 이어서 한다(재확인 안내가 낡은 상태를 말하지 않게 그 앞에서)
         return [], project_recheck(graph.get("project_id")) if graph.get("project_id") else []
 
@@ -167,7 +167,7 @@ def refresh(name):
         except Exception as exc:  # noqa: BLE001 - 저장은 끝났다. 다시 만들기 실패는 표시로 남기고 다음 동작에서 다시 해 본다
             LOG.exception("그래프 다시 만들기 실패")
             mark_stale(name, exc)
-            return True, ["저장했지만 그래프·지식그래프를 다시 만들지 못했습니다(%s). 다음 동작에서 다시 만듭니다." % str(exc)[:120]], []
+            return True, ["저장했지만 도면 반영은 끝내지 못했습니다(%s). 다음 동작에서 다시 반영합니다." % str(exc)[:120]], []
         finally:
             if mine:
                 busy.discard(name)

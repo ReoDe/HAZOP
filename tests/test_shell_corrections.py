@@ -225,7 +225,7 @@ class TagKindFlowTest(Base):
         self.engine.start_job = lambda label, fn, kind="register": started.append((label, kind)) or "j-held"      # 작업이 아직 안 끝난 때
         r = self.edit("set_tag", n["local_id"], {"tag": "FAST-1"})
         self.assertTrue(r["ok"] and r["data"]["refreshing"] and r["data"]["graph_stale"], r)
-        self.assertEqual(started, [("그래프 다시 만들기", "graph_refresh")])
+        self.assertEqual(started, [("도면 반영", "graph_refresh")])
         self.assertTrue(sheet_refresh.graph_stale(self.name))                              # 표시가 서 있다: 읽는 쪽이 낡은 그래프임을 안다
         self.assertEqual(len(corrections.load(self.name)["ops"]), 1)
         self.engine.start_job = real
@@ -349,7 +349,7 @@ class ReachTest(Base):
         self.assertEqual([x["reason"] for x in out["not_applicable"]], ["대상 없음"])
         v = AC.view(self.engine, self.gid)
         self.assertEqual([o["status"] for o in v["ops"]], ["applied", "not_applicable"])
-        self.assertEqual(v["ops"][1]["reason"], "대상 없음")
+        self.assertEqual(v["ops"][1]["reason"], "대상을 찾지 못했습니다")
         self.assertEqual(next(x for x in corrections.apply_saved(fresh, self.name)["nodes"] if x["local_id"] == n["local_id"])["tag"], "RE-1")
 
     def test_a_confirmed_sheet_is_reported_as_released_by_an_edit(self):
@@ -365,7 +365,7 @@ class ReachTest(Base):
         stale = {"schema_version": study_nodes.SCHEMA_VERSION, "graph_version": "old", "project_id": self.engine.project_id(), "graph_id": "pg", "nodes": [{"node_id": "S1", "members": [], "confirmed": {"by": "a"}}]}
         with mock.patch.object(study_nodes, "read_as_is", lambda pg: stale):
             notes = sheet_refresh.project_recheck(self.engine.project_id())
-        self.assertTrue(notes and notes[0].startswith("④ 검토구간이 고치기 전 도면 기준입니다"), notes)
+        self.assertTrue(notes and notes[0].startswith("검토구간이 고치기 전 도면 기준입니다"), notes)
 
     def test_web_never_sends_or_receives_paths(self):
         n = self.tagged()

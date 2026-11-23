@@ -53,7 +53,7 @@ def _original(name):
 
 def _current(shown, c):
     if c["field"] == "connection":
-        return "열린 끝"
+        return "끊긴 연결"
     node = shown.get(c["target"])
     if node is None:
         return ""
@@ -437,7 +437,7 @@ def _decide_locked(engine, graph_id, cand_ids, action, ver, by=None, confirm=Non
         if not by:
             raise Refused("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 수락·거절한 사람으로 남습니다.")
         if not ver or ver != ver_of(name):
-            raise Refused("stale", STALE_TEXT if ver else "읽은 판(ver)이 없어 저장하지 않았습니다. 후보 목록을 먼저 읽으세요.")
+            raise Refused("stale", STALE_TEXT if ver else "화면에서 본 후보 목록을 함께 보내지 않아 저장하지 않았습니다. 후보 목록을 다시 열어 주세요.")
         doc, original = _load(name)
         if doc is None:
             raise Refused("not_found", "이 도면에는 AI 후보가 없습니다.")
@@ -521,7 +521,7 @@ def accept_bulk(engine, graph_id, task, ver, by=None):
         except (OSError, ValueError) as exc:
             return {"ok": False, "code": "failed", "message": "AI 후보를 읽을 수 없습니다(%s)." % str(exc)[:120]}
         if not ver or ver != ver_of(name):
-            return {"ok": False, "code": "stale", "message": STALE_TEXT if ver else "읽은 판(ver)이 없어 저장하지 않았습니다. 후보 목록을 먼저 읽으세요."}
+            return {"ok": False, "code": "stale", "message": STALE_TEXT if ver else "화면에서 본 후보 목록을 함께 보내지 않아 저장하지 않았습니다. 후보 목록을 다시 열어 주세요."}
         ids = _bulk(doc, task)
         if not ids:
             return {"ok": False, "code": "not_found", "message": "묶어 수락할 후보가 없습니다."}
