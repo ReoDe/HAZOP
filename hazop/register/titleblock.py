@@ -94,9 +94,19 @@ def _graph_id_of(extraction, project_id):
     return sources.sheet_name(project_id, extraction)
 
 
+def _built_graph_id(name):
+    """그 폴더의 graph.json이 지닌 그래프 ID(프로젝트 그래프가 이 쪽을 부르는 이름) 또는 None(아직 짓지 않았거나 비켜 둠)."""
+    try:
+        with open(os.path.join(paths.output_root("graph"), name, "graph.json"), encoding="utf-8") as fh:
+            return json.load(fh).get("graph_id")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def _sheets(record):
     """쪽마다 추출 결과가 있는 가장 새 등록 버전 [{page, version, name, graph_id, page_name, material_id, page_count, file, number}].
-    추출한 적 없는 쪽은 뺀다."""
+    추출한 적 없는 쪽은 뺀다. graph_id는 지은 graph.json의 이름이고, 짓지 않았으면 규칙이 셈한 이름이다. 둘은 다를 수 있다: 사람이 다른 파일을
+    고르면 옛 이름 붙박기가 풀리지만(sheets.seat) 다시 추출하기 전까지 이 쪽은 옛 이름으로 보이고 기록도 그 이름을 가리킨다."""
     out = []
     for page in range(_page_count(record)):
         for version in range(record["registration_version"], 0, -1):
@@ -107,7 +117,8 @@ def _sheets(record):
             except (OSError, ValueError):
                 continue
             f = sheet_rules.facts(ex)
-            out.append({"page": page, "version": version, "name": name, "graph_id": _graph_id_of(ex, record.get("project_id")),
+            out.append({"page": page, "version": version, "name": name,
+                        "graph_id": _built_graph_id(name) or _graph_id_of(ex, record.get("project_id")),
                         "page_name": f["page_name"], "material_id": f["material_id"], "page_count": f["page_count"], "file": f["file"],
                         "number": f["number"]})
             break
