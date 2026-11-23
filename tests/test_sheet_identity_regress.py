@@ -121,6 +121,32 @@ class SeatRegressTest(SheetCase):
         self.assertTrue(out["ok"], "막을 것이 없는데 거절: %s" % (out.get("refused") or [{}])[0].get("reason"))
         self.assertEqual((out["carries"], out["renames"]), ({}, []))
 
+    def choose_back(self, step):
+        """옛 자리 주인 a의 구간을 두고 b를 골랐다가, a에 step(다시 추출·제목 확정)을 한 뒤 a를 다시 고른다. 카드가 '다시 고르면 바로 되돌아옵니다'라고
+        약속하므로 a의 구간은 되돌아와야 한다."""
+        a, b = self.legacy_pair()
+        _pg, before = self.make_nodes(a)
+        members = before["nodes"][0]["members"]
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=b)
+        _pg, n = self.node()
+        self.assertEqual((n["members"], len(n.get("lost") or [])), ([], 6), "시험 전제: b를 고르자 a의 구성요소가 묘비가 됨")
+        step(a)
+        self.assertIn(a, [x["material_id"] for c in sources.conflicts(P) if c["graph_id"] == "graph-SNP-M-101" for x in c["candidates"]],
+                      "a가 그 이름의 고르기 후보에서 사라져 되돌릴 길이 없음")
+        sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
+        self.assertEqual(self.owner("graph-SNP-M-101"), a)
+        _pg, n = self.node()
+        self.assertEqual((n["members"], n.get("lost") or []), (members, []), "다시 고른 a의 구성요소가 묘비로 남음")
+
+    def test_choosing_back_after_reextracting_the_unpinned_file_restores_its_segment(self):
+        self.choose_back(self.reextract)
+
+    def test_choosing_back_after_confirming_only_the_title_restores_its_segment(self):
+        def title(a):
+            out = self.confirm(a, {"title": "다른 제목"})
+            self.assertTrue(out["ok"], out.get("refused"))
+        self.choose_back(title)
+
     def test_e2_choosing_a_format_after_the_legacy_owner_keeps_its_name(self):
         a, b = self.legacy_pair()
         sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
