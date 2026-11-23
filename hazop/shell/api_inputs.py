@@ -69,6 +69,21 @@ class Builds:
             self._start(n)
         return pick
 
+    def stop(self):
+        """엔진을 닫거나 멈출 때: 타이머를 끄고 맡은 도면의 '반영 대기'를 푼다(낡은 표시는 남아 다음 열기·다음 동작에서 다시 만든다).
+        돌고 있는 짓기에는 멈춤 신호를 보낸다."""
+        from hazop.shell import sheet_refresh
+        with self.lock:
+            if self.timer is not None:
+                self.timer.cancel()
+                self.timer = None
+            names = set(self.due) | set(self.running)
+            self.due.clear()
+            for ev in self.running.values():
+                ev.set()
+        for n in names:
+            sheet_refresh.undefer(n)
+
     def waiting(self):
         """짓기를 기다리는 도면 이름(돌고 있는 것은 빼고)."""
         with self.lock:
@@ -80,6 +95,8 @@ class Builds:
 
     # ------------------------------------------------------------ 차례
     def _arm(self):
+        if self.engine.stop_requested():
+            return
         with self.lock:
             if self.timer is not None:
                 self.timer.cancel()

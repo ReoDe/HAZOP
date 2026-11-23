@@ -419,6 +419,9 @@ class Engine:
         """돌고 있는 작업에 멈추라고 알린다. 작업은 진행을 알리는 자리(등록 -> 추출 -> AI 검토 사이, AI 검토는 도면마다)에서 멈춘다.
         단계 한가운데(추출 호출 하나)는 끊지 않는다: 반쯤 쓰인 자료를 남기지 않으려는 것이다."""
         self._stop.set()
+        builds = getattr(self, "_input_builds", None)
+        if builds is not None:                 # 수락 뒤 짓기 차례(api_inputs): 타이머를 끄고 맡은 도면의 '반영 대기'를 푼다
+            builds.stop()
 
     def stop_requested(self):
         return self._stop.is_set()

@@ -71,6 +71,22 @@ export const tests = [
     await tick();
     assert.equal(holds.slice(-2), [true, false], "닫으면 읽기");
   } },
+  { name: "대기열(입력 연산 U2 §11.3 6): 반영 전 수락은 카드에 한 줄과 까닭, 도면에 '반영 전' 점선 상자", async run(assert) {
+    await start([aiItem(1)], { inputs: { G: { waiting: 2, lines: [{ state: "waiting", code: "waiting", text: "기다림" }, { state: "not_applicable", code: "overlap", text: "다른 나누기와 겹쳐 반영하지 못했습니다" }],
+      boxes: [{ op_id: "c-1", rect: [100, 200, 130, 240], kind_label: "게이트 밸브" }] } } });
+    const host = document.createElement("div"); document.body.appendChild(host);
+    render(html`<${QueueCard} onChat=${() => {}} />`, host);
+    await tick();
+    const line = host.querySelector(".qinputs");
+    assert(line && line.textContent.includes("반영 전 수락 2건") && line.textContent.includes("겹쳐 반영하지 못했습니다"), line ? line.textContent : "줄 없음");
+    const marks = store.get().marks.bySheet.G || [];
+    const box = marks.find((m) => m.op === "box");
+    assert(box && box.boxes[0].label === "반영 전" && box.boxes[0].rect.join(",") === "100,200,130,240", JSON.stringify(marks));
+    const { resolveMark } = await import("../js/canvas/marks.js");
+    const r = resolveMark(box, { byId: new Map() });
+    assert.equal([r.items.length, r.items[0].box, r.badges[0].text, r.missing.length], [1, "pending", "반영 전", 0]);
+    host.remove();
+  } },
   { name: "대기열: Space는 저장하지 않고, 끝에서 건너뛴 것 다시 보기", async run(assert) {
     await start([aiItem(1), aiItem(2)]);
     await key(" "); await key(" ");

@@ -247,7 +247,7 @@ class AiReviewDialog(QDialog):
         self.doc = ai_review.load_doc(name) or ai_review.new_doc(name, self.original)
         # 지금 값은 사람 수정을 적용한 값으로 보인다(②에서 고친 태그가 '없음'으로 보이지 않게)
         from hazop.extract import corrections
-        self.shown = corrections.apply_saved(self.original, name)
+        self.shown = corrections.resolve(name, self.original)["corrected"]      # 기준 추출(나누기 반영) 위 고친 값
         lay = QVBoxLayout(self)
         self.head = QLabel("")
         self.head.setWordWrap(True)

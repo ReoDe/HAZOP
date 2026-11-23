@@ -81,6 +81,17 @@ function Done({ s }) {
 }
 
 /** 오른쪽 칸(채팅 자리)의 카드. 머리의 말풍선 단추는 대기열을 닫고 채팅으로 돌아간다. */
+/** 이 도면의 반영 전 수락(입력 연산 U2 §11.3 6): 기다리는 수와 적용하지 못한 까닭(사람 말). 대기열을 닫거나 잠시 쉬면 도면을 다시 읽는다. */
+function InputsLine({ s, it }) {
+  const gid = (it && it.graph_id) || s.gid;
+  const d = gid && (s.inputs || {})[gid];
+  if (!d) return null;
+  const bad = (d.lines || []).filter((x) => x.state === "not_applicable");
+  return html`<div class="qmsg qinputs" role="status">
+    ${d.waiting ? html`<div>반영 전 수락 ${d.waiting}건 · 대기열을 닫거나 10초 쉬면 도면을 다시 읽어 반영합니다(도면 위 점선 상자).</div>` : null}
+    ${bad.slice(0, 3).map((x) => html`<div class="warn">${x.text}</div>`)}${bad.length > 3 ? html`<div class="muted small">그 밖에 ${bad.length - 3}건</div>` : null}</div>`;
+}
+
 export function QueueCard({ onChat }) {
   const s = Q.useQueue((x) => x);
   const it = Q.current(s);
@@ -99,6 +110,7 @@ export function QueueCard({ onChat }) {
           ${it.kind === "ai" ? html`<button type="button" class="btn sm" disabled=${s.busy || !it.edit_op} aria-keyshortcuts="E" onClick=${Q.startEdit}><${Icon} name="pencil" size=${14} /> 고쳐서 수락 E</button>` : null}
           <button type="button" class="btn sm" disabled=${s.busy || !s.undo.length} aria-keyshortcuts="Z" onClick=${Q.undo}><${Icon} name="arrow-back-up" size=${14} /> 되돌리기 Z</button></div>
         <${BulkBox} s=${s} />` : null}
+      <${InputsLine} s=${s} it=${it} />
       ${s.error ? html`<div class="qmsg err" role="alert">${s.error}</div>` : null}
       ${s.note ? html`<div class="qmsg" role="status">${s.note}</div>` : null}
       <div class="qkeys muted small">${s.kind === "ai" ? "A 수락 · R 거절 · Space 건너뛰기 · E 고쳐서 수락 · Shift+A 묶음 · Z 되돌리기 · Esc 끝" : "R 거절 · Space 건너뛰기 · Z 되돌리기 · Esc 끝"}</div>

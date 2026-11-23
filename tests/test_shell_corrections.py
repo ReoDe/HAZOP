@@ -115,6 +115,40 @@ class Base(unittest.TestCase):
                     and all(ep.get("node_local_id") for ep in r["endpoints"]))
 
 
+
+class BaseExtractionTest(Base):
+    """입력 연산 U2 §11.3 4·5: 고치기는 기준 추출(나누기를 넣어 다시 읽은 것, corrections.resolve의 base) 위에서 한다.
+    나뉜 기호(원본에 없는 번호)를 고치면 그 번호로 연산을 만들 수 있어야 한다(예전에는 원본에서 찾아 '도면에 없는 항목')."""
+
+    def split_base(self):
+        import copy
+        src = self.tagged()
+        extra = copy.deepcopy(src)
+        extra.update(local_id="local-split-0001", source_object_id="split-c-0001-0", tag=None)
+        base = copy.deepcopy(self.ex)
+        base["nodes"].append(extra)
+        for loc in list(base.get("source_locations") or []):
+            if loc.get("local_id") == src["local_id"]:
+                base["source_locations"].append(dict(loc, local_id="local-split-0001", source_object_id="split-c-0001-0"))
+        real = corrections.resolve
+
+        def resolve(name, original=None, ops=None, *, allow_extract=False):
+            r = real(name, original, ops, allow_extract=allow_extract)
+            if name == self.name:
+                r = dict(r, base=base, corrected=corrections.apply(base, r["ops"]))
+            return r
+        p_ = mock.patch.object(corrections, "resolve", resolve)
+        p_.start()
+        self.addCleanup(p_.stop)
+        return extra
+
+    def test_a_split_symbol_can_be_tagged(self):
+        extra = self.split_base()
+        out = self.edit("set_tag", extra["local_id"], {"tag": "V777"})
+        self.assertTrue(out["ok"], out)
+        op = corrections.load(self.name)["ops"][-1]
+        self.assertEqual((op["op"], op["target"], op["value"]["tag"]), ("set_tag", "split-c-0001-0", "V777"))
+
 class TagKindFlowTest(Base):
     def test_tag_is_saved_reread_shown_in_the_graph_and_undone_and_redone(self):
         n = self.tagged()

@@ -50,6 +50,29 @@ class AiQueueTest(TA.Base):
         for w in BANNED:
             self.assertNotIn(w, text)
 
+    def test_unbuilt_inputs_and_their_boxes_come_with_the_queue(self):
+        """입력 연산 U2 §11.3 6: 대기열이 도면마다 반영 전 수락(input_items, 사람 말)과 도면 위 '반영 전' 상자(pending_inputs)를 싣는다.
+        상자는 도면 그림 좌표(sheet_items의 원점)로 옮겨 싣는다."""
+        from unittest import mock
+        from hazop.extract import corrections
+        from hazop.shell import sheet_items
+        self.seed([self.tag(1, self.valves[0], "V901")])
+        real = corrections.resolve
+        items = [{"op_id": "c-0009", "op": "split", "target": "pdf-path-0001", "candidate": "s-1:split", "state": "waiting", "code": "waiting",
+                  "text": "수락한 나누기가 아직 도면에 들지 않았습니다", "inputs": []},
+                 {"op_id": "c-0010", "op": "split", "target": "pdf-path-0002", "candidate": None, "state": "not_applicable", "code": "overlap",
+                  "text": "다른 나누기와 겹쳐 반영하지 못했습니다", "inputs": []}]
+        boxes = [{"op_id": "c-0009", "op": "split", "target": "pdf-path-0001", "kind": "gate_valve", "bbox": [110.0, 220.0, 30.0, 40.0], "objects": 3,
+                  "candidate": "s-1:split", "by": "검토자A", "at": "x"}]
+        with mock.patch.object(corrections, "resolve", lambda name, *a, **k: dict(real(name, *a, **k), inputs=dict(real(name, *a, **k)["inputs"], state="partial", waiting=["c-0009"]))),                 mock.patch.object(corrections, "input_items", lambda r: items),                 mock.patch.object(corrections, "pending_inputs", lambda name, original=None, ops=None: boxes),                 mock.patch.object(sheet_items, "_offset", lambda ex: (10.0, 20.0)):
+            q = self.queue()
+        got = q["inputs"][self.gid]
+        self.assertEqual(got["waiting"], 1)
+        self.assertEqual([x["text"] for x in got["lines"]], [items[0]["text"], items[1]["text"]])
+        self.assertEqual(got["boxes"], [{"op_id": "c-0009", "rect": [100.0, 200.0, 130.0, 240.0], "kind_label": got["boxes"][0]["kind_label"]}])
+        text = json.dumps(got, ensure_ascii=False)
+        self.assertNotRegex(text, r"gate_valve|pdf-path")
+
     def test_the_queue_can_hold_one_drawing_only(self):
         self.seed([self.tag(1, self.valves[0], "V901")])
         one = json.loads(api_queue.read(self.engine, ["queue", "ai"], {"graph_id": self.gid}).body.decode("utf-8"))

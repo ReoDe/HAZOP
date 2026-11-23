@@ -125,7 +125,7 @@ def candidates(engine, graph_id):
     if doc is None:
         return dict(base, available=False, reason="이 도면에는 AI 후보가 없습니다. AI 검토를 실행하면 생깁니다.", counts={}, groups=[], bulk=[],
                     last_run=None)
-    shown = {n["source_object_id"]: n for n in corrections.apply_saved(original, name)["nodes"]}
+    shown = {n["source_object_id"]: n for n in corrections.resolve(name, original)["corrected"]["nodes"]}      # 기준 추출 위 고친 값(입력 연산 U2)
     order = {f: i for i, f in enumerate(FIELD_LABELS)}
     rows = sorted(doc["candidates"], key=lambda c: (c["status"] != "proposed", order.get(c["field"], 99), -c["confidence"], c["cand_id"]))
     groups = []
@@ -530,6 +530,13 @@ def run_review(engine, graph_ids, cap, progress, token=None):
         with _LIVE_LOCK:
             cancelled = set(_live(engine)["cancel"]) if token is not None else set()
         pages = [(names[g], _original(names[g])) for g in graph_ids if g in names and names[g] not in cancelled]
+        # 다시 묻기는 수락한 나누기가 도면에 든 뒤(inputs.state ready·none)만: 반영 전에 물으면 같은 덩어리를 다시 제안한다(입력 연산 U2 §11.3 4)
+        waiting = [n for n, ex in pages if _inputs_waiting(n, ex)]
+        pages = [(n, ex) for n, ex in pages if n not in waiting]
+        if waiting:
+            from hazop.shell import api_inputs
+            for n in waiting:
+                api_inputs.note(engine, n)                                  # 짓기 차례에 넣는다(조용해지면 다시 읽음)
         est, _mode = ai_image_flow.estimate_pages(pages, cap, ai_review.RUN_CAP, ai_image_flow.enabled(engine))
         if pages and token is not None and _mark_running(engine, token, pages[0][0], 0, est["pages"][0]["calls"] if est["pages"] else None):
             engine.changed("aireview", None)                     # 차례를 잡았다: 첫 도면은 이제 묻는 중
@@ -539,13 +546,24 @@ def run_review(engine, graph_ids, cap, progress, token=None):
                                                lambda name, d, t, left: _progress(engine, token, progress, name, d, t), stop,
                                                skip=_skipper(engine, token) if token is not None else None,
                                                on_page=(lambda name: _page_started(engine, token, name)) if token is not None else None)
+    for n in waiting:
+        engine.emit("app.notice", {"text": "%s는 수락한 나누기를 도면에 반영한 뒤 AI에 다시 물을 수 있습니다. 도면을 다시 읽은 뒤 다시 실행하세요." % _number(engine, n)})
     used = images.used if images is not None else {}
     failed = list(images.failed) if images is not None else []
     engine.changed("aireview", None)
     return {"drawings": [{"graph_id": to_gid.get(n), "candidates": count, "calls": st.get("calls", 0), "left": st.get("left", 0),
                           "halted": bool(st.get("halted")), "images": n in used, "legend_source": used.get(n)} for n, count, st in done],
+            "waiting_inputs": [to_gid.get(n) for n in waiting],
             "calls": sum(st.get("calls", 0) for _n, _c, st in done), "estimate": est["calls"], "capped": est["capped"],
             "image_failed": failed}
+
+
+def _inputs_waiting(name, ex):
+    """수락한 입력 연산 가운데 아직 기준 추출에 들지 않은 것이 있는가(corrections.resolve의 inputs.state가 pending·partial)."""
+    try:
+        return corrections.resolve(name, ex)["inputs"]["state"] in ("pending", "partial")
+    except (OSError, ValueError, KeyError):
+        return False
 
 
 def _progress(engine, token, progress, name, done, total):

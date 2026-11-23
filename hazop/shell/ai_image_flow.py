@@ -142,7 +142,7 @@ class Factory:
                         ex = self.extra.get(name) or data.read_json(data.extraction_path(name))
                         src = pdf_source(ex)
                         if src:
-                            out.append((src[0], src[1], corrections.apply_saved(ex, name)))
+                            out.append((src[0], src[1], corrections.resolve(name, ex)["corrected"]))
                     except (OSError, ValueError, KeyError):
                         continue
                 self._drawings = out

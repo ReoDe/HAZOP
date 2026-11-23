@@ -80,7 +80,8 @@ def _sources(name):
     if ai is not None and (not isinstance(ai, dict) or ai.get("kind") != ai_review.KIND):
         ai = None
     ops = list((doc or {}).get("ops") or [])
-    return {"original": original, "ops": ops, "doc": doc, "fp": fps["edits"], "corrected": corrections.apply(original, ops),
+    r = corrections.resolve(name, original, ops)          # 기준 추출(나누기·배관 지정을 넣어 다시 읽은 것) 위에 덧바른다(입력 연산 U2)
+    return {"original": original, "base": r["base"], "inputs": r["inputs"], "ops": ops, "doc": doc, "fp": fps["edits"], "corrected": r["corrected"],
             "ver": sheet_refresh.ver_from(fps), "ai": ai}
 
 
@@ -129,14 +130,8 @@ def _redo_stack(doc):
 
 
 def _depends(ops, op_id):
-    """이 연산이 만든 기기·연결(manual-<op_id>)을 가리키는 뒤 연산."""
-    mine = corrections.MANUAL_PREFIX + op_id
-    out = []
-    for o in ops:
-        v = o.get("value") or {}
-        if o.get("target") == mine or any(v.get(k) == mine for k in corrections.REF_KEYS):
-            out.append(o["op_id"])
-    return out
+    """이 연산을 빼면 함께 빠져야 하는 뒤 연산(만든 기기·연결, 나눈 기호를 가리키거나 via에 적은 것, 이어서: corrections.dependents)."""
+    return corrections.dependents(ops, op_id)
 
 
 def _op_row(op, corrected, by_sid):
@@ -480,7 +475,7 @@ def apply_edit(engine, graph_id, op, local_id, value, ver, confirm=None, by=None
                     where = ", ".join("%s(%s)" % (h.get("name"), h.get("local_id")) for h in hits[:5])
                     _ask(confirm, "태그 '%s'가 이미 있습니다: %s. 태그는 프로젝트 전체에서 유일해야 합니다. 그래도 고칠까요?" % (v.get("tag"), where), {"conflicts": hits[:20]})
             try:
-                new = corrections.make_op(src["original"], op, target, v, who, existing_ops=src["ops"], name=name)
+                new = corrections.make_op(src["base"], op, target, v, who, existing_ops=src["ops"], name=name)      # 나뉜 기호도 대상이 된다
             except ValueError as exc:
                 raise Refused("bad_args", str(exc))
             out = _write(engine, graph_id, name, src["ops"] + [new], who, src, "edit", defer=defer)
@@ -534,7 +529,7 @@ def redo(engine, graph_id, ver, by=None, defer=False):
             ops = list(src["ops"])
             at = len(ops) if index is None else max(0, min(int(index), len(ops)))
             ops.insert(at, op)
-            trial = corrections.apply(src["original"], ops)["corrections"]
+            trial = corrections.resolve(name, src["original"], ops)["corrected"]["corrections"]
             why = next((x["reason"] for x in trial["not_applicable"] if x["op_id"] == op["op_id"]), None)
             if why:
                 raise Refused("bad_args", "다시 할 수 없습니다: %s" % why)

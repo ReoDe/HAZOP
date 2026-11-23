@@ -46,6 +46,18 @@ function recsOf(index, id) { return index.byId.get(id) || []; }
  */
 export function resolveMark(mark, index) {
   const out = { id: mark.id, op: mark.op, items: [], missing: [], dim: mark.op === "path" ? true : mark.dim_others !== false, badges: [], arrows: [], labels: [] };
+  if (mark.op === "box") {        // 도면 그림 좌표의 상자(반영 전 나누기 자리 등): 점선 테두리와 글 하나
+    const color = styleColor(mark.style || "warn");
+    for (const b of mark.boxes || []) {
+      const r = b.rect;
+      if (!Array.isArray(r) || r.length !== 4) continue;
+      const rec = { id: "box", layer: "box", rect: { x0: r[0], y0: r[1], x1: r[2], y1: r[3] } };
+      out.items.push({ id: "box", rec, color, box: "pending" });
+      if (b.label) out.badges.push({ rect: rec.rect, text: String(b.label), color });
+    }
+    out.dim = false;
+    return out;
+  }
   if (mark.op === "mark") {
     for (const g of mark.groups || []) {
       const color = styleColor(g.style);
@@ -258,7 +270,11 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
   for (const m of resolved) {
     if (m.missing.length) missing.set(m.id, m.missing);
     for (const it of m.items) {
-      if (it.box && recolor) {
+      if (it.box === "pending") {          // 자리만 있는 상자(도면 항목이 아님): 늘 점선 네모
+        const r = it.rec.rect;
+        nodes.push(el("rect", { x: r.x0, y: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0, rx: 2 / k, fill: it.color, "fill-opacity": 0.06, stroke: it.color,
+          "stroke-width": 1.8, "vector-effect": "non-scaling-stroke", "stroke-dasharray": "6 4", "pointer-events": "none" }));
+      } else if (it.box && recolor) {
         nodes.push(...mk({ rec: it.rec, color: it.color, dashed: it.box === "unknown" }, 2.6, null));
       } else if (it.box) {
         const r = it.rec.rect, pad = 5 / k;

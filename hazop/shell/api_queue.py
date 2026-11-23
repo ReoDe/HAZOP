@@ -56,7 +56,7 @@ def _value_text(field, value):
 def _ai_items(engine, graph_id=None):
     from hazop.extract import corrections
     from hazop.shell import api_aireview
-    items, bulk, vers = [], [], []
+    items, bulk, vers, inputs = [], [], [], {}
     for row in api_aireview.overview(engine)["drawings"]:
         if not row.get("proposed") or (graph_id and row["graph_id"] != graph_id):
             continue
@@ -67,8 +67,13 @@ def _ai_items(engine, graph_id=None):
         vers.append("%s=%s" % (gid, view["ver"]))
         name = engine.graph_names().get(gid)
         try:
-            shown = {n.get("local_id"): n for n in corrections.apply_saved(api_aireview._original(name), name)["nodes"]}
-        except (OSError, ValueError, TypeError):
+            original = api_aireview._original(name)
+            resolved = corrections.resolve(name, original)
+            shown = {n.get("local_id"): n for n in resolved["corrected"]["nodes"]}
+            pend = _inputs_of(name, original, resolved)
+            if pend:
+                inputs[gid] = pend
+        except (OSError, ValueError, TypeError, KeyError):
             shown = {}
         for g in view["groups"]:
             for c in g["items"]:
@@ -88,7 +93,26 @@ def _ai_items(engine, graph_id=None):
             if b["task"] not in CONNECT_TASKS:
                 bulk.append({"graph_id": gid, "sheet": view["drawing_number"], "task": b["task"], "label": b["label"], "count": b["count"],
                              "ver": view["ver"]})
-    return items, bulk, vers
+    return items, bulk, vers, inputs
+
+
+def _inputs_of(name, original, resolved):
+    """반영 전 수락(입력 연산 U2 §11.3 6): {"waiting": 기다리는 수, "lines": [{state, code, text}](사람 말), "boxes": [{op_id, rect, kind_label}]}.
+    rect는 도면 그림 좌표 [x0, y0, x1, y1](sheet_items와 같은 원점). 입력 연산이 없으면 None."""
+    from hazop.extract import corrections
+    from hazop.shell import sheet_items
+    st = resolved["inputs"]
+    if st["state"] == "none" and not st.get("not_applicable"):
+        return None
+    lines = [{"state": x["state"], "code": x["code"], "text": x["text"], "candidate": x.get("candidate")} for x in corrections.input_items(resolved)]
+    ox, oy = sheet_items._offset(original)
+    boxes = []
+    for b in corrections.pending_inputs(name, original, resolved["ops"]):
+        x, y, w, h = b["bbox"]
+        boxes.append({"op_id": b["op_id"], "rect": [x - ox, y - oy, x + w - ox, y + h - oy], "kind_label": _kind_text(b.get("kind")) or "기호"})
+    if not lines and not boxes:
+        return None
+    return {"waiting": len(st.get("waiting") or []), "lines": lines, "boxes": boxes}
 
 
 # ---------------------------------------------------------------- 찾지 못한 구성요소
@@ -128,8 +152,9 @@ def _lost_items(engine):
 # ---------------------------------------------------------------- 읽기
 def summary(engine, kind, graph_id=None):
     if kind == "ai":
-        items, bulk, vers = _ai_items(engine, graph_id)
-        out = {"kind": "ai", "graph_id": graph_id, "items": items, "bulk": bulk, "threshold": ai_review.DEFAULT_THRESHOLD}
+        items, bulk, vers, inputs = _ai_items(engine, graph_id)
+        out = {"kind": "ai", "graph_id": graph_id, "items": items, "bulk": bulk, "threshold": ai_review.DEFAULT_THRESHOLD, "inputs": inputs}
+        vers += ["%s:%s" % (g, v["waiting"]) for g, v in sorted(inputs.items())]
     else:
         items, set_rev, vers = _lost_items(engine)
         out = {"kind": "lost", "items": items, "bulk": [], "set_rev": set_rev, "project_id": engine.project_id()}

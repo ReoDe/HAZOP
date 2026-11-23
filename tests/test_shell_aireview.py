@@ -69,6 +69,8 @@ class Base(unittest.TestCase):
         self.engine = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=self.events,
                                  run_jobs=lambda job_id, fn: fn())
         self.engine.settings["reviewer_name"] = "검토자A"
+        from hazop.shell import api_inputs
+        self.addCleanup(lambda: api_inputs.of(self.engine).stop())      # 수락 뒤 짓기 타이머·'반영 대기'가 다음 시험으로 넘어가지 않게
         self.gid = {v: k for k, v in self.engine.graph_names().items()}[self.name]
         from hazop.app import data
         self.ex = data.read_json(data.extraction_path(self.name))
@@ -395,6 +397,23 @@ class RunTest(Base):
     def conn_ver(self):
         r = json.loads(AR.read(self.engine, ["aireview", "estimate"], {"cap": "2"}).body.decode("utf-8"))
         return r["conn"]["conn_ver"]
+
+    def test_a_drawing_with_unbuilt_inputs_is_not_asked_again(self):
+        """입력 연산 U2 §11.3 4: 다시 묻기는 inputs.state가 ready(또는 입력 없음)일 때만. 나누기를 반영하기 전에 물으면 같은 덩어리를 다시 제안한다."""
+        client = StubClient(kind_answers)
+        self.engine.ai = FakeAi(client)
+        real = corrections.resolve
+
+        def waiting(name, *a, **k):
+            r = real(name, *a, **k)
+            r["inputs"] = dict(r["inputs"], state="pending", waiting=["c-0009"])
+            return r
+        with mock.patch.object(corrections, "resolve", waiting):
+            out = self.call("aireview.run", graph_ids=[self.gid], cap=2, conn_ver=self.conn_ver())
+        self.assertTrue(out["ok"], out)
+        done = next(e for e in self.events.items if e.get("name") == "job.done")["data"]["result"]
+        self.assertEqual(len(client.requests), 0, "반영 전 나누기가 있는 도면은 묻지 않는다")
+        self.assertEqual(done["waiting_inputs"], [self.gid])
 
     def test_run_needs_connection(self):
         out = self.call("aireview.run", graph_ids=[self.gid], conn_ver=self.conn_ver())
