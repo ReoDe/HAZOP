@@ -33,8 +33,8 @@ _EXTRACT_CACHE = {}
 
 OTHER_FORMAT, OTHER_FILE, BEFORE_SETTLE = "same_number_other_format", "same_number_other_file", "same_name_before_settle"
 REASONS = {
-    OTHER_FORMAT: "같은 도면 번호 %(number)s의 원본이 %(formats)s 형식으로 함께 있습니다. 고르기 전에는 %(in_use)s를 씁니다.",
-    OTHER_FILE: "같은 도면 번호 %(number)s의 다른 파일이 들어왔습니다. 그래프에 쓸 파일을 고르세요. 고르기 전에는 %(in_use)s를 씁니다.",
+    OTHER_FORMAT: "같은 도면 번호 %(number)s의 원본이 %(formats)s 형식으로 함께 있습니다. 사람이 고르기 전에는 %(in_use)s를 씁니다.",
+    OTHER_FILE: "같은 도면 번호 %(number)s의 다른 파일이 들어왔습니다. 그래프에 쓸 파일을 고르세요. 사람이 고르기 전에는 %(in_use)s를 씁니다.",
     BEFORE_SETTLE: "번호가 없는 도면 %(count)d개가 옛 이름 %(graph_id)s를 나눠 써서 %(in_use)s만 보입니다. 다음 추출·그래프 짓기에서 "
                    "도면마다 따로 들어옵니다.",
 }
@@ -274,7 +274,8 @@ def pick(project_id, cands, graph_root=None, choices_root=None, store_root=None)
     """cands: [{"gid", "key"(바뀐 시각, 경로), "graph", "name"}] -> ({gid: 고른 후보}, notes). 파일을 쓰지 않는다."""
     state, settled = _state(project_id, cands, graph_root, choices_root, store_root)
     extract_root = extract_root_for(graph_root)
-    notes = [_row(gid, group, c, settled, extract_root)["text"] for gid, group, c, _f in state if _is_conflict(group, extract_root)]
+    notes = [_row(gid, group, c, settled, extract_root)["text"] for gid, group, c, followed in state  # 사람이 고른 것을 따른 줄은 알리지 않는다
+             if not followed and _is_conflict(group, extract_root)]
     return {gid: c for gid, _g, c, _f in state}, sorted(set(notes))
 
 
