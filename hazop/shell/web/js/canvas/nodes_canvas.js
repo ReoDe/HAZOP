@@ -2,7 +2,7 @@
 // SheetHost가 `useNodeCanvas(sheet, {onEsc})`의 props를 <Sheet>에 펼치고 `<NodeOverlay />`를 도면 자리 안에 그린다.
 // 도면·모델에서 온 글(태그, 이름)은 htm이 이스케이프하는 텍스트로만 넣는다.
 import { html } from "../ui/html.js";
-import { useEffect, useMemo } from "../../vendor/hooks.module.js";
+import { useEffect, useLayoutEffect, useMemo } from "../../vendor/hooks.module.js";
 import { store as shell } from "../store.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
@@ -23,17 +23,19 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
   const links = useMemo(() => (sheetView && sheetView.graph_id === sheet && Array.isArray(sheetView.links) ? sheetView.links : []), [sheetView, sheet]);
   const outside = useMemo(() => (showOutside && sheetView && sheetView.graph_id === sheet && sheetView.segments.length ? sheetView.outside_ids : []), [sheetView, showOutside, sheet]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {          // 그린 바로 뒤에 키를 잇는다(끌기 → Enter가 바로 먹게)
     function key(e) {
       const t = e.target, tag = (t && t.tagName) || "";
       const typing = tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || (t && t.isContentEditable);
       const s = N.nodes.get();
-      const act = keyAction(e, { selection: s.selection, typing, panelWide: false });
+      if (t && t.closest && t.closest(".newnode")) return;          // 카드 안의 키는 카드가 처리한다
+      const act = keyAction(e, { selection: s.selection, typing, panelWide: false, card: !!s.card });
       if (!act) return;
       e.preventDefault();
       if (act === "pan" || act === "pick") N.setMode(act);
       else if (act === "fit") N.zoomToIds(s.selection);
       else if (act === "card") N.openCard();
+      else if (act === "submit") N.submitCard();
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -88,9 +90,21 @@ function SelectionBar() {
     <${Btn} kind="ghost" sm=${true} icon="x" label="고른 것 비우기" title="비우기 (Esc)" onClick=${() => N.clearSelection()} /></div>`;
 }
 
+function PickHint() {
+  const mode = N.useNodes((s) => s.mode);
+  const selection = N.useNodes((s) => s.selection);
+  const card = N.useNodes((s) => s.card);
+  if (mode !== "pick" || selection.length || card) return null;
+  return html`<div class="float selbar pickhint" role="status"><${Icon} name="select" size=${15} />
+    <span>구간에 넣을 구성요소를 도면에서 네모로 끌어 고르세요. 고른 뒤 Enter로 이름을 정하고 Enter로 만듭니다.</span>
+    <${Btn} kind="ghost" sm=${true} label="고르기 그만두기" title="그만두기 (Esc)" onClick=${() => N.setMode("pan")}>그만두기<//></div>`;
+}
+
 function NewNodeCard() {
   const card = N.useNodes((s) => s.card);
   const list = N.useNodes((s) => s.list.nodes);
+  const opened = !!card;
+  useEffect(() => { if (opened) { const el = document.getElementById("nn-name"); if (el) el.focus(); } }, [opened]);
   if (!card) return null;
   const sg = card.suggest;
   const nextNo = "S" + (Math.max(0, ...list.map((n) => parseInt(String(n.node_id).slice(1), 10) || 0)) + 1);
@@ -123,5 +137,5 @@ function OutsideChip() {
 
 export function NodeOverlay() {
   N.wire();
-  return html`<${OutsideChip} /><${SelectionBar} /><${NewNodeCard} /><${Toolbar} /><${EditOverlay} />`;
+  return html`<${OutsideChip} /><${SelectionBar} /><${PickHint} /><${NewNodeCard} /><${Toolbar} /><${EditOverlay} />`;
 }

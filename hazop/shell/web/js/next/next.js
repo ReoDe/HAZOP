@@ -7,7 +7,13 @@ import { createStore, store } from "../store.js";
 import { onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 
-export const next = createStore({ items: [], running: null, open: false });
+export const next = createStore({ items: [], running: null, open: false, pinned: null });
+
+/** 줄에 보일 차례: 사람이 '그 밖에'에서 고른 일(pinned)이 아직 남아 있으면 맨 앞(엔진의 맨 위 것이 그 흐름을 가로막지 않게, 실제 창 3차). */
+export function shown(s) {
+  const i = s.pinned ? s.items.findIndex((x) => x.kind === s.pinned) : -1;
+  return i > 0 ? [s.items[i]].concat(s.items.slice(0, i), s.items.slice(i + 1)) : s.items;
+}
 
 /** 이 영역 store를 읽는다(store.js의 useStore와 같은 꼴). */
 export function useNext(selector) {
@@ -26,7 +32,8 @@ export async function load() {
   try {
     const d = await read("next");
     if (mine !== seq || !d) return;
-    next.set({ items: d.items || [], running: d.running || null });
+    const items = d.items || [];
+    next.set((s) => ({ items, running: d.running || null, pinned: s.pinned && items.some((x) => x.kind === s.pinned) ? s.pinned : null }));
   } catch (e) { /* 안내 한 줄: 읽기 실패는 앞 줄을 그대로 둔다 */ }
 }
 
@@ -37,6 +44,12 @@ function soon() { clearTimeout(timer); timer = setTimeout(load, 120); }      // 
 const handlers = {};
 /** 패널 쪽에서 가는 길을 붙인다(순환 가져오기를 피하려고 main.js가 이어 준다): name → fn(target). */
 export function setGo(name, fn) { handlers[name] = fn; }
+
+/** 펼친 목록에서 고른 일: 그 일을 줄 맨 앞에 붙잡아 두고 간다. */
+export function pick(it) {
+  next.set({ pinned: it.kind });
+  return go(it.action);
+}
 
 export function go(action) {
   if (!action) return;
@@ -58,10 +71,10 @@ export function wire() {
   wired = true;
   onChanged((topic) => { if (topic === "next" || topic === "state") soon(); });
   let lastProject = store.get().drawings.project_id;
-  store.subscribe((s) => { if (s.drawings.project_id !== lastProject) { lastProject = s.drawings.project_id; next.set({ items: [], running: null, open: false }); soon(); } });
+  store.subscribe((s) => { if (s.drawings.project_id !== lastProject) { lastProject = s.drawings.project_id; next.set({ items: [], running: null, open: false, pinned: null }); soon(); } });
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === "j" || e.key === "J")) {
-      const top = next.get().items[0];
+      const top = shown(next.get())[0];
       if (top && top.kind !== "none") { e.preventDefault(); go(top.action); }
     }
   });
@@ -74,11 +87,13 @@ export function wire() {
 
 const ICON = { apply_failed: "alert-triangle", recheck: "alert-triangle", no_sheets: "upload", titleblock: "file-text", ai_candidates: "sparkles",
   sheet_confirm: "check", nodes_none: "vector-triangle", nodes_draft: "vector-triangle", nodes_unrun: "sparkles", results_unjudged: "table",
-  ie_draft: "route", none: "circle-check" };
+  ie_none: "route", ie_draft: "route", none: "circle-check" };
 
 export function NextLine() {
   wire();
-  const items = useNext((s) => s.items);
+  const engineItems = useNext((s) => s.items);
+  const pinned = useNext((s) => s.pinned);
+  const items = shown({ items: engineItems, pinned });
   const running = useNext((s) => s.running);
   const open = useNext((s) => s.open);
   if (!items.length && !running) return html`<div class="next" id="next"></div>`;
@@ -95,7 +110,7 @@ export function NextLine() {
         ${rest > 0 ? html`<button type="button" class="more" aria-label=${"그 밖에 " + rest + "건 보기"} aria-expanded=${open} onClick=${(e) => { e.stopPropagation(); next.set({ open: !open }); }}>그 밖에 ${rest}건 <${Icon} name="chevron-down" size=${14} /></button>` : null}</div>`;
   return html`<div class="next" id="next">${line}
     ${open ? html`<div class="next-list" role="menu" aria-label="남은 일"><div class="h"><span>남은 일 · 앞에 있는 것부터</span><span>Ctrl+J = 맨 위 것 하기</span></div>
-      ${items.map((it, j) => html`<button type="button" role="menuitem" key=${it.kind} class=${"item" + (j === 0 ? " top" : "") + (it.tone === "warn" ? " warn" : "")} onClick=${() => go(it.action)}>
+      ${engineItems.map((it, j) => html`<button type="button" role="menuitem" key=${it.kind} class=${"item" + (j === 0 ? " top" : "") + (it.tone === "warn" ? " warn" : "")} onClick=${() => pick(it)}>
         <span class="n">${j + 1}</span><${Icon} name=${ICON[it.kind] || "info-circle"} size=${14} /><span class="t">${it.text}${it.detail ? html`<span>${it.detail}</span>` : null}</span>
         <span class="go">${it.action.label} ›</span></button>`)}</div>` : null}</div>`;
 }

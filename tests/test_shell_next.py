@@ -21,7 +21,7 @@ from tests.test_shell_auto_catch_up import Base as AutoBase  # noqa: E402
 from tests.test_shell_catch_up import PID  # noqa: E402
 
 SPEC_ORDER = ["apply_failed", "no_sheets", "recheck", "sheet_choose", "sheet_skipped", "titleblock", "number_held", "ai_unreviewed", "ai_candidates", "sheet_confirm", "nodes_none", "nodes_draft",
-              "nodes_unrun", "results_unjudged", "ie_draft"]
+              "nodes_unrun", "results_unjudged", "ie_none", "ie_draft"]
 GO = re.compile(r"^(panel:[a-z]+(#[a-z_]+)?|queue:(ai|lost)|confirm:[a-z_]+\.[a-z_]+)$")
 
 
@@ -32,7 +32,7 @@ class RulesTest(unittest.TestCase):
     def test_everything_at_once_comes_in_that_order(self):
         f = {"apply_failed": True, "sheets": 0, "running": [], "lost_members": 2, "lost_refs": 1, "lost_nodes": ["S1"], "titleblock": 1, "sheet_choose": 1, "sheet_skipped": 1, "number_held": 1,
              "ai_unreviewed": 2, "ai_candidates": 3, "sheet_confirm": 2, "sheets_confirmed": 1, "nodes_total": 0, "nodes_draft": 2, "nodes_unrun": 1,
-             "results_unjudged": 4, "ie_draft": 1}
+             "results_unjudged": 4, "ie_none": 1, "ie_draft": 1}
         kinds = [i["kind"] for i in api_next.items(f)]
         self.assertEqual(kinds, [k for k in SPEC_ORDER if k not in ("sheet_confirm", "number_held")], "표제란이 남으면 쪽 확정·번호 보류는 아직 띄우지 않는다")
         rc = next(i for i in api_next.items(f) if i["kind"] == "recheck")
@@ -48,13 +48,61 @@ class RulesTest(unittest.TestCase):
         self.assertNotIn("no_sheets", [i["kind"] for i in api_next.items({"sheets": 0, "running": [{"kind": "register"}]})])
 
     def test_texts_are_screen_words_and_targets_are_well_formed(self):
-        f = {k: 1 for k in ("sheet_choose", "sheet_skipped", "number_held", "titleblock", "ai_unreviewed", "ai_candidates", "nodes_draft", "nodes_unrun", "results_unjudged", "ie_draft", "lost_members")}
+        f = {k: 1 for k in ("sheet_choose", "sheet_skipped", "number_held", "titleblock", "ai_unreviewed", "ai_candidates", "nodes_draft", "nodes_unrun", "results_unjudged", "ie_none", "ie_draft", "lost_members")}
         f.update(apply_failed=True, sheets=0, running=[], sheets_confirmed=1, nodes_total=0)
         for i in api_next.items(f) + [api_next.NONE_ITEM]:
             for w in BANNED:
                 self.assertNotIn(w, i["text"])
             self.assertRegex(i["action"]["go"], GO)
 
+
+
+class _FakeEngine:
+    def project_id(self):
+        return "P"
+
+    def job_progress(self):
+        return []
+
+    def graph_names(self):
+        return {"G1": "a", "G2": "b", "G3": "c"}
+
+    def catching(self, _pid):
+        return False
+
+
+class FactsTest(unittest.TestCase):
+    """실제 창 3차(838c7f2): 3~7단계 내내 맨 위가 'AI 검토 시작'이었고, 판정이 끝난 뒤 '초기사건 초안 만들기'가 어디에도 없었다.
+    총괄 결정: ai_unreviewed는 AI에게 물을 곳이 있고 아직 쪽을 확정하지 않은 도면만 센다. 초안이 없고 승인된 결과(후보)가 있으면 '초안 만들기'."""
+
+    def facts(self, review, sheet_state, ie=None):
+        from hazop.shell import api_aireview, api_drawings, api_ie
+        rows = [{"graph_id": g, "drawing_number": g, "proposed": 0, "review": r} for g, r in review.items()]
+        sc = {"drawings": [{"graph_id": g, "state": st} for g, st in sheet_state.items()]}
+        with mock.patch.object(api_aireview, "overview", lambda e: {"drawings": rows}), \
+                mock.patch.object(api_drawings, "exportable", lambda e: sc), \
+                mock.patch.object(api_drawings, "labels", lambda e: {}), \
+                mock.patch.object(api_next, "_conflicts", lambda e: []), \
+                mock.patch.object(api_ie, "summary", lambda e: ie or {"available": False}):
+            return api_next.facts(_FakeEngine())
+
+    def test_a_confirmed_sheet_or_one_with_nothing_to_ask_is_not_an_unreviewed_drawing(self):
+        f = self.facts({"G1": "not_run", "G2": "not_run", "G3": "nothing"}, {"G1": "confirmed", "G2": "ready", "G3": "open"})
+        self.assertEqual((f["ai_unreviewed"], f["ai_unreviewed_first"]), (1, "G2"), "쪽을 확정한 G1·물을 곳이 없는 G3는 빠진다")
+        f = self.facts({"G1": "not_run", "G2": "partial"}, {"G1": "confirmed", "G2": "confirmed"})
+        self.assertEqual(f["ai_unreviewed"], 0)
+        self.assertNotIn("ai_unreviewed", [i["kind"] for i in api_next.items(dict(f, sheets=2, running=[]))], "목록에도 남지 않는다")
+
+    def test_a_draft_to_make_shows_up_after_judging(self):
+        ie = {"available": True, "kpi": {"candidates": 3, "groups": 0, "draft": 0}}
+        f = self.facts({}, {}, ie)
+        out = api_next.items(dict(f, sheets=3, running=[]))
+        self.assertEqual(out[0]["kind"], "ie_none", out)
+        self.assertEqual((out[0]["action"]["label"], out[0]["action"]["go"]), ("초안 만들기", "confirm:ie.suggest"))
+        f = self.facts({}, {}, {"available": True, "kpi": {"candidates": 3, "groups": 2, "draft": 2}})
+        self.assertEqual([i["kind"] for i in api_next.items(dict(f, sheets=3, running=[]))], ["ie_draft"], "초안이 있으면 '초안 보기'만")
+        f = self.facts({}, {}, {"available": True, "kpi": {"candidates": 0, "groups": 0, "draft": 0}})
+        self.assertEqual([i["kind"] for i in api_next.items(dict(f, sheets=3, running=[]))], ["none"], "승인된 결과가 없으면 초안 만들기를 띄우지 않는다")
 
 class EmptyProjectTest(unittest.TestCase):
     def setUp(self):

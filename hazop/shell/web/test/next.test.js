@@ -3,7 +3,8 @@
 import { html, render } from "../js/ui/html.js";
 import { store } from "../js/store.js";
 import { deliver } from "../js/bridge.js";
-import { NextLine, go, load, next, setGo } from "../js/next/next.js";
+import * as NX from "../js/next/next.js";
+const { NextLine, go, load, next, setGo } = NX;
 
 const tick = async () => { for (let i = 0; i < 400; i++) await Promise.resolve(); };
 const item = (kind, text, label, goTo, extra) => Object.assign({ kind, count: 1, text, detail: null, action: { label, go: goTo, target: null }, tone: "" }, extra || {});
@@ -25,7 +26,7 @@ function stub() {
 async function mount() {
   stub();
   served = { items: LIST, running: null, ver: "a" };
-  next.set({ items: [], running: null, open: false });
+  next.set({ items: [], running: null, open: false, pinned: null });
   const host = document.createElement("div");
   document.body.appendChild(host);
   render(html`<${NextLine} />`, host);
@@ -83,6 +84,24 @@ export const tests = [
     assert.equal(store.get().panel, "results", "패널로 가기");
     go({ go: "queue:ai" });
     assert.equal(store.get().panel, "aireview", "대기열 전에는 AI 검토 패널로");
+    host.remove();
+  } },
+  { name: "다음에 할 일(실제 창 3차): '그 밖에'에서 고른 일은 그 일이 남아 있는 동안 줄 맨 앞, 없어지면 엔진 차례로", async run(assert) {
+    const host = await mount();
+    const seen = [];
+    setGo("confirm:nodes.confirm", () => seen.push("nodes"));
+    host.querySelector(".next .more").click();
+    await tick();
+    host.querySelectorAll(".next-list .item")[2].click();
+    await tick();
+    assert.equal(seen, ["nodes"]);
+    assert(host.querySelector(".next .line .txt").textContent.includes("확정하지 않은 검토구간"), "고른 일이 줄 맨 앞: " + host.querySelector(".next .line .txt").textContent);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "j", ctrlKey: true, bubbles: true }));
+    assert.equal(seen, ["nodes", "nodes"], "Ctrl+J도 고른 일");
+    served = { items: [LIST[0], LIST[1]], running: null };
+    await load(); await tick();
+    assert(host.querySelector(".next .line .txt").textContent.includes("다시 확인"), "고른 일이 끝나면 엔진 맨 위 것");
+    assert.equal(next.get().pinned, null);
     host.remove();
   } },
 ];

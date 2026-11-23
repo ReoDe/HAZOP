@@ -260,3 +260,5 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .rv-modal .small, .qdone .small { font-size: var(--fs-xs); }
 .qnext { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); width: 100%; box-sizing: border-box; }
 .chat.queue:focus { outline: none; }
+.selbar.pickhint { white-space: normal; max-width: min(760px, calc(100% - 32px)); gap: var(--sp-2); }
+.na-modal .card.confirm-all { border: 0; box-shadow: none; padding: 0; margin: 0; }

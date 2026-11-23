@@ -172,6 +172,60 @@ export const tests = [
     assert.equal([k("v"), k("S"), k("f"), k("Enter"), k("Enter", { ctrlKey: true }), k("x")], ["pan", "pick", "fit", "card", null, null]);
     assert.equal(L.keyAction({ key: "v" }, { selection: [], typing: true, panelWide: false }), null);
     assert.equal(L.keyAction({ key: "Enter" }, { selection: [], typing: false, panelWide: false }), null);
+    assert.equal(L.keyAction({ key: "Enter" }, { selection: ["a"], typing: false, panelWide: false, card: true }), "submit", "카드가 열려 있으면 Enter는 만들기");
+    assert.equal(L.keyAction({ key: "s" }, { selection: ["a"], typing: false, panelWide: false, card: true }), null);
+  } },
+  { name: "구간 만들기(실제 창 3차): 끌기 → Enter(카드) → Enter(만들기), 이름 제안을 기다리는 중 누른 Enter도 만든다", async run(assert) {
+    await setup();
+    engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "제안 이름", count: 2, asked: 2, boundary: [], overlaps: [] } } : { ok: true, data: { set_rev: 5, node_ids: ["S4"] } });
+    N.setMode("pick");
+    N.setSelection(["n1", "n2"]);
+    const Keys = () => { useNodeCanvas("graph-A"); return null; };
+    const host = mount(html`<${Keys} /><${NodeOverlay} />`);
+    await tick();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    assert(N.nodes.get().card && N.nodes.get().card.loading, "카드가 열리고 이름 제안을 읽는 중");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await tick();
+    const created = sent.filter((m) => m.name === "nodes.create");
+    assert.equal(created.length, 1, "두 번째 Enter가 만들기: " + JSON.stringify(sent.map((m) => m.name)));
+    assert.equal(created[0].args.name, "제안 이름");
+    assert.equal(N.nodes.get().card, null);
+    host.remove();
+  } },
+  { name: "구간 만들기: 고르기 모드에서 고른 것이 없으면 할 일을 한 줄로 안내한다", async run(assert) {
+    await setup();
+    N.setMode("pick");
+    const host = mount(html`<${NodeOverlay} />`);
+    await tick();
+    const h = host.querySelector(".pickhint");
+    assert(h && h.textContent.includes("네모로 끌어 고르세요"), "안내 줄");
+    N.setSelection(["n1"]);
+    await tick();
+    assert(!host.querySelector(".pickhint"), "고르면 'n개 고름' 막대로 바뀐다");
+    N.setMode("pan");
+    host.remove();
+  } },
+  { name: "모두 확정(실제 창 3차): 구간 패널을 열지 않고 도면 위 확인 창, Enter로 확정", async run(assert) {
+    await setup();
+    store.set({ panel: null });
+    const { ConfirmAllModal } = await import("../js/panels/nodes_confirm.js");
+    const host = mount(html`<${ConfirmAllModal} />`);
+    N.askConfirmAll();
+    await tick();
+    const m = host.querySelector(".na-modal");
+    assert(m && m.textContent.includes("2개 구간을 확정할까요?"), "확인 창");
+    assert.equal(store.get().panel, null, "패널은 열지 않음");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await tick();
+    assert.equal(sent.filter((x) => x.name === "nodes.confirm").map((x) => x.args.node_ids), [["S1", "S2"]]);
+    assert(!host.querySelector(".na-modal"), "확정하면 닫힘");
+    N.askConfirmAll();
+    await tick();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+    assert.equal(N.nodes.get().confirmAsk, null, "Esc는 취소");
+    host.remove();
   } },
   { name: "구간 연결: 명령은 set_rev와 대상의 rev·state를 함께 보내고, 성공하면 다시 읽는다", async run(assert) {
     await setup();

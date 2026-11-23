@@ -67,11 +67,13 @@ def facts(engine):
     with_cands = [r for r in (ar or {}).get("drawings") or [] if r["proposed"]]
     f["ai_candidates_first"] = with_cands[0]["graph_id"] if with_cands else None
     f["ai_candidates_sheet"] = (with_cands[0]["drawing_number"], with_cands[0]["proposed"], len(with_cands)) if with_cands else None
-    todo = [r for r in (ar or {}).get("drawings") or [] if r.get("review") in UNREVIEWED]
+    sc = _safe(lambda: api_drawings.exportable(engine), "쪽 확정")
+    # 'AI 검토 시작'은 물을 곳이 있고(not_run·partial·failed) 사람이 아직 쪽을 확정하지 않은 도면만(실제 창 3차, 총괄 결정)
+    confirmed = {r["graph_id"] for r in (sc or {}).get("drawings") or [] if r.get("state") == "confirmed"}
+    todo = [r for r in (ar or {}).get("drawings") or [] if r.get("review") in UNREVIEWED and r["graph_id"] not in confirmed]
     f["ai_unreviewed"] = len(todo) if ar else None
     f["ai_unreviewed_first"] = todo[0]["graph_id"] if todo else None
     f["ai_unreviewed_sheet"] = todo[0]["drawing_number"] if todo else None
-    sc = _safe(lambda: api_drawings.exportable(engine), "쪽 확정")
     f["sheet_confirm"] = sum(1 for r in sc["drawings"] if r.get("state") != "confirmed") if sc else None
     f["sheets_confirmed"] = sum(1 for r in sc["drawings"] if r.get("state") == "confirmed") if sc else None
     f["sheet_confirm_first"] = next((r["graph_id"] for r in (sc or {}).get("drawings") or [] if r.get("state") != "confirmed"), None)
@@ -91,7 +93,9 @@ def facts(engine):
         f["results_unjudged"] = int((rs.get("kpi") or {}).get("unreviewed") or 0)
     ie = _safe(lambda: api_ie.summary(engine), "초기사건") if names else None
     if ie and ie.get("available"):
-        f["ie_draft"] = int((ie.get("kpi") or {}).get("draft") or 0)
+        k = ie.get("kpi") or {}
+        f["ie_draft"] = int(k.get("draft") or 0)
+        f["ie_none"] = 1 if not k.get("groups") and k.get("candidates") else 0      # 초안이 없고 승인된 결과(후보)가 있다
     return f
 
 
@@ -146,6 +150,8 @@ RULES = (
      lambda f, n: "분석하지 않은 검토구간이 %d개 있습니다" % n, "분석 실행", "panel:results#run", ""),
     ("results_unjudged", lambda f: _n(f, "results_unjudged"),
      lambda f, n: "판정하지 않은 분석 결과가 %d건 있습니다" % n, "판정하기", "panel:results#unjudged", ""),
+    ("ie_none", lambda f: _n(f, "ie_none"),
+     lambda f, n: "초기사건 초안을 만들 차례입니다", "초안 만들기", "confirm:ie.suggest", ""),
     ("ie_draft", lambda f: _n(f, "ie_draft"),
      lambda f, n: "초기사건 초안 %d그룹을 확인해 주세요" % n, "초안 보기", "panel:ie#draft", ""),
 )

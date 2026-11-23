@@ -135,13 +135,16 @@ export function dismissError() { nodes.set({ error: null, needArchive: null }); 
 export async function openCard() {
   const { selection } = nodes.get(), sheet = shell.get().sheet;
   if (!selection.length || !sheet) return;
-  nodes.set({ card: blankCard({ busy: true }) });
+  nodes.set({ card: blankCard({ busy: true, loading: true }) });
   try {
     const sg = await cmd("nodes.suggest", { project_id: nodes.get().list.project_id, sheet, ids: selection });
-    if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, suggest: sg, name: s.card.name || sg.name }) }));
+    if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, loading: false, suggest: sg, name: s.card.name || sg.name }) }));
+    const c = nodes.get().card;
+    if (c && c.submitWhenReady) { editCard({ submitWhenReady: false }); return submitCard(); }      // 이름 제안을 기다리는 사이 누른 Enter
   } catch (e) {
-    if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, error: errorText(e) }) }));
+    if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, loading: false, submitWhenReady: false, error: errorText(e) }) }));
   }
+  return null;
 }
 
 export function editCard(patch) { nodes.set((s) => ({ card: s.card ? Object.assign({}, s.card, patch) : s.card })); }
@@ -149,6 +152,7 @@ export function closeCard() { nodes.set({ card: null }); }
 
 export async function submitCard() {
   const { card, selection, list } = nodes.get(), sheet = shell.get().sheet;
+  if (card && card.loading) { editCard({ submitWhenReady: true }); return null; }      // 제안 이름이 오면 바로 만든다
   if (!card || card.busy) return null;
   if (!card.name.trim()) { editCard({ error: "구간 이름을 입력하세요." }); return null; }
   editCard({ busy: true, error: null });

@@ -8,6 +8,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { canEdit, checkText, colorOf, confirmedLostText, discardLabel, rangeText, sheetName, stateChip } from "./nodes_logic.js";
 import * as N from "./nodes_state.js";
+import { ConfirmAllCard } from "./nodes_confirm.js";
 
 const cssHref = new URL("nodes.css", import.meta.url).href;
 if (typeof document !== "undefined" && !document.querySelector('link[data-nodes-css]')) {
@@ -158,11 +159,7 @@ export function NodesPanel({ onClose }) {
         <button type="button" class=${scope === "all" ? "on" : ""} aria-pressed=${scope === "all" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "all" })}>전체</button></div>
         ${checked.length >= 2 ? html`<${Btn} sm=${true} icon="plus" label="체크한 구간 합치기" disabled=${busy} onClick=${N.mergeChecked}>${checked.length}개 합치기<//>` : null}
         ${drafts ? html`<${Btn} sm=${true} kind="primary" icon="check" label="확정하지 않은 구간 모두 확정" disabled=${busy || !!confirmAsk || !N.draftIds(scopeSheet).length} onClick=${() => N.askConfirmAll(scopeSheet)}>모두 확정 (${N.draftIds(scopeSheet).length})<//>` : null}</div>
-      ${confirmAsk ? html`<div class="card confirm-all" role="dialog" aria-label="여러 구간 확정"><b>${confirmAsk.length}개 구간을 확정할까요?</b>
-        <ul class="tight">${confirmAsk.slice(0, 12).map((id) => { const n = list.nodes.find((x) => x.node_id === id); return html`<li key=${id}>${id} ${n ? n.name : ""}${n && n.lost ? html` <span class="chip warn">찾지 못한 구성요소 ${n.lost}개</span>` : null}</li>`; })}
-          ${confirmAsk.length > 12 ? html`<li class="muted">그 밖에 ${confirmAsk.length - 12}개</li>` : null}</ul>
-        <div class="acts-row"><${Btn} sm=${true} kind="primary" label="이 구간들 확정" disabled=${busy} onClick=${() => N.confirmMany(confirmAsk)}>확정<//>
-          <${Btn} sm=${true} label="확정하지 않기" onClick=${N.cancelConfirmAll}>취소<//></div></div>` : null}
+      <${ConfirmAllCard} />
       ${shown.length === 0 ? html`<${Notice}>${list.nodes.length ? "이 도면에는 구간이 없습니다. '전체'로 바꾸면 다른 도면의 구간이 보입니다." : "구간이 없습니다. 도면에서 구성요소를 네모로 끌어 고르고 '구간 만들기'를 누르거나, 채팅에 '대표 구간 3개 만들어 줘'라고 하세요."}<//>`
         : html`<div class="list" role="list">${shown.map((n) => html`<${Row} key=${n.node_id} n=${n} list=${list.nodes} drawings=${drawings} on=${n.node_id === focus} checked=${checked.includes(n.node_id)} />`)}</div>`}
       ${focused ? html`<${Detail} n=${focused} d=${detail} list=${list.nodes} drawings=${drawings} selection=${selection} busy=${busy} needArchive=${needArchive} />` : null}
