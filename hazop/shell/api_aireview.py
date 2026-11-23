@@ -453,15 +453,17 @@ def _decide_locked(engine, graph_id, cand_ids, action, ver, by=None, confirm=Non
     changed = [i for i in ids if after.get(i) != before[i]]
     stale = stale_before
     if changed and action in ("accept", "revert"):
-        stale, more, recheck = refresh(name)                    # 실패해도 예외 없이 낡은 그래프 표시를 남긴다(sheet_refresh)
-        notes = notes + more
+        # 그래프·지식그래프 다시 만들기(나누기는 기준 추출 짓기까지)는 짓기 작업으로 미룬다: 수락이 이어지는 동안 잠금을 오래 쥐지 않게
+        # 마지막 수락 뒤 조용해지거나 대기열을 닫으면 도면마다 한 번 돈다(api_inputs, 입력 연산 U2 §11.3·§11.5). 도면 그림은 수정 기록을 바로 보인다
+        from hazop.shell import api_inputs
+        api_inputs.note(engine, name)
     if changed or stale_before != stale:
         engine.changed("aireview", None)
         engine.changed("drawings", None)
         engine.changed("sheetconf", None)                         # 쪽 확정 카드의 AI 후보 수(검토 6)
         if action in ("accept", "revert") or stale_before != stale:
             engine.changed("sheet", graph_id)
-            engine.changed("kg", None)
+            engine.changed("inputs", None)
     return {"ok": True, "graph_id": graph_id, "changed": changed, "failed": failed, "ver": ver_of(name), "notes": notes,
             "recheck": recheck, "graph_stale": stale}
 

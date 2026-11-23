@@ -26,6 +26,26 @@ LOG = logging.getLogger("hazop.shell.sheet_refresh")
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
 _ENSURING = threading.local()
+_DEFERRED = set()            # 다시 만들기를 짓기 작업(api_inputs)에 맡긴 도면: 다음 수락·읽기가 그 자리에서 다시 만들지 않는다
+_DEFERRED_GUARD = threading.Lock()
+
+
+def defer(name):
+    """수락을 저장했고 그래프는 짓기 작업이 다시 만든다. 낡은 그래프 표시를 남겨(앱이 그새 닫혀도 다음 열기에서 다시 만듦) 두되,
+    이 프로세스 안에서는 ensure_graph·ensure_project가 그 자리에서 다시 만들지 않는다(수락마다 도면 잠금을 오래 쥐지 않게)."""
+    mark_stale(name, "수락 반영 대기")
+    with _DEFERRED_GUARD:
+        _DEFERRED.add(name)
+
+
+def undefer(name):
+    with _DEFERRED_GUARD:
+        _DEFERRED.discard(name)
+
+
+def deferred(name):
+    with _DEFERRED_GUARD:
+        return name in _DEFERRED
 
 
 @contextlib.contextmanager
@@ -140,6 +160,8 @@ def refresh(name):
 def ensure_graph(name):
     if not graph_stale(name):
         return False, [], []
+    if deferred(name):                            # 짓기 작업이 곧 다시 만든다(수락이 이어지는 동안 잠금을 오래 쥐지 않게)
+        return False, [], []
     return refresh(name)
 
 
@@ -177,6 +199,9 @@ def ensure_project(project_id):
         left = []
         for name in stale_names(project_id):
             if name in _busy():                   # 지금 이 스레드가 다시 만드는 쪽(그 일이 끝나면 표시를 지운다)
+                continue
+            if deferred(name):                    # 짓기 작업이 맡은 쪽: 그 작업이 끝나면 프로젝트 그래프도 새로 짓는다(notify_graph_changed)
+                left.append(name)
                 continue
             stale, _notes, _recheck = refresh(name)
             if stale:

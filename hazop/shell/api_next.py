@@ -17,7 +17,7 @@ LOG = logging.getLogger(__name__)
 
 TOPICS = ("next",)
 # 이 영역들이 바뀌었다고 알리면 엔진이 next도 바뀌었다고 알린다(api.Engine.changed)
-SOURCES = ("titleblock", "aireview", "nodes", "results", "ie", "drawings", "sheetconf", "sources", "links", "state")
+SOURCES = ("titleblock", "aireview", "nodes", "results", "ie", "drawings", "sheetconf", "sources", "links", "state", "inputs")
 
 UNREVIEWED = ("not_run", "partial", "failed")     # 'AI 검토 시작'을 기다리는 도면(§3.7. nothing·waiting·running은 세지 않는다)
 RUNNING_TEXT = {"register": "도면을 읽고 있습니다", "ai_review": "AI가 도면을 검토하고 있습니다", "analysis": "AI 분석을 하고 있습니다",
@@ -32,6 +32,11 @@ def _api():
 def _conflicts(engine):
     from hazop.graph import sources
     return sources.conflicts(engine.project_id())
+
+
+def _inputs(engine):
+    from hazop.shell import api_inputs
+    return api_inputs.summary(engine)
 
 
 def _safe(fn, what):
@@ -57,6 +62,10 @@ def facts(engine):
         f["sheet_choose_first"] = open_[0]["graph_id"] if open_ else None
         f["sheet_skipped"] = sum(1 for c in cf if c.get("reason") == "settle_rebuild_failed")
         f["sheet_skipped_text"] = next((api_drawings.conflict_text(c, c.get("drawing_number") or "") for c in cf if c.get("reason") == "settle_rebuild_failed"), None)
+    ip = _safe(lambda: _inputs(engine), "반영 전 수락")
+    if ip is not None:
+        f["inputs_pending"] = len(ip["left"])          # 열 때 찾은 것만(짓기를 기다리는 10초 동안 한 줄이 깜빡이지 않게)
+        f["inputs_pending_first"] = ip["left"][0]["graph_id"] if ip["left"] else None
     lb = _safe(lambda: api_drawings.labels(engine), "도면 이름")
     if lb is not None:
         f["number_held"] = sum(1 for r in lb.values() if r.get("number_state") == "held")
@@ -128,6 +137,9 @@ RULES = (
     ("recheck", _recheck,
      lambda f, n: ("도면이 바뀌어 찾지 못한 구성요소 %d개를 다시 확인해야 합니다" if _n(f, "lost_members") else "도면이 바뀌어 분석 결과 %d곳을 다시 확인해야 합니다") % n,
      "확인하기", "queue:lost", "warn"),
+    # 입력 연산 U2: 수락했지만 아직 도면에 반영하지 않은 나누기·배관 지정(앱을 닫을 때 남았거나 짓기를 기다리는 도면)
+    ("inputs_pending", lambda f: _n(f, "inputs_pending"),
+     lambda f, n: "수락했지만 도면에 아직 반영하지 않은 나누기가 있는 도면이 %d장 있습니다" % n, "다시 읽기", "confirm:inputs.build", ""),
     # 시트 정체(U4): 같은 번호 자리에 파일·형식이 둘 이상이면 고르기, 정착이 들이지 못한 가려진 도면
     ("sheet_choose", lambda f: _n(f, "sheet_choose"),
      lambda f, n: "같은 번호의 도면 파일이 둘 이상인 곳이 %d곳 있습니다. 쓸 파일을 고르세요" % n, "파일 고르기", "panel:drawings#sources", "warn"),
@@ -159,7 +171,7 @@ RULES = (
      lambda f, n: "초기사건 초안 %d그룹을 확인해 주세요" % n, "초안 보기", "panel:ie#draft", ""),
 )
 # 단추가 바로 갈 자리(화면이 그 도면·자료·구간을 연다). 없으면 그 패널만 연다
-TARGET = {"sheet_choose": "sheet_choose_first", "titleblock": "titleblock_first", "sheet_confirm": "sheet_confirm_first", "ai_unreviewed": "ai_unreviewed_first",
+TARGET = {"inputs_pending": "inputs_pending_first", "sheet_choose": "sheet_choose_first", "titleblock": "titleblock_first", "sheet_confirm": "sheet_confirm_first", "ai_unreviewed": "ai_unreviewed_first",
           "ai_candidates": "ai_candidates_first"}
 
 NONE_ITEM = {"kind": "none", "count": 0, "text": "지금 할 일이 없습니다", "detail": None,

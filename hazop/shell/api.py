@@ -231,8 +231,14 @@ class Engine:
         return True
 
     def catch_up_on_open(self):
-        """앱을 열었을 때(프로젝트를 정했을 때) 시트 자리를 한 번 정착하고(settle_on_open), 이미 낡은 프로젝트를 같은 길로 맞춘다. → 판 이전을 했으면 True."""
+        """앱을 열었을 때(프로젝트를 정했을 때) 시트 자리를 한 번 정착하고(settle_on_open), 이미 낡은 프로젝트를 같은 길로 맞춘다. → 판 이전을 했으면 True.
+        짓지 않은 입력 연산(나누기·배관 지정 수락)이 남은 도면은 찾아 '다음에 할 일'에 올린다(api_inputs.scan_on_open, 저절로 짓지 않음)."""
         self.settle_on_open()
+        try:
+            from hazop.shell import api_inputs
+            api_inputs.scan_on_open(self)
+        except Exception:  # noqa: BLE001 - 안내 한 줄을 위한 찾기: 실패해도 열기를 막지 않는다
+            LOG.warning("짓지 않은 입력 연산 찾기 실패", exc_info=True)
         return self.auto_catch_up(self.project_id())
 
     def settle_on_open(self):
@@ -691,7 +697,7 @@ PROJECT_BOUND_CORE = ("chat.action.", "sheet.")
 
 # 영역별 모듈(등록 규약은 hazop/shell/README.md). 새 영역은 이 튜플에 모듈 이름 하나를 더하는 것이 전부다.
 MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "api_kg", "api_actionlog", "api_aireview", "api_docs", "api_titleblock", "api_settings", "api_corrections", "clean_items",
-           "api_next", "api_queue")
+           "api_next", "api_queue", "api_inputs")
 
 TOPIC_OWNER = {}          # 토픽 -> 읽기 모듈
 LOADED = {}               # 모듈 이름 -> 모듈 (읽지 못한 것은 없다)

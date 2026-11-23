@@ -10,15 +10,17 @@ const tick = async () => { for (let i = 0; i < 400; i++) await Promise.resolve()
 const aiItem = (n, extra) => Object.assign({ qid: "ai|G|c" + n, kind: "ai", graph_id: "G", sheet: "SNP-M-101", ver: "v0", cand_id: "c" + n, local_id: "n" + n,
   label: "RC-V0" + n, task: "태그·속성", field: "tag", field_label: "태그", now: "(비어 있음)", proposal: "V90" + n, confidence: 0.95, why: "주변 글자",
   bulk: true, edit_op: "set_tag", state: "open" }, extra || {});
-let served, sent, verN;
+let served, sent, verN, holds = [];
 
 function install() {
   sent = [];
+  holds = [];
   verN = 0;
   window.hazopBridge = {
     send(text) {
       const m = JSON.parse(text);
       if (m.t !== "cmd") return;
+      if (m.name === "inputs.hold") { holds.push(m.args.on); Promise.resolve().then(() => deliver(JSON.stringify({ t: "reply", id: m.id, ok: true, data: {} }))); return; }
       sent.push([m.name, m.args]);
       verN++;
       const data = { ver: "v" + verN, changed: m.args.cand_ids || (m.name === "aireview.accept_bulk" ? ["c1", "c2"] : []), failed: [], op_id: "op1", batch_id: "B9", set_rev: 8 };
@@ -60,6 +62,14 @@ export const tests = [
     assert.equal(sent[1][1].ver, "v1", "앞 판정 뒤 다시 읽은 판");
     assert(Q.q.get().done, "끝 화면");
     assert.equal(Q.counts(), { accepted: 1, rejected: 1, skipped: 0, open: 0 });
+  } },
+  { name: "대기열(입력 연산 U2 §11.3): AI 대기열이 열려 있는 동안 도면 다시 읽기를 미루고, 닫으면 엔진이 바로 읽게 알린다", async run(assert) {
+    await start([aiItem(1)]);
+    await tick();
+    assert.equal(holds.slice(-1), [true], "열면 미룸");
+    Q.closeQueue();
+    await tick();
+    assert.equal(holds.slice(-2), [true, false], "닫으면 읽기");
   } },
   { name: "대기열: Space는 저장하지 않고, 끝에서 건너뛴 것 다시 보기", async run(assert) {
     await start([aiItem(1), aiItem(2)]);

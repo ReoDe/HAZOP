@@ -50,6 +50,7 @@ export async function openQueue(kind, gid = null) {
   }
   q.set(Object.assign({}, START, { open: true, kind, gid, items: d.items.map((x) => Object.assign({}, x)), setRev: d.set_rev ?? null,
     projectId: d.project_id || null, bulk: d.bulk || [] }));
+  if (kind === "ai") hold(true);                  // 대기열이 열려 있는 동안 도면 다시 읽기를 미룬다(수락이 이어져도 기다리지 않게, 입력 연산 U2)
   store.set({ panel: null });
   takeFocus();
   show();
@@ -75,8 +76,12 @@ function takeFocus() {
   setTimeout(() => { const el = document.querySelector("aside.chat.queue"); if (el) el.focus(); }, 0);
 }
 
+/** 엔진에 대기열이 열렸는지 알린다(닫으면 기다리던 도면을 바로 다시 읽는다). 실패해도 대기열은 쓴다: 엔진은 10초 조용하면 짓는다. */
+function hold(on) { cmd("inputs.hold", { on }).catch(() => {}); }
+
 export function closeQueue() {
   seq++;
+  if (q.get().open && q.get().kind === "ai") hold(false);
   q.set(Object.assign({}, START));
   store.set({ marks: { rid: null, bySheet: {} } });
 }

@@ -85,7 +85,7 @@ export function wire() {
   load();
 }
 
-const ICON = { apply_failed: "alert-triangle", recheck: "alert-triangle", no_sheets: "upload", titleblock: "file-text", ai_candidates: "sparkles",
+const ICON = { inputs_pending: "refresh", apply_failed: "alert-triangle", recheck: "alert-triangle", no_sheets: "upload", titleblock: "file-text", ai_candidates: "sparkles",
   sheet_confirm: "check", nodes_none: "vector-triangle", nodes_draft: "vector-triangle", nodes_unrun: "sparkles", results_unjudged: "table",
   ie_none: "route", ie_draft: "route", none: "circle-check" };
 

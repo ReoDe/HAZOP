@@ -36,6 +36,7 @@ setGo("panel:drawings#sources", () => {      // 같은 번호 자리의 파일·
 // 확정 안 한 구간 목록을 보인 확인 카드(한 번에 확정). 구간 패널은 열지 않는다: 카드는 도면 위 창으로(실제 창 3차, 클릭 줄이기)
 setGo("confirm:nodes.confirm", async () => { const N = await import("./panels/nodes_state.js"); await N.refresh(); N.askConfirmAll(); });
 setGo("panel:nodes#pick", async () => { store.set({ panel: null }); const N = await import("./panels/nodes_state.js"); N.setMode("pick"); });      // 도면 위 안내 줄이 할 일을 보인다(nodes_canvas PickHint)
+setGo("confirm:inputs.build", (t) => cmd("inputs.build", t ? { graph_id: t } : {}).catch((e) => toast((e && e.message) || "다시 읽지 못했습니다.", "err")));      // 반영 전 수락이 남은 도면 다시 읽기(작업 줄에 진행)
 setGo("confirm:ie.suggest", async () => {      // 초기사건 규칙 초안 만들기(확정하지 않음, 두 번 해도 더하는 것이 없다): 패널을 열고 만든다
   store.set({ panel: "ie" });
   const I = await import("./panels/ie_state.js");
