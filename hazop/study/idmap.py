@@ -474,6 +474,31 @@ def compute(node_set, graph, at=None):
                 return target
         return s
 
+    def numbering_of(m):
+        """옛 구성요소 m의 참조가 그 시트 번호 기준 안의 sym 번호(n <= upto)면 그 번호 기준, 아니면 None."""
+        r = old_refs.get(m)
+        num = (node_set.get("graph_member_numbering") or {}).get(drawing_of(r))
+        k = ids.sym_number((r or "").partition("#")[2])
+        if m not in old_refs or old_basis_of(m) == ids.SOURCE or not isinstance(num, dict) or k is None:
+            return None
+        return dict(num) if isinstance(num.get("upto"), int) and k <= num["upto"] else None
+
+    def by_numbering(rec):
+        """묘비 기록의 sym 번호를 잃을 때와 같은 번호 기준의 같은 번호 순번 기호로 되찾는 후보. 증명이 없으면 None."""
+        num, ref = rec.get("numbering"), rec.get("ref")
+        if not isinstance(num, dict) or not isinstance(ref, str) or rec.get("basis") == ids.SOURCE:
+            return None
+        was = drawing_of(ref)
+        sheet = relocated(was, rec.get("material"), ref)
+        if not sheet or sheet in moved or now_nums.get(sheet) != num or (
+                rec.get("material") and now_sheets.get(sheet) != rec["material"]):
+            return None
+        k = ids.sym_number(ref.partition("#")[2])
+        if k is None or not isinstance(num.get("upto"), int) or k > num["upto"]:
+            return None
+        here = sheet + "#" + ref.partition("#")[2]
+        return sheet, was, [e for e in by_ref.get(here) or () if new_basis[e] == ids.SEQUENCE]
+
     def material_of(m):
         sheet = m.partition("/")[0] if "/" in m else drawing_of(old_refs.get(m))
         return old_sheets.get(sheet)
@@ -542,6 +567,9 @@ def compute(node_set, graph, at=None):
                 table["new_tombs"][t].update(look=lk, look_key=look_key(t, lk))
             if material_of(m):   # 잃을 때의 시트 자료: 다른 파일로 바뀐 뒤 같은 id로 되찾지 않고, 이름이 바뀐 뒤에는 그 자료의 시트에서 찾는다
                 table["new_tombs"][t]["material"] = material_of(m)
+            num = numbering_of(m)
+            if num is not None:  # 잃을 때 sym 번호가 기댄 원본 추출: 같은 원본의 같은 번호가 다시 나오면 그 기호나 몸체다
+                table["new_tombs"][t]["numbering"] = num
     table["eid"].update(link)
     taken = set(link.values())
     # 기준 추출이 같은 시트에서 참조로 이은 기호: 같은 참조로 잃은 묘비(고친 코드 전에 사람 고침으로 잃음)도 그 기호다
@@ -550,7 +578,10 @@ def compute(node_set, graph, at=None):
     for t, rec in sorted(tombs.items()):
         if not isinstance(rec, dict) or rec.get("found") is not None or t in gone or not _recorded_as(t, rec, gid):
             continue
-        if valid_mark(rec.get("mark")):
+        numbered = by_numbering(rec)
+        if numbered is not None:  # 번호 기준이 같으면 같은 번호가 그 기호나 몸체다(줄어든 몸체를 잃은 뒤 덩어리가 돌아옴)
+            sheet, was, hits = numbered
+        elif valid_mark(rec.get("mark")):
             was = rec["mark"][1]
             sheet = relocated(was, rec.get("material"), rec.get("ref"))
             hits = mark_hits(_renamed_sheet(rec["mark"], sheet))

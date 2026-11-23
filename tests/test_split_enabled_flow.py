@@ -157,7 +157,6 @@ class SplitEnabledFlow(Base):
         self.accept(ids)
         self.whole(self.revert(ids), "되돌리면 돌아온다")
 
-    @unittest.expectedFailure
     def test_accept_one_then_the_rest_and_revert_all_at_once(self):
         # 엔진 결함(2026-11-24, R3b에 넘김): 두 번에 걸쳐 전부 수락한 뒤 셋을 한꺼번에 되돌리면 덩어리는 돌아오지만
         # 검토구간 구성원으로 다시 들지 않고 '찾지 못한 구성요소'로 남는다. 한 번에 전부 수락·되돌리기, 차례로 되돌리기는 돌아온다.

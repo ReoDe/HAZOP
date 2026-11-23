@@ -97,6 +97,59 @@ class NumberingLinkTest(unittest.TestCase):
         self.assertEqual(landed(old, new), {"e1": None, "e2": None}, "옛 기호 둘이 표시로 새 기호 하나에 모이면 둘 다 묘비")
 
 
+class TombByNumberingTest(unittest.TestCase):
+    """줄어든 몸체를 잃은 묘비(모든 조각을 수락해 몸체가 사라짐)는 잃을 때의 번호 기준을 적고, 같은 번호 기준의 같은 번호가 다시 나오면
+    (모든 수락을 한꺼번에 되돌려 덩어리가 돌아옴) 그 기호로 되찾는다. 상자가 몸체와 덩어리로 달라 표시로는 찾지 못한다(2026-11-24)."""
+
+    def setUp(self):
+        body = graph("v-1", "b-split1", [("e1", "pdf-p0-sym-0001", BODY), ("e2", "pdf-p0-sym-0002", FAR)], N1)
+        gone = graph("v-2", "b-split2", [("e2", "pdf-p0-sym-0002", FAR)], N1)
+        ns = dict(idmap.snapshot(body), graph_id="graph-T", graph_version="v-1", nodes=[])
+        table = idmap.compute(ns, gone, at=AT)
+        self.tomb = table["eid"]["e1"]
+        self.assertTrue(idmap.is_tomb(self.tomb))
+        self.rec = table["new_tombs"][self.tomb]
+        self.ns = dict(idmap.snapshot(gone), graph_id="graph-T", graph_version="v-2", nodes=[],
+                       tombstones={self.tomb: self.rec})
+
+    def found(self, new, rec=None):
+        ns = dict(self.ns, tombstones={self.tomb: rec or self.rec})
+        return {t: v[0] for t, v in idmap.compute(ns, new)["found"].items()}
+
+    def test_the_tomb_records_the_numbering_it_was_lost_under(self):
+        self.assertEqual(self.rec["numbering"], N1)
+
+    def test_lump_back_under_the_same_numbering_takes_the_tomb_back(self):
+        back = graph("v-3", "b-orig1", [("e1", "pdf-p0-sym-0001", LUMP), ("e2", "pdf-p0-sym-0002", FAR)], N1)
+        self.assertEqual(self.found(back), {self.tomb: "e1"})
+
+    def test_another_original_with_the_same_number_does_not_take_the_tomb_back(self):
+        other = graph("v-3", "b-reex", [("e1", "pdf-p0-sym-0001", LUMP), ("e2", "pdf-p0-sym-0002", FAR)], {"base": "b-orig2", "upto": 3})
+        self.assertEqual(self.found(other), {})
+
+    def test_no_numbering_on_the_new_graph_does_not_take_the_tomb_back(self):
+        self.assertEqual(self.found(graph("v-3", "b-x", [("e1", "pdf-p0-sym-0001", LUMP)])), {})
+
+    def test_sheet_with_another_material_does_not_take_the_tomb_back(self):
+        moved = graph("v-3", "b-orig1", [("e1", "pdf-p0-sym-0001", LUMP)], N1, material="m-2")
+        self.assertEqual(self.found(moved), {})
+
+    def test_number_after_the_recorded_end_is_not_proof(self):
+        rec = dict(self.rec, numbering={"base": "b-orig1", "upto": 0})
+        self.assertEqual(self.found(graph("v-3", "b-orig1", [("e1", "pdf-p0-sym-0001", LUMP)], {"base": "b-orig1", "upto": 0}), rec), {})
+
+    def test_old_tomb_record_without_numbering_needs_the_same_mark(self):
+        rec = {k: v for k, v in self.rec.items() if k != "numbering"}
+        self.assertEqual(self.found(graph("v-3", "b-orig1", [("e1", "pdf-p0-sym-0001", LUMP)], N1), rec), {})
+        self.assertEqual(self.found(graph("v-3", "b-orig1", [("e1", "pdf-p0-sym-0001", BODY)], N1), rec), {self.tomb: "e1"})
+
+    def test_junction_tomb_records_no_numbering(self):
+        old = graph("v-1", "b-orig1", [("e1", "pdf-p0-junction-0001", [10, 10, 2, 2])], N1)
+        ns = dict(idmap.snapshot(old), graph_id="graph-T", graph_version="v-1", nodes=[])
+        rec = next(iter(idmap.compute(ns, graph("v-2", "b-s", [], N1))["new_tombs"].values()))
+        self.assertNotIn("numbering", rec)
+
+
 class SplitIdKeepsItsPieceTest(unittest.TestCase):
     """나눈 id(pdf-p<쪽>-split-<op_id>)는 연산 하나가 만든 조각 하나이고 개체도 연산에 고정이다. op_id는 다시 쓰지 않는다
     (corrections.issued_op_ids). 그래서 같은 나눈 id는 같은 조각이고, 종류만 바뀐 것(분류 규칙 변경·set_kind)은 같은 기호로 잇는다
