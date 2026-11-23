@@ -75,8 +75,8 @@ class SplitAcceptTest(unittest.TestCase):
         failed = ai_review.accept(doc, ids, self.original, NAME, by=BY, at=AT)
         self.assertEqual(failed, [])
 
-    def revert(self, ids):
-        return ai_review.revert(ai_review.load_doc(NAME), ids, NAME, by=BY, at=AT)
+    def revert(self, ids, confirm=None):
+        return ai_review.revert(ai_review.load_doc(NAME), ids, NAME, by=BY, at=AT, confirm=confirm)
 
     def ops(self):
         return (corrections.load(NAME) or {}).get("ops") or []
@@ -121,8 +121,8 @@ class SplitAcceptTest(unittest.TestCase):
         self.assertIn(target, {n["source_object_id"] for n in made["base"]["nodes"]})
         tag = corrections.make_op(made["base"], "set_tag", target, {"tag": "V-101"}, BY, at=AT, existing_ops=ops, name=NAME)
         corrections.save(NAME, ops + [tag], BY, at=AT)
-        self.revert(self.cands[:1])
-        self.assertEqual(self.ops(), [], "수락을 되돌리면 그 기호에 기댄 사람 고침도 함께 빠진다")
+        self.revert(self.cands[:1], confirm=[tag["op_id"]])
+        self.assertEqual(self.ops(), [], "수락을 되돌리면 그 기호에 기댄 사람 고침도 함께 빠진다(미리 알린 뒤)")
 
     def test_accept_then_revert_then_accept_restores_the_same_split(self):
         self.accept(self.cands[:1])
@@ -320,7 +320,7 @@ class SplitAcceptTest(unittest.TestCase):
         self.assertEqual(ai_review.revert_preview(doc, self.cands[:1], NAME),
                          {"ops": [ops[0]["op_id"]],
                           "dependents": [{"op_id": tag["op_id"], "op": "set_tag", "target": tag["target"], "candidate": None}]})
-        self.assertEqual(self.revert(self.cands[:1]), [ops[0]["op_id"], tag["op_id"]])
+        self.assertEqual(self.revert(self.cands[:1], confirm=[tag["op_id"]]), [ops[0]["op_id"], tag["op_id"]])
         self.assertEqual([e["action"] for e in corrections.load(NAME)["log"]], ["ai_accept", "save", "ai_revert"])
 
 

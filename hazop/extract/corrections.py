@@ -87,8 +87,9 @@ def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, ac
     before = list(saved)
     after = [o["op_id"] for o in ops]
     gone = _issued(prev) - set(before)
-    kept = [o for e in prev.get("log") or [] for o in e.get("removed_ops") or []]
-    reused = [o["op_id"] for o in ops if o["op_id"] in gone and o not in kept]  # 지운 그대로 되살리는 것(실행 취소)은 된다
+    kept = [_content(o) for e in prev.get("log") or [] for o in e.get("removed_ops") or []]
+    # 지운 그대로 되살리는 것(실행 취소, 되돌린 AI 후보 다시 수락)은 된다. 누가·언제(PROVENANCE)만 다를 수 있다
+    reused = [o["op_id"] for o in ops if o["op_id"] in gone and _content(o) not in kept]
     reused += [i for i, o in zip(after, ops) if i in saved and o != saved[i]]
     reused += [i for n, i in enumerate(after) if i in after[:n]]
     if action not in SAVE_ACTIONS:
@@ -108,6 +109,13 @@ def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, ac
     }
     path = store_path(name)
     return path, store_io.write_json(path, doc, expect=fp)
+
+
+PROVENANCE = ("by", "at", "accepted_by", "accepted_at")   # 연산의 누가·언제. 같은 op_id를 되살릴 때 지금 값으로 바꿔도 같은 연산이다
+
+
+def _content(op):
+    return {k: v for k, v in op.items() if k not in PROVENANCE}
 
 
 def issued_op_ids(name):
@@ -747,22 +755,41 @@ def _next_op_id(existing_ops, used_ids=()):
     return store_io.next_id("c-%04d", [o.get("op_id") for o in existing_ops] + list(used_ids))
 
 
-def _via(extraction, ids, existing_ops):
-    """ids(대상·참조 노드)가 기댄 입력 연산 op_id 목록. 입력 연산이 만든 노드(pdf-p0-split-<op_id>)이거나, 배관 지정한
-    pdf 개체를 근거로 가진 대상이면 그 연산이다."""
-    out = []
-    objs_of = {}
+def _objs_by_sid(extraction):
+    out = {}
     for key in ("nodes", "relations", "unresolved_connectors"):
-        for o in extraction.get(key) or []:
-            objs_of[o["source_object_id"]] = set((o.get("evidence") or {}).get("pdf_objects") or [])
+        for o in (extraction or {}).get(key) or []:
+            out[o["source_object_id"]] = set((o.get("evidence") or {}).get("pdf_objects") or [])
+    return out
+
+
+def _via(extraction, ids, existing_ops, original=None):
+    """ids(대상·참조 노드)가 기댄 입력 연산 op_id 목록. 입력 연산이 만든 노드(pdf-p0-split-<op_id>)이거나, 배관 지정한
+    pdf 개체를 근거로 가진 대상이면 그 연산이다. original(원본 추출)을 주면, 원본에 없는 번호의 대상(나누기로 개체가 바뀌어
+    새 번호를 받은 덩어리 나머지)은 그 개체를 가졌던 원본 덩어리를 나눈 연산에 기댄다."""
+    out = []
+    objs_of = _objs_by_sid(extraction)
     pipes = [(o["op_id"], set(o["value"]["objects"])) for o in existing_ops
              if o.get("op") == "pipe" and isinstance(o.get("value"), dict) and isinstance(o["value"].get("objects"), list)]
+    before = _objs_by_sid(original) if original is not None else None
+    splits = [o for o in existing_ops if o.get("op") == "split"]
     for sid in ids:
         m = INPUT_NAME.match(str(sid))
         if m:
             out.append(m.group(2))
         out += [oid for oid, objs in pipes if objs & objs_of.get(sid, set())]
+        if before is not None and not m and not str(sid).startswith(MANUAL_PREFIX) and sid not in before:
+            out += [o["op_id"] for o in splits if before.get(o.get("target"), set()) & objs_of.get(sid, set())]
     return list(dict.fromkeys(out))
+
+
+def _saved_original(name):
+    """name의 원본 추출(output/extract/<이름>/extraction.json). 없거나 깨졌으면 None."""
+    try:
+        with open(os.path.join(paths.output_root("extract"), name, "extraction.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
 
 
 def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=(), used_ids=(), name=None):
@@ -787,7 +814,8 @@ def make_op(original_extraction, op, target, value, by, at=None, op_id=None, exi
     refs = {sid: fp.get(sid) for sid in _refs(value)} if isinstance(value, dict) else {}
     new = {"op_id": op_id or _next_op_id(existing_ops, used_ids), "op": op, "target": target, "base": base, "refs": refs,
            "value": copy.deepcopy(value), "by": by, "at": at or now_utc()}
-    via = _via(original_extraction, ([target] if target else []) + sorted(refs), existing_ops)
+    via = _via(original_extraction, ([target] if target else []) + sorted(refs), existing_ops,
+               _saved_original(name) if name else None)
     if via:
         new["via"] = via
     if any(o.get("op_id") == new["op_id"] for o in existing_ops):
@@ -885,11 +913,12 @@ def _locate(op, shapes, sha, reader):
 _SHA_CACHE = {}
 
 
-def file_sha256(path):
-    """파일 내용의 sha256. (경로, 수정 시각, 크기)가 같으면 다시 읽지 않는다(큰 PDF를 수락마다 읽지 않게)."""
+def file_sha256(path, fresh=False):
+    """파일 내용의 sha256. (경로, 수정 시각, 크기)가 같으면 다시 읽지 않는다(큰 PDF를 수락마다 읽지 않게).
+    fresh면 늘 다시 읽는다(기준 추출을 짓기 직전. 크기·시각이 같은 채 바뀐 파일을 알아챈다)."""
     st = os.stat(path)
     key = (os.path.normcase(os.path.abspath(path)), st.st_mtime_ns, st.st_size)
-    if key not in _SHA_CACHE:
+    if fresh or key not in _SHA_CACHE:
         with open(path, "rb") as fh:
             _SHA_CACHE[key] = hashlib.sha256(fh.read()).hexdigest()
     return _SHA_CACHE[key]
@@ -1002,13 +1031,13 @@ def _params(original):
     return ((original.get("run") or {}).get("settings") or {}).get("params")
 
 
-def _pdf_now(original):
-    """(지금 원본 PDF 경로, 쪽, 파일 sha256, 읽기 엔진 판) 또는 (None, 사유)."""
+def _pdf_now(original, fresh=False):
+    """(지금 원본 PDF 경로, 쪽, 파일 sha256, 읽기 엔진 판) 또는 (None, 사유). fresh는 file_sha256과 같다."""
     from hazop.extract.adapters import pdf_vector
     where, why = pdf_source(original)
     if where is None:
         return None, why
-    return (where[0], where[1], file_sha256(where[0]), pdf_vector.reader_version()), None
+    return (where[0], where[1], file_sha256(where[0], fresh), pdf_vector.reader_version()), None
 
 
 def _env(original):
@@ -1061,7 +1090,7 @@ def build_base(original, inputs):
     (적용 불가 연산은 결과에 흔적이 없다). 같은 입력이면 같은 결과다."""
     from hazop.extract.adapters import pdf_vector
     status = {"applied": [], "not_applicable": [], "retargeted": []}
-    now, why = _pdf_now(original)
+    now, why = _pdf_now(original, fresh=True)
     if now is None or now[2] != (original.get("source") or {}).get("sha256"):
         status["not_applicable"] = [{"op_id": o["op_id"], "reason": why or PDF_CHANGED} for o in inputs]
         return copy.deepcopy(original), status
@@ -1213,7 +1242,8 @@ def _waiting_on(ops, waiting, skipped):
 
 def resolve(name, original=None, ops=None, *, allow_extract=False):
     """수정 기록을 적용한 결과 {"original", "base", "corrected", "ops", "inputs"}.
-    inputs: {"key", "state", "applied", "not_applicable", "retargeted", "waiting", "waiting_on"}.
+    inputs: {"key", "state", "applied", "not_applicable", "retargeted", "waiting", "waiting_on", "base_key"}.
+    base_key는 실제로 쓴 기준 추출 파일의 열쇠(없으면 None). 쪽 확정 지문이 이것으로 다시 지은 기준 추출을 알아챈다.
     - state none: 입력 연산 없음, base = 원본. ready: 기준 추출 사용. partial: 앞서 지은 기준 추출(지금 입력의 일부)을 쓰고
       나머지 입력은 대기. pending: 쓸 기준 추출이 없어 원본 위에 덮는 연산만 적용하고 입력 연산은 모두 대기.
     - waiting: 아직 기준 추출에 들지 않은 입력 연산 op_id(기록 차례). applied·not_applicable·retargeted는 든 입력의 결과다.
@@ -1227,14 +1257,14 @@ def resolve(name, original=None, ops=None, *, allow_extract=False):
         ops = ((load(name) or {}).get("ops") or [])
     inputs = [o for o in ops if is_input(o)]
     state = {"key": None, "state": "none", "applied": [], "not_applicable": [], "retargeted": [], "waiting": [],
-             "waiting_on": {}}
+             "waiting_on": {}, "base_key": None}
     base = original
     if inputs:
         found, built, key = _find_base(name, original, inputs)
         if allow_extract and len(built) < len(inputs):
             extraction, status = build_base(original, inputs)
             _write_base(name, original, inputs, extraction, status)
-            found, built = {"inputs": status, "extraction": extraction}, {o.get("op_id") for o in inputs}
+            found, built = {"key": key, "inputs": status, "extraction": extraction}, {o.get("op_id") for o in inputs}
         state["key"] = key
         state["waiting"] = [o.get("op_id") for o in inputs if o.get("op_id") not in built]
         if found is None:
@@ -1242,7 +1272,7 @@ def resolve(name, original=None, ops=None, *, allow_extract=False):
         else:
             base = found["extraction"]
             state.update({k: found["inputs"][k] for k in ("applied", "not_applicable", "retargeted")},
-                         state="partial" if state["waiting"] else "ready")
+                         state="partial" if state["waiting"] else "ready", base_key=found.get("key"))
     corrected = apply(base, ops)
     if inputs:
         c = corrected.setdefault("corrections", {})
@@ -1283,6 +1313,8 @@ def pending_inputs(name, original=None, ops=None):
 
 
 # 입력 연산 사유 → 검토 대기열 항목의 (코드, 사람용 글). 왼쪽은 build_base·resolve가 쓰는 사유의 머리다(같은 모듈이 만든 글).
+# 글의 {what}은 연산 이름(INPUT_LABELS)이다
+INPUT_LABELS = {"split": "나누기", "pipe": "배관 지정"}
 INPUT_REASONS = (
     ("나눈 개체가 기호가 되지 못함", "not_symbol", "고른 부분이 기호 하나로 읽히지 않아 나누지 못했습니다."),
     ("나눌 개체 ", "partly", "고른 부분 가운데 일부를 떼어 내지 못해 나누지 않았습니다."),
@@ -1290,23 +1322,30 @@ INPUT_REASONS = (
     ("도면이 바뀌어 나눌 개체를 찾지 못함", "objects_lost", "도면 파일이 바뀌어 고른 부분을 찾지 못했습니다."),
     ("도면이 바뀌어 배관 개체를 찾지 못함", "objects_lost", "도면 파일이 바뀌어 고른 선을 찾지 못했습니다."),
     ("도면이 바뀌어", "objects_ambiguous", "도면 파일이 바뀌어 고른 부분이 어디인지 하나로 정하지 못했습니다."),
-    (PDF_CHANGED, "pdf_changed", "도면 파일이 읽은 뒤 바뀌었습니다. 도면을 다시 읽어야 나누기를 반영합니다."),
-    ("원본 PDF 없음", "no_pdf", "원본 도면 파일이 없어 나누기를 반영하지 못했습니다."),
-    ("벡터 PDF 도면만", "no_pdf", "이 도면 파일로는 나누기를 할 수 없습니다."),
-    ("형식 오류", "format", "저장된 나누기 내용이 올바르지 않아 반영하지 못했습니다."),
+    (PDF_CHANGED, "pdf_changed", "도면 파일이 읽은 뒤 바뀌었습니다. 도면을 다시 읽어야 {what}를 반영합니다."),
+    ("원본 PDF 없음", "no_pdf", "원본 도면 파일이 없어 {what}를 반영하지 못했습니다."),
+    ("벡터 PDF 도면만", "no_pdf", "이 도면 파일로는 {what}를 할 수 없습니다."),
+    ("형식 오류", "format", "저장된 {what} 내용이 올바르지 않아 반영하지 못했습니다."),
     (PIPE_PENDING, "pipe_pending", "배관 지정은 아직 도면 다시 읽기에 넣지 않습니다."),
 )
-WAITING_TEXT = {"waiting": "아직 도면에 반영하기 전인 나누기입니다. 다시 읽기가 끝나면 반영됩니다.",
-                "waiting_on": "반영하기 전인 나누기에 기댄 고침입니다. 나누기가 반영되면 함께 적용됩니다."}
-OTHER_TEXT = "나누기를 반영하지 못했습니다."
+WAITING_TEXT = {"waiting": "아직 도면에 반영하기 전인 {what}입니다. 다시 읽기가 끝나면 반영됩니다.",
+                "waiting_on": "반영하기 전인 {what}에 기댄 고침입니다. {what}가 반영되면 함께 적용됩니다."}
+OTHER_TEXT = "{what}를 반영하지 못했습니다."
 
 
-def input_reason(reason):
-    """입력 연산의 적용 불가 사유 글 → (코드, 사람용 글)."""
+def _label(ops):
+    """입력 연산들의 이름: 한 종류면 그 이름, 섞이면 '나누기·배관 지정'."""
+    kinds = sorted({o.get("op") for o in ops if o.get("op") in INPUT_LABELS}, key=list(INPUT_LABELS).index)
+    return "·".join(INPUT_LABELS[k] for k in kinds) or INPUT_LABELS["split"]
+
+
+def input_reason(reason, op="split"):
+    """입력 연산의 적용 불가 사유 글 → (코드, 사람용 글). op는 그 연산 이름(split|pipe)."""
+    what = INPUT_LABELS.get(op, INPUT_LABELS["split"])
     for head, code, text in INPUT_REASONS:
         if reason.startswith(head):
-            return code, text
-    return "other", OTHER_TEXT
+            return code, text.format(what=what)
+    return "other", OTHER_TEXT.format(what=what)
 
 
 def input_items(resolved):
@@ -1318,11 +1357,12 @@ def input_items(resolved):
     out = []
     for oid, o in by_id.items():
         if oid in st["waiting"]:
-            row = ("waiting", "waiting", WAITING_TEXT["waiting"], [])
+            row = ("waiting", "waiting", WAITING_TEXT["waiting"].format(what=_label([o])), [])
         elif oid in st["waiting_on"]:
-            row = ("waiting", "waiting_on", WAITING_TEXT["waiting_on"], st["waiting_on"][oid])
+            on = st["waiting_on"][oid]
+            row = ("waiting", "waiting_on", WAITING_TEXT["waiting_on"].format(what=_label([by_id[i] for i in on if i in by_id])), on)
         elif oid in na:
-            row = ("not_applicable",) + input_reason(na[oid]) + ([],)
+            row = ("not_applicable",) + input_reason(na[oid], o.get("op")) + ([],)
         else:
             continue
         out.append({"op_id": oid, "op": o.get("op"), "target": o.get("target"), "candidate": o.get("ai_candidate"),

@@ -253,6 +253,8 @@ def store_path(name):
 
 def _combined(files):
     text = "|".join("%s=%s" % (k, files[k] or "-") for k in FILES)
+    if files.get("base"):   # 나누기를 지은 기준 추출을 쓴 쪽만. 입력 연산이 없는 쪽의 지문은 예전과 같다
+        text += "|base=%s" % files["base"]
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
@@ -273,8 +275,11 @@ def _read_sources(name):
         if doc is not None and (not isinstance(doc, dict) or doc.get("kind") != kind):
             raise ValueError("%s 파일이 아님" % what)
     ops = (edits or {}).get("ops") or []
-    corrected = corrections.resolve(name, original, ops)["corrected"]   # 기준 추출이 없거나 낡으면 나누기는 대기(input_waiting)
-    return corrected, ai_doc, ops, files, original
+    got = corrections.resolve(name, original, ops)   # 기준 추출이 없거나 낡으면 나누기는 대기(input_waiting)
+    # 쓴 기준 추출의 열쇠도 지문에 넣는다. 코드·사전이 바뀌어 기준 추출을 다시 지으면 쪽 전체를 지금 코드로 다시 읽은 것이라
+    # 확정이 풀려야 한다(검토 2026-11-23)
+    files["base"] = got["inputs"]["base_key"]
+    return got["corrected"], ai_doc, ops, files, original
 
 
 def _empty_record(name):
@@ -323,7 +328,7 @@ def _read_record(name):
 
 
 def _changed(record_files, files):
-    return [k for k in FILES if (record_files or {}).get(k) != files.get(k)]
+    return [k for k in FILES + ("base",) if (record_files or {}).get(k) != files.get(k)]
 
 
 def _status(name, record, sources, problem=None):

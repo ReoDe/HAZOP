@@ -746,9 +746,11 @@ def human_targets(name):
 def decided_targets(name):
     """다시 묻지 않을 대상: 사람이 고친 자리, AI 후보를 수락해 들어간 자리, 사람이 거절한 후보의 자리(검토 8).
     되돌린 후보(제안 상태로 돌아감)는 다시 물을 수 있다. 나누기는 덩어리 안 묶음 하나를 정한 것이라 덩어리를 닫지 않는다.
-    덩어리는 그 split 후보가 모두 정해졌을 때만 닫는다."""
+    덩어리는 그 split 후보가 모두 정해졌거나 사람이 그 덩어리를 고쳤을 때 닫는다."""
     rec = corrections.load(name)
-    out = {o.get("target") for o in (rec or {}).get("ops") or [] if o.get("target") and o.get("op") != "split"}
+    ops = (rec or {}).get("ops") or []
+    out = {o.get("target") for o in ops if o.get("target") and o.get("op") != "split"}
+    human = {o.get("target") for o in ops if o.get("target") and o.get("op") != "split" and o.get("origin") != "ai"}
     try:
         doc = load_doc(name)
     except ValueError:
@@ -759,7 +761,7 @@ def decided_targets(name):
             open_lumps.add(c.get("target"))
         elif c.get("status") in ("accepted", "rejected"):
             out.add(c.get("target"))
-    out -= open_lumps
+    out -= open_lumps - human   # 사람이 고친 덩어리는 split 후보가 남아도 닫힌 채로
     out.discard(None)
     return out
 
@@ -997,13 +999,29 @@ RESTORE_KEYS = ("op", "target", "base", "refs", "value", "via")
 
 
 def _restorable(rec, cand_id, new):
-    """되돌린 그 후보의 연산이 지금 만든 연산과 같으면 그 연산(지운 그대로). 다시 수락이 같은 op_id를 되살려 나눈 기호·새 기기 id가
-    바뀌지 않는다(검토구간이 잃은 구성요소를 되찾음). 없으면 None."""
+    """되돌린 그 후보의 연산이 지금 만든 연산과 같으면 그 op_id로 되살린 연산. 다시 수락이 같은 op_id를 되살려 나눈 기호·새 기기 id가
+    바뀌지 않는다(검토구간이 잃은 구성요소를 되찾음). 누가·언제는 지금 수락(new)의 값이다(앞 이력은 기록 log에 남는다).
+    없으면 None."""
     for entry in reversed((rec or {}).get("log") or []):
         for o in entry.get("removed_ops") or []:
             if o.get("ai_candidate") == cand_id and all(o.get(k) == new.get(k) for k in RESTORE_KEYS):
-                return o
+                return dict(o, **{k: new[k] for k in corrections.PROVENANCE if k in new})
     return None
+
+
+def _claimed(ops, doc):
+    """이미 나눈 pdf 개체 {개체: op_id}: split 연산의 개체와, 옛 판에서 split 후보를 add_node로 수락한 연산의 그 후보 개체."""
+    split_cands = {c["cand_id"]: c for c in doc["candidates"] if c.get("field") == "split"}
+    out = {}
+    for o in ops:
+        if o.get("op") == "split":
+            objs = (o.get("value") or {}).get("objects") or ()
+        elif o.get("op") == "add_node" and o.get("ai_candidate") in split_cands:
+            objs = split_cands[o["ai_candidate"]].get("pdf_objects") or ()
+        else:
+            continue
+        out.update((p, o["op_id"]) for p in objs)
+    return out
 
 
 def accept(doc, cand_ids, original_ex, name, by, at=None):
@@ -1035,8 +1053,7 @@ def accept(doc, cand_ids, original_ex, name, by, at=None):
             ex = original_ex if c["field"] == "split" and c["target"] in in_original else base
             op, value = _op_for(c, ex)
             if op == "split":
-                claimed = {p: o["op_id"] for o in ops if o.get("op") == "split"
-                           for p in (o.get("value") or {}).get("objects") or ()}
+                claimed = _claimed(ops, work)
                 hit = sorted({claimed[p] for p in value["objects"] if p in claimed})
                 if hit:
                     raise ValueError("이미 나눈 부분과 겹침(%s)" % ", ".join(hit))
@@ -1119,13 +1136,27 @@ def revert_preview(doc, cand_ids, name):
                                         "candidate": by_id[i].get("ai_candidate")} for i in deps]}
 
 
-def revert(doc, cand_ids, name, by, at=None):
+class RevertNeedsConfirm(ValueError):
+    """되돌리면 기댄 사람 고침도 함께 빠지는데 그 목록을 확인받지 않은 호출. dependents는 확인받아야 할 사람 고침 op_id."""
+
+    def __init__(self, dependents):
+        super().__init__("이 수락에 기대 사람이 한 고침 %d건이 함께 빠집니다. 미리 알린 뒤 다시 되돌리세요." % len(dependents))
+        self.dependents = dependents
+
+
+def revert(doc, cand_ids, name, by, at=None, confirm=None):
     """수락·거절을 되돌린다. 수락으로 넣은 연산과 그 연산에 기댄 고침(revert_preview의 dependents)을 사람 수정 기록에서
-    한 번에 지우고(후보 문서와 함께), 기댄 고침이 AI 후보 수락이면 그 후보도 제안으로 돌린다. → 지운 op_id 목록(기록 차례)."""
+    한 번에 지우고(후보 문서와 함께), 기댄 고침이 AI 후보 수락이면 그 후보도 제안으로 돌린다. → 지운 op_id 목록(기록 차례).
+    기댄 고침 가운데 사람이 한 것이 있으면 confirm(revert_preview의 dependents op_id 목록)이 그것을 모두 담아야 한다.
+    아니면 아무것도 지우지 않고 RevertNeedsConfirm(부르는 쪽이 미리 알림을 빠뜨려도 사람 고침이 조용히 지워지지 않게)."""
     at = at or now_utc()
     rec, fp = corrections.load_fp(name)
     ops = list((rec or {}).get("ops") or [])
     own, deps = _revert_plan(doc, cand_ids, ops)
+    by_id = {o["op_id"]: o for o in ops}
+    human = [i for i in deps if by_id[i].get("origin") != "ai"]
+    if human and not set(human) <= set(confirm or ()):
+        raise RevertNeedsConfirm(human)
     drop = set(own) | set(deps)
     work = copy.deepcopy(doc)
     for c in work["candidates"]:
