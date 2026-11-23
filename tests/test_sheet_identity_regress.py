@@ -193,6 +193,20 @@ class SeatRegressTest(SheetCase):
             self.assertTrue(out["ok"], out.get("refused"))
         self.choose_back(title)
 
+    def test_refusal_for_a_number_another_file_uses_names_paths_that_exist(self):
+        """시드 214·246 꼴: 새 번호를 다른 파일이 쓰고, 확정 전에는 그 번호에 이 파일의 고르기 줄이 없다. 글이 '원본을 먼저 고르세요'라고 하면
+        할 수 없는 일을 시키는 것이다."""
+        a = self.add("SNP-M-101", "pdf")
+        self.make_nodes(a)
+        self.register(self.copy_in("SNP-M-102", "pdf", "in-b"), dict(NUMBER))
+        self.assertEqual(sources.conflicts(P), [], "시험 전제: 확정 전에는 그 번호에 고를 원본이 없음")
+        out = self.confirm(a, {"drawing_number": "SNP-M-101"}, dry=True)
+        self.assertFalse(out["ok"], "시험 전제: a의 구간이 갈 곳이 없어 막음")
+        reason = out["refused"][0]["reason"]
+        self.assertNotIn("원본을 먼저 고르", reason, "확정 전에는 고를 줄이 없는데 고르라고 함")
+        for todo in ("다른 번호를 쓰거나", "그 파일의 번호를 먼저 바꾸거나", "SNP-M-102_"):
+            self.assertIn(todo, reason)
+
     def test_e2_choosing_a_format_after_the_legacy_owner_keeps_its_name(self):
         a, b = self.legacy_pair()
         sources.choose(P, "graph-SNP-M-101", None, BY, material_id=a)
