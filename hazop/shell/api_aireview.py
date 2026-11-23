@@ -86,6 +86,10 @@ def local_of(c, shown):
     """후보가 가리키는 기호의 지금 자리 번호. 기준 추출을 다시 지으면 local-node 번호가 밀리므로 저장된 c["local_id"]를 쓰지 않고
     지금 고친 결과에서 그 기호(c["target"], source_object_id)로 찾는다. 지금 없는 기호면 None(엉뚱한 기호에 붙지 않게, 검토 차단 1)."""
     hit = shown.get(c.get("target"))
+    if hit is None and c.get("field") == "split" and c.get("pdf_objects"):
+        # 나누기를 하나 수락해 기준 추출을 다시 지으면 남은 덩어리 몸체가 새 순번을 받는다: 남은 나누기 후보는 그 개체를 품은 기호로 찾는다
+        want = set(c["pdf_objects"])
+        hit = next((x for x in shown.values() if want <= set((x.get("evidence") or {}).get("pdf_objects") or ())), None)
     return hit.get("local_id") if hit else None
 
 
