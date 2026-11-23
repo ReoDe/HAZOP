@@ -20,7 +20,7 @@ from tests.test_screen_words import BANNED  # noqa: E402
 from tests.test_shell_auto_catch_up import Base as AutoBase  # noqa: E402
 from tests.test_shell_catch_up import PID  # noqa: E402
 
-SPEC_ORDER = ["apply_failed", "no_sheets", "recheck", "inputs_pending", "sheet_choose", "sheet_skipped", "titleblock", "number_held", "ai_unreviewed", "ai_candidates", "sheet_confirm", "nodes_none", "nodes_draft",
+SPEC_ORDER = ["apply_failed", "no_sheets", "recheck", "inputs_pending", "sheet_released", "sheet_choose", "sheet_skipped", "titleblock", "number_held", "ai_unreviewed", "ai_candidates", "sheet_confirm", "nodes_none", "nodes_draft",
               "nodes_unrun", "results_unjudged", "ie_none", "ie_draft"]
 GO = re.compile(r"^(panel:[a-z]+(#[a-z_]+)?|queue:(ai|lost)|confirm:[a-z_]+\.[a-z_]+)$")
 
@@ -30,7 +30,7 @@ class RulesTest(unittest.TestCase):
         self.assertEqual([r[0] for r in api_next.RULES], SPEC_ORDER)
 
     def test_everything_at_once_comes_in_that_order(self):
-        f = {"apply_failed": True, "sheets": 0, "running": [], "lost_members": 2, "lost_refs": 1, "lost_nodes": ["S1"], "titleblock": 1, "inputs_pending": 1, "sheet_choose": 1, "sheet_skipped": 1, "number_held": 1,
+        f = {"apply_failed": True, "sheets": 0, "running": [], "lost_members": 2, "lost_refs": 1, "lost_nodes": ["S1"], "titleblock": 1, "inputs_pending": 1, "sheet_released": 1, "sheet_choose": 1, "sheet_skipped": 1, "number_held": 1,
              "ai_unreviewed": 2, "ai_candidates": 3, "sheet_confirm": 2, "sheets_confirmed": 1, "nodes_total": 0, "nodes_draft": 2, "nodes_unrun": 1,
              "results_unjudged": 4, "ie_none": 1, "ie_draft": 1}
         kinds = [i["kind"] for i in api_next.items(f)]
@@ -51,7 +51,7 @@ class RulesTest(unittest.TestCase):
         self.assertNotIn("no_sheets", [i["kind"] for i in api_next.items({"sheets": 0, "running": [{"kind": "register"}]})])
 
     def test_texts_are_screen_words_and_targets_are_well_formed(self):
-        f = {k: 1 for k in ("inputs_pending", "sheet_choose", "sheet_skipped", "number_held", "titleblock", "ai_unreviewed", "ai_candidates", "nodes_draft", "nodes_unrun", "results_unjudged", "ie_none", "ie_draft", "lost_members")}
+        f = {k: 1 for k in ("inputs_pending", "sheet_released", "sheet_choose", "sheet_skipped", "number_held", "titleblock", "ai_unreviewed", "ai_candidates", "nodes_draft", "nodes_unrun", "results_unjudged", "ie_none", "ie_draft", "lost_members")}
         f.update(apply_failed=True, sheets=0, running=[], sheets_confirmed=1, nodes_total=0)
         for i in api_next.items(f) + [api_next.NONE_ITEM]:
             for w in BANNED:
@@ -109,6 +109,18 @@ class FactsTest(unittest.TestCase):
                 mock.patch.object(api_ie, "summary", lambda e: {"available": False}):
             f = api_next.facts(_FakeEngine())
         self.assertEqual((f["sheet_choose"], f["sheet_choose_first"]), (1, "G3"))
+
+    def test_a_confirmation_released_by_a_rebuilt_base_asks_to_check_again(self):
+        """입력 연산 U2 §11.3 7: 쪽 확정이 기준 추출이 바뀌어(나누기를 다시 읽어) 풀렸으면 '다시 확인' 줄."""
+        from hazop.extract import corrections
+        from hazop.shell import api_aireview, api_drawings, api_ie
+        st = {"G1": {"released": [{"what": "confirmed", "changed": ["base"]}]}, "G2": {"released": [{"what": "confirmed", "changed": ["edits"]}]}}
+        with mock.patch.object(api_aireview, "overview", lambda e: {"drawings": []}),                 mock.patch.object(api_drawings, "exportable", lambda e: {"drawings": [{"graph_id": g, "state": "open"} for g in ("G1", "G2", "G3")]}),                 mock.patch.object(api_drawings, "labels", lambda e: {}),                 mock.patch.object(api_drawings, "status", lambda e, g: st.get(g, {"released": []})),                 mock.patch.object(corrections, "load", lambda n: {"ops": [{"op": "split"}]} if n in ("a", "b") else None),                 mock.patch.object(corrections, "is_input", lambda o: o.get("op") == "split"),                 mock.patch.object(api_next, "_conflicts", lambda e: []),                 mock.patch.object(api_ie, "summary", lambda e: {"available": False}):
+            f = api_next.facts(_FakeEngine())
+        self.assertEqual((f["sheet_released"], f["sheet_released_first"]), (1, "G1"))
+        it = next(i for i in api_next.items(dict(f, sheets=3, running=[])) if i["kind"] == "sheet_released")
+        self.assertIn("다시", it["text"])
+        self.assertEqual((it["action"]["go"], it["action"]["target"]), ("panel:drawings#sheetconf", "G1"))
 
     def test_a_draft_to_make_shows_up_after_judging(self):
         ie = {"available": True, "kpi": {"candidates": 3, "groups": 0, "draft": 0}}

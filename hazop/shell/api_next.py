@@ -39,6 +39,24 @@ def _inputs(engine):
     return api_inputs.summary(engine)
 
 
+def _released_by_base(engine, sc):
+    """쪽 확정이 기준 추출이 바뀌어(수락한 나누기를 다시 읽어) 풀린 도면(입력 연산 U2 §11.3 7). 입력 연산이 있는 도면만 본다(나머지는 기준 추출이 없다)."""
+    from hazop.extract import corrections
+    from hazop.shell import api_drawings
+    names = engine.graph_names()
+    out = []
+    for r in sc.get("drawings") or []:
+        if r.get("state") == "confirmed" or r["graph_id"] not in names:
+            continue
+        ops = (corrections.load(names[r["graph_id"]]) or {}).get("ops") or []
+        if not any(corrections.is_input(o) for o in ops):
+            continue
+        st = api_drawings.status(engine, r["graph_id"]) or {}
+        if any("base" in (x.get("changed") or []) for x in st.get("released") or []):
+            out.append(r["graph_id"])
+    return out
+
+
 def _safe(fn, what):
     try:
         return fn()
@@ -87,6 +105,10 @@ def facts(engine):
     f["sheet_confirm"] = sum(1 for r in sc["drawings"] if r.get("state") != "confirmed") if sc else None
     f["sheets_confirmed"] = sum(1 for r in sc["drawings"] if r.get("state") == "confirmed") if sc else None
     f["sheet_confirm_first"] = next((r["graph_id"] for r in (sc or {}).get("drawings") or [] if r.get("state") != "confirmed"), None)
+    rel = _safe(lambda: _released_by_base(engine, sc), "기준 추출로 풀린 쪽 확정") if sc else None
+    if rel is not None:
+        f["sheet_released"] = len(rel)
+        f["sheet_released_first"] = rel[0] if rel else None
     ns = _safe(lambda: api_nodes.summary(engine), "구간") if names else None
     rs = _safe(lambda: api_results.summary(engine), "분석 결과") if names else None
     if ns and ns.get("available"):
@@ -140,6 +162,9 @@ RULES = (
     # 입력 연산 U2: 수락했지만 아직 도면에 반영하지 않은 나누기·배관 지정(앱을 닫을 때 남았거나 짓기를 기다리는 도면)
     ("inputs_pending", lambda f: _n(f, "inputs_pending"),
      lambda f, n: "수락했지만 도면에 아직 반영하지 않은 나누기가 있는 도면이 %d장 있습니다" % n, "다시 읽기", "confirm:inputs.build", ""),
+    ("sheet_released", lambda f: _n(f, "sheet_released"),
+     lambda f, n: "수락한 나누기를 도면에 반영해 쪽 확정이 풀린 도면이 %d장 있습니다. 바뀐 곳을 다시 확인하고 확정하세요" % n, "다시 확인",
+     "panel:drawings#sheetconf", "warn"),
     # 시트 정체(U4): 같은 번호 자리에 파일·형식이 둘 이상이면 고르기, 정착이 들이지 못한 가려진 도면
     ("sheet_choose", lambda f: _n(f, "sheet_choose"),
      lambda f, n: "같은 번호의 도면 파일이 둘 이상인 곳이 %d곳 있습니다. 쓸 파일을 고르세요" % n, "파일 고르기", "panel:drawings#sources", "warn"),
@@ -171,7 +196,7 @@ RULES = (
      lambda f, n: "초기사건 초안 %d그룹을 확인해 주세요" % n, "초안 보기", "panel:ie#draft", ""),
 )
 # 단추가 바로 갈 자리(화면이 그 도면·자료·구간을 연다). 없으면 그 패널만 연다
-TARGET = {"inputs_pending": "inputs_pending_first", "sheet_choose": "sheet_choose_first", "titleblock": "titleblock_first", "sheet_confirm": "sheet_confirm_first", "ai_unreviewed": "ai_unreviewed_first",
+TARGET = {"inputs_pending": "inputs_pending_first", "sheet_released": "sheet_released_first", "sheet_choose": "sheet_choose_first", "titleblock": "titleblock_first", "sheet_confirm": "sheet_confirm_first", "ai_unreviewed": "ai_unreviewed_first",
           "ai_candidates": "ai_candidates_first"}
 
 NONE_ITEM = {"kind": "none", "count": 0, "text": "지금 할 일이 없습니다", "detail": None,

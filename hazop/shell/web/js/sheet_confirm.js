@@ -136,7 +136,8 @@ function Card({ gid, st }) {
     <div class="nd-h"><b>쪽 확정</b><span class="muted small">${METHOD[st.read_method] || st.read_method}</span>
       <span class="acts"><${Btn} sm=${true} kind="ghost" icon="x" label="쪽 확정 닫기" onClick=${() => conf.set({ open: false })} /></span></div>
     ${st.state === "confirmed" ? html`<${Notice} kind="info" icon="circle-check">${st.confirmed.by}가 확정했습니다. 도면 자료가 바뀌면 확정이 풀립니다.<//>` : null}
-    ${(st.released || []).length ? html`<${Notice} kind="warn" icon="alert-triangle">도면 자료가 바뀌어 이전 견줌·확정이 풀렸습니다.<//>` : null}
+    ${(st.released || []).length ? html`<${Notice} kind="warn" icon="alert-triangle">${(st.released || []).some((r) => (r.changed || []).includes("base"))
+      ? "수락한 나누기를 도면에 반영해(도면을 다시 읽어) 이전 견줌·확정이 풀렸습니다. 바뀐 곳을 다시 확인하세요." : "도면 자료가 바뀌어 이전 견줌·확정이 풀렸습니다."}<//>` : null}
     <${Conditions} st=${st} gid=${gid} />
     ${st.record_error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">확정 기록을 읽을 수 없습니다: ${st.record_error}</span><br />'확정 해제'를 누르면 깨진 기록을 버리고 새 기록을 시작합니다. 견줌·확정은 그 뒤에 다시 합니다.<//>` : null}
     ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error}<//>` : null}
