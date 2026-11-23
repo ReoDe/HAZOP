@@ -447,7 +447,9 @@ def analyze_bytes(data, page=0, params=None, splits=None):
     """PDF 바이트 한 쪽 → (sha256, page_count, width, height, analysis). (해시, 쪽, 문턱, 나눔)이 같으면 다시 분석하지 않는다.
     analysis는 호출끼리 함께 쓰므로 고치지 않는다(build_extraction은 읽기만 한다). splits는 analyze와 같다."""
     sha = hashlib.sha256(data).hexdigest()
-    key = (sha, page, tuple(sorted((params or {}).items())))
+    # 문턱은 기본값과 합친 꼴로 열쇠에 넣는다. 기준 추출(corrections.build_base)은 원본 추출의 설정 전체를 넘기고 AI 실행·미리보기는
+    # None을 넘기는데, 값이 같으면 같은 분석이다(analyze가 같은 합치기를 한다)
+    key = (sha, page, tuple(sorted(dict(PARAMS, **(params or {})).items())))
     if splits:
         key += (json.dumps(splits, sort_keys=True),)
     with _cache_lock:
