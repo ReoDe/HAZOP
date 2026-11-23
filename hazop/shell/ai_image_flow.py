@@ -184,7 +184,7 @@ def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=F
     그림 입력을 만들지 못한 도면은 글 입력으로 돌리되 그 도면의 그림 입력 예상 호출 수에서 자른다.
     → ([(이름, 새 후보 수, stats)], Factory 또는 None)."""
     images = Factory(engine, pages) if enabled(engine, auto) else None
-    done, used = [], 0
+    done, used, kinds = [], 0, []          # kinds: 실행 전체의 오류 줄(같은 오류 3번이면 멈춤이 도면 경계에서 풀리지 않게)
     for name, ex in pages:
         if should_stop and should_stop():
             break
@@ -197,7 +197,8 @@ def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=F
             else:
                 info = {"legend_source": img.legend_source}
         result = ai_review.run(ex, client, cap=limit, budget=budget, exclude=ai_review.decided_targets(name),
-                               on_progress=_tolerant(progress, name) if progress else None, should_stop=should_stop, images=img)
+                               on_progress=_tolerant(progress, name) if progress else None, should_stop=should_stop, images=img,
+                               kinds=kinds)
         stats = result["stats"]
         used += stats["calls"]
         if info is not None:

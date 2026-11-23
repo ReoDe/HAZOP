@@ -642,7 +642,7 @@ def _recheck_pass(ex, client, images, answer_kinds, stats, kinds, limit, batch, 
 
 
 def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_progress=None,
-        should_stop=None, budget=None, exclude=(), images=None, connect=0):
+        should_stop=None, budget=None, exclude=(), images=None, connect=0, kinds=None):
     """AI 검토 한 번. ex는 바꾸지 않는다. → {candidates, stats}.
     cap: 도면당 호출 상한, budget: 이번 실행에 남은 호출 수(RUN_CAP에서 앞 도면이 쓴 만큼 뺀 값). 둘 중 작은 값까지만 부른다.
     exclude: 묻지 않을 대상 source_object_id(사람이 고친 자리).
@@ -653,6 +653,8 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
     묻기에 필요한 호출 수를 넘지 않음)을 뺀 상한까지 부르고, 연결 묻기는 첫 묻기 뒤 넓혀 다시 묻기보다 먼저 남은 호출로 돈다.
     0이면 연결 묻기를 하지 않는다(그 전과 같은 요청).
     on_progress(끝낸 호출 수, 이번 호출 수, 남은 항목 수), should_stop() → True면 다음 호출 전에 멈춘다.
+    kinds: 앞 도면부터 이어지는 오류 종류 목록(실행 전체에서 하나, 이 실행이 그 자리에서 덧붙인다). 주면 '같은 오류 3번이면 멈춤'이
+    도면 경계에서 풀리지 않는다(run_many·ai_image_flow.run_pages가 넘긴다). 없으면 이 도면만의 목록.
     멈춤은 응답 상태와 관계없이 error_kind로 providers.halts를 따른다. 호출은 끝났는데 한도·초과 사용이 온 응답은 받은
     답은 반영하고 남은 호출은 멈춘다."""
     stats = {"items": 0, "planned_calls": 0, "needed_calls": 0, "calls": 0, "errors": 0, "dropped": 0, "confirmed": 0,
@@ -684,13 +686,16 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         connect_items = ai_connect.page_items(ex, images.page, exclude)
         reserve = min(connect, ai_connect.calls_needed(len(connect_items)))
     p = plan(items, max(0, limit - reserve), batch)
-    cands, kinds = [], []
+    cands = []
+    kinds = [] if kinds is None else kinds
     stats.update(items=len(items), planned_calls=len(p["calls"]), needed_calls=p["needed"], left=len(items),
                  kind_items=sum(1 for i in items if i["task"] == "kind"))
     done_items = 0
     for n, call in enumerate(p["calls"]):
         if should_stop and should_stop():
             stats["stopped"] = True
+            break
+        if stats["calls"] >= limit:          # 다시 묻기로 상한을 다 쓰면 남은 묶음을 부르지 않는다(남은 항목은 left에 남는다)
             break
         done, new, no_kind = _ask(ex, client, call, images, answer_kinds, stats, kinds)
         if done:
@@ -790,13 +795,13 @@ def run_many(pages, client, cap=DEFAULT_CAP, run_cap=RUN_CAP, on_progress=None, 
     사람이 고친 자리는 묻지 않는다. save면 도면마다 후보 문서에 합쳐 저장한다(읽은 판이 바뀌었으면 다시 읽어 합침).
     images: (이름, extraction) -> ai_images.ImageInput 또는 None. 주면 도면마다 그림 입력으로 묻는다(ai_images.image_input_for).
     → [(이름, 새 후보 수, stats)]."""
-    done, used = [], 0
+    done, used, kinds = [], 0, []
     for name, ex in pages:
         if should_stop and should_stop():
             break
         result = run(ex, client, cap=cap, budget=run_cap - used, exclude=decided_targets(name),
                      on_progress=(lambda d, t, left, n=name: on_progress(n, d, t, left)) if on_progress else None,
-                     should_stop=should_stop, images=images(name, ex) if images else None)
+                     should_stop=should_stop, images=images(name, ex) if images else None, kinds=kinds)
         used += result["stats"]["calls"]
         if save and not result["stats"]["refused"]:
             desc = client.describe() if hasattr(client, "describe") else {}
