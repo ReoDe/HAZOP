@@ -175,23 +175,47 @@ export const tests = [
     assert.equal(L.keyAction({ key: "Enter" }, { selection: ["a"], typing: false, panelWide: false, card: true }), "submit", "카드가 열려 있으면 Enter는 만들기");
     assert.equal(L.keyAction({ key: "s" }, { selection: ["a"], typing: false, panelWide: false, card: true }), null);
   } },
-  { name: "구간 만들기(실제 창 3차): 끌기 → Enter(카드) → Enter(만들기), 이름 제안을 기다리는 중 누른 Enter도 만든다", async run(assert) {
+  { name: "구간 만들기(실제 창 4차): 끌기 → Enter 한 번에 제안 이름으로 만들고, 만든 카드에서 이름을 고쳐 Enter로 저장한다", async run(assert) {
     await setup();
-    engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "제안 이름", count: 2, asked: 2, boundary: [], overlaps: [] } } : { ok: true, data: { set_rev: 5, node_ids: ["S4"] } });
+    engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "제안 이름", count: 2, asked: 2, boundary: [], overlaps: [] } }
+      : name === "nodes.create" ? { ok: true, data: { set_rev: 5, node_ids: ["S4"], batch_id: "B9" } } : { ok: true, data: { set_rev: 6 } });
     N.setMode("pick");
     N.setSelection(["n1", "n2"]);
     const Keys = () => { useNodeCanvas("graph-A"); return null; };
     const host = mount(html`<${Keys} /><${NodeOverlay} />`);
     await tick();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    assert(N.nodes.get().card && N.nodes.get().card.loading, "카드가 열리고 이름 제안을 읽는 중");
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await tick();
     const created = sent.filter((m) => m.name === "nodes.create");
-    assert.equal(created.length, 1, "두 번째 Enter가 만들기: " + JSON.stringify(sent.map((m) => m.name)));
+    assert.equal(created.length, 1, "Enter 한 번이 만들기: " + JSON.stringify(sent.map((m) => m.name)));
     assert.equal(created[0].args.name, "제안 이름");
-    assert.equal(N.nodes.get().card, null);
+    const c = N.nodes.get().card;
+    assert(c && c.made === "S4" && c.batch === "B9", "만든 구간의 카드: " + JSON.stringify(c));
+    assert.equal(N.nodes.get().mode, "pick", "고르기 모드는 그대로");
+    N.editCard({ name: "저온관" });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await tick();
+    const ren = sent.filter((m) => m.name === "nodes.rename");
+    assert.equal(ren.map((m) => [m.args.node_id, m.args.name]), [["S4", "저온관"]], "고친 이름만 보낸다");
+    assert.equal(N.nodes.get().card, null, "저장하면 닫힌다");
     host.remove();
+  } },
+  { name: "구간 만들기(실제 창 4차): 만든 카드의 되돌리기는 만든 묶음을 되돌리고, 안 고친 카드는 다음 고르기에서 닫힌다", async run(assert) {
+    await setup();
+    engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "", count: 1, asked: 1, boundary: [], overlaps: [] } }
+      : name === "nodes.create" ? { ok: true, data: { set_rev: 5, node_ids: ["S4"], batch_id: "B9" } } : { ok: true, data: { set_rev: 6 } });
+    N.setMode("pick");
+    N.setSelection(["n1"]);
+    await N.openCard();
+    assert.equal(sent.find((m) => m.name === "nodes.create").args.name, "구간 S4", "제안 이름이 없으면 기본 이름");
+    await N.undoMade();
+    assert.equal(sent.filter((m) => m.name === "nodes.undo").map((m) => m.args.batch_id), ["B9"]);
+    assert.equal(N.nodes.get().card, null);
+    N.setSelection(["n2"]);
+    await N.openCard();
+    N.setSelection(["n3"]);
+    assert.equal(N.nodes.get().card, null, "안 고친 카드는 다음 고르기에서 닫힌다");
+    N.setMode("pan");
   } },
   { name: "구간 만들기: 고르기 모드에서 고른 것이 없으면 할 일을 한 줄로 안내한다", async run(assert) {
     await setup();
@@ -416,7 +440,7 @@ export const tests = [
     assert.equal(lastCmd().name, "chat.ask");
     host.remove();
   } },
-  { name: "도면 고르기: 'n개 고름' 막대 → 구간 만들기 카드 → 만들기 명령(sheet·local_id)", async run(assert) {
+  { name: "도면 고르기: 'n개 고름' 막대 → 구간 만들기(제안 이름으로 바로) → 만든 카드에서 설계 의도 저장", async run(assert) {
     await setup();
     engine.reply = (name) => (name === "nodes.suggest"
       ? { ok: true, data: { count: 3, asked: 3, name: "RC-RV01 → RC-SG01", majors: ["RC-RV01", "RC-SG01"], boundary: ["RC-RV01", "RC-SG01"], overlaps: [{ node_id: "S1", shared: 1 }], set_rev: 4 } }
@@ -427,21 +451,23 @@ export const tests = [
     assert(host.textContent.includes("3개 고름"), "막대");
     [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "구간 만들기").click();
     await tick();
-    assert.equal(lastCmd().name, "nodes.suggest");
+    const m = sent.find((x) => x.name === "nodes.create");
+    assert(m, "누르면 바로 만든다");
+    assert.equal(m.args, { project_id: "P", sheet: "graph-A", ids: ["n1", "n2", "n3"], name: "RC-RV01 → RC-SG01", set_rev: 4 });
+    assert.equal(N.nodes.get().selection, []);
+    assert.equal(N.nodes.get().focus, "S4");
     const card = host.querySelector(".newnode");
-    assert(card && card.textContent.includes("새 구간 S4") && card.textContent.includes("S1 구간과 1개가 겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
+    assert(card && card.textContent.includes("구간 S4을 만들었습니다") && card.textContent.includes("S1 구간과 1개가 겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
     const intent = card.querySelector("#nn-intent");
     intent.value = "원자로 출구를 증기발생기로 보냄";
     intent.dispatchEvent(new Event("input", { bubbles: true }));
     await tick();
-    [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "만들기").click();
+    [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "이름·설계 의도 저장").click();
     await tick();
-    const m = lastCmd();
-    assert.equal(m.name, "nodes.create");
-    assert.equal(m.args, { project_id: "P", sheet: "graph-A", ids: ["n1", "n2", "n3"], name: "RC-RV01 → RC-SG01", design_intent: "원자로 출구를 증기발생기로 보냄", set_rev: 4 });
-    assert.equal(N.nodes.get().selection, []);
+    const si = sent.filter((x) => x.name === "nodes.set_intent");
+    assert.equal(si.map((x) => [x.args.node_id, x.args.text]), [["S4", "원자로 출구를 증기발생기로 보냄"]]);
+    assert(!sent.some((x) => x.name === "nodes.rename"), "이름은 안 고쳤으니 보내지 않음");
     assert(!host.querySelector(".newnode"), "카드가 닫힘");
-    assert.equal(N.nodes.get().focus, "S4");
     host.remove();
   } },
   { name: "도면 고르기: 강조한 구간에 더하기·빼기는 적용됨 구간에서만, 확정이면 숨김", async run(assert) {

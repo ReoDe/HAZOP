@@ -144,7 +144,7 @@ def conflict_text(c, shown):
         using = "%s(%s)" % (c["in_use_file"], _format_word(c["in_use_format"]))
     reason = c.get("reason")
     if reason == "same_number_other_format":
-        kinds = "와 ".join(_format_word(f) for f in c.get("formats") or [])
+        kinds = "과 ".join(_format_word(f) for f in c.get("formats") or [])      # 말이 모두 '파일'로 끝나 '과'(실제 창 4차 조사 오류)
         return "같은 도면 번호 %s의 원본이 %s로 함께 있습니다. 사람이 고르기 전에는 %s을(를) 씁니다." % (shown, kinds, using)
     if reason == "same_number_other_file":
         return "같은 도면 번호 %s의 다른 파일이 들어왔습니다. 쓸 파일을 고르세요. 사람이 고르기 전에는 %s을(를) 씁니다." % (shown, using)
@@ -167,6 +167,7 @@ def source_conflicts(engine):
     rows = []
     found = sources.conflicts(engine.project_id())[:MAX_ROWS]
     held = _nodes_on(engine, [c["graph_id"] for c in found]) if found else {}
+    firm = _confirmed_on(engine, [c["graph_id"] for c in found]) if found else {}
     lb = labels(engine) if found else {}
     for c in found:
         shown = display(engine, c["graph_id"], lb)
@@ -174,10 +175,12 @@ def source_conflicts(engine):
                      "drawing_number": c["drawing_number"], "graph_id": c["graph_id"], "formats": list(c["formats"]),
                      "in_use_format": c.get("in_use_format"), "in_use_material": c.get("in_use_material"), "in_use_file": c.get("in_use_file"),
                      "chosen": c.get("chosen"), "chosen_material": c.get("chosen_material"), "nodes_on_sheet": held.get(c["graph_id"], 0),
+                     "confirmed_on_sheet": firm.get(c["graph_id"], 0),
                      "candidates": [{"material_id": x.get("material_id"), "file": x.get("file"), "format": x.get("format"),
                                      "in_use": bool(x.get("in_use")),
                                      # 이 후보로 바꾸면 다시 확인할 구간 수(지금 쓰는 파일이면 바뀌는 것이 없어 0, 검토 지적 3)
                                      "recheck": 0 if x.get("in_use") else held.get(c["graph_id"], 0),
+                                     "released": 0 if x.get("in_use") else firm.get(c["graph_id"], 0),       # 바꾸면 확정이 풀리는 구간 수
                                      "modified": datetime.datetime.fromtimestamp(x["modified"]).strftime("%Y-%m-%d %H:%M") if x.get("modified") else None}
                                     for x in c["candidates"]]})
     return {"conflicts": rows}
@@ -195,6 +198,21 @@ def _nodes_on(engine, graph_ids):
     except Exception:  # noqa: BLE001 - 미리 알림의 수다: 못 읽으면 0
         return {}
     return {g: len(node_commands.drawing_nodes(pg, ns, g)) for g in graph_ids}
+
+
+def _confirmed_on(engine, graph_ids):
+    """{graph_id: 그 도면 구성요소를 품은 구간 가운데 확정·잠금한 수}: 원본을 바꾸면 그 확정이 풀린다(실제 창 4차, 미리 알림)."""
+    from hazop.shell import api_nodes
+    from hazop.study import node_commands, nodes
+    pg = api_nodes._pg(engine, strict=False)
+    if pg is None:
+        return {}
+    try:
+        ns, _legacy = api_nodes._peek(pg)
+    except Exception:  # noqa: BLE001 - 미리 알림의 수다: 못 읽으면 0
+        return {}
+    state = {n["node_id"]: nodes.node_state(n) for n in (ns or {}).get("nodes") or []}
+    return {g: sum(1 for x in node_commands.drawing_nodes(pg, ns, g) if state.get(x["node_id"]) != "applied") for g in graph_ids}
 
 
 # ---------------------------------------------------------------- 쓰기

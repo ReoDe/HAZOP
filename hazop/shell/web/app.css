@@ -263,3 +263,6 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .selbar.pickhint { white-space: normal; max-width: min(760px, calc(100% - 32px)); gap: var(--sp-2); }
 .na-modal .card.confirm-all { border: 0; box-shadow: none; padding: 0; margin: 0; }
 .qinputs .warn { color: var(--warn-ink, #74430a); }
+.job-line { display: flex; align-items: center; gap: 6px; min-height: 26px; font-size: var(--fs-sm); overflow: hidden; white-space: nowrap; }
+.job-line span { overflow: hidden; text-overflow: ellipsis; }
+.jobs-done summary { cursor: pointer; padding: 2px 0; }

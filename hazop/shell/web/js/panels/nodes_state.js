@@ -83,7 +83,10 @@ export async function refresh() {
 
 // ---------------------------------------------------------------- 보기 동작
 export function setMode(mode) { nodes.set({ mode: mode === "pick" ? "pick" : "pan" }); }
-export function setSelection(ids, truncated = false) { nodes.set({ selection: ids, truncated: !!truncated }); }
+export function setSelection(ids, truncated = false) {
+  // 다음 구간을 고르기 시작하면 앞서 만든 구간의 카드는 닫는다(고친 것이 없으면 잃을 것이 없고, 고친 것은 저장을 눌러야 남는다)
+  nodes.set((s) => ({ selection: ids, truncated: !!truncated, card: s.card && s.card.made && ids.length && s.card.name === s.card.saved.name && (s.card.intent || "") === (s.card.saved.intent || "") ? null : s.card }));
+}
 export function clearSelection() { nodes.set({ selection: [], truncated: false }); }
 
 export function focusNode(id, { zoom = false } = {}) {
@@ -132,15 +135,20 @@ export function followLink(link) {
 export function dismissError() { nodes.set({ error: null, needArchive: null }); }
 
 // ---------------------------------------------------------------- 카드
+/** '구간 만들기'(또는 고른 뒤 Enter): 제안 이름으로 바로 만들고, 만든 구간의 이름·설계 의도를 고치는 카드를 연다(실제 창 4차: 2단 → 1단).
+ *  잘못 만들었으면 그 카드의 '되돌리기'(만든 묶음 되돌리기)나 구간 패널의 지우기로 푼다. 제안 이름이 없으면 '구간 S<n>'. */
 export async function openCard() {
   const { selection } = nodes.get(), sheet = shell.get().sheet;
   if (!selection.length || !sheet) return;
+  if (nodes.get().card && !nodes.get().card.made) return;      // 만드는 중
   nodes.set({ card: blankCard({ busy: true, loading: true }) });
   try {
     const sg = await cmd("nodes.suggest", { project_id: nodes.get().list.project_id, sheet, ids: selection });
-    if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, loading: false, suggest: sg, name: s.card.name || sg.name }) }));
-    const c = nodes.get().card;
-    if (c && c.submitWhenReady) { editCard({ submitWhenReady: false }); return submitCard(); }      // 이름 제안을 기다리는 사이 누른 Enter
+    if (!nodes.get().card) return null;                          // 그새 Esc로 닫음: 만들지 않는다
+    const list = nodes.get().list.nodes;
+    const fallback = "구간 S" + (Math.max(0, ...list.map((n) => parseInt(String(n.node_id).slice(1), 10) || 0)) + 1);
+    nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, loading: false, suggest: sg, name: s.card.name || sg.name || fallback }) }));
+    return submitCard();
   } catch (e) {
     if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, loading: false, submitWhenReady: false, error: errorText(e) }) }));
   }
@@ -150,24 +158,51 @@ export async function openCard() {
 export function editCard(patch) { nodes.set((s) => ({ card: s.card ? Object.assign({}, s.card, patch) : s.card })); }
 export function closeCard() { nodes.set({ card: null }); }
 
+/** 만든 구간 카드의 '되돌리기': 만든 묶음을 되돌린다(구간이 사라진다). */
+export async function undoMade() {
+  const c = nodes.get().card;
+  if (!c || !c.made || c.busy) return null;
+  editCard({ busy: true });
+  const r = c.batch ? await undo(c.batch) : null;
+  nodes.set({ card: null });
+  if (r) shell.set({ toast: { text: c.made + " 구간 만들기를 되돌렸습니다.", kind: "info" } });
+  return r;
+}
+
 export async function submitCard() {
   const { card, selection, list } = nodes.get(), sheet = shell.get().sheet;
-  if (card && card.loading) { editCard({ submitWhenReady: true }); return null; }      // 제안 이름이 오면 바로 만든다
+  if (card && card.loading) return null;                          // 만드는 중(제안 이름이 오면 저절로 만든다)
   if (!card || card.busy) return null;
+  if (card.made) return saveMade(card);
   if (!card.name.trim()) { editCard({ error: "구간 이름을 입력하세요." }); return null; }
   editCard({ busy: true, error: null });
   try {
     const r = await cmd("nodes.create", { project_id: list.project_id, sheet, ids: selection, name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev });
     // 고르기 모드는 그대로: 다음 구간을 바로 끌어 고른다(HZ-DSN-06 U9, Esc·이동 단추로 끈다). 응답을 기다리는 사이 새로 고른 것은 남긴다
-    nodes.set((s) => (s.selection === selection ? { card: null, selection: [], truncated: false } : { card: null }));
+    const made = r.node_ids && r.node_ids[0];
+    const after = made ? Object.assign(blankCard({ made, batch: r.batch_id, name: card.name.trim(), intent: card.intent || "", suggest: card.suggest }), { saved: { name: card.name.trim(), intent: card.intent || "" } }) : null;
+    nodes.set((s) => (s.selection === selection ? { card: after, selection: [], truncated: false } : { card: after }));
     await refresh();
-    if (r.node_ids && r.node_ids[0]) focusNode(r.node_ids[0]);
+    if (made) focusNode(made);
     return r;
   } catch (e) {
     await afterError(e);
     editCard({ busy: false, error: errorText(e) });
     return null;
   }
+}
+
+/** 만든 구간 카드의 저장(Enter): 고친 이름·설계 의도만 보내고 카드를 닫는다. 안 고쳤으면 닫기만. */
+async function saveMade(card) {
+  const name = card.name.trim(), intent = (card.intent || "").trim();
+  if (!name) { editCard({ error: "구간 이름을 입력하세요." }); return null; }
+  editCard({ busy: true, error: null });
+  let ok = true;
+  if (name !== card.saved.name) ok = !!(await rename(card.made, name));
+  if (ok && intent !== (card.saved.intent || "").trim()) ok = !!(await setIntent(card.made, intent));
+  if (!ok) { editCard({ busy: false, error: nodes.get().error }); return null; }
+  nodes.set({ card: null });
+  return true;
 }
 
 // ---------------------------------------------------------------- 명령

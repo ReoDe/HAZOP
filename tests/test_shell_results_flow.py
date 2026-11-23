@@ -179,6 +179,7 @@ class ResultsPanelTest(W.ShellBase):
                 mock.patch("hazop.study.ai_cells.run_unit", fake_run_unit()):
             self.assertTrue(self.js(win, "(() => { document.querySelector(\"button[aria-label='분석 실행']\").click(); return true; })()"))
             pump(0.3)
+            # 이 틀에는 실패 칸이 있어 '실패 칸 다시'를 고를 수 있으므로 범위 메뉴가 뜬다(고를 것이 없을 때만 바로 확인 창, 아래 시험)
             self.assertTrue(self.js(win, "(() => { document.querySelector(\"button[aria-label='모든 구간 분석']\").click(); return true; })()"))
             self.assertTrue(wait_for(lambda: "AI 분석 실행" in self.text(win), 10), self.text(win)[-300:])
             self.assertIn("호출", self.text(win))
@@ -187,6 +188,19 @@ class ResultsPanelTest(W.ShellBase):
             self.assertLessEqual(len(reads), 4, "호출 6번 동안 행렬 전체 요약을 호출마다 다시 읽지 않는다: %d번" % len(reads))
         doc = self.stored()
         self.assertTrue(any(e["entry_id"].startswith("ai-") for c in doc["cells"] for e in c["entries"]))
+
+    def test_run_goes_straight_to_the_all_sections_confirm_when_there_is_nothing_to_choose(self):
+        """실제 창 4차: 고른 칸이 없고 실패 칸도 없으면 '분석 실행' → (범위 메뉴 없이) '모든 구간' 확인 창(4클릭 → 3클릭)."""
+        doc = self.stored()
+        for c in doc["cells"]:
+            if (c.get("ai_run") or {}).get("status") == "failed":
+                c["ai_run"]["status"] = "done"
+        res.save(doc, self.project)
+        win = self.open_panel()
+        win.engine.ai = FakeAi()
+        self.assertTrue(self.js(win, "(() => { document.querySelector(\"button[aria-label='분석 실행']\").click(); return true; })()"))
+        self.assertTrue(wait_for(lambda: "AI 분석 실행" in self.text(win), 10), self.text(win)[-300:])
+        self.assertFalse(self.js(win, "!!document.querySelector(\"button[aria-label='모든 구간 분석']\")"), "범위 메뉴를 건너뜀")
 
     def test_project_switch_clears_the_panel_and_rereads_for_the_new_project(self):
         win = self.open_panel()

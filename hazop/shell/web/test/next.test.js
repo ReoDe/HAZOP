@@ -72,6 +72,15 @@ export const tests = [
     assert(host.querySelector(".next .line .txt").textContent.includes("표제란"), "새 맨 앞 것");
     host.remove();
   } },
+  { name: "다음에 할 일(실제 창 4차): 바뀜 알림의 첫 것은 타이머를 기다리지 않고 바로 다시 읽는다(수가 한 박자 늦지 않게)", async run(assert) {
+    const host = await mount();
+    await new Promise((r) => setTimeout(r, 400));                 // 앞 시험의 읽기와 떨어뜨린다
+    served = { items: [LIST[2]], running: null };
+    deliver(JSON.stringify({ t: "changed", topic: "next", rev: null }));
+    await tick();
+    assert(host.querySelector(".next .line .txt").textContent.includes("검토구간이 2개"), "바로 읽음: " + host.querySelector(".next .line .txt").textContent);
+    host.remove();
+  } },
   { name: "다음에 할 일: 단추와 Ctrl+J가 같은 자리로 가고, 도면 위 자리로 갈 때 패널을 닫는다", async run(assert) {
     const host = await mount();
     const seen = [];

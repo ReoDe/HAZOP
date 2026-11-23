@@ -89,8 +89,12 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const over = useStore((s) => s.dropOver);
   const conn = useStore((s) => s.conn);
   // 작업 카드: 도는 것과 끝난 것 가운데 가장 새 것 둘만(멈춘 것은 알림으로 끝: 카드로 쌓여 도면 줄의 단추를 밀어내지 않게, 실제 창 3차 결함 4)
-  const all = Object.entries(jobs).filter(([, j]) => j.state !== "stopped");
-  const running = all.filter(([, j]) => j.state === "running").concat(all.filter(([, j]) => j.state !== "running").slice(-2));
+  // 작업 표시가 도면 줄을 밀지 않게(실제 창 4차 결함 4): AI 검토 작업은 도면 줄의 칩이 진행과 멈추기·취소를 보이므로 따로 그리지 않고,
+  // 다른 도는 작업은 한 줄로, 끝난 작업은 접힌 '끝난 작업 n개' 안에 둔다(멈춘 작업은 알림으로 끝)
+  const all = Object.entries(jobs).filter(([, j]) => j.state !== "stopped" && !/^AI 검토/.test(String(j.label || "")));
+  const running = all.filter(([, j]) => j.state === "running");
+  const ended = all.filter(([, j]) => j.state !== "running");
+  const failedJobs = ended.filter(([, j]) => j.state === "failed");
   const est = useAiEstimate(!!app.ai_review, app.ai_review_cap);
 
   const pick = () => cmd("register.pick").catch(toastError);
@@ -103,11 +107,13 @@ export function DrawingsPanel({ onOpen, onClose }) {
       <div class=${"drop" + (over ? " over" : "")} role="button" tabindex="0" aria-label="도면 파일 고르기" onClick=${pick}
         onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } }}>
         <${Icon} name="upload" size=${22} /><div><b>도면 파일을 여기에 끌어 놓으세요</b><br /><span>.drawio, .pdf, DEXPI .xml 여러 개 · 눌러서 고르기</span></div></div>
-      ${running.map(([id, j]) => html`<div class="card job" key=${id}>
-        <div class="kv"><div class="k"><b>${j.label}</b><span>${j.state === "failed" ? j.message : (j.text || "준비 중")}${j.total ? " (" + j.done + "/" + j.total + ")" : ""}</span></div>
-          ${j.state === "running" ? html`<${Icon} name="loader-2" cls="spin" />` : j.state === "done" ? html`<${Chip} kind="ok" icon="check">완료<//>` : html`<${Chip} kind="err" icon="alert-triangle">실패<//>`}
-          ${j.state !== "running" ? html`<${Btn} sm=${true} kind="ghost" icon="x" label=${j.label + " 알림 닫기"} title="닫기" onClick=${() => dismissJob(id)} />` : null}</div>
-          ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}</div>`)}
+      ${running.map(([id, j]) => html`<div class="job-line" key=${id} role="status"><${Icon} name="loader-2" cls="spin" size=${14} />
+        <b>${j.label}</b><span class="muted small">${j.text || "준비 중"}${j.total ? " (" + j.done + "/" + j.total + ")" : ""}</span></div>`)}
+      ${ended.length ? html`<details class="jobs-done" open=${failedJobs.length > 0}><summary class="muted small">끝난 작업 ${ended.length}개${failedJobs.length ? " · 실패 " + failedJobs.length : ""}</summary>
+        ${ended.map(([id, j]) => html`<div class="job-line" key=${id}>${j.state === "done" ? html`<${Chip} kind="ok" icon="check">완료<//>` : html`<${Chip} kind="err" icon="alert-triangle">실패<//>`}
+          <b>${j.label}</b><span class="muted small">${j.state === "failed" ? j.message : (j.text || "")}</span>
+          ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}
+          <${Btn} sm=${true} kind="ghost" icon="x" label=${j.label + " 알림 닫기"} title="닫기" onClick=${() => dismissJob(id)} /></div>`)}</details>` : null}
       <div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">도면 ${data.drawings.length}장${data.project_id ? " · 프로젝트 " + data.project_id : ""}${reviewLine ? " · " + reviewLine : ""}</div>
         ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 위 자리에 도면 파일을 끌어 놓으면 등록하고 읽습니다.<//>` : html`<div class="list">
           ${data.drawings.map((d) => html`<${Fragment} key=${d.graph_id}><div class=${"row drow" + (d.graph_id === sheet ? " on" : "")}>

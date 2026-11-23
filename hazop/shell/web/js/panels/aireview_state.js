@@ -81,12 +81,16 @@ async function write(name, args, notice) {
   try {
     const r = await cmd(name, Object.assign({ graph_id: ai.get().graphId, ver: ai.get().view.ver }, args));
     const failed = (r && r.failed) || [];
-    ai.set({ busy: false, notice: notice(r) + (failed.length ? " 하지 못한 후보 " + failed.length + "건: " + failed.slice(0, 3).map((f) => f.reason).join(" · ") : "")
-      + ((r && r.notes && r.notes.length) ? " " + r.notes.join(" ") : "") + ((r && r.recheck && r.recheck.length) ? " " + r.recheck.join(" ") : "") });
+    const text = notice(r) + (failed.length ? " 하지 못한 후보 " + failed.length + "건: " + failed.slice(0, 3).map((f) => f.reason).join(" · ") : "")
+      + ((r && r.notes && r.notes.length) ? " " + r.notes.join(" ") : "") + ((r && r.recheck && r.recheck.length) ? " " + r.recheck.join(" ") : "");
+    ai.set({ busy: false, notice: text });
+    // 패널 맨 위 알림은 목록 아래쪽에서 누른 사람에게 보이지 않는다(실제 창 4차): 화면 아래 알림으로도 띄운다
+    store.set({ toast: { text, kind: failed.length ? "err" : "info" } });
     await refresh();
     return r;
   } catch (e) {
     ai.set({ busy: false, error: errorText(e) });
+    store.set({ toast: { text: errorText(e), kind: "err" } });      // 누른 자리(목록 아래쪽)에서도 보이게
     if (e && e.code === "stale") await refresh();
     return null;
   }

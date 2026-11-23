@@ -128,12 +128,15 @@ function Header({ s }) {
   const [exp, setExp] = useState(false);
   const exporting = R.useResults((x) => x.exporting);
   const view = R.useResults((x) => x.view);
+  const active = R.useResults((x) => x.active);
+  // 고를 것이 없으면(행렬에서 고른 칸이 없고 실패 칸도 없음) 범위 메뉴를 건너뛰고 '모든 구간' 확인 창으로 바로 간다(실제 창 4차: 4클릭 → 3클릭)
+  const direct = !active && !(s.kpi && s.kpi.failed_cells);
   return html`<div class="acts-row res-head">
     <${Kpi} kpi=${s.kpi} />
     <span class="acts">
       <${Btn} sm=${true} label=${view === "recs" ? "행렬 보기" : "권고 " + (s.kpi ? s.kpi.recs : 0) + " 보기"}
         onClick=${() => R.setView(view === "recs" ? "matrix" : "recs")}>${view === "recs" ? "행렬" : "권고 " + (s.kpi ? s.kpi.recs : 0)}<//>
-      <${Btn} sm=${true} icon="cpu" label="분석 실행" title=${s.stale ? "도면 변경을 반영한 뒤 분석합니다(검토구간 패널)" : null} disabled=${!!(s.run && s.run.running) || !!s.stale} onClick=${() => setMenu(!menu)}>분석 실행<//>
+      <${Btn} sm=${true} icon="cpu" label="분석 실행" title=${s.stale ? "도면 변경을 반영한 뒤 분석합니다(검토구간 패널)" : null} disabled=${!!(s.run && s.run.running) || !!s.stale} onClick=${() => { if (direct) { setMenu(false); R.planRun("all"); } else setMenu(!menu); }}>분석 실행<//>
       <${Btn} sm=${true} icon="file-export" label="Excel 내보내기 범위 고르기" title=${s.stale ? "도면 변경을 반영한 뒤 내보냅니다(검토구간 패널)" : null} disabled=${exporting || !!s.stale} onClick=${() => setExp(!exp)}>Excel<//>
       <${Btn} sm=${true} icon="file-export" label="초기사건 인계 묶음 내보내기" disabled=${exporting} onClick=${R.exportIe}>초기사건 인계<//></span></div>
     ${exp ? html`<${ExportCard} s=${s} onDone=${() => setExp(false)} />` : null}

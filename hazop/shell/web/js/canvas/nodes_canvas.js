@@ -107,11 +107,15 @@ function NewNodeCard() {
   useEffect(() => { if (opened) { const el = document.getElementById("nn-name"); if (el) el.focus(); } }, [opened]);
   if (!card) return null;
   const sg = card.suggest;
-  const nextNo = "S" + (Math.max(0, ...list.map((n) => parseInt(String(n.node_id).slice(1), 10) || 0)) + 1);
+  const nextNo = card.made || "S" + (Math.max(0, ...list.map((n) => parseInt(String(n.node_id).slice(1), 10) || 0)) + 1);
   const submit = (e) => { e.preventDefault(); N.submitCard(); };
-  return html`<form class="float newnode" role="dialog" aria-label="새 구간" onSubmit=${submit}
+  if (!card.made) {          // 만드는 중(제안 이름을 받아 바로 만든다)
+    return html`<div class="float newnode" role="status" aria-label="새 구간"><div class="nn-h"><b>구간 만드는 중…</b></div>
+      ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//><div class="acts-row"><${Btn} label="닫기" onClick=${N.closeCard}>닫기<//></div>` : null}</div>`;
+  }
+  return html`<form class="float newnode" role="dialog" aria-label=${"새 구간 " + nextNo} onSubmit=${submit}
     onKeyDown=${(e) => { if (e.key === "Escape") { e.stopPropagation(); N.closeCard(); } else if (e.key === "Enter" && (e.ctrlKey || e.target.tagName !== "TEXTAREA")) { e.preventDefault(); N.submitCard(); } }}>
-    <div class="nn-h"><span class="seg-dot" style=${"background:" + colorOf(list.concat([{ node_id: nextNo }]), nextNo)}></span><b>새 구간 ${nextNo}</b>
+    <div class="nn-h"><span class="seg-dot" style=${"background:" + colorOf(list.concat([{ node_id: nextNo }]), nextNo)}></span><b>구간 ${nextNo}을 만들었습니다</b>
       ${sg ? html`<${Chip}>구성요소 ${sg.count}<//>` : null}<${Btn} kind="ghost" sm=${true} icon="x" label="카드 닫기" title="닫기 (Esc)" onClick=${N.closeCard} /></div>
     <div class="field"><label for="nn-name">이름</label>
       <input id="nn-name" class="textbox" autofocus value=${card.name} maxlength="120" onInput=${(e) => N.editCard({ name: e.target.value })} /></div>
@@ -121,8 +125,10 @@ function NewNodeCard() {
     ${sg && sg.overlaps.length ? html`<${Notice} kind="info">${sg.overlaps.map((o) => o.node_id + " 구간과 " + o.shared + "개가 겹칩니다").join(" · ")}. 겹쳐도 만들 수 있습니다.<//>` : null}
     ${sg && sg.asked > sg.count ? html`<${Notice} kind="warn" icon="alert-triangle">고른 ${sg.asked}개 가운데 ${sg.asked - sg.count}개는 구간에 넣을 수 없는 선(신호선·계측선)이라 뺐습니다.<//>` : null}
     ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//>` : null}
-    <div class="acts-row"><${Btn} kind="primary" icon="check" label="만들기" disabled=${card.busy || !card.name.trim()} onClick=${submit}>만들기 <kbd>Enter</kbd><//>
-      <${Btn} label="취소" onClick=${N.closeCard}>취소<//></div></form>`;
+    <div class="muted small">이름과 설계 의도는 여기서 고칠 수 있습니다. 그대로 두려면 Esc나 다음 구간 고르기로 닫으세요.</div>
+    <div class="acts-row"><${Btn} kind="primary" icon="check" label="이름·설계 의도 저장" disabled=${card.busy || !card.name.trim()} onClick=${submit}>저장 <kbd>Enter</kbd><//>
+      <${Btn} label="이 구간 만들기 되돌리기" disabled=${card.busy} onClick=${N.undoMade}>되돌리기<//>
+      <${Btn} kind="ghost" label="카드 닫기" onClick=${N.closeCard}>닫기<//></div></form>`;
 }
 
 function OutsideChip() {

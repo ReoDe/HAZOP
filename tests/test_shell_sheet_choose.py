@@ -153,6 +153,10 @@ class MixedRowTest(ShellSheetBase):
                               project=P, via_web=True)
         self.assertTrue(r["ok"], r)
         row = self.conflict_row()
+        # 실제 창 4차: 미리 알림이 '확정이 풀린다'를 밝히도록 바꾸면 풀릴 확정 구간 수를 싣는다
+        self.assertEqual(row["confirmed_on_sheet"], 1)
+        self.assertEqual({x["material_id"]: x["released"] for x in row["candidates"]}[self.a], 0, "지금 쓰는 파일은 풀릴 것이 없다")
+        self.assertTrue(all(x["released"] == 1 for x in row["candidates"] if x["material_id"] != self.a), row["candidates"])
         away = next(x["material_id"] for x in row["candidates"] if x["material_id"] != self.a)
         self.assertTrue(self.eng.dispatch("sources.choose", {"drawing_number": row["graph_id"], "material_id": away})["ok"])
         self.assertTrue(self.eng.dispatch("sources.choose", {"drawing_number": row["graph_id"], "material_id": self.a})["ok"])
@@ -168,6 +172,7 @@ class FormatVersusFileTest(MixedRowTest):
         """실제 창 3차 D: 카드 글 "…원본이 drawio·pdf_vector 형식으로 함께 있습니다…"(형식 코드), 번호 전 폴더 이름."""
         row = self.conflict_row()
         self.assertIn("PDF 파일", row["text"])
+        self.assertIn("파일과 ", row["text"], "조사: 파일과(실제 창 4차)")
         self.assertNotRegex(row["text"], r"pdf_vector|graph-|SCN__|material-")
 
     def test_file_choice_wins_over_format_and_format_choice_drops_it(self):

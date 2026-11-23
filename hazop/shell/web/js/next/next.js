@@ -37,8 +37,14 @@ export async function load() {
   } catch (e) { /* 안내 한 줄: 읽기 실패는 앞 줄을 그대로 둔다 */ }
 }
 
-let timer = null;
-function soon() { clearTimeout(timer); timer = setTimeout(load, 120); }      // 영역 알림이 몰려와도 한 번만 읽는다
+let timer = null, last = 0;
+/** 영역 알림 → 다시 읽기. 첫 알림은 바로 읽고(실제 창 4차: 만든·확정한 직후 수가 한 박자 늦던 것), 잇달아 오는 알림은 120ms 뒤 한 번으로 모은다. */
+function soon() {
+  const now = Date.now();
+  clearTimeout(timer);
+  if (now - last > 300) { last = now; load(); }
+  timer = setTimeout(() => { last = Date.now(); load(); }, 120);
+}
 
 // ---------------------------------------------------------------- 가는 곳
 const handlers = {};
