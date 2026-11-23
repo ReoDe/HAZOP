@@ -7,13 +7,16 @@
 
 자리 표: `data/drawing-sources/<프로젝트>.json`
   chosen{도면 번호: {format, by, at}}      사람이 고른 형식(옛 파일 그대로 읽힘)
-  seats{graph_id: {material_id, page, why, name, by, at}}   why: legacy(이 규칙 전 이름을 지킴)·in_use(정착 때 쓰던 파일)·chosen(사람이 고름)
+  seats{graph_id: {material_id, page, why, name, by, at, pin?}}   그 이름의 주인. why: legacy(이 규칙 전 이름을 지킴)·in_use(정착 때
+                                           쓰던 파일, 다른 파일이 번호를 받기 전에 붙박은 파일)·chosen(사람이 고름)
+  자리 규칙은 hazop.graph.sheets 한 곳이다: 주인과 옛 이름 붙박기(sheets.pin)는 따로이고, 자리를 새로 적으면(sheets.seat) 붙박기를 이어받는다.
+  주인이 그 이름을 떠난 자리는 낡았다(sheets.owner_live): 고르기가 보지 않고 keep_owner가 지금 주인으로 갈아 적는다.
   seats_settled{at, rule}                  정착을 마쳤다는 표시. 없으면 고르기·이름은 이 단위 전 규칙 그대로다(열지 않은 프로젝트는 그대로 보임)
 이 파일은 프로젝트 그래프 입력 지문에 들어 있어(hazop.app.project_ctx._graph_inputs) 바뀌면 그래프와 도면 이름 캐시를 다시 짓는다.
 
 고르기 차례(정착 뒤, graph_id 묶음 안에서):
-  0. (자료, 쪽)마다 가장 새 등록 판 하나(같은 도면이 두 시트가 되지 않게). legacy 자리가 붙박은 폴더는 이름이 다르면 남긴다
-  1. 자료가 하나면 그것  2. 사람이 고른 파일, 고른 형식이면 그 형식 안에서  3. 자리 주인(legacy·in_use)
+  0. (자료, 쪽)마다 가장 새 등록 판 하나(같은 도면이 두 시트가 되지 않게). 옛 이름 붙박기(sheets.pin)의 폴더는 이름이 다르면 남긴다
+  1. 자료가 하나면 그것  2. 사람이 고른 파일, 고른 형식이면 그 형식 안에서  3. 자리 주인(legacy·in_use). 2·3은 주인이 묶음에 있을 때만
   4. 먼저 등록한 자료(등록 색인 registry.json의 차례, 없는 자료는 맨 뒤에 폴더 이름 차례). 그래프 수정 시각은 쓰지 않는다(다시 추출로 뒤집힘)
 읽는 함수(pick, conflicts, sheet_rows, sheet_name)는 파일을 쓰지 않는다. 쓰는 것은 choose와 settle뿐이고, settle은 작업 루트에서만 돈다.
 Qt 의존 없음.
@@ -236,8 +239,8 @@ def _decide(group, seat, choice, order, extract_root):
 
 
 def _one_per_sheet(cands, seats):
-    """고르기 차례 0: (자료, 쪽)마다 가장 새 등록 판의 후보만 남긴다. legacy 자리가 붙박은 폴더는 남은 후보와 이름이 다르면 남긴다."""
-    pinned = {s.get("name") for s in seats.values() if s.get("why") == sheets.LEGACY}
+    """고르기 차례 0: (자료, 쪽)마다 가장 새 등록 판의 후보만 남긴다. 옛 이름 붙박기(sheets.pin)의 폴더는 남은 후보와 이름이 다르면 남긴다."""
+    pinned = {p.get("name") for p in map(sheets.pin, seats.values()) if p}
     by_key, out = {}, []
     for c in cands:
         if _cheap(c)["mat"]:
@@ -314,19 +317,25 @@ def owner_if(project_id, material_id, page, graph_id, number, keep=False, graph_
 
 
 def _seat_for_owner(project_id, cands, graph_id, doc, graph_root, choices_root, store_root):
-    """지금 그 이름의 주인을 붙박을 자리 기록(이미 자리가 있거나 주인이 없거나 정착 전이면 None)."""
-    if not doc.get("seats_settled") or graph_id in _seats(doc):
+    """지금 그 이름의 주인을 붙박을 자리 기록. 그 이름에 주인이 살아 있는 자리(sheets.owner_live)가 있거나 주인이 없거나 정착 전이면 None.
+    주인이 그 이름을 떠난 낡은 자리는 지금 주인으로 갈아 적는다(앞 자리의 옛 이름 붙박기는 이어받음)."""
+    if not doc.get("seats_settled"):
         return None
+    prior = _seats(doc).get(graph_id)
     state, _ = _state(project_id, cands, graph_root, choices_root, store_root, doc)
-    c = next((c for gid, _g, c, _f in state if gid == graph_id), None)
-    if c is None or not _cheap(c)["mat"]:
+    hit = next(((g, c) for gid, g, c, _f in state if gid == graph_id), None)
+    if hit is None or not _cheap(hit[1])["mat"]:
         return None
-    return {"material_id": c["mat"], "page": c["page"], "why": sheets.IN_USE, "name": c["name"]}
+    group, c = hit
+    if prior and sheets.owner_live(prior, {sheet_key(x) for x in group}):
+        return None
+    return sheets.seat(c["mat"], c["page"], sheets.IN_USE, c["name"], prior)
 
 
 def keep_owner(project_id, graph_id, by, at=None):
     """다른 파일이 같은 이름(같은 도면 번호)을 받기 전에 지금 주인을 자리(in_use)로 붙박는다(말없이 갈아타지 않게, 먼저 있던 파일이 주인으로 남음).
-    이미 자리가 있거나 주인이 없거나 정착 전이면 쓰지 않는다. -> 쓴 자리 기록 또는 None. 원자적, 읽은 뒤 바뀌었으면 store_io.Conflict."""
+    주인이 살아 있는 자리가 이미 있거나 주인이 없거나 정착 전이면 쓰지 않는다. 주인이 그 이름을 떠난 낡은 자리는 갈아 적는다.
+    -> 쓴 자리 기록 또는 None. 원자적, 읽은 뒤 바뀌었으면 store_io.Conflict."""
     path = choices_path(project_id)
     doc, fp = _read_doc(path)
     seat = _seat_for_owner(project_id, _candidates(project_id, None), graph_id, doc, None, None, None)
@@ -460,8 +469,8 @@ def choose(project_id, drawing_number, source_format_name, by, at=None, graph_ro
         if not doc.get("seats_settled"):
             raise ValueError("이 프로젝트의 시트 자리를 아직 정하지 않아 파일을 고를 수 없음(다시 추출하거나 그래프를 다시 지은 뒤 고르세요)")
         page = sheets.from_out_name(cand["name"])
-        record = {"material_id": material_id, "page": page[2] if page else 0, "why": sheets.CHOSEN, "name": cand["name"],
-                  "by": by, "at": at}
+        record = dict(sheets.seat(material_id, page[2] if page else 0, sheets.CHOSEN, cand["name"], _seats(doc).get(row["graph_id"])),
+                      by=by, at=at)
         doc.setdefault("seats", {})[row["graph_id"]] = record
         _write_doc(project_id, path, doc, fp)
         return record
@@ -474,9 +483,13 @@ def choose(project_id, drawing_number, source_format_name, by, at=None, graph_ro
     if not isinstance(doc.get("chosen"), dict):
         doc["chosen"] = {}
     doc["chosen"][row["drawing_number"]] = record
-    seat = (doc.get("seats") or {}).get(row["graph_id"])
-    if isinstance(seat, dict) and seat.get("why") == sheets.CHOSEN:   # 형식을 새로 고르면 앞서 고른 파일은 내려놓는다
-        del doc["seats"][row["graph_id"]]
+    seat = _seats(doc).get(row["graph_id"])
+    if seat and seat["why"] == sheets.CHOSEN:   # 형식을 새로 고르면 앞서 고른 파일은 내려놓는다(옛 이름 붙박기는 남김)
+        left = sheets.unchoose(seat)
+        if left:
+            doc["seats"][row["graph_id"]] = dict(left, by=by, at=at)
+        else:
+            del doc["seats"][row["graph_id"]]
     _write_doc(project_id, path, doc, fp)
     return record
 
@@ -510,8 +523,7 @@ def settle(project_id, render, at=None):
             continue
         why = sheets.LEGACY if gid != sheets.natural(f) else sheets.IN_USE if len(_by_material(group, extract_root)) > 1 else None
         if why:
-            seats[gid] = {"material_id": f["material_id"], "page": f.get("page_index") or 0, "why": why, "name": c["name"],
-                          "by": "settle", "at": at}
+            seats[gid] = dict(sheets.seat(f["material_id"], f.get("page_index"), why, c["name"]), by="settle", at=at)
     todo = []
     for c in cands:
         f = facts_of(c, extract_root)

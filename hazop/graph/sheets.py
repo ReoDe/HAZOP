@@ -7,7 +7,8 @@
   - 쓸 수 있는 번호: 사람이 확정한 번호이고 자료가 한 쪽일 때만. 여러 쪽 자료의 자료 단위 번호는 쪽 번호가 아니라서 이름에 쓰지 않는다
     (쪽들이 한 이름으로 겹치므로). 그 사유 코드가 NUMBER_HELD다.
 - 자리(seat): 이 규칙 전에 쓰던 이름(graph-drawing, graph-<쪽 이름>, 여러 쪽 자료의 graph-<번호>)을 지금 쓰는 시트가 지키도록
-  프로젝트마다 한 번 적는 표(hazop.graph.sources.settle). 번호를 쓸 수 없는 (자료, 쪽)이 legacy 자리를 가지면 그 이름을 쓴다.
+  프로젝트마다 한 번 적는 표(hazop.graph.sources.settle). 번호를 쓸 수 없는 (자료, 쪽)을 붙박은 자리(pin)가 있으면 그 이름을 쓴다.
+  자리의 주인·붙박기·낡음 규칙은 이 모듈의 pin·seat·unchoose·owner_live 한 곳이다.
 - 등록 판(r1, r2)은 이름에 넣지 않는다. 표제란 확정이 새 판을 만들어도 같은 시트로 남는다.
 - 정착 전의 프로젝트는 legacy_name(이 규칙 전의 이름) 그대로다.
 순수 함수만 둔다(파일을 읽거나 쓰지 않음).
@@ -104,13 +105,45 @@ def natural(f):
     return legacy_name(f)
 
 
+def pin(seat):
+    """그 자리가 옛 이름을 붙박아 주는 쪽 {material_id, page, name} 또는 None. 주인과 붙박기는 따로다: legacy 자리는 주인이 곧 붙박힌
+    쪽이고, 주인을 새로 적은 자리(사람이 고름, 낡은 주인을 갈아 붙박음)는 앞 자리의 붙박기를 pin 칸에 이어 지닌다(seat)."""
+    if seat.get("why") == LEGACY:
+        return {"material_id": seat.get("material_id"), "page": seat.get("page") or 0, "name": seat.get("name")}
+    p = seat.get("pin")
+    return p if isinstance(p, dict) and p.get("material_id") else None
+
+
+def seat(material_id, page, why, name, prior=None):
+    """그 이름의 주인을 적은 자리 한 곳. prior(그 이름의 앞 자리)가 붙박던 옛 이름은 이어받는다(주인이 바뀌어도 그 쪽의 이름은 그대로).
+    사람이 붙박힌 쪽이 아닌 다른 파일을 고르면 붙박기를 푼다: 붙박혔던 쪽은 다음 추출에서 자기 이름으로 따로 들어온다."""
+    out = {"material_id": material_id, "page": page or 0, "why": why, "name": name}
+    p = pin(prior or {})
+    if p and why != LEGACY and not (why == CHOSEN and (p["material_id"], p.get("page") or 0) != (material_id, page or 0)):
+        out["pin"] = dict(p)
+    return out
+
+
+def unchoose(seat_):
+    """사람이 고른 자리를 내려놓을 때 남길 자리: 붙박기가 있으면 그 쪽의 legacy 자리, 없으면 None(자리를 지움)."""
+    p = pin(seat_)
+    return {"material_id": p["material_id"], "page": p.get("page") or 0, "why": LEGACY, "name": p.get("name")} if p else None
+
+
+def owner_live(seat_, keys):
+    """자리의 주인이 지금 그 이름을 원하는 쪽 keys {(material_id, 쪽)} 가운데 있는가. 그 이름을 떠난 주인의 자리는 낡았다: 고르기가
+    보지 않고, 다른 파일이 그 이름을 받기 전에 지금 주인으로 갈아 붙박는다(떠났던 파일이 돌아와도 쓰던 파일에게서 말없이 빼앗지 않게)."""
+    return (seat_.get("material_id"), seat_.get("page") or 0) in keys
+
+
 def sheet_id(f, seats):
-    """자리 표(seats {graph_id: {material_id, page, why, …}})를 본 이름. 쓸 수 있는 번호가 없고 이 (자료, 쪽)이 legacy 자리를
-    가지면 그 자리 이름, 아니면 natural."""
+    """자리 표(seats {graph_id: {material_id, page, why, …}})를 본 이름. 쓸 수 있는 번호가 없고 이 (자료, 쪽)을 붙박은 자리(pin)가
+    있으면 그 자리 이름, 아니면 natural."""
     k = key(f)
     if k is not None and not usable_number(f):
-        for gid, seat in sorted((seats or {}).items()):
-            if seat.get("why") == LEGACY and (seat.get("material_id"), seat.get("page") or 0) == k:
+        for gid, s in sorted((seats or {}).items()):
+            p = pin(s)
+            if p and (p["material_id"], p.get("page") or 0) == k:
                 return gid
     return natural(f)
 
