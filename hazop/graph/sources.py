@@ -255,10 +255,10 @@ def _one_per_sheet(cands, seats):
     return out
 
 
-def _state(project_id, cands, graph_root, choices_root, store_root):
-    """[(gid, 묶음, 고른 후보, 사람이 고른 것을 따랐는가)], 정착했는가."""
+def _state(project_id, cands, graph_root, choices_root, store_root, doc=None):
+    """[(gid, 묶음, 고른 후보, 사람이 고른 것을 따랐는가)], 정착했는가. doc: 자리 표 대신 쓸 문서(미리 셈용)."""
     extract_root = extract_root_for(graph_root)
-    doc = _read_doc(choices_path(project_id, choices_root))[0]
+    doc = _read_doc(choices_path(project_id, choices_root))[0] if doc is None else doc
     seats, chosen, settled = _seats(doc), _chosen(doc), bool(doc.get("seats_settled"))
     pool = _one_per_sheet(cands, seats) if settled else cands
     by_gid = {}
@@ -286,6 +286,56 @@ def pick(project_id, cands, graph_root=None, choices_root=None, store_root=None)
     notes = [_row(gid, group, c, settled, extract_root)["text"] for gid, group, c, followed in state  # 사람이 고른 것을 따른 줄은 알리지 않는다
              if not followed and _is_conflict(group, extract_root)]
     return {gid: c for gid, _g, c, _f in state}, sorted(set(notes))
+
+
+def _renamed(cands, material_id, page, graph_id, number):
+    """cands 가운데 그 (자료, 쪽)의 후보를 graph_id(번호 number)로 이름을 바꾼 사본."""
+    out = []
+    for c in cands:
+        if sheet_key(c) == (material_id, page):
+            src = dict(c["graph"].get("source") or {}, drawing_number=number)
+            c = dict(c, gid=graph_id, graph=dict(c["graph"], graph_id=graph_id, source=src))
+        out.append(c)
+    return out
+
+
+def owner_if(project_id, material_id, page, graph_id, number, keep=False, graph_root=None, choices_root=None, store_root=None):
+    """그 (자료, 쪽)의 시트 이름이 graph_id(이름에 쓴 번호 number)가 되면 고르기가 그 이름에 쓸 자료 ID(없으면 None). 파일을 쓰지 않는다.
+    keep: 지금 그 이름의 주인을 자리(in_use)로 붙박은 셈(keep_owner를 부른 뒤의 고르기). 표제란 가드가 번호를 바꾸기 전에 묻는다."""
+    doc = _read_doc(choices_path(project_id, choices_root))[0]
+    cands = _candidates(project_id, graph_root)
+    if keep:
+        seat = _seat_for_owner(project_id, cands, graph_id, doc, graph_root, choices_root, store_root)
+        if seat:
+            doc = dict(doc, seats=dict(_seats(doc), **{graph_id: seat}))
+    state, _ = _state(project_id, _renamed(cands, material_id, page, graph_id, number), graph_root, choices_root, store_root, doc)
+    c = next((c for gid, _g, c, _f in state if gid == graph_id), None)
+    return _cheap(c)["mat"] if c else None
+
+
+def _seat_for_owner(project_id, cands, graph_id, doc, graph_root, choices_root, store_root):
+    """지금 그 이름의 주인을 붙박을 자리 기록(이미 자리가 있거나 주인이 없거나 정착 전이면 None)."""
+    if not doc.get("seats_settled") or graph_id in _seats(doc):
+        return None
+    state, _ = _state(project_id, cands, graph_root, choices_root, store_root, doc)
+    c = next((c for gid, _g, c, _f in state if gid == graph_id), None)
+    if c is None or not _cheap(c)["mat"]:
+        return None
+    return {"material_id": c["mat"], "page": c["page"], "why": sheets.IN_USE, "name": c["name"]}
+
+
+def keep_owner(project_id, graph_id, by, at=None):
+    """다른 파일이 같은 이름(같은 도면 번호)을 받기 전에 지금 주인을 자리(in_use)로 붙박는다(말없이 갈아타지 않게, 먼저 있던 파일이 주인으로 남음).
+    이미 자리가 있거나 주인이 없거나 정착 전이면 쓰지 않는다. -> 쓴 자리 기록 또는 None. 원자적, 읽은 뒤 바뀌었으면 store_io.Conflict."""
+    path = choices_path(project_id)
+    doc, fp = _read_doc(path)
+    seat = _seat_for_owner(project_id, _candidates(project_id, None), graph_id, doc, None, None, None)
+    if not seat:
+        return None
+    seat.update(by=by, at=at or store_io.now_utc())
+    doc.setdefault("seats", {})[graph_id] = seat
+    _write_doc(project_id, path, doc, fp)
+    return seat
 
 
 def _is_conflict(group, extract_root):

@@ -31,6 +31,7 @@ graph.superseded.json으로 비켜 둔다(한 도면이 프로젝트 그래프�
 import csv
 import io
 import json
+import logging
 import os
 import re
 import unicodedata
@@ -45,6 +46,7 @@ COMMANDS = ("view", "confirm", "unconfirm")
 CODES = ("unknown_command", "bad_actor", "bad_args", "stale", "not_found", "rule", "conflict", "io")
 MAX_VALUE = 200
 SUPERSEDED = "graph.superseded.json"
+LOG = logging.getLogger(__name__)
 # 도면 번호 가드의 사유 코드(거절 줄의 reason_code). 번호 꼴 사유 셋은 hazop.graph.sheets와 같은 값이다.
 HAS_RECORDS = "sheet_has_records"            # 그 도면을 가리키는 사람 기록이 있어 번호를 바꾸면 끊김
 CHOICE_PINNED = "source_choice_pinned"       # 그 번호에 사람이 고른 원본 형식이 걸려 있음
@@ -89,7 +91,7 @@ def _graph_id_of(extraction, project_id):
 
 
 def _sheets(record):
-    """쪽마다 추출 결과가 있는 가장 새 등록 버전 [{page, version, name, graph_id, page_name, material_id, page_count, file}].
+    """쪽마다 추출 결과가 있는 가장 새 등록 버전 [{page, version, name, graph_id, page_name, material_id, page_count, file, number}].
     추출한 적 없는 쪽은 뺀다."""
     out = []
     for page in range(_page_count(record)):
@@ -102,7 +104,8 @@ def _sheets(record):
                 continue
             f = sheet_rules.facts(ex)
             out.append({"page": page, "version": version, "name": name, "graph_id": _graph_id_of(ex, record.get("project_id")),
-                        "page_name": f["page_name"], "material_id": f["material_id"], "page_count": f["page_count"], "file": f["file"]})
+                        "page_name": f["page_name"], "material_id": f["material_id"], "page_count": f["page_count"], "file": f["file"],
+                        "number": f["number"]})
             break
     return out
 
@@ -176,60 +179,84 @@ def _number_refs(project_id, graph_id):
     return {k: v for k, v in out.items() if v}
 
 
-def _references(project_id, graph_id):
-    """그래프 ID를 가리키는 참조 수 {이름: 수}(0인 것은 뺀다). 참조 꼴은 "<그래프 ID>"·"<그래프 ID>/…"·"<그래프 ID>#…"(JSON),
-    CSV 칸(_csv_refs), 도면 번호로 적는 기록(_number_refs)."""
-    if not graph_id:
-        return {}
-    pat = re.compile(r'"%s(?=["/#])' % re.escape(graph_id))
-    out = {}
-    for name, files in _ref_places(project_id):
-        n = 0
-        for f in files:
-            try:
-                if f.endswith(".csv"):
-                    n += _csv_refs(f, graph_id)
-                    continue
-                with open(f, encoding="utf-8") as fh:
-                    n += len(pat.findall(_referring_text(fh.read())))
-            except (OSError, UnicodeDecodeError, ValueError):
-                continue
-        if n:
-            out[name] = out.get(name, 0) + n
-    for name, n in _number_refs(project_id, graph_id).items():
-        out[name] = out.get(name, 0) + n
-    return out
+PAST_KEYS = ("batches", "history", "log", "drawings")   # 지난 일의 기록: 되돌리기 묶음, 이력, 판 이전 줄의 도면 목록
 
 
-def _not_refs(x):
-    """판 사진(graph_member_*: 그래프 전체 구성요소의 참조·표시)과 판 이전 줄의 도면 목록(drawings: 그때 그래프에 있던 시트)을 뺀 사본.
-    둘 다 구간·결과가 가리키는 것이 아니다."""
+def _points_at(text, graph_id):
+    return isinstance(text, str) and (text == graph_id or text.startswith((graph_id + "/", graph_id + "#", graph_id + ":")))
+
+
+def _live_nodes(doc, graph_id):
+    """검토구간 집합에서 그 도면을 지금 가리키는 구간 수: 구성원, 또는 찾지 못한·버린 구성요소(묘비 기록의 ref·lost_from)가 그 도면인 구간.
+    되돌리기 묶음(batches)과 이력은 세지 않는다(지운 구간을 세면 '그 기록을 먼저 정리하세요'대로 해도 풀리지 않는다)."""
+    tombs = doc.get("tombstones") if isinstance(doc.get("tombstones"), dict) else {}
+
+    def tomb_hits(t):
+        rec = tombs.get(t)
+        return isinstance(rec, dict) and any(_points_at(v, graph_id) for v in rec.values())
+    return sum(1 for n in doc.get("nodes") or [] if isinstance(n, dict) and (
+        any(_points_at(m, graph_id) for m in n.get("members") or [])
+        or any(tomb_hits(t) for k in ("lost", "discarded") for t in n.get(k) or [])))
+
+
+def _live(x):
+    """지금 값만 남긴 사본: 판 사진(graph_member_*)과 PAST_KEYS를 뺀다."""
     if isinstance(x, dict):
-        return {k: _not_refs(v) for k, v in x.items() if not k.startswith("graph_member_") and k != "drawings"}
+        return {k: _live(v) for k, v in x.items() if not k.startswith("graph_member_") and k not in PAST_KEYS}
     if isinstance(x, list):
-        return [_not_refs(v) for v in x]
+        return [_live(v) for v in x]
     return x
 
 
-def _referring_text(text):
-    """참조를 셀 글(JSON이면 _not_refs를 거친 것)."""
+def _json_refs(text, graph_id):
+    """(수, 단위). 검토구간 집합은 구간 수, 다른 기록은 지금 값 안의 참조 수."""
+    from hazop.study import nodes
     try:
         doc = json.loads(text)
     except ValueError:
-        return text
-    return json.dumps(_not_refs(doc), ensure_ascii=False)
+        doc = None
+    if isinstance(doc, dict) and doc.get("kind") == nodes.KIND:
+        return _live_nodes(doc, graph_id), "개"
+    live = text if doc is None else json.dumps(_live(doc), ensure_ascii=False)
+    return len(re.findall(r'"%s(?=["/#:])' % re.escape(graph_id), live)), "곳"
+
+
+def _references(project_id, graph_id):
+    """그 도면을 지금 가리키는 사람 기록 {이름: (수, 단위)}(0인 것은 뺀다). JSON 안의 "<그래프 ID>"·"<그래프 ID>/…"·"<그래프 ID>#…",
+    CSV 칸(_csv_refs), 도면 번호로 적는 기록(_number_refs). 지난 일의 기록(되돌리기 묶음·이력·판 사진)은 세지 않는다."""
+    if not graph_id:
+        return {}
+    out = {}
+
+    def add(name, n, unit):
+        if n:
+            have = out.get(name, (0, unit))
+            out[name] = (have[0] + n, have[1])
+    for name, files in _ref_places(project_id):
+        for f in files:
+            try:
+                if f.endswith(".csv"):
+                    add(name, _csv_refs(f, graph_id), "곳")
+                    continue
+                with open(f, encoding="utf-8") as fh:
+                    add(name, *_json_refs(fh.read(), graph_id))
+            except (OSError, UnicodeDecodeError, ValueError):
+                continue
+    for name, n in _number_refs(project_id, graph_id).items():
+        add(name, n, "곳")
+    return out
 
 
 def _shown(graph_id, sheet=None):
     """안내 글에 쓸 도면 이름(임시 이름 대신 파일 이름·쪽)."""
-    if sheet is not None and sheet_rules.is_temp_name(graph_id):
+    if sheet is not None and not sheet_rules.usable_number(sheet):   # 임시 이름, 정착이 붙박은 옛 이름(graph-drawing 등)
         return sheet_rules.label({"material_id": sheet.get("material_id"), "page_index": sheet.get("page") or 0,
                                   "page_count": sheet.get("page_count") or 1, "number": None, "file": sheet.get("file")})
     return sheet_rules.display_name({"graph_id": graph_id})
 
 
 def _describe(refs):
-    return "·".join("%s %d곳" % (k, v) for k, v in refs.items())
+    return "·".join("%s %d%s" % (k, n, unit) for k, (n, unit) in refs.items())
 
 
 def _evidence(cand):
@@ -281,8 +308,8 @@ def row(project_id, material_id, store_root=None):
 def _merged_refs(project_id, sheets):
     out = {}
     for gid in sorted({s["graph_id"] for s in sheets if s.get("graph_id")}):
-        for k, v in _references(project_id, gid).items():
-            out[k] = out.get(k, 0) + v
+        for k, (n, unit) in _references(project_id, gid).items():
+            out[k] = (out.get(k, (0, unit))[0] + n, unit)
     return out
 
 
@@ -340,59 +367,96 @@ def _others(project_id, material_id, store_root):
     return out
 
 
-def _owns(project_id, graph_id, sheet):
-    """이 쪽(sheet)이 그 이름의 지금 주인인가: 프로젝트 그래프가 그 이름에 고른 폴더가 같은 (자료, 쪽)이거나, 아무도 고르지 않았거나.
-    주인이 아닌 쪽(같은 번호의 다른 형식·파일, 정착 전에 가려진 도면)의 이름이 바뀌어도 그 이름을 가리키는 기록은 주인 도면에 그대로 붙는다."""
+def _owner_of(project_id, graph_id):
+    """그 이름을 지금 프로젝트 그래프가 쓰는 (자료 ID, 쪽) 또는 None(아무도 쓰지 않음). 등록 밖 폴더는 ("", 0)."""
     from hazop.app import project_ctx
     folder = project_ctx.graph_names(project_id).get(graph_id)
-    seat = sheet_rules.from_out_name(folder) if folder else None
-    return seat is None or (seat[0], seat[2]) == (sheet.get("material_id"), sheet.get("page") or 0)
+    if not folder:
+        return None
+    seat = sheet_rules.from_out_name(folder)
+    return (seat[0], seat[2]) if seat else ("", 0)
+
+
+def _owns(project_id, graph_id, sheet):
+    """이 쪽(sheet)이 그 이름의 지금 주인인가(아무도 쓰지 않으면 주인으로 본다). 주인이 아닌 쪽(같은 번호의 다른 형식·파일, 정착 전에
+    가려진 도면)의 이름이 바뀌어도 그 이름을 가리키는 기록은 주인 도면에 그대로 붙는다."""
+    owner = _owner_of(project_id, graph_id)
+    return owner is None or owner == (sheet.get("material_id"), sheet.get("page") or 0)
 
 
 def _records_refusal(what, gid, sheet, refs):
     shown, where = _shown(gid, sheet), _describe(refs)
-    if sheet is not None and sheet_rules.is_temp_name(gid):
-        return Refused("drawing_number", "rule", "번호가 확정되지 않은 도면 %s를 %s이 이미 가리키고 있어, 지금 번호를 확정하면 그 기록이 끊깁니다. "
-                       "번호를 확정하려면 그 기록을 먼저 정리하세요(구간을 만들기 전에 표제란을 확정하면 이런 일이 없습니다)."
+    if sheet is not None and not sheet_rules.usable_number(sheet):
+        return Refused("drawing_number", "rule", "번호가 확정되지 않은 이 도면(%s)을 가리키는 기록이 있어(%s) 지금 번호를 확정하면 그 기록이 "
+                       "끊깁니다. 번호를 확정하려면 그 기록을 먼저 정리하세요(구간을 만들기 전에 표제란을 확정하면 이런 일이 없습니다)."
                        % (shown, where), sheet_rules.CONFIRM_FIRST)
-    return Refused("drawing_number", "rule", "%s(%s)의 구성요소를 %s이 가리키고 있어 도면 번호를 바꾸면 그 기록이 끊기거나 다른 도면과 섞입니다. "
+    return Refused("drawing_number", "rule", "%s(%s)을 가리키는 기록이 있어(%s) 도면 번호를 바꾸면 그 기록이 끊기거나 다른 도면과 섞입니다. "
                    "번호를 바꾸려면 그 기록을 먼저 정리하세요." % (what, shown, where), HAS_RECORDS)
 
 
-def _guard_number(project_id, record, sheets, new_number, store_root):
+SHARED_NUMBER = ("도면 번호 %s는 이미 다른 파일(%s)이 씁니다. 번호를 확정하면 도면 목록에서 어느 파일을 쓸지 고를 수 있고, 고르기 전에는 "
+                 "지금 쓰는 파일을 그대로 씁니다.")
+
+
+def _guard_number(project_id, record, sheets, new_number, store_root, names=True):
     """도면 번호가 new_number(None이면 확정 취소)가 될 때 끊기거나 겹치는 것을 막는다(가드 건전: 허락한 바꾸기는 사람 기록을 끊지 않음).
-    지금 이름의 참조는 이 쪽이 그 이름의 주인일 때만 센다(_owns). 새 이름의 참조는 늘 센다(그 이름을 얻을지 미리 알 수 없음)."""
+    - 지금 이름의 참조는 이 쪽이 그 이름의 주인일 때만 센다(_owns). 참조는 지금 값만 센다(_references).
+    - 새 이름을 다른 파일이 쓰고 있으면 그 파일을 주인으로 붙박을 것으로 셈하고(sources.owner_if keep), 그래도 이 쪽이 주인이 될 때만 새 이름의
+      참조를 센다. 아무도 쓰지 않는 새 이름의 참조(지운 도면의 기록)는 늘 센다.
+    names가 False면(정착 전 프로젝트의 dry) 이름으로 셈하는 검사를 건너뛴다(옛 이름으로 셈하면 정착 뒤에는 없을 거절이 나온다).
+    -> (붙박을 새 이름 목록, 알림 글 목록)."""
+    from hazop.graph import sources
     if record.get("drawing_number") == new_number:
-        return
+        return [], []
     problem = sheet_rules.number_problem(new_number, _page_count(record))
     if problem:
         raise Refused("drawing_number", "rule", problem["text"], problem["code"])
     old_number = record.get("drawing_number")
-    if old_number is not None:
-        from hazop.graph import sources
-        if old_number in sources.load_choices(project_id):
-            raise Refused("drawing_number", "rule", "도면 번호 %s에는 사람이 고른 원본 형식 선택이 걸려 있어 번호를 바꾸지 않습니다. "
-                          "그 선택은 새 번호로 옮겨지지 않습니다." % old_number, CHOICE_PINNED)
+    if old_number is not None and old_number in sources.load_choices(project_id):
+        raise Refused("drawing_number", "rule", "도면 번호 %s에는 사람이 고른 원본 형식 선택이 걸려 있어 번호를 바꾸지 않습니다. "
+                      "그 선택은 새 번호로 옮겨지지 않습니다." % old_number, CHOICE_PINNED)
+    if not names:
+        return [], []
     targets = [(s.get("graph_id"), _gid(new_number, s, project_id), s) for s in sheets]
     if not sheets and new_number is not None:
         targets = [(None, "graph-%s" % new_number, None)]
+    keep, notes = [], []
     for old, new, sheet in targets:
         if old is not None and old != new:
             refs = _references(project_id, old) if _owns(project_id, old, sheet) else {}
             if refs:
                 raise _records_refusal("이 도면", old, sheet, refs)
-            refs = _references(project_id, new)
-            if refs:
-                raise _records_refusal("새 번호의 도면", new, None, refs)
-        for gid, fmt, name, _mid in _others(project_id, record["material_id"], store_root):
-            if _key(gid) != _key(new):
-                continue
-            if gid != new:
-                raise Refused("drawing_number", "conflict", "다른 자료 %s의 도면 %s와 글자만 달라 같은 파일을 쓰게 됩니다. 같은 도면이면 "
+            mine = (sheet.get("material_id"), sheet.get("page") or 0)
+            owner = _owner_of(project_id, new)
+            shown_number = new[len(sheet_rules.PREFIX):] if new_number and new == sheet_rules.PREFIX + new_number else None
+            if owner is not None and owner != mine:
+                if sources.owner_if(project_id, mine[0], mine[1], new, shown_number, keep=True) == mine[0]:
+                    refs = _references(project_id, new)
+                    if refs:
+                        raise Refused("drawing_number", "rule", "도면 번호 %s는 이미 다른 파일이 쓰고 그 도면을 가리키는 기록이 있습니다(%s). 사람이 고른 "
+                                      "원본 형식 때문에 이 파일이 그 번호를 차지하게 되어 그 기록이 다른 도면으로 옮겨 갑니다. 도면 목록에서 원본 "
+                                      "고르기를 먼저 바꾸세요." % (shown_number or _shown(new), _describe(refs)), NUMBER_TAKEN)
+                keep.append(new)
+                notes.append(SHARED_NUMBER % (shown_number or _shown(new), _owner_file(project_id, new)))
+            else:
+                refs = _references(project_id, new)
+                if refs:
+                    raise _records_refusal("새 번호의 도면", new, None, refs)
+        elif old is None and _owner_of(project_id, new) is not None:   # 아직 추출하지 않은 자료: 추출하면 그 이름을 함께 원한다
+            keep.append(new)
+            notes.append(SHARED_NUMBER % (new_number, _owner_file(project_id, new)))
+        for gid, _fmt, name, _mid in _others(project_id, record["material_id"], store_root):
+            if _key(gid) == _key(new) and gid != new:
+                raise Refused("drawing_number", "conflict", "다른 자료 %s의 도면 번호(%s)와 글자만 달라 같은 파일을 쓰게 됩니다. 같은 도면이면 "
                               "그 번호를 그대로 쓰고, 다른 도면이면 다른 번호를 쓰세요." % (name, gid[len("graph-"):]), NUMBER_TAKEN)
-            if fmt == record.get("format"):
-                raise Refused("drawing_number", "conflict", "같은 형식(%s)의 다른 자료 %s가 이미 도면 번호 %s를 씁니다."
-                              % (fmt, name, gid[len("graph-"):]), NUMBER_TAKEN)
+    return keep, notes
+
+
+def _owner_file(project_id, graph_id):
+    """그 이름을 지금 쓰는 파일의 원본 이름(모르면 '다른 파일')."""
+    owner = _owner_of(project_id, graph_id)
+    record = registry.latest(project_id, owner[0])[0] if owner and owner[0] else None
+    return (record or {}).get("original_name") or "다른 파일"
 
 
 def _union(first, second, key):
@@ -499,21 +563,25 @@ def _reextract(record, registration_path, sheets, extract, progress):
     return carried
 
 
+SETTLE_FIRST_NOTE = "도면 목록을 새 이름 규칙으로 아직 정리하지 않은 프로젝트라, 확정할 때 먼저 정리한 뒤 다시 검사합니다."
+
+
 def _settle(project_id):
-    """번호를 바꾸기 전에 시트 자리를 정착한다(hazop.app.data.settle_sheets, 멱등). 다시 추출이 맨 앞에서 정착하므로, 가드가 옛 규칙
-    (graph-drawing 등)으로 이름을 예측하면 정착 뒤 실제 이름과 달라 남의 구간 때문에 막히거나 놓친다."""
+    """번호를 바꾸기 전에 시트 자리를 정착한다(hazop.app.data.settle_sheets, 멱등). 사람이 확정을 승인한 뒤(dry가 아닌 차례)에만 부른다.
+    다시 추출이 맨 앞에서 정착하므로, 가드가 옛 규칙(graph-drawing 등)으로 이름을 예측하면 정착 뒤 실제 이름과 달라진다."""
     from hazop.app import data
     try:
         data.settle_sheets(project_id)
-    except Exception as exc:  # noqa: BLE001 - 정착이 안 되면 번호를 바꾸지 않는다(이름을 맞게 예측할 수 없음)
-        raise Refused("extraction", "io", "도면 이름을 정리하지 못해 번호를 바꾸지 않았습니다(%s). 다시 시도하세요."
-                      % (" ".join(str(exc).split())[:160] or type(exc).__name__))
+    except Exception:  # noqa: BLE001 - 정착이 안 되면 번호를 바꾸지 않는다(이름을 맞게 예측할 수 없음). 사유는 기록에만 남긴다
+        LOG.exception("표제란 확정 전 시트 정착 실패: %s", project_id)
+        raise Refused("extraction", "io", "도면 목록을 새 이름 규칙으로 정리하지 못해 번호를 바꾸지 않았습니다. 잠시 뒤 다시 시도하세요.")
 
 
 def _apply(project_id, material_id, by, ver, store_root, change, extract, progress, dry=False):
     """change(record) -> (새 버전을 만드는 함수 또는 None, 새 도면 번호). 공통: 판 대조, 정착, 번호 검사, 새 버전, 옮겨 쓰기, 다시 추출.
-    dry면 검사까지만 하고 등록정보·추출 결과를 쓰지 않는다(화면이 작업을 시작하기 전에 거절 사유를 바로 보이려고). 번호를 바꾸는
-    요청이면 dry여도 정착 전 프로젝트를 정착한다(_settle: 보이던 도면 이름은 그대로 두는 한 번뿐인 정리라, 검사가 실제 이름으로 셈하게)."""
+    dry면 검사까지만 하고 아무것도 쓰지 않는다(화면·채팅이 사람 승인 전에 거절 사유를 바로 보이려고). 정착 전 프로젝트에서 번호를 바꾸면
+    dry는 이름으로 셈하는 검사를 건너뛰고 알림(SETTLE_FIRST_NOTE)을 달며, 실제 확정이 먼저 정착한 뒤 모든 검사를 한다.
+    다른 파일이 쓰는 번호를 받으면 그 파일을 주인으로 붙박은 뒤(sources.keep_owner) 새 판을 만든다."""
     by = (by or "").strip()
     if not by:
         raise Refused("by", "bad_actor", "확정한 사람 이름이 있어야 함(설정의 검토자 이름)")
@@ -524,17 +592,27 @@ def _apply(project_id, material_id, by, ver, store_root, change, extract, progre
         raise Refused("ver", "stale", "본 뒤 등록정보가 바뀜(다시 보고 확정할 것)")
     if record.get("status") != "registered":
         raise Refused("material_id", "rule", "등록이 끝나지 않은 자료라 확정할 수 없음(status %s)" % record.get("status"))
+    from hazop.graph import sources
     make, new_number = change(record)
-    if make is not None and new_number != record.get("drawing_number"):
+    renaming = make is not None and new_number != record.get("drawing_number")
+    unsettled = renaming and not sources.load_seats(project_id)[1]
+    if unsettled and not dry:
         _settle(project_id)
     sheets = _sheets(record)
     behind = [s for s in sheets if s["version"] != record["registration_version"]]
     if make is None and not behind:
         return {"ok": True, "changed": False, "row": row(project_id, material_id, store_root), "refused": []}
+    keep, notes = [], []
     if make is not None:
-        _guard_number(project_id, record, sheets, new_number, store_root)
+        keep, notes = _guard_number(project_id, record, sheets, new_number, store_root, names=not (dry and unsettled and sheets))
     if dry:
-        return {"ok": True, "changed": True, "dry": True, "re_extract": bool(sheets), "refused": []}
+        notes += [SETTLE_FIRST_NOTE] if unsettled and sheets else []
+        return {"ok": True, "changed": True, "dry": True, "re_extract": bool(sheets), "notes": notes, "refused": []}
+    for gid in keep:
+        try:
+            sources.keep_owner(project_id, gid, by)
+        except (OSError, ValueError, store_io.Conflict):
+            raise Refused("drawing_number", "io", "같은 번호를 쓰는 파일의 자리를 적지 못해 번호를 바꾸지 않았습니다. 잠시 뒤 다시 시도하세요.")
     released = _confirmed_sheets(sheets)
     if make is None:  # 앞서 다시 추출이 실패한 자료: 새 버전 없이 다시 읽기만
         carried = _reextract(record, path, behind, extract, progress)
@@ -554,7 +632,7 @@ def _apply(project_id, material_id, by, ver, store_root, change, extract, progre
     carried = _reextract(rec, res["registration_file"], sheets, extract, progress) if sheets else []
     return {"ok": True, "changed": True, "version": rec["registration_version"], "re_extracted": bool(sheets),
             "carried": carried, "released_sheet_confirmations": released, "conflicts": res.get("conflicts") or [],
-            "notes": res.get("notes") or [], "row": row(project_id, material_id, store_root), "refused": []}
+            "notes": notes + (res.get("notes") or []), "row": row(project_id, material_id, store_root), "refused": []}
 
 
 def _default_extract(registration_path):

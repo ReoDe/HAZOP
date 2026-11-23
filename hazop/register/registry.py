@@ -358,6 +358,8 @@ def _number_hold(record, metadata, material_type, page_count, number_checked):
     number = (metadata or {}).get("drawing_number")
     if material_type != "P&ID" or not isinstance(number, str) or not number.strip():
         return []
+    if record is not None and number == record.get("drawing_number"):   # 번호를 바꾸지 않는 다시 등록(옛 저장본의 여러 쪽 번호 포함)
+        return []
     from hazop.graph import sheets
     problem = sheets.number_problem(number, page_count)
     if problem:
@@ -458,7 +460,7 @@ def _register_one(source_path, project_id, material_type="P&ID", store_root=None
                 % (record.get("material_type") or "P&ID", record["material_id"]), "material_type")])
         held = _number_hold(record, metadata, material_type, _pages_of(record), number_checked)
         if held:
-            return _held(record, held, path, ["같은 프로젝트에 동일 원본 등록됨: %s 버전 %d" % (record["material_id"], latest)])
+            return _held(record, held, None, ["같은 프로젝트에 동일 원본 등록됨: %s 버전 %d" % (record["material_id"], latest)])
         if record["status"] != "registered":
             # 저장 실패·중단 후 재시도: 같은 자료 ID·버전으로 다시 저장한다(중복 등록 없음).
             _apply_meta(record, metadata, actor, at)

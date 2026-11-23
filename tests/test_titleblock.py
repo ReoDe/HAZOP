@@ -270,11 +270,15 @@ class InterrogateFindingsTest(Base):
         self.assertTrue(os.path.isfile(os.path.join(paths.output_root("graph"), old, tb.SUPERSEDED)))
 
     def test_number_that_collides_through_case_or_file_key_is_refused(self):
-        """번호 확정 전 시트는 graph-<자료>-p<쪽>이라 쪽 이름으로는 겹치지 않는다(hazop.graph.sheets). 확정한 번호와 같거나 글자만 다른 번호는 막는다."""
+        """번호 확정 전 시트는 graph-<자료>-p<쪽>이라 쪽 이름으로는 겹치지 않는다(hazop.graph.sheets). 확정한 번호와 글자만 다른 번호는 막는다.
+        같은 번호는 형식이 같아도 막지 않는다: 같은 번호의 다른 파일은 고르기 줄(kind file)에 오르고 먼저 있던 파일이 주인으로 남는다(시트 정체 U2)."""
         a = self.add("SNP-M-101")
         self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         b = self.add("SNP-M-102", extract=False)
-        for number in ("SNP-M-101", "snp-m-101", "SNP-M-101_"):
+        same = self.confirm(b, {"drawing_number": "SNP-M-101"}, dry=True)
+        self.assertTrue(same["ok"], same)
+        self.assertEqual(len(same["notes"]), 1, "이미 다른 파일이 쓰는 번호라고 알림")
+        for number in ("snp-m-101", "SNP-M-101_"):
             with self.subTest(number):
                 out = self.confirm(b, {"drawing_number": number})
                 self.assertEqual(out["refused"][0]["code"], "conflict", out)
