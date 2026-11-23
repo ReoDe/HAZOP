@@ -129,6 +129,48 @@ class SerialTest(QueueBase):
         self.assertEqual((self.ended(first)["name"], self.ended(second)["name"]), ("job.done", "job.done"))
         self.assertEqual(self.client.peak, 1)
 
+    def test_waiting_review_reads_the_drawing_after_its_turn(self):
+        """기다리는 동안 다시 추출되면(추출 결과가 바뀌면) 차례를 잡은 뒤의 판으로 묻는다."""
+        from hazop.app import data
+        self.review_job()
+        self.assertTrue(wait_for(lambda: self.client.active == 1))
+        second = self.review_job()
+        self.assertTrue(wait_for(lambda: any("기다리는 중" in t for t in self.texts(second))))
+        path = data.extraction_path(self.name)
+        ex = data.read_json(path)
+        for it in ar.collect_items(ex):
+            cx, cy = (it["bbox"][0] + it["bbox"][2]) / 2.0, (it["bbox"][1] + it["bbox"][3]) / 2.0
+            ex.setdefault("texts", []).append({"text": "ZZ999", "geometry": {"x": cx, "y": cy, "width": 1, "height": 1}})
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(ex, fh, ensure_ascii=False)
+        self.client.release.set()
+        self.assertTrue(self.engine.wait_jobs(20))
+        self.assertEqual(self.ended(second)["name"], "job.done", self.ended(second))
+        later = self.client.requests[1:]
+        self.assertTrue(later)
+        self.assertTrue(all("ZZ999" in r["context"] for r in later), "기다리기 전에 읽은 낡은 판으로 물음")
+
+    def test_analysis_stop_reaches_it_while_waiting(self):
+        from hazop.shell import analysis_run, api_results
+        calls = []
+
+        def fake_run(client, ns, pg, units, intent_of, progress, should_stop, on_saved=None, test=False):
+            calls.append(1)
+            return {"calls": 0, "rest": [], "reason": "done"}
+
+        unit = {"node_id": "S1", "deviation_ids": ["D01"], "unit_id": "u1"}
+        with mock.patch.object(api_results, "_plan", lambda engine, a: ({}, {"graph_id": "g"}, None, [unit])),                 mock.patch.object(analysis_run, "run", fake_run):
+            self.review_job()
+            self.assertTrue(wait_for(lambda: self.client.active == 1))
+            second = self.engine.dispatch("results.run", {"scope": "all"})["data"]["job"]
+            self.assertTrue(wait_for(lambda: any("기다리는 중" in t for t in self.texts(second))))
+            self.assertTrue(self.engine.dispatch("results.stop", {})["data"]["stopping"])
+            self.assertTrue(wait_for(lambda: self.ended(second) is not None, 3), "기다리는 분석이 멈추지 않음")
+            self.assertTrue(self.ended(second)["data"].get("stopped"), self.ended(second))
+            self.assertFalse(self.engine.analysis.running)
+            self.assertEqual(self.client.active, 1, "AI 검토는 그대로 돈다(분석 멈춤은 분석만)")
+        self.assertEqual(calls, [])
+
     def test_stop_reaches_a_waiting_job_at_once(self):
         self.review_job()
         self.assertTrue(wait_for(lambda: self.client.active == 1))
@@ -157,6 +199,43 @@ class BusyTest(QueueBase):
         self.assertTrue(self.engine.wait_jobs(20))
         out = self.engine.dispatch("aireview.run", {"graph_ids": [self.gid], "cap": 1, "conn_ver": ver})   # 끝나면 다시 받는다
         self.assertTrue(out["ok"], out)
+
+
+    def test_auto_review_skips_the_drawing_a_manual_review_holds(self):
+        from hazop.app import data
+        from hazop.shell import register_flow
+        self.engine.settings["extract_ai_review"] = True
+        self.engine.settings["extract_ai_cap"] = 1
+        ex = data.read_json(data.extraction_path(self.name))
+        out = self.engine.dispatch("aireview.run", {"graph_ids": [self.gid], "cap": 1, "conn_ver": self.conn_ver()})
+        self.assertTrue(out["ok"], out)
+        self.assertTrue(wait_for(lambda: self.client.active == 1))
+        only = register_flow.review_if_wanted(self.engine, [(self.name, ex)], lambda *a: None)
+        self.assertEqual((only["ran"], only["skipped"], only.get("busy")), (False, "busy", [self.name]), only)
+        self.client.release.set()                       # 아래 실행이 차례를 기다리지 않게 앞 작업을 끝낸다
+        self.assertTrue(self.engine.wait_jobs(20))
+        held = self.engine.reserve_review([self.name])  # 수동 검토가 그 도면을 잡은 채로
+        try:
+            mixed = register_flow.review_if_wanted(self.engine, [(self.name, ex), (self.name + "-copy", ex)], lambda *a: None)
+        finally:
+            self.engine.release_review(held)
+        self.assertTrue(mixed["ran"], mixed)
+        self.assertEqual(mixed.get("busy"), [self.name], mixed)   # 건너뛴 도면이 결과에 남는다
+
+
+class GateTest(unittest.TestCase):
+    def test_same_thread_taking_the_turn_again_fails_at_once(self):
+        from hazop.shell import ai_gate
+        gate = ai_gate.Gate()
+        started = time.monotonic()
+        with gate.turn("앞", lambda: False, RuntimeError):
+            with self.assertRaises(ai_gate.Reentry):
+                with gate.turn("다시", lambda: False, RuntimeError):
+                    pass
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertEqual(gate.waiting(), [])
+        with gate.turn("뒤", lambda: False, RuntimeError):   # 차례가 비어 다음 작업이 잡는다
+            pass
 
 
 class SaveRaceTest(Base):
@@ -305,6 +384,16 @@ class RetryTest(unittest.TestCase):
             st = ar.run(self.ex, client, recheck=0, batch=2, **kw)["stats"]
             self.assertGreaterEqual(st["planned_calls"], 2, kw)
             self.assertEqual((st["calls"], len(client.requests), st["retries"]), (2, 2, 1), kw)
+
+    def test_retries_in_many_batches_stay_within_the_cap(self):
+        """묶음마다 '일시 오류 한 번 뒤 성공'이 되풀이돼도 호출은 상한을 넘지 않는다."""
+        planned = ar.run(self.ex, StubClient(good_answers), cap=50, recheck=0, batch=1)["stats"]["planned_calls"]
+        self.assertGreaterEqual(planned, 3)
+        client = StubClient(good_answers, errors=["transient", None] * 50)
+        st = ar.run(self.ex, client, cap=planned, recheck=0, batch=1)["stats"]
+        self.assertEqual((st["calls"], len(client.requests)), (planned, planned))
+        self.assertGreater(st["left"], 0)                    # 다시 묻기로 쓴 만큼 남은 항목이 남는다
+        self.assertFalse(st["halted"])
 
     def test_later_passes_stop_at_the_cap_after_retries(self):
         """첫 묻기 뒤 단계(넓혀 다시 묻기·규칙 다시 확인·나누기·연결 묻기)도 누적 호출로 상한을 지킨다."""
