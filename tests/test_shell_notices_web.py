@@ -11,7 +11,7 @@ class NoticeBarTest(ShellBase):
         win.bridge.send({"t": "event", "name": "study.lost", "data": {"sections": 2, "members": 3, "first_node": "S1"}})
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.notice-row').length") == 1, 10), "알림 줄이 뜨지 않음")
         text = self.js(win, "document.querySelector('.notice-row .nt').textContent")
-        self.assertIn("도면이 바뀌어 2곳을 다시 확인해야 합니다", text)
+        self.assertIn("도면이 바뀌어 찾지 못한 구성요소 3개를 다시 확인해야 합니다(검토구간 2곳)", text)      # 한 줄과 같은 단위(실제 창 3차 결함 6)
         self.assertNotIn("lost:", text)
         self.js(win, "[...document.querySelectorAll('.notice-row button')].find(b => b.textContent.includes('그 자리로')).click()")
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "nodes", 10), "구간 패널로 가지 않음")
