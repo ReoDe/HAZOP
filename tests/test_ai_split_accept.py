@@ -3,6 +3,7 @@ AI split 후보 셋을 두고 수락이 split 입력 연산으로 들어가 다�
 근거: docs/units/2026-11-13-drawing-knowledge/evidence/fix-input-ops-design.md §8 U2."""
 
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -21,13 +22,13 @@ from tests import test_screen_words  # noqa: E402
 from tests.test_corrections_inputs import BLOB, GROUPS, HAS_PDFPLUMBER, page  # noqa: E402
 
 NAME = "SYN-1"
+BY = "김검토"
+AT = "2026-11-23T00:00:00Z"
 
 
 def data_load(name):
     from hazop.app import data
     return data.load_extraction(name)
-BY = "김검토"
-AT = "2026-11-23T00:00:00Z"
 
 
 @unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 필요")
@@ -321,6 +322,119 @@ class SplitAcceptTest(unittest.TestCase):
                           "dependents": [{"op_id": tag["op_id"], "op": "set_tag", "target": tag["target"], "candidate": None}]})
         self.assertEqual(self.revert(self.cands[:1]), [ops[0]["op_id"], tag["op_id"]])
         self.assertEqual([e["action"] for e in corrections.load(NAME)["log"]], ["ai_accept", "save", "ai_revert"])
+
+
+    # ---------------------------------------------------------------- 검토(hazop-reviewer, 2026-11-23) 지적
+
+    def test_rebuilt_base_releases_the_sheet_fingerprint(self):
+        """(1) 코드가 바뀌어 기준 추출을 다시 지으면 쪽 내용을 지금 코드로 다시 읽은 것이라 확정 지문이 바뀐다."""
+        from hazop.extract import confirmation
+        self.accept(self.cands[:1])
+        corrections.ensure_base(NAME)
+        before = confirmation.sheet_confirmation(NAME)["fingerprint"]
+        with unittest.mock.patch.object(corrections, "code_fingerprint", lambda: "other-code"):
+            self.assertEqual(corrections.ensure_base(NAME), "ready")
+            after = confirmation.sheet_confirmation(NAME)
+        self.assertNotEqual(after["fingerprint"], before, "다시 지은 기준 추출은 확정을 푼다")
+
+    def test_sheet_fingerprint_without_input_ops_stays_the_three_files(self):
+        from hazop.extract import confirmation
+        st = confirmation.sheet_confirmation(NAME)
+        text = "|".join("%s=%s" % (k, st["files"][k] or "-") for k in ("extraction", "edits", "ai_review"))
+        self.assertEqual(st["fingerprint"], "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                         "입력 연산이 없는 쪽의 확정 지문은 예전과 같다")
+
+    def test_reaccepting_keeps_the_op_id_but_records_who_accepted_it_now(self):
+        """(2) 되살린 연산의 누가·언제는 지금 수락한 사람·시각이다."""
+        ai_review.accept(ai_review.load_doc(NAME), self.cands[:1], self.original, NAME, by="가", at="2026-11-23T00:00:00Z")
+        first = self.ops()[0]
+        ai_review.revert(ai_review.load_doc(NAME), self.cands[:1], NAME, by="나", at="2026-11-24T00:00:00Z")
+        ai_review.accept(ai_review.load_doc(NAME), self.cands[:1], self.original, NAME, by="다", at="2026-12-01T00:00:00Z")
+        again = self.ops()[0]
+        self.assertEqual(again["op_id"], first["op_id"])
+        self.assertEqual((again["by"], again["at"], again["accepted_by"], again["accepted_at"]),
+                         ("다", "2026-12-01T00:00:00Z", "다", "2026-12-01T00:00:00Z"))
+
+    def test_edit_on_the_renumbered_lump_waits_with_its_split(self):
+        """(3) 나뉜 뒤 번호가 바뀐 덩어리 나머지에 단 고침도 기준 추출이 낡으면 대기다."""
+        self.accept(self.cands[:1])
+        split = self.ops()[0]
+        base = corrections.resolve(NAME, allow_extract=True)["base"]
+        rest = next(n["source_object_id"] for n in base["nodes"]
+                    if set(GROUPS[1]) <= set((n.get("evidence") or {}).get("pdf_objects") or ()))
+        self.assertNotIn(rest, {n["source_object_id"] for n in self.original["nodes"]}, "덩어리 나머지는 새 번호")
+        kind = corrections.make_op(base, "set_kind", rest, {"kind": "manual_valve", "category": "valve"}, BY, at=AT,
+                                   existing_ops=[split], name=NAME)
+        corrections.save(NAME, [split, kind], BY, at=AT)
+        os.remove(corrections.base_path(NAME))
+        got = corrections.resolve(NAME)
+        self.assertEqual(got["inputs"]["waiting_on"], {kind["op_id"]: [split["op_id"]]})
+        self.assertEqual(got["corrected"]["corrections"]["not_applicable"], [])
+        self.assertIn((kind["op_id"], "waiting_on"), [(i["op_id"], i["code"]) for i in corrections.input_items(got)])
+
+    def test_split_overlapping_an_old_add_node_acceptance_is_refused(self):
+        """(4) 옛 판에서 add_node로 수락한 split이 차지한 개체와 겹치는 새 split 후보는 받지 않는다."""
+        doc = ai_review.load_doc(NAME)
+        old = doc["candidates"][0]
+        b = old["new_bbox"]
+        op = corrections.make_op(self.original, "add_node", None,
+                                 {"kind": "manual_valve", "category": "valve", "bbox": [b[0], b[1], b[2] - b[0], b[3] - b[1]]},
+                                 BY, at=AT, name=NAME)
+        op.update(origin="ai", ai_candidate=old["cand_id"], accepted_by=BY, accepted_at=AT)
+        corrections.save(NAME, [op], BY, at=AT)
+        old.update(status="accepted", op_id=op["op_id"], decided_at=AT, decided_by=BY)
+        lump = next(n for n in self.original["nodes"] if n["source_object_id"] == BLOB)
+        twin = self.candidate(lump, GROUPS[0][1:] + GROUPS[1], pdf_vector.member_shapes(self.pdf, 0))
+        doc["candidates"].append(twin)
+        ai_review.save_doc(doc)
+        failed = ai_review.accept(ai_review.load_doc(NAME), [twin["cand_id"]], self.original, NAME, by=BY, at=AT)
+        self.assertEqual([c for c, _ in failed], [twin["cand_id"]])
+        self.assertIn("이미 나눈 부분과 겹침", failed[0][1])
+        self.assertEqual([o["op"] for o in self.ops()], ["add_node"], "같은 자리에 밸브 둘을 만들지 않는다")
+
+    def test_pdf_replaced_with_the_same_size_and_time_is_not_built(self):
+        """(5) 크기·수정 시각이 같은 채 내용이 바뀐 PDF는 같은 프로세스에서도 다시 읽기 전에 알아챈다."""
+        self.accept(self.cands[:1])
+        st = os.stat(self.pdf)
+        with open(self.pdf, "rb") as fh:
+            data = fh.read()
+        self.assertEqual(data.count(b"1 w"), 1)
+        with open(self.pdf, "wb") as fh:
+            fh.write(data.replace(b"1 w", b"2 w"))
+        os.utime(self.pdf, ns=(st.st_atime_ns, st.st_mtime_ns))
+        corrections.ensure_base(NAME)
+        got = corrections.resolve(NAME)["inputs"]
+        self.assertEqual((got["applied"], [x["reason"] for x in got["not_applicable"]]), ([], [corrections.PDF_CHANGED]))
+
+    def test_lump_a_person_edited_stays_closed(self):
+        """(6) 사람이 고친 덩어리는 split 후보가 남아 있어도 다시 묻지 않는다(ba5c2f4와 같음)."""
+        op = corrections.make_op(self.original, "set_kind", BLOB, {"kind": "package", "category": "equipment"},
+                                 BY, at=AT, name=NAME)
+        corrections.save(NAME, [op], BY, at=AT)
+        self.assertIn(BLOB, ai_review.decided_targets(NAME))
+
+    def test_revert_that_would_drop_a_human_edit_needs_the_preview(self):
+        """(7) 기댄 사람 고침이 있으면 미리 알림의 op_id를 넘긴 호출만 지운다."""
+        split, tag = self.tag_split()
+        doc = ai_review.load_doc(NAME)
+        with self.assertRaises(ai_review.RevertNeedsConfirm) as cm:
+            ai_review.revert(doc, self.cands[:1], NAME, by=BY, at=AT)
+        self.assertEqual(cm.exception.dependents, [tag["op_id"]])
+        self.assertEqual([o["op_id"] for o in self.ops()], [split["op_id"], tag["op_id"]], "알림 없이는 아무것도 지우지 않는다")
+        preview = ai_review.revert_preview(doc, self.cands[:1], NAME)
+        removed = ai_review.revert(doc, self.cands[:1], NAME, by=BY, at=AT,
+                                   confirm=[d["op_id"] for d in preview["dependents"]])
+        self.assertEqual(removed, [split["op_id"], tag["op_id"]])
+
+    def test_waiting_pipe_is_called_a_pipe(self):
+        """(8) 배관 지정이 기다릴 때 글은 '나누기'가 아니다."""
+        value = corrections.input_value(self.original, ["pdf-path-0001"], ring=False, line_type="process")
+        op = corrections.make_op(self.original, "pipe", None, value, BY, at=AT, name=NAME)
+        corrections.save(NAME, [op], BY, at=AT)
+        items = corrections.input_items(corrections.resolve(NAME))
+        self.assertEqual([i["code"] for i in items], ["waiting"])
+        self.assertIn("배관 지정", items[0]["text"])
+        self.assertNotIn("나누기", items[0]["text"])
 
 
 @unittest.skipUnless(HAS_PDFPLUMBER, "pdfplumber 필요")
