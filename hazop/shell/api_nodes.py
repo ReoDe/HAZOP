@@ -479,7 +479,7 @@ def _catch_up(eng, a):
     try:
         out = data.migrate_study(pg)
     except (OSError, ValueError, store_io.Conflict) as exc:
-        raise api.CommandError("failed", "판 이전을 저장하지 못했습니다(%s). 파일은 그대로입니다. 다시 눌러 주세요." % str(exc)[:120])
+        raise api.CommandError("failed", "도면 변경을 반영하지 못했습니다(%s). 저장된 구간은 그대로입니다. 다시 눌러 주세요." % str(exc)[:120])
     for topic in ("nodes", "results", "ie", "kg"):
         eng.changed(topic)
     return {"changed": True, "matched": out["matched"], "tombstones": out["tombstones"], "lost_members": out["lost_members"]}
@@ -550,7 +550,7 @@ def register(commands):
         _check_project(eng, a)
         return suggest(eng, a["sheet"], a["ids"])
     put("suggest", {"project_id": proj, "sheet": sheet, "ids": ids}, h_suggest, "고른 구성요소로 만들 구간의 카드 초안(저장하지 않음)")
-    put("catch_up", {"project_id": proj}, _catch_up, "다시 추출 뒤 검토구간 판 이전을 지금 한다(같은 판이면 아무것도 쓰지 않음). 이어진 수·되찾지 못한 묘비 수를 답한다")
+    put("catch_up", {"project_id": proj}, _catch_up, "다시 추출 뒤 검토구간에 도면 변경을 지금 반영한다(이미 반영돼 있으면 아무것도 쓰지 않음). 이어진 수·찾지 못한 구성요소 수를 답한다")
     put("migrate", {"project_id": proj}, _migrate, "0.1 구간 파일을 새 판으로 바꾼다(사용자가 누를 때 한 번)")
     return commands
 

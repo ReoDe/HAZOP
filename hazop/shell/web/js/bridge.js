@@ -39,7 +39,7 @@ export function setProject(id) { project = id || null; }
 export function cmd(name, args = {}) {
   return new Promise((resolve, reject) => {
     const id = "c" + (++seq);
-    const timer = setTimeout(() => { pending.delete(id); reject(Object.assign(new Error("엔진이 응답하지 않습니다."), { code: "timeout" })); }, 120000);
+    const timer = setTimeout(() => { pending.delete(id); reject(Object.assign(new Error("프로그램이 응답하지 않습니다."), { code: "timeout" })); }, 120000);
     pending.set(id, { resolve, reject, timer });
     send(Object.assign({ t: "cmd", id, name, args }, project ? { project } : {}));
   });

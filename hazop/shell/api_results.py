@@ -238,7 +238,7 @@ def _run_state(engine):
     return snap
 
 
-STALE_LABEL = "판 이전 전(자리 확인 안 됨)"
+STALE_LABEL = "위치 확인 전(도면 변경 반영 전)"
 
 
 def cell_view(engine, node_id, deviation_id):

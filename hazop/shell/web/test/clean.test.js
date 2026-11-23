@@ -163,7 +163,7 @@ export const tests = [
     assert(!host.textContent.includes("위치 없음 2") && host.querySelector(".vm-dot.warn"), "접힌 메뉴 안의 알릴 것은 점으로");
     host.querySelector(".vm-btn").click();
     await tick();
-    assert(host.textContent.includes("위치 없음 2") && host.textContent.includes("원본에 남은 것: 엔진이 세지 않음"), host.textContent);
+    assert(host.textContent.includes("위치 없음 2") && host.textContent.includes("원본에 남은 것: 셀 수 없음"), host.textContent);
     const d2 = data("drawio", []);
     d2.leftovers = { counted: true, n: 3, items: [] };
     C.onClean("g1", d2);

@@ -15,9 +15,9 @@ export const canEdit = (n) => !!n && n.state === "applied";
 
 /** 판 이전 지금 하기(nodes.catch_up)가 끝났을 때의 알림 글. */
 export function catchUpText(r) {
-  if (!r || !r.changed) return "이미 지금 판입니다. 판 이전할 것이 없습니다.";
+  if (!r || !r.changed) return "이미 도면의 최신 모습으로 반영돼 있습니다.";
   const lost = r.tombstones || 0;
-  return "판 이전을 마쳤습니다: 이어진 구성요소 " + (r.matched || 0) + "개" + (lost ? " · 찾지 못한 구성요소 " + lost + "개(해당 구간을 확인하세요)" : "") + ".";
+  return "도면 변경을 반영했습니다: 이어진 구성요소 " + (r.matched || 0) + "개" + (lost ? " · 찾지 못한 구성요소 " + lost + "개(해당 구간을 확인하세요)" : "") + ".";
 }
 
 /** 확정한 구간이 잃은 구성요소를 둔 채 확정됐다면 그 글(confirmed.lost). */
@@ -32,7 +32,7 @@ export function lostNoticeText(info) {
 
 /** 구간 하나의 확인 필요 글: '찾지 못한 구성요소 n개 · 참조 확인 필요 m건'(없는 것은 뺀다). 묘비 id는 쓰지 않는다. */
 export function lostText(lost, lostRefs) {
-  return [lost ? "찾지 못한 구성요소 " + lost + "개" : null, lostRefs ? "참조 확인 필요 " + lostRefs + "건" : null].filter(Boolean).join(" · ");
+  return [lost ? "찾지 못한 구성요소 " + lost + "개" : null, lostRefs ? "다시 확인할 곳 " + lostRefs + "건" : null].filter(Boolean).join(" · ");
 }
 
 /** 프로젝트 확인 필요 요약(엔진 idmap.needs_check) → 한 줄 안내. 확인할 것이 없으면 빈 글. */
@@ -40,7 +40,7 @@ export function checkText(c) {
   if (!c || !c.needs_check) return "";
   const nodes = Object.keys(Object.assign({}, c.lost_members, c.lost_refs)).length;
   const lost = Object.values(c.lost_members || {}).reduce((a, b) => a + b, 0), refs = Object.values(c.lost_refs || {}).reduce((a, b) => a + b, 0);
-  const parts = [lost ? "찾지 못한 구성요소 " + lost + "개" : null, refs ? "참조 확인 필요 " + refs + "건" : null].filter(Boolean);
+  const parts = [lost ? "찾지 못한 구성요소 " + lost + "개" : null, refs ? "다시 확인할 곳 " + refs + "건" : null].filter(Boolean);
   if (!parts.length) return "다시 추출한 도면과 저장된 구간·분석 결과를 이은 기록 가운데 확인이 필요한 것이 있습니다.";
   return "다시 추출한 도면에서 같은 자리의 구성요소를 찾지 못했습니다: " + parts.join(" · ") + (nodes ? "(구간 " + nodes + "개)" : "") + ". 해당 구간을 열어 구성요소를 확인하세요.";
 }

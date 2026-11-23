@@ -179,7 +179,7 @@ export function CompareCard() {
     ${dexpi ? html`<div class="muted small">DEXPI는 원본 그림이 없어 변환 도면의 종류별 수를 끝까지 넘겨 견줍니다.</div>` : html`<div class="seg cmp-mode" role="group" aria-label="견주기 방식">
       <button type="button" class=${c.mode === "side_by_side" ? "on" : ""} aria-pressed=${c.mode === "side_by_side" ? "true" : "false"} onClick=${() => setMode("side_by_side")}>나란히</button>
       <button type="button" class=${c.mode === "overlay" ? "on" : ""} aria-pressed=${c.mode === "overlay" ? "true" : "false"} onClick=${() => setMode("overlay")}>겹쳐(원본 30%)</button></div>`}
-    ${dexpi ? html`<${KindTable} sheet=${c.sheet} />` : (!counted ? html`<${Notice} kind="warn" icon="alert-triangle">이 읽은 방법은 엔진이 원본에 남은 것을 세지 못해 견줄 수 없습니다.<//>`
+    ${dexpi ? html`<${KindTable} sheet=${c.sheet} />` : (!counted ? html`<${Notice} kind="warn" icon="alert-triangle">이 방법으로 읽은 도면은 원본에 남은 것을 셀 수 없어 견줄 수 없습니다.<//>`
       : total === 0 ? html`<div class="muted small" role="status">원본에 남은 것이 없습니다. 두 도면을 훑어 빠진 구성요소가 없는지 본 뒤 아래 체크를 켜세요.</div>`
       : html`<div class="cmp-step" role="group" aria-label="원본에 남은 것">
           <div><b>${c.idx + 1} / ${total}</b> <span class="muted small">${(it && it.kind) === "unclassified" ? "분류하지 못한 셀" : (it && it.kind)}${it && it.text ? " · " + it.text : ""}</span></div>

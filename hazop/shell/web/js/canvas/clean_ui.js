@@ -137,7 +137,7 @@ function ViewSwitch({ gid }) {
       ${count ? check(ov.unconfirmed, "속성 미확인 보기", "호박색 점선 네모: 읽지 못한 것이 아니라 속성만 확인되지 않은 곳(포트·흐름 방향·고장 위치 등)을 도면에 보입니다. 읽지 못한 기호·열린 끝은 늘 보입니다",
         () => toggleOverlay("unconfirmed")) : null}
       ${lo && lo.counted ? check(ov.leftovers, "원본에 남은 것 " + lo.n, "원본에서 어느 구성요소에도 쓰이지 않은 것을 겹쳐 봅니다 (L)", () => toggleOverlay("leftovers"))
-        : (lo ? html`<div class="vm-info warn" title="이 읽은 방법에서는 엔진이 원본에 남은 선·글자를 세지 못합니다. 쪽을 확정하기 전에 원본과 견주어야 합니다">원본에 남은 것: 엔진이 세지 않음</div>` : null)}
+        : (lo ? html`<div class="vm-info warn" title="이 방법으로 읽은 도면은 원본에 남은 선·글자를 셀 수 없습니다. 쪽을 확정하기 전에 원본과 견주어야 합니다">원본에 남은 것: 셀 수 없음</div>` : null)}
       ${!dexpi ? check(ov.original, "원본 겹쳐 보기", "원본 도면을 옅게(30%) 겹쳐 어긋난 곳을 찾습니다", () => toggleOverlay("original")) : null}</div>` : null}</div>`;
 }
 

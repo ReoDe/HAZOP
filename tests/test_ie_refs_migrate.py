@@ -398,7 +398,7 @@ class IeRefsAfterReextractTest(unittest.TestCase):
         try:
             b = bundle.build_bundle(r, ns, g2, ie, AT, fmea=store.load_fmea(PID)[0])
         except ValueError as exc:
-            self.assertIn("판 이전", str(exc))
+            self.assertIn("도면 변경 반영", str(exc))      # follow.STALE의 안내(화면 글은 사람 말로 바꿈)
             return
         before = {t["heading_id"]: t["targets"] for t in self.bundle1["top_events"]}
         for t in b["top_events"]:

@@ -24,7 +24,7 @@ from tests.test_study_migrate import AT, DEVS, PLACES, SID, drawn
 
 PID = "P-CATCHUP"
 V1_REF = "graph-T#" + SID["V1"]
-STALE_LABEL = "판 이전 전(자리 확인 안 됨)"
+STALE_LABEL = "위치 확인 전(도면 변경 반영 전)"
 
 
 def world(version, places):
@@ -137,7 +137,7 @@ class CatchUpCommandTest(Base):
 class GuideTest(Base):
     def test_the_reason_text_names_the_real_way(self):
         from hazop.study import follow
-        self.assertIn("판 이전 지금 하기", follow.STALE)
+        self.assertIn("도면 변경 반영하기", follow.STALE)
         self.assertIn("검토구간", follow.STALE)
 
     def test_ie_tells_the_screen_where_to_go(self):
@@ -145,7 +145,7 @@ class GuideTest(Base):
         s = self.read("ie")
         self.assertFalse(s["available"])
         self.assertEqual(s.get("action"), "nodes", s)
-        self.assertIn("판 이전 지금 하기", s["reason"])
+        self.assertIn("도면 변경 반영하기", s["reason"])
 
     def test_ie_without_a_stale_set_has_no_action(self):
         s = self.read("ie")
@@ -205,7 +205,7 @@ class StaleBlocksAnalysisAndExportTest(Base):
     def test_the_refusal_names_the_real_way(self):
         self.re_extract()
         out = self.engine.dispatch("results.run_plan", {"scope": "all"}, project=PID)
-        self.assertIn("판 이전 지금 하기", out["error"]["message"])
+        self.assertIn("도면 변경 반영하기", out["error"]["message"])
 
     def test_chat_analysis_goes_through_the_same_guard(self):
         self.re_extract()

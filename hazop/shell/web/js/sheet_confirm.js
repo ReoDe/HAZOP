@@ -78,7 +78,7 @@ function Conditions({ st }) {
   return html`<ul class="tight conf-list" aria-label="남은 조건">
     <li class=${st.unconfirmed_total ? "bad" : "good"}>미확인 ${st.unconfirmed_total}곳${rows.length ? html`<span class="muted small"> — ${rows.map(([k, n]) => (REASON[k] || k) + " " + n).join(" · ")}${st.unconfirmed_total > st.unconfirmed.length ? " …" : ""}</span>` : null}</li>
     <li class=${st.unplaced_total ? "bad" : "good"}>위치 없는 구성요소 ${st.unplaced_total}개${st.unplaced_total ? html`<span class="muted small"> — 위치를 주거나 도면에 없음으로 지워야 합니다</span>` : null}</li>
-    <li class=${st.leftovers === null ? "bad" : "good"}>원본에 남은 것 ${st.leftovers === null ? "— 이 읽은 방법은 엔진이 세지 못해 확정할 수 없습니다" : st.leftovers.total + "개(확정을 막지 않습니다)"}</li>
+    <li class=${st.leftovers === null ? "bad" : "good"}>원본에 남은 것 ${st.leftovers === null ? "— 이 방법으로 읽은 도면은 원본에 남은 것을 셀 수 없어 확정할 수 없습니다" : st.leftovers.total + "개(확정을 막지 않습니다)"}</li>
     <li class=${st.compared ? "good" : "todo"}>원본과 견줌 ${st.compared ? st.compared.by + " · 기록됨" : "— 아직"}</li></ul>`;
 }
 
