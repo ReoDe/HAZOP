@@ -182,20 +182,38 @@ def _number_refs(project_id, graph_id):
 PAST_KEYS = ("batches", "history", "log", "drawings")   # 지난 일의 기록: 되돌리기 묶음, 이력, 판 이전 줄의 도면 목록
 
 
-def _points_at(text, graph_id):
-    return isinstance(text, str) and (text == graph_id or text.startswith((graph_id + "/", graph_id + "#", graph_id + ":")))
+def _links(project_id, graph_id):
+    """그 도면에 끝이 닿아 이어진 도면 연결 구간 id(xlink-…). 연결 구간 id에는 도면 접두가 없고 두 끝의 '<그래프 ID>#…'를 해시한 값이라,
+    그 도면의 이름이 바뀌면 다른 도면 구간에 든 연결 구간도 사라진다(R13)."""
+    from hazop.app import project_ctx
+    from hazop.graph import project
+    try:
+        links = project_ctx.project_graph(project_id).get("sheet_links") or []
+    except (OSError, ValueError, KeyError):
+        LOG.exception("도면 연결 구간을 읽지 못함: %s", project_id)
+        return frozenset()
+    return frozenset(l["link_id"] for l in links if l.get("status") == project.LINKED
+                     and graph_id in ((l.get("from") or {}).get("graph_id"), (l.get("to") or {}).get("graph_id")))
 
 
-def _live_nodes(doc, graph_id):
+def _points_at(text, graph_id, links=frozenset()):
+    """그 도면을 가리키는가: '<그래프 ID>'·'<그래프 ID>/…'·'#…'·':…', 또는 그 도면에 닿는 연결 구간과 그 두 끝 관계('<연결 구간>-a'·'-b')."""
+    if not isinstance(text, str):
+        return False
+    return text == graph_id or text.startswith((graph_id + "/", graph_id + "#", graph_id + ":"))         or text in links or text[:-2] in links and text[-2:] in ("-a", "-b")
+
+
+def _live_nodes(doc, graph_id, links=frozenset()):
     """검토구간 집합에서 그 도면을 지금 가리키는 구간 수: 구성원, 또는 찾지 못한·버린 구성요소(묘비 기록의 ref·lost_from)가 그 도면인 구간.
+    그 도면에 닿는 도면 연결 구간을 구성원으로 둔 다른 도면의 구간도 센다(이름이 바뀌면 그 연결 구간을 잃는다).
     되돌리기 묶음(batches)과 이력은 세지 않는다(지운 구간을 세면 '그 기록을 먼저 정리하세요'대로 해도 풀리지 않는다)."""
     tombs = doc.get("tombstones") if isinstance(doc.get("tombstones"), dict) else {}
 
     def tomb_hits(t):
         rec = tombs.get(t)
-        return isinstance(rec, dict) and any(_points_at(v, graph_id) for v in rec.values())
+        return isinstance(rec, dict) and any(_points_at(v, graph_id, links) for v in rec.values())
     return sum(1 for n in doc.get("nodes") or [] if isinstance(n, dict) and (
-        any(_points_at(m, graph_id) for m in n.get("members") or [])
+        any(_points_at(m, graph_id, links) for m in n.get("members") or [])
         or any(tomb_hits(t) for k in ("lost", "discarded") for t in n.get(k) or [])))
 
 
@@ -208,25 +226,27 @@ def _live(x):
     return x
 
 
-def _json_refs(text, graph_id):
-    """(수, 단위). 검토구간 집합은 구간 수, 다른 기록은 지금 값 안의 참조 수."""
+def _json_refs(text, graph_id, links=frozenset()):
+    """(수, 단위). 검토구간 집합은 구간 수, 다른 기록은 지금 값 안의 참조 수(그 도면에 닿는 연결 구간 id 포함)."""
     from hazop.study import nodes
     try:
         doc = json.loads(text)
     except ValueError:
         doc = None
     if isinstance(doc, dict) and doc.get("kind") == nodes.KIND:
-        return _live_nodes(doc, graph_id), "개"
+        return _live_nodes(doc, graph_id, links), "개"
     live = text if doc is None else json.dumps(_live(doc), ensure_ascii=False)
-    return len(re.findall(r'"%s(?=["/#:])' % re.escape(graph_id), live)), "곳"
+    heads = [r'"%s(?=["/#:])' % re.escape(graph_id)] + [r'"%s(?="|-[ab]")' % re.escape(l) for l in sorted(links)]
+    return sum(len(re.findall(h, live)) for h in heads), "곳"
 
 
 def _references(project_id, graph_id):
-    """그 도면을 지금 가리키는 사람 기록 {이름: (수, 단위)}(0인 것은 뺀다). JSON 안의 "<그래프 ID>"·"<그래프 ID>/…"·"<그래프 ID>#…",
-    CSV 칸(_csv_refs), 도면 번호로 적는 기록(_number_refs). 지난 일의 기록(되돌리기 묶음·이력·판 사진)은 세지 않는다."""
+    """그 도면을 지금 가리키는 사람 기록 {이름: (수, 단위)}(0인 것은 뺀다). JSON 안의 "<그래프 ID>"·"<그래프 ID>/…"·"<그래프 ID>#…"와
+    그 도면에 닿는 도면 연결 구간 id(_links), CSV 칸(_csv_refs), 도면 번호로 적는 기록(_number_refs). 지난 일의 기록(되돌리기 묶음·이력·판 사진)은 세지 않는다."""
     if not graph_id:
         return {}
     out = {}
+    links = _links(project_id, graph_id)
 
     def add(name, n, unit):
         if n:
@@ -239,7 +259,7 @@ def _references(project_id, graph_id):
                     add(name, _csv_refs(f, graph_id), "곳")
                     continue
                 with open(f, encoding="utf-8") as fh:
-                    add(name, *_json_refs(fh.read(), graph_id))
+                    add(name, *_json_refs(fh.read(), graph_id, links))
             except (OSError, UnicodeDecodeError, ValueError):
                 continue
     for name, n in _number_refs(project_id, graph_id).items():

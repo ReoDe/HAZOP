@@ -134,6 +134,27 @@ class GuardCountsTest(GuardCase):
         row = self.refused(self.confirm(mid, {"drawing_number": "SNP-M-555"}, dry=True))
         self.assertIn("지식그래프 판단", row["reason"])
 
+    def test_guard_counts_a_link_segment_in_another_drawings_node(self):
+        """R13. 도면 연결 구간(xlink-…)은 id에 도면 접두가 없고 두 끝 '<그래프 ID>#…'의 해시다. 다른 도면(102)의 구간에 101로 이어진 연결 구간만
+        들어 있어도 101의 번호를 바꾸거나 취소하면 그 연결이 사라져 구성원을 잃는다. 앞서는 이 참조를 세지 않아 허락했다."""
+        from hazop.study import node_commands
+        a = self.numbered("SNP-M-101", "drawio")
+        self.numbered("SNP-M-102", "drawio")
+        pg = project_ctx.project_graph(P)
+        link = next(l["link_id"] for l in pg["sheet_links"] if l["status"] == "linked")
+        mine = [n["entity_id"] for n in pg["nodes"] if n.get("sheet") == "graph-SNP-M-102"][:3]
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-555"}, dry=True)["ok"], "시험 전제: 구간이 없으면 허락")
+        out = node_commands.execute(pg, "create", {"items": [{"members": [link] + mine, "name": "B-1", "basis": "시험"}]},
+                                    author="user", confirmed_by=BY, set_rev=0)
+        self.assertTrue(out["ok"], out)
+        row = self.refused(self.confirm(a, {"drawing_number": "SNP-M-555"}))
+        self.assertEqual(row["reason_code"], tb.HAS_RECORDS)
+        self.assertIn("구간 1개", row["reason"])
+        self.assertFalse(tb.unconfirm(P, a, ["drawing_number"], BY, ver=self.row(a)["ver"])["ok"], "확정 취소도 막음")
+        pg, n = self.node()
+        self.assertEqual((sorted(n["members"]), n.get("lost") or []), (sorted([link] + mine), []), "연결 구간이 그대로 이어져 있음")
+        self.assertIn(link, {x["entity_id"] for x in pg["nodes"]})
+
 
 class GuardOwnerTest(GuardCase):
     """그 이름의 지금 주인일 때만 참조를 센다. 주인이 아닌 자료는 남의 기록 때문에 갇히지 않고, 주인은 지금처럼 막힌다."""
