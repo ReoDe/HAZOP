@@ -521,11 +521,10 @@ def extraction_path(name):
 
 
 def load_extraction(name, ops=None):
-    """(원본, 고친 추출). ops가 None이면 저장된 수정 기록(data/drawing-edits)을, 아니면 주어진 작업 중 ops를 적용한다."""
+    """(원본, 고친 추출). ops가 None이면 저장된 수정 기록(data/drawing-edits)을, 아니면 주어진 작업 중 ops를 적용한다.
+    나누기는 지어 둔 기준 추출이 있으면 그 위에, 없으면 대기로 둔다(corrections.resolve, 여기서 다시 추출하지 않는다)."""
     original = read_json(extraction_path(name))
-    corrected = (corrections.apply_saved(original, name) if ops is None
-                 else corrections.apply(original, ops))
-    return original, corrected
+    return original, corrections.resolve(name, original, ops)["corrected"]
 
 
 def viewer_html_for(name, ops=None):

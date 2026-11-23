@@ -21,6 +21,11 @@ from tests import test_screen_words  # noqa: E402
 from tests.test_corrections_inputs import BLOB, GROUPS, HAS_PDFPLUMBER, page  # noqa: E402
 
 NAME = "SYN-1"
+
+
+def data_load(name):
+    from hazop.app import data
+    return data.load_extraction(name)
 BY = "김검토"
 AT = "2026-11-23T00:00:00Z"
 
@@ -162,6 +167,32 @@ class SplitAcceptTest(unittest.TestCase):
         kept = [(c["cand_id"], c["status"]) for c in doc["candidates"]]
         self.assertEqual(kept, [(self.cands[0], "accepted"), (again[1]["cand_id"], "proposed")],
                          "정한 묶음은 다시 넣지 않고, 새 답과 겹치는 오래된 제안은 뺀다")
+
+    def test_read_quality_measures_splits_the_way_acceptance_builds_them(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import check_read_quality as rq
+        blob = next(n for n in self.original["nodes"] if n["source_object_id"] == BLOB)
+        check = {"candidates": [{"node_local_id": blob["local_id"], "field": "split", "values": ["manual_valve"],
+                                 "match": "legend", "pdf_objects": GROUPS[0]}]}
+        measured = rq.apply_with_splits(self.original, check, self.pdf, self.tmp)
+        self.accept(self.cands[:1])
+        accepted = corrections.resolve(NAME, allow_extract=True)["corrected"]
+        shape = lambda ex: sorted((rq._evidence(n), n["kind"]) for n in ex["nodes"])  # noqa: E731
+        self.assertEqual(shape(measured), shape(accepted))
+        self.assertEqual(json.dumps(rq.apply_with_splits(self.original, {"candidates": []}, self.pdf, self.tmp), sort_keys=True),
+                         json.dumps(rq.apply_candidates(self.original, {"candidates": []}), sort_keys=True),
+                         "split 후보가 없으면 예전과 같다")
+
+    def test_sheet_is_not_confirmable_while_a_split_waits(self):
+        from hazop.extract import confirmation
+        self.accept(self.cands[:1])
+        count = lambda: confirmation.sheet_confirmation(NAME)["counts"]["input_waiting"]  # noqa: E731
+        self.assertEqual(count(), 1, "반영 전 나누기는 미확인으로 센다")
+        corrections.ensure_base(NAME)
+        self.assertEqual(count(), 0)
+        _, corrected = data_load(NAME)
+        self.assertIn("pdf-p0-split-" + self.ops()[0]["op_id"], {n["source_object_id"] for n in corrected["nodes"]},
+                      "앱이 읽는 고친 추출도 지어 둔 기준 추출 위다")
 
     def tag_split(self):
         """수락 하나를 짓고 나눈 기호에 태그를 단 기록. → (split 연산, 태그 연산)."""

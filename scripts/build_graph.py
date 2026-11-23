@@ -52,15 +52,16 @@ def _is_app_root(out_root):
     return os.path.normcase(os.path.abspath(out_root)) == os.path.normcase(os.path.abspath(paths.output_root("graph")))
 
 
-def render_one(extraction_path, seats=None, out_root=None, extraction=None):
+def render_one(extraction_path, seats=None, out_root=None, extraction=None, allow_extract=False):
     """추출 결과 -> (graph, {파일 이름: 바이트}) 쓰지 않고 만든다. 파일은 graph.json·structure_report.md·entity_mapping.json·path_expectations.json.
-    extraction: 이미 읽은 추출 결과(없으면 extraction_path에서 읽음)."""
+    extraction: 이미 읽은 추출 결과(없으면 extraction_path에서 읽음). allow_extract: 나누기의 기준 추출이 없으면 그 자리에서
+    짓는다(배치 실행만. 앱은 기준 추출을 작업에서 지으므로 넘기지 않는다, corrections.resolve)."""
     if extraction is None:
         with open(extraction_path, encoding="utf-8") as fh:
             extraction = json.load(fh)
     folder = os.path.basename(os.path.dirname(extraction_path))
     # ② 사람 수정 기록을 매번 다시 적용한다(다시 추출해도 수정 유지, extraction.json은 원본 그대로)
-    extraction = corrections.apply_saved(extraction, folder)
+    extraction = corrections.resolve(folder, extraction, allow_extract=allow_extract)["corrected"]
     gid = _sheet_name(extraction, out_root or "", seats) if (seats is not None or out_root) else None
     graph = build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path, paths.work_root()), graph_id=gid)
     files = {
@@ -76,11 +77,12 @@ def render_one(extraction_path, seats=None, out_root=None, extraction=None):
     return graph, files
 
 
-def build_one(extraction_path, out_root, seats=None):
+def build_one(extraction_path, out_root, seats=None, allow_extract=False):
     with open(extraction_path, encoding="utf-8") as fh:
         extraction = json.load(fh)
     _prepare_study_marks(extraction, out_root)
-    graph, files = render_one(extraction_path, seats=seats, out_root=out_root, extraction=extraction)
+    graph, files = render_one(extraction_path, seats=seats, out_root=out_root, extraction=extraction,
+                              allow_extract=allow_extract)
     # 추출 결과 폴더 이름을 그대로 쓴다(--samples: 도면번호, 등록 경로: <자료 ID>-r<버전>). 뷰어도 같은 이름으로 그래프를 찾는다.
     out_dir = paths.safe_join(out_root, paths.safe_name(os.path.basename(os.path.dirname(extraction_path))))
     os.makedirs(out_dir, exist_ok=True)
@@ -100,7 +102,7 @@ def main(argv=None):
         path = os.path.join(args.extract_root, name, "extraction.json")
         if not os.path.isfile(path):
             continue
-        graph, out_dir = build_one(path, args.out_root)
+        graph, out_dir = build_one(path, args.out_root, allow_extract=True)
         s = graph["structure"]
         print("%s: %s nodes=%d edges=%d components_physical=%d unknowns=%d -> %s" % (
             graph["source"]["drawing_number"] or os.path.basename(out_dir), graph["validation"]["status"], s["node_count"],

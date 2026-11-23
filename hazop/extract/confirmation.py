@@ -31,7 +31,8 @@ CLEAN_FIRST = ("drawio", "dexpi")              # 처음부터 정리된 보기
 CLEAN_WHEN_CONFIRMED = ("pdf_vector", "raster")  # 확정된 쪽만 정리된 보기
 TAGGED = ("equipment", "valve", "instrument")   # 태그를 갖는 종류(없으면 '태그 없음')
 # 추출의 미확인 기록(validation.unknowns) 말고 이 판정이 직접 정하는 사유. 그 밖의 사유는 unknowns의 check 코드 그대로다
-REASONS = ("unknown_symbol", "missing_tag", "open_end", "unresolved_connector", "ai_candidate", "unplaced")
+# input_waiting: 수락·지정한 나누기가 아직 도면 다시 읽기에 들지 않음(corrections.resolve의 inputs.waiting). 다시 읽기가 끝나야 없어진다
+REASONS = ("unknown_symbol", "missing_tag", "open_end", "unresolved_connector", "ai_candidate", "unplaced", "input_waiting")
 # 사람 수정의 '이대로 확인'(corrections의 confirm 연산, items[].check)으로 끝낼 수 있는 사유. AI 후보는 수락·거절로만 끝낸다
 ACKNOWLEDGEABLE = ("unknown_symbol", "missing_tag", "open_end", "unresolved_connector", "unplaced")
 FILES = ("extraction", "edits", "ai_review")
@@ -208,10 +209,12 @@ def check(extraction, ai_doc=None, ops=()):
         add(u.get("target") if isinstance(u.get("target"), str) else None, str(u["check"]), u.get("reason"))
     for c in pending:
         add(c.get("target") if isinstance(c.get("target"), str) else None, "ai_candidate", c.get("cand_id"))
+    for oid in ((extraction.get("corrections") or {}).get("inputs") or {}).get("waiting") or []:
+        add(None, "input_waiting", oid)
 
     seen, out = set(), []
     for u in rows:
-        key = (u["id"], u["reason"], u["detail"] if u["id"] is None and u["reason"] == "ai_candidate" else None)
+        key = (u["id"], u["reason"], u["detail"] if u["id"] is None and u["reason"] in ("ai_candidate", "input_waiting") else None)
         if key not in seen:
             seen.add(key)
             out.append(u)
@@ -270,7 +273,8 @@ def _read_sources(name):
         if doc is not None and (not isinstance(doc, dict) or doc.get("kind") != kind):
             raise ValueError("%s 파일이 아님" % what)
     ops = (edits or {}).get("ops") or []
-    return corrections.apply(original, ops), ai_doc, ops, files, original
+    corrected = corrections.resolve(name, original, ops)["corrected"]   # 기준 추출이 없거나 낡으면 나누기는 대기(input_waiting)
+    return corrected, ai_doc, ops, files, original
 
 
 def _empty_record(name):
