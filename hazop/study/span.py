@@ -36,8 +36,14 @@ UNNUMBERED = "(번호 미확정)"
 
 
 def sheet_label(sheet):
-    """도면 하나의 표기: 확정 도면번호, 없으면 '(번호 미확정) <그래프 ID>'."""
-    return sheet.get("drawing_number") or "%s %s" % (UNNUMBERED, sheet.get("graph_id") or "-")
+    """도면 하나의 표기: 확정 도면번호, 없으면 '(번호 미확정) <파일 이름 · n쪽>'(hazop.graph.sheets.display_name), 그 이름이 없는 옛 시트는
+    '(번호 미확정) <그래프 ID>'. 번호 미확정 시트의 임시 이름(graph-material-…)은 그대로 내지 않는다."""
+    from hazop.graph import sheets
+    if sheet.get("drawing_number"):
+        return sheet["drawing_number"]
+    if sheet.get("label") or sheets.is_temp_name(sheet.get("graph_id")):
+        return "%s %s" % (UNNUMBERED, sheets.display_name(dict(sheet, drawing_number=None)))
+    return "%s %s" % (UNNUMBERED, sheet.get("graph_id") or "-")
 
 
 def _sheet_of(pg):

@@ -351,6 +351,8 @@ def compute(node_set, graph, at=None):
     now_sheets = sheet_materials(graph)
     old_sheets = node_set.get("graph_member_sheets") or {}
     moved = {s for s, mid in old_sheets.items() if mid and now_sheets.get(s) not in (None, mid)}
+    # 옛 사진에 그 시트의 자료가 없으면(이 칸 전에 저장) 그 이름을 다른 자료도 원하는 시트에서는 자료가 바뀌었는지 알 수 없다: 파일 id를 믿지 않는다
+    moved |= {s["graph_id"] for s in graph.get("sheets") or () if s.get("contested") and not old_sheets.get(s["graph_id"])}
     by_id = {n["entity_id"]: n for n in graph.get("nodes", [])}
     new_ref = {e: ref_of(n, gid) for e, n in by_id.items()}
     by_ref = {}

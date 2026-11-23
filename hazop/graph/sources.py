@@ -32,11 +32,13 @@ FORMATS = ("drawio", "pdf_vector", "dexpi")  # 추출 결과 source.format 값. 
 _EXTRACT_CACHE = {}
 
 OTHER_FORMAT, OTHER_FILE, BEFORE_SETTLE = "same_number_other_format", "same_number_other_file", "same_name_before_settle"
+SETTLE_SKIPPED = "settle_rebuild_failed"
 REASONS = {
     OTHER_FORMAT: "같은 도면 번호 %(number)s의 원본이 %(formats)s 형식으로 함께 있습니다. 사람이 고르기 전에는 %(in_use)s를 씁니다.",
     OTHER_FILE: "같은 도면 번호 %(number)s의 다른 파일이 들어왔습니다. 그래프에 쓸 파일을 고르세요. 사람이 고르기 전에는 %(in_use)s를 씁니다.",
     BEFORE_SETTLE: "번호가 없는 도면 %(count)d개가 옛 이름 %(graph_id)s를 나눠 써서 %(in_use)s만 보입니다. 다음 추출·그래프 짓기에서 "
                    "도면마다 따로 들어옵니다.",
+    SETTLE_SKIPPED: "가려졌던 도면 %(skipped)s를 새 이름으로 다시 짓지 못해 %(in_use)s만 보입니다(%(why)s). 그 도면을 다시 추출하면 따로 들어옵니다.",
 }
 
 
@@ -70,6 +72,12 @@ def _chosen(doc):
 def load_choices(project_id, root=None):
     """{도면 번호: {"format", "by", "at"}}. 파일이 없거나 깨졌으면 {}."""
     return _chosen(_read_doc(choices_path(project_id, root))[0])
+
+
+def _skipped(doc):
+    """{폴더 이름: 사유} 정착이 다시 짓지 못한 가려진 시트."""
+    rows = (doc.get("seats_settled") or {}).get("skipped") if isinstance(doc.get("seats_settled"), dict) else None
+    return {r["name"]: str(r.get("reason") or "") for r in rows or () if isinstance(r, dict) and r.get("name")}
 
 
 def load_seats(project_id, root=None):
@@ -266,6 +274,7 @@ def _state(project_id, cands, graph_root, choices_root, store_root):
             if order is None and len(_by_material(group, extract_root)) > 1:
                 order = registration_order(project_id, store_root)
             pick_c, followed = _decide(group, seats.get(gid), choice, order or {}, extract_root)
+        pick_c["rivals"] = len(_by_material(group, extract_root)) - 1 if len(group) > 1 else 0   # 이 이름을 원하는 다른 자료 수
         out.append((gid, group, pick_c, followed))
     return out, settled
 
@@ -290,20 +299,25 @@ def _file_name(c, extract_root):
     return facts_of(c, extract_root).get("file") or c["name"]
 
 
-def _row(gid, group, chosen, settled, extract_root):
-    """고를 것이 있는 묶음 한 줄(conflicts의 꼴, chosen·chosen_material 칸 빼고)."""
+def _row(gid, group, chosen, settled, extract_root, skipped=None):
+    """고를 것이 있는 묶음 한 줄(conflicts의 꼴, chosen·chosen_material 칸 빼고). skipped: 정착이 다시 짓지 못한 폴더 {이름: 사유}."""
     mats = _by_material(group, extract_root)
     members = list(mats.values()) if settled else sorted(group, key=lambda c: c["name"])
     formats = sorted({_format(c, extract_root) for c in members} - {None})
     usable = sheets.usable_number(facts_of(chosen, extract_root))
     number = usable if usable and gid == sheets.PREFIX + usable else None
+    stuck = [c for c in members if c is not chosen and c["name"] in (skipped or {})]
     if len(formats) > 1:
         kind, reason = "format", OTHER_FORMAT
+    elif stuck:
+        kind, reason = "file", SETTLE_SKIPPED
     else:
         kind, reason = "file", OTHER_FILE if number else BEFORE_SETTLE
     in_use = "%s(%s)" % (_file_name(chosen, extract_root), chosen.get("format") or "형식 모름")
     shown = number or drawing_number_of(chosen["graph"])
-    text = REASONS[reason] % {"number": shown, "formats": "·".join(formats), "in_use": in_use, "count": len(mats), "graph_id": gid}
+    text = REASONS[reason] % {"number": shown, "formats": "·".join(formats), "in_use": in_use, "count": len(mats), "graph_id": gid,
+                              "skipped": "·".join(_file_name(c, extract_root) for c in stuck),
+                              "why": "; ".join(skipped[c["name"]] for c in stuck) if stuck else ""}
     return {"kind": kind, "reason": reason, "text": text, "graph_id": gid, "drawing_number": shown,
             "formats": formats, "in_use": chosen["name"], "in_use_format": chosen.get("format"), "in_use_material": chosen.get("mat"),
             "in_use_file": _file_name(chosen, extract_root),
@@ -336,13 +350,13 @@ def conflicts(project_id, graph_root=None, choices_root=None, store_root=None):
           "registration_version", "file"(원본 파일 이름), "in_use"}]}."""
     extract_root = extract_root_for(graph_root)
     doc = _read_doc(choices_path(project_id, choices_root))[0]
-    seats, chosen_fmt = _seats(doc), _chosen(doc)
+    seats, chosen_fmt, skipped = _seats(doc), _chosen(doc), _skipped(doc)
     state, settled = _state(project_id, _candidates(project_id, graph_root), graph_root, choices_root, store_root)
     out = []
     for gid, group, c, followed in state:
         if not _is_conflict(group, extract_root):
             continue
-        row = _row(gid, group, c, settled, extract_root)
+        row = _row(gid, group, c, settled, extract_root, skipped)
         seat = seats.get(gid) if settled else None
         row["chosen_material"] = seat["material_id"] if seat and seat.get("why") == sheets.CHOSEN and followed else None
         fmt = chosen_fmt.get(drawing_number_of(c["graph"]), {}).get("format")
@@ -421,7 +435,9 @@ def settle(project_id, render, at=None):
     """정착: 이 단위 전 규칙이 지금 보여 주는 시트의 이름을 자리 표에 붙박고, 가려졌던 시트를 새 이름으로 다시 짓는다. 작업 루트에서만 돈다.
     render(extraction_path, seats) -> (graph, {파일 이름: 바이트}): 그 폴더의 그래프 파일들을 쓰지 않고 만든다(scripts/build_graph.render_one).
     - 이미 정착했으면 아무것도 쓰지 않는다(멱등). 자리를 다시 셈하지 않는다(다시 지은 뒤의 고르기가 달라지므로).
-    - 다시 지을 그래프를 모두 먼저 만든 뒤에 쓴다. 만들다 실패하면 아무것도 쓰지 않고 예외를 올린다(옛 상태 그대로).
+    - 다시 지을 그래프를 모두 먼저 만든 뒤에 쓴다. 한 시트를 만들지 못하면(추출 결과 깨짐 등) 그 시트만 옛 이름 그대로 두고 skipped에
+      사유를 적어 나머지를 마친다(가려진 도면 하나 때문에 프로젝트의 추출이 막히지 않게). 사유는 자리 표 seats_settled.skipped에 남고
+      고르기 줄(reason settle_rebuild_failed)로 사용자에게 보인다. 쓰다 실패하면(디스크) 예외를 올린다.
     - 쓰기 전에 바꿀 파일(자리 표·다시 지을 폴더의 파일)을 store_io.backup으로 백업하고, 파일마다 원자적으로 쓴다. 자리 표를 맨 끝에 쓴다:
       그 앞에서 끊기면 정착 전 상태로 남고(다시 지은 시트는 새 이름이라 옛 규칙으로도 겹치지 않음) 다음 정착이 같은 끝 상태로 간다.
     그래프가 아직 없는 새 프로젝트도 정착을 마친 것으로 적는다(붙박을 옛 이름이 없으므로 처음부터 새 이름을 쓴다).
@@ -458,9 +474,14 @@ def settle(project_id, render, at=None):
         if not os.path.isfile(ex_path):
             out["skipped"].append({"name": c["name"], "reason": "추출 결과가 없어 다시 지을 수 없음"})
             continue
-        graph, files = render(ex_path, seats)
+        try:
+            graph, files = render(ex_path, seats)
+        except Exception as exc:  # noqa: BLE001 - 가려진 시트 하나 때문에 프로젝트의 추출·다시 짓기를 막지 않는다(그 시트만 옛 이름으로 남김)
+            out["skipped"].append({"name": c["name"], "reason": "다시 짓지 못함: %s" % (str(exc)[:160] or type(exc).__name__)})
+            continue
         if graph.get("graph_id") != want:
-            raise ValueError("정착: %s를 %s로 다시 지어야 하는데 %s가 됨" % (c["name"], want, graph.get("graph_id")))
+            out["skipped"].append({"name": c["name"], "reason": "다시 지은 이름이 %s가 아님(%s)" % (want, graph.get("graph_id"))})
+            continue
         todo.append((c, want, files))
     backup_files = ([path] if os.path.isfile(path) else []) + [
         os.path.join(graph_root, c["name"], n) for c, _w, files in todo for n in sorted(files)
@@ -472,7 +493,7 @@ def settle(project_id, render, at=None):
             store_io.write_bytes(os.path.join(graph_root, c["name"], n), data)
         out["renamed"].append({"name": c["name"], "from": c["gid"], "to": want})
     doc["seats"] = seats
-    doc["seats_settled"] = {"at": at, "rule": SETTLE_RULE}
+    doc["seats_settled"] = dict({"at": at, "rule": SETTLE_RULE}, **({"skipped": out["skipped"]} if out["skipped"] else {}))
     _write_doc(project_id, path, doc, fp)
     out.update(changed=True, state="settled", seats=seats)
     return out

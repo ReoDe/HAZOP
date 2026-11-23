@@ -63,13 +63,17 @@ HZ-GOV-02 §4.8 '그래프 ID는 사용자 데이터라 바꾸지 않는다'와 
 ```
 settle(project_id, render):              # 작업 루트에서만. 이미 seats_settled면 아무것도 쓰지 않음
   지금(옛) 규칙의 고르기 결과마다: gid != natural → legacy 자리, 같은 gid에 다른 자료가 있으면 → in_use 자리
-  후보마다 sheet_id(사실, 자리) != 지금 graph_id → render로 다시 지을 파일을 메모리에 만든다(실패하면 아무것도 안 씀)
+  후보마다 sheet_id(사실, 자리) != 지금 graph_id → render로 다시 지을 파일을 메모리에 만든다(한 시트를 못 만들면 그 시트만 skipped에 사유)
   바꿀 파일(자리 표·다시 지을 폴더의 네 파일)을 data/backup/<시각>-sheet-identity/로 백업
   폴더마다 파일을 원자적으로 씀 → 자리 표를 맨 끝에 원자적으로 씀(읽은 지문과 다르면 Conflict, data.settle_sheets가 한 번 다시 돈다)
 ```
 
-- 부르는 곳: `data.extract_and_graph` 맨 앞, 그래프를 앱 작업 루트에 짓는 `scripts/build_graph.build_one`(사람 수정 저장·AI 수락 뒤 다시 짓기·낡은 그래프 다시 짓기가 모두 지난다).
-  읽는 길(`project_ctx.project_graph`·`graph_names`, `sources.pick`·`conflicts`·`sheet_rows`, 셸 도면 목록)에서는 부르지 않는다.
+- 부르는 곳: `data.extract_and_graph` 맨 앞(`data.settle_sheets`) 한 곳. 화면이 프로젝트를 열 때 명시적으로 부르는 일은 U4다.
+  `scripts/build_graph.build_one`은 정착하지 않고 자리 표만 읽는다(정착 전 프로젝트는 옛 이름 그대로). 그래서 읽는 길
+  (`project_ctx.project_graph`가 낡은 그래프 표시를 보고 다시 짓는 길 포함)·`sources.pick`·`conflicts`·`sheet_rows`·셸 도면 목록은 정착을 일으키지 않는다.
+- 정착 전에 옛 검토구간 집합의 판 사진 칸(시트 자료)을 지금 그래프로 채운다(`data.prepare_reextract`). 자리 표가 바뀐 뒤의 판 이전이 시트 자료를 견줄 수 있게.
+- 가려진 시트 하나를 다시 짓지 못하면(추출 결과 깨짐 등) 그 시트만 옛 이름으로 두고 `skipped`에 사유를 적어 나머지를 마친다. 사유는 자리 표
+  `seats_settled.skipped`에 남고 고르기 줄(`reason: settle_rebuild_failed`)로 보인다. 그 시트를 다시 추출하면 새 이름으로 들어온다.
 - 그래프가 아직 없는 새 프로젝트도 정착을 마친 것으로 적는다(붙박을 옛 이름이 없으니 처음부터 새 이름).
 - 다시 짓기는 추출을 다시 하지 않는다. graph_version은 그대로이고 이름과 머리 칸만 바뀐다.
 - 끊김: 자리 표를 쓰기 전에 끊기면 정착 전 상태로 남는다. 다시 지은 시트는 새 이름이라 옛 규칙으로도 겹치지 않고, 다음 정착이 같은 끝 상태로 간다.
@@ -84,7 +88,10 @@ settle(project_id, render):              # 작업 루트에서만. 이미 seats_
 - 판 사진에 시트별 자료 `graph_member_sheets {시트 graph_id: material_id}`(프로젝트 그래프 `sheets[].material_id`)를 남기고,
 - 옛 사진과 새 그래프의 자료가 다른 시트의 source 구성요소는 참조로 잇지 않으며(표시로 증명하지 못하면 묘비),
 - source 묘비 기록에 잃을 때의 시트 자료 `material`을 적고, 자료가 다른 시트에서는 같은 참조·같은 겉모습이어도 되찾지 않는다(그 자료로 돌아가면 되찾는다).
-- `material`이 없는 옛 묘비는 이번 판 이전에서 그 시트의 자료가 바뀌었는지만 본다. `graph_member_sheets`가 없는 옛 사진은 전처럼 참조로 잇는다(10장 남은 위험).
+- `material`이 없는 옛 묘비는 이번 판 이전에서 그 시트의 자료가 바뀌었는지만 본다.
+- 옛 사진에 그 시트의 자료가 없으면(`graph_member_sheets` 전에 저장) 그 이름을 다른 자료도 원하는 시트(프로젝트 그래프 `sheets[].contested`)에서는
+  자료가 바뀌었는지 알 수 없으므로 source 구성요소를 참조로 잇지 않는다(묘비). '빠지면 같다'는 그 이름의 자료가 하나뿐일 때만이다.
+  정착·다시 추출 직전에는 그 칸을 채우므로, 이 규칙은 채우기 전에 사람이 파일을 고른 경우에 걸린다.
 - 나중에 들인 판 사진 칸(`idmap.OPTIONAL_SNAPSHOT` = `graph_member_looks`·`graph_member_sheets`) 규칙은 하나다. 없는 옛 사진은 `has_snapshot`이 그 칸을 보지 않아
   같은 판을 열기만 해서는 집합을 다시 쓰지 않는다(총괄 조건 5와 같은 쪽). 다시 추출·그래프 다시 짓기 직전의 표지 채우기(`data.prepare_reextract`, `_needs_marks`가 그 칸이 빠진
   집합도 고름)는 `migrate.filling_new_fields()` 안에서 그 칸까지 채운다. 웹 고침 길도 `scripts/build_graph.build_one`에서 이 채우기를 지난다. f945ff2는 looks가 빠진 집합을
@@ -121,6 +128,7 @@ settle(project_id, render):              # 작업 루트에서만. 이미 seats_
 
 | 코드 | 언제 | 사람용 글(요지) |
 | --- | --- | --- |
+| `settle_rebuild_failed` | 고르기 줄: 정착이 가려진 도면을 다시 짓지 못함 | 그 도면을 다시 추출하면 따로 들어옴(사유 포함) |
 | `confirm_title_block_first` | 등록 경로 시트에 번호가 없음 | 구간을 만들기 전에 표제란을 확정하면 도면 연결·DEXPI 내보내기·개정판 이어 받기를 쓸 수 있음 |
 | `multi_page_number` | 여러 쪽 자료에 자료 단위 번호가 있음(이름에 쓰지 않음). 등록 쪽 보류 사유로도 씀(U2) | 쪽을 파일로 나눠 등록하면 쪽마다 번호를 확정할 수 있음 |
 | `reserved_number` | 번호가 임시 이름 꼴 | 임시 이름과 같은 꼴이라 쓸 수 없음 |
@@ -134,7 +142,13 @@ settle(project_id, render):              # 작업 루트에서만. 이미 seats_
  "skipped": [{"name", "reason"}](추출 결과가 없어 다시 짓지 못한 폴더), "backup", "backup_files"}
 ```
 
-프로젝트 그래프에는 `source_notes`(고르기 줄의 `text` 목록)와 `sheets[].material_id`·`page_index`가 더해진다(판 문자열에는 넣지 않음).
+프로젝트 그래프에는 `source_notes`(고르기 줄의 `text` 목록)와 `sheets[].material_id`·`page_index`·`label`(번호 없는 등록 시트)·`contested`가 더해진다
+(판 문자열에는 넣지 않음).
+
+**사람용 도면 이름 한 곳** `sheets.display_name(시트)`: 번호, 없으면 `label`('파일 · n쪽'), 그것도 없으면 graph-를 뗀 이름, 임시 이름이면 '번호 미확정 도면'.
+`study/span.sheet_label`, `kg/screen.py`(지식그래프 화면 묶음 이름), `chat`(카드의 도면 이름)이 이 함수를 쓴다. 표제란 가드의 거절 글도 임시 이름 대신 파일 이름·쪽을 쓴다.
+셸에서 임시 이름이 그대로 보일 수 있는 곳(U4, s-viewer 몫, 이 단위는 고치지 않음): `hazop/shell/api_nodes.py` 기본 구간 이름('<graph_id에서 graph-를 뗀 것> 구간'),
+`web/js/panels/drawings.js` 도면 목록 행·내보내기 빠진 쪽, `web/js/main.js` 위 막대 도면 칩, `web/js/panels/nodes_logic.js` 구간 패널 도면 이름.
 
 ## 7. 시험과 지키는 불변식
 
@@ -146,7 +160,8 @@ settle(project_id, render):              # 작업 루트에서만. 이미 seats_
 | `…mixed_formats_and_files…`, `…same_format_other_file…` | 같은 번호의 다른 형식·파일은 말없이 갈아타지 않고 고르기 줄에 오름, 사람이 고르면 갈아탐 |
 | `…choosing_another_drawio_file…` | 같은 번호의 다른 drawio로 갈아타도 같은 파일 id로 잇지 않음(묘비) |
 | `…saved_collision…`(PDF·drawio) | 이 단위 전에 겹쳐 저장된 프로젝트를 열면 뒤집히지 않고 가려진 도면만 들어옴, 두 번 열어도 같음 |
-| `test_sheet_settle` | 읽는 길·다른 그래프 폴더는 쓰지 않음, 정착 전 백업, 실패하면 옛 상태 그대로, 두 번 = 한 번 |
+| `test_sheet_settle` | 읽는 길·다른 그래프 폴더는 쓰지 않음, 정착 전 백업, 두 번 = 한 번, 다시 짓지 못한 시트만 사유와 함께 건너뜀(깨진 가려진 도면이 보이던 도면의 다시 추출을 막지 않음), 옛 집합의 같은 번호 다른 drawio 갈아타기, ⑤·⑥ 참조가 있는 저장본, 임시 이름 시트의 DEXPI 내보내기 |
+| `test_sheet_gid_paths` 번호 확정 둘 | 구간 없는 새 도면의 번호 확정은 다른 도면 구간에 막히지 않음(판 사진·판 이전 줄의 도면 목록은 참조로 세지 않음), 거절 글에 임시 이름 대신 파일 이름 |
 | `test_sheet_identity` | 이름 규칙·사유 코드·엔진 값의 꼴, 판 이전의 자료 바뀜 규칙(`MaterialSwitchIdmapTest`) |
 | `test_study_source_tombs` | f945ff2 검토 지적: 묘비 id가 겉모습 유무와 무관, 재확인 사유, 집합 수준 버린 묘비, 태그 규칙 양쪽, 옛 0.3 집합은 열기만으로 안 씀·다시 추출 직전(웹 길 포함) 채움, 실제 drawio 사람 수정 길의 되찾기 |
 
@@ -183,8 +198,10 @@ U1 커밋에는 넣지 않았다(실패하는 시험·기대 실패를 두지 �
 
 ## 9. 구현하며 바꾼 것
 
-- 표제란(`register/titleblock.py`)의 이름 사본 둘(`_graph_id_of`, `_gid`)은 U1에서 `sources.sheet_name`·`name_for`를 부르게 했다. 가드 논리는 그대로다.
+- 표제란(`register/titleblock.py`)의 이름 사본 둘(`_graph_id_of`, `_gid`)은 U1에서 `sources.sheet_name`·`name_for`를 부르게 했다.
   사본을 두면 표제란 패널·가드가 새 이름의 시트를 옛 이름으로 세어, 참조가 있는 시트의 번호 바꾸기를 놓친다.
+  이름이 바뀌면서 가드가 새 도면의 번호 확정에서도 참조를 세게 되어, 검토구간 집합의 판 사진(그래프 전체 구성요소 목록)과 판 이전 줄의 도면 목록을
+  참조로 잘못 세는 회귀가 드러났다(검토 지적). 그 둘은 세지 않게 고쳤다. 주인일 때만 세는 일·FMEA·도면 연결·구간 제외는 U2 그대로다.
 - 정착은 읽는 길에서 부르지 않는다(총괄 조건). 이미 겹친 저장본의 가려진 도면은 다음 추출·그래프 짓기, 또는 화면이 프로젝트를 열 때 명시적으로 부르는
   `data.settle_sheets`(U4)에서 들어온다.
 - `scripts/build_graph.build_one`을 쓰지 않고 만드는 `render_one`과 쓰는 `build_one`으로 나누고, 파일마다 원자적으로 쓴다. 정착이 다시 지을 것을 모두 만든 뒤 쓰기 위함이다.
@@ -197,6 +214,8 @@ U1 커밋에는 넣지 않았다(실패하는 시험·기대 실패를 두지 �
 
 - U1과 U4 사이에는 '같은 번호의 다른 파일'이 고르기 카드 없이 옛 파일을 지킨다. 셸의 옛 원본 고르기 카드는 `kind: file` 줄을 형식 하나짜리 충돌로 보이고, 형식으로 고르면 엔진이 거절한다.
   이 사이에는 배포본을 묶지 않는다.
-- `graph_member_sheets`가 없는 옛 집합(이 단위 전에 저장)과 `material`이 없는 옛 묘비는 갈아타기 직전에 집합이 한 번도 다시 쓰이지 않았으면 전처럼 참조로 잇거나 되찾을 수 있다.
+- `graph_member_sheets`가 없는 옛 집합은 그 이름의 자료가 하나뿐인 시트에서 전처럼 참조로 잇는다. 주인 파일의 그래프가 사라져 남은 다른 파일 하나가 그 이름을 얻고,
+  그 사이 집합이 한 번도 다시 쓰이거나 채워지지 않았으면(정착·다시 추출 직전에 채움) 다른 파일의 같은 id로 이을 수 있다. `material`이 없는 옛 묘비도 같은 경우에 되찾을 수 있다.
 - 주인 파일의 그래프가 사라지면 4번 차례로 다른 파일이 말없이 그 이름을 얻는다. 판 이전은 5장 규칙으로 묘비를 내지만 알림은 고르기 줄뿐이다.
+- 정착이 건너뛴 가려진 시트(`settle_rebuild_failed`)는 그 시트를 다시 추출할 때까지 가려진 채다. 정착은 한 번뿐이라 저절로 다시 시도하지 않는다.
 - 정착 전 프로젝트에서 표제란 확정 취소의 예측 이름이 정착 뒤 이름과 다를 수 있다(8장, U2).

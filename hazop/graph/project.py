@@ -29,6 +29,7 @@ import threading
 
 from hazop import paths
 from hazop.extract import ids
+from hazop.graph import sheets as sheet_rules
 from hazop.graph import sources
 from hazop.graph.build import to_networkx
 
@@ -470,7 +471,7 @@ def _duplicate_tags(graphs):
             for t, ids in sorted(seen.items()) if len({i.split(SEP)[0] for i in ids}) > 1]
 
 
-def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None, source_notes=()):
+def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None, source_notes=(), contested=()):
     """도면 그래프 목록 -> 프로젝트 그래프 dict. 도면 graph_id가 겹치면 ValueError(auto.project_graphs가 먼저 고른다).
     copies: {도면 graph_id: _copy_sheet(그 도면) 결과(새 객체)}. 주면 그 도면은 다시 복사하지 않는다(load_with_names의 쪽별 캐시)."""
     graphs = sorted(graphs, key=lambda g: g["graph_id"])
@@ -518,7 +519,12 @@ def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None, sou
               "drawing_number": (g.get("source") or {}).get("drawing_number")} for g in graphs]
     version = "pv-" + _sha({"sheets": heads, "links": [(l["link_id"], l["status"], l["reason"]) for l in links]})
     # 시트 정체 (자료, 쪽). 이 규칙 전 graph.json에는 없어 None. 판(version)에는 넣지 않는다(같은 시트면 같은 판)
-    sheets = [dict(h, material_id=(g.get("source") or {}).get("material_id"), page_index=(g.get("source") or {}).get("page_index"))
+    # contested: 이 이름을 다른 자료도 원함(hazop.graph.sources). 판 이전이 시트 자료를 모르는 옛 판 사진에서 파일 id를 믿지 않는 근거
+    # label: 사람용 이름(hazop.graph.sheets.display_name이 씀)
+    sheets = [dict(h, material_id=(g.get("source") or {}).get("material_id"), page_index=(g.get("source") or {}).get("page_index"),
+                   **({"contested": True} if g["graph_id"] in contested else {}),
+                   **({"label": sheet_rules.label(sheet_rules.from_graph(g))} if (g.get("source") or {}).get("material_id")
+                      and not h["drawing_number"] else {}))
               for h, g in zip(heads, graphs)]
     return {
         "schema_version": SCHEMA_VERSION, "kind": KIND, "project_id": project_id,
@@ -618,12 +624,16 @@ def load_with_names(project_id, graph_root=None):
         src = c["graph"].setdefault("source", {})
         if mid and not src.get("material_id"):
             src["material_id"], src["page_index"] = mid, page
+            if not src.get("drawing_number"):   # 번호 없는 옛 시트의 사람용 이름(파일 이름·쪽)
+                src.update({k: v for k, v in sources.facts_of(c, sources.extract_root_for(graph_root)).items()
+                            if k in ("file", "page_count") and v is not None})
     graphs = [best[k]["graph"] for k in sorted(best)]
     if not graphs:
         raise ValueError("프로젝트 %s에 추출한 도면이 없음" % project_id)
     copies = {c["graph"]["graph_id"]: _sheet_copy(c["path"], c["stamp"], c["graph"]) for c in best.values()}
     pg = build(project_id, graphs, (load_manual(project_id) or {}).get("ops") or (),
-               load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)), copies=copies, source_notes=notes)
+               load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)), copies=copies, source_notes=notes,
+               contested={gid for gid, c in best.items() if c.get("rivals")})
     return pg, {gid: c["name"] for gid, c in best.items() if gid}
 
 

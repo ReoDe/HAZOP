@@ -133,12 +133,39 @@ def _references(project_id, graph_id):
         for f in files:
             try:
                 with open(f, encoding="utf-8") as fh:
-                    n += len(pat.findall(fh.read()))
+                    n += len(pat.findall(_referring_text(fh.read())))
             except (OSError, UnicodeDecodeError):
                 continue
         if n:
             out[name] = out.get(name, 0) + n
     return out
+
+
+def _not_refs(x):
+    """판 사진(graph_member_*: 그래프 전체 구성요소의 참조·표시)과 판 이전 줄의 도면 목록(drawings: 그때 그래프에 있던 시트)을 뺀 사본.
+    둘 다 구간·결과가 가리키는 것이 아니다."""
+    if isinstance(x, dict):
+        return {k: _not_refs(v) for k, v in x.items() if not k.startswith("graph_member_") and k != "drawings"}
+    if isinstance(x, list):
+        return [_not_refs(v) for v in x]
+    return x
+
+
+def _referring_text(text):
+    """참조를 셀 글(JSON이면 _not_refs를 거친 것)."""
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return text
+    return json.dumps(_not_refs(doc), ensure_ascii=False)
+
+
+def _shown(graph_id, sheet=None):
+    """안내 글에 쓸 도면 이름(임시 이름 대신 파일 이름·쪽)."""
+    if sheet is not None and sheet_rules.is_temp_name(graph_id):
+        return sheet_rules.label({"material_id": sheet.get("material_id"), "page_index": sheet.get("page") or 0,
+                                  "page_count": sheet.get("page_count") or 1, "number": None, "file": sheet.get("file")})
+    return sheet_rules.display_name({"graph_id": graph_id})
 
 
 def _describe(refs):
@@ -266,16 +293,17 @@ def _guard_number(project_id, record, sheets, new_number, store_root):
         if old_number in sources.load_choices(project_id):
             raise Refused("drawing_number", "rule", "도면 번호 %s에 사람이 고른 원본 형식 선택이 있어 번호를 바꾸지 않음(같은 번호의 다른 형식 "
                           "원본에 걸린 선택이라 새 번호로 옮길 수 없음)" % old_number)
-    targets = [(s.get("graph_id"), _gid(new_number, s, project_id)) for s in sheets]
+    targets = [(s.get("graph_id"), _gid(new_number, s, project_id), s) for s in sheets]
     if not sheets and new_number is not None:
-        targets = [(None, "graph-%s" % new_number)]
-    for old, new in targets:
+        targets = [(None, "graph-%s" % new_number, None)]
+    for old, new, sheet in targets:
         if old is not None and old != new:
-            for gid, what in ((old, "이 도면"), (new, "새 번호의 도면")):
+            for gid, what, owner in ((old, "이 도면", sheet), (new, "새 번호의 도면", None)):
                 refs = _references(project_id, gid)
                 if refs:
                     raise Refused("drawing_number", "rule", "%s(%s)의 구성요소를 %s이 가리키고 있어 번호를 바꾸면 끊기거나 섞임. 그래프 "
-                                  "ID를 옮기는 길이 아직 없어 막음: 번호를 바꾸려면 그 기록을 먼저 정리해야 함" % (what, gid, _describe(refs)))
+                                  "ID를 옮기는 길이 아직 없어 막음: 번호를 바꾸려면 그 기록을 먼저 정리해야 함"
+                                  % (what, _shown(gid, owner), _describe(refs)))
         for gid, fmt, name, mid in _others(project_id, record["material_id"], store_root):
             if _key(gid) != _key(new):
                 continue

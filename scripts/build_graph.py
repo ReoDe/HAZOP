@@ -36,21 +36,16 @@ def _prepare_study_marks(extraction, out_root):
 
 
 def _sheet_name(extraction, out_root, seats):
-    """그래프 이름(graph_id). seats를 주면 그 자리 표로(정착이 부름). 앱 작업 루트의 그래프면 그 프로젝트를 먼저 정착한 뒤 자리 표로
-    (hazop.app.data.settle_sheets, hazop.graph.sources.sheet_name). 다른 곳(시험·샘플 만들기)은 자리 표를 보지 않은 자연 이름."""
+    """그래프 이름(graph_id). seats를 주면 그 자리 표로(정착이 부름). 앱 작업 루트의 그래프면 그 프로젝트의 자리 표로
+    (hazop.graph.sources.sheet_name, 정착 전 프로젝트는 이 규칙 전 이름 그대로). 다른 곳(시험·샘플 만들기)은 자리 표를 보지 않은 자연 이름.
+    정착은 여기서 하지 않는다(낡은 그래프 다시 짓기처럼 읽는 길이 부르는 다시 짓기가 정착을 일으키지 않게). 정착은 추출 맨 앞
+    (hazop.app.data.extract_and_graph)에서 한다."""
     from hazop.graph import project, sheets, sources
     if seats is not None:
         return sheets.sheet_id(sheets.facts(extraction), seats)
     if not _is_app_root(out_root):
         return None
-    pid = project.project_id_of(extraction)
-    try:
-        from hazop.app import data
-    except ImportError:
-        data = None
-    if data is not None:
-        data.settle_sheets(pid)
-    return sources.sheet_name(pid, extraction)
+    return sources.sheet_name(project.project_id_of(extraction), extraction)
 
 
 def _is_app_root(out_root):

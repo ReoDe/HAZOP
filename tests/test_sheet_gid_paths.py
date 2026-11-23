@@ -150,6 +150,25 @@ class SheetGidPathTest(SheetCase):
         _pg, n = self.node()
         self.assertEqual((n["members"], n.get("lost") or []), (members, []))
 
+    def test_numbering_a_new_drawing_is_not_blocked_by_another_drawings_segments(self):
+        """구간이 없는 새 도면의 번호 확정은 다른 도면의 구간 때문에 막히지 않는다(판 사진에 적힌 그래프 전체 참조는 구간이 가리키는 것이 아님)."""
+        a = self.add("SNP-M-101", "drawio")
+        self.make_nodes(a)
+        b = self.add("SNP-M-102", "drawio")
+        out = self.confirm(b, {"drawing_number": "SNP-M-102"})
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(self.sheet(b)["graph_id"], "graph-SNP-M-102")
+
+    def test_refusal_names_the_drawing_by_file_not_by_its_temporary_name(self):
+        """구간이 있는 번호 미확정 도면의 번호 확정은 막되, 안내에 임시 이름(graph-material-…)이 아니라 파일 이름·쪽이 나온다."""
+        a = self.add("SNP-M-101", "drawio")
+        self.make_nodes(a)
+        out = self.confirm(a, {"drawing_number": "SNP-M-101"})
+        self.assertFalse(out["ok"])
+        reason = out["refused"][0]["reason"]
+        self.assertNotIn("material-", reason)
+        self.assertIn("SNP-M-101_RCS-main-loop.drawio · 1쪽", reason)
+
     # ------------------------------------------------------------ 번호가 같은 시트
     def test_reextracting_the_first_format_does_not_hand_the_sheet_to_the_other_format(self):
         """P9. 같은 번호의 drawio와 PDF가 함께 있으면 먼저 있던 형식을 쓴다. 먼저 있던 drawio를 다시 추출해 그래프가 더 새로워져도
@@ -226,17 +245,6 @@ class SheetGidPathTest(SheetCase):
         self.assertEqual(len(n.get("lost") or []), len(members))
 
     # ------------------------------------------------------------ 이미 겹친 저장본
-    def _collided(self, kind):
-        """이 단위 전 앱으로 두 도면이 한 시트 이름을 나눠 쓴 채 저장된 프로젝트를 만든다. 첫 도면 구간은 둘째 도면 때문에 이미 잃었다."""
-        with mock.patch("hazop.graph.sources.sheet_name", legacy_name, create=True), \
-                mock.patch("hazop.app.data.settle_sheets", lambda *a, **k: None, create=True):
-            a = self.add("SNP-M-101", kind)
-            self.make_nodes(a)
-            b = self.add("SNP-M-102", "pdf") if kind == "pdf" else self.register(self.same_page_name_drawio())
-            pg, n = self.node()
-        self.assertEqual(len(pg["sheets"]), 1, "시험 전제: 옛 규칙에서는 한 시트")
-        return a, b, n
-
     def _open_saved_collision_twice(self, kind):
         a, b, seen = self.collided(kind)
         gid = project_ctx.project_graph(P)["sheets"][0]["graph_id"]

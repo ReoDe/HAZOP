@@ -8,19 +8,20 @@
 """
 
 import hashlib
+import json
 import os
 import shutil
 import unittest
 from unittest import mock
 
-from tests.test_sheet_gid_paths import SheetCase, legacy_name
+from tests.test_sheet_gid_paths import NUMBER, SheetCase, legacy_name
 
 from hazop import paths
 from hazop.app import data, project_ctx
 from hazop.graph import project, sources
 from hazop.kg import auto
 from hazop.study import nodes
-from tests.test_titleblock import P
+from tests.test_titleblock import BY, P
 
 
 def tree(root, skip=()):
@@ -109,10 +110,10 @@ class SettleTest(SheetCase):
         n = nodes.load(pg)["nodes"][0]
         self.assertEqual((n["members"], n.get("lost") or []), (before["members"], before.get("lost") or []))
 
-    def test_failed_settle_leaves_the_old_state(self):
-        """다시 짓기가 둘째 시트에서 실패하면 앞서 고친 시트도 되돌리고 자리 표를 쓰지 않는다(옛 상태 그대로). 다음 정착이 끝까지 한다."""
+    def test_a_sheet_that_cannot_be_rebuilt_is_skipped_with_a_reason(self):
+        """가려진 시트 하나를 다시 짓지 못해도(만들다 실패) 정착은 나머지를 마치고, 그 시트만 옛 이름 그대로 두며 사유를 돌려준다.
+        그 사유는 자리 표에 남아 고르기 줄(reason settle_rebuild_failed)로 보인다."""
         self.legacy_three()
-        before = tree(paths.output_root())
         real = data.script_module("build_graph").render_one
         calls = []
 
@@ -122,12 +123,82 @@ class SettleTest(SheetCase):
                 raise OSError("디스크가 가득 참(시험)")
             return real(path, **kw)
         with mock.patch.object(data.script_module("build_graph"), "render_one", flaky):
-            with self.assertRaises(OSError):
-                data.settle_sheets(P)
-        self.assertEqual(tree(paths.output_root()), before, "실패한 정착이 시트 하나를 바꾼 채 남김")
-        self.assertFalse(os.path.exists(sources.choices_path(P)), "실패한 정착이 자리 표를 씀")
-        self.assertTrue(data.settle_sheets(P)["changed"])
-        self.assertEqual(len(self.gids()), 3)
+            out = data.settle_sheets(P)
+        self.assertTrue(out["changed"])
+        self.assertEqual((len(out["renamed"]), len(out["skipped"])), (1, 1), out)
+        self.assertIn("디스크가 가득 참", out["skipped"][0]["reason"])
+        self.assertEqual(len(self.gids()), 2)
+        rows = sources.conflicts(P)
+        self.assertEqual([r["reason"] for r in rows], ["settle_rebuild_failed"], rows)
+        self.assertIn("디스크가 가득 참", rows[0]["text"])
+
+    def test_a_broken_hidden_sheet_does_not_block_reextracting_the_visible_one(self):
+        """이 단위 전 저장본에서 가려진 도면의 추출 결과가 깨져 있어도(source_locations 없음) 보이던 도면의 다시 추출·다시 짓기는 된다."""
+        from hazop.extract import confirmation
+        from hazop.shell import sheet_refresh
+        a, b, _seen = self.collided("pdf")
+        path = confirmation.extraction_path(self.sheet(a)["name"])
+        with open(path, encoding="utf-8") as fh:
+            ex = json.load(fh)
+        del ex["source_locations"]
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(ex, fh)
+        self.reextract(b)
+        sheet_refresh.rebuild(self.sheet(b)["name"])
+        self.assertEqual([r["reason"] for r in sources.conflicts(P)], ["settle_rebuild_failed"])
+
+    def test_old_set_does_not_follow_matching_file_ids_to_the_other_file(self):
+        """조건 4, 이 단위 전 집합: 같은 번호의 drawio 둘(뒤에 넣은 B가 보임) 위에 만든 구간을 정착 뒤 A로 갈아타도, 시트 자료 칸이 없는
+        옛 판 사진이라 A의 같은 파일 id 기호로 잇지 않는다(묘비)."""
+        from hazop.app import project_ctx
+        with mock.patch("hazop.graph.sources.sheet_name", legacy_name, create=True), \
+                mock.patch("hazop.app.data.settle_sheets", lambda *a, **k: None, create=True):
+            a = self.register(self.copy_in("SNP-M-101", "drawio", "in-a"), NUMBER)
+            b = self.register(self.copy_in("SNP-M-102", "drawio", "in-b"), dict(NUMBER))
+            _pg, ns = self.make_nodes(b)
+        members = ns["nodes"][0]["members"]
+        path = nodes.store_path(P, "project-" + P)
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc.pop("graph_member_sheets", None)          # f945ff2 전 집합에는 이 칸이 없다
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, ensure_ascii=False, indent=2)
+        project_ctx._PROJECT_GRAPHS.clear()
+        project_ctx._NAMES.clear()
+        self.assertEqual(data.settle_sheets(P)["seats"]["graph-SNP-M-101"]["material_id"], b)
+        sources.choose(P, "SNP-M-101", None, BY, material_id=a)
+        n = nodes.load(project_ctx.project_graph(P))["nodes"][0]
+        self.assertEqual((n["members"], len(n.get("lost") or [])), ([], len(members)), "다른 파일의 같은 id 기호로 이어짐")
+
+    def test_settle_leaves_results_and_initiating_event_references_alone(self):
+        """⑤·⑥ 참조까지 있는 저장본: 정착은 그 파일을 쓰지 않고, 참조하는 시트(보이던 도면)의 이름과 자료가 그대로다."""
+        from hazop.app import project_ctx
+        from hazop.ie import store as ie_store
+        a, b, seen = self.collided("pdf")
+        pg = project_ctx.project_graph(P)
+        gid = pg["sheets"][0]["graph_id"]
+        ref = next(n for n in pg["nodes"] if n.get("sheet") == gid and n.get("source_object_id"))
+        refs = {"ie": ie_store.store_path(P), "fmea": ie_store.fmea_path(P)}
+        for k, f in refs.items():
+            os.makedirs(os.path.dirname(f), exist_ok=True)
+            with open(f, "w", encoding="utf-8") as fh:
+                json.dump({"ref": "%s#%s" % (gid, ref["source_object_id"]), "entity_id": ref["entity_id"]}, fh)
+        before = {k: open(f, "rb").read() for k, f in refs.items()}
+        data.settle_sheets(P)
+        self.assertEqual({k: open(f, "rb").read() for k, f in refs.items()}, before)
+        pg = project_ctx.project_graph(P)
+        sheet = next(s for s in pg["sheets"] if s["graph_id"] == gid)
+        self.assertEqual(sheet["material_id"], b, "참조하던 시트의 자료가 바뀜")
+        self.assertIn(ref["entity_id"], {n["entity_id"] for n in pg["nodes"]})
+
+    def test_temporary_name_sheet_is_not_exported_to_dexpi_and_says_why(self):
+        """임시 이름 시트(번호 미확정)는 DEXPI 내보내기 목록에서 '도면 번호가 없음'으로 빠진다."""
+        from hazop.export import dexpi_export
+        mid = self.add("SNP-M-101", "pdf")
+        rows = [r for r in dexpi_export.list_exportable() if r["name"] == self.sheet(mid)["name"]]
+        self.assertEqual(len(rows), 1)
+        self.assertFalse(rows[0]["exportable"])
+        self.assertIn("도면 번호가 없음", rows[0]["why"])
 
 
 if __name__ == "__main__":

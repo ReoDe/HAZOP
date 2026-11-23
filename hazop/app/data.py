@@ -261,6 +261,8 @@ def settle_sheets(project_id):
     if not project_id:
         return None
     bg = script_module("build_graph")
+    if not graph_sources.load_seats(project_id)[1]:
+        prepare_reextract(project_id)      # 자리를 바꾸기 전에 옛 집합의 판 사진 칸(시트 자료)을 지금 그래프로 채운다
     with _SETTLE_LOCK:
         try:
             return graph_sources.settle(project_id, lambda path, seats: bg.render_one(path, seats=seats))

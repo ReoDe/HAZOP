@@ -21,6 +21,8 @@ LEGACY, IN_USE, CHOSEN = "legacy", "in_use", "chosen"
 SEAT_KINDS = (LEGACY, IN_USE, CHOSEN)
 # 사람이 도면 번호로 확정하면 임시 이름과 겹치는 꼴(등록·표제란 입력 검사가 막는다)
 RESERVED_NUMBER = re.compile(r"^material-[0-9a-f]{12}-p\d+$", re.IGNORECASE)
+_TEMP_NAME = re.compile(r"^graph-material-[0-9a-f]{12}-p\d+$")
+UNNUMBERED = "번호 미확정 도면"
 _OUT_NAME = re.compile(r"__(material-[0-9a-f]{12})-r(\d+)-p(\d+)$")   # scripts/extract_drawio.registered_out_name 꼬리
 
 NUMBER_HELD = "multi_page_number"
@@ -121,6 +123,24 @@ def label(f):
     if f.get("material_id"):
         return "%s · %d쪽" % (f.get("file") or f["material_id"], (f.get("page_index") or 0) + 1)
     return f.get("number") or f.get("page_name") or "drawing"
+
+
+def is_temp_name(graph_id):
+    """번호가 없는 등록 시트의 임시 이름(graph-<material_id>-p<쪽>)인가. 사람에게 보이는 글에 그대로 내지 않는다."""
+    return bool(_TEMP_NAME.match(graph_id or ""))
+
+
+def display_name(sheet):
+    """사람용 도면 이름 한 곳. sheet는 프로젝트 그래프 sheets[]의 한 줄({graph_id, drawing_number, label}) 또는 같은 꼴.
+    번호, 없으면 label('파일 · n쪽'), 그것도 없으면 graph-를 뗀 이름(임시 이름은 '번호 미확정 도면')."""
+    if sheet.get("drawing_number"):
+        return sheet["drawing_number"]
+    if sheet.get("label"):
+        return sheet["label"]
+    gid = sheet.get("graph_id") or ""
+    if is_temp_name(gid):
+        return UNNUMBERED
+    return gid[len(PREFIX):] if gid.startswith(PREFIX) else gid or "-"
 
 
 def describe(f, graph_id=None):

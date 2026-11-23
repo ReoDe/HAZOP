@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 from hazop import paths
 from hazop.graph import project
+from hazop.graph import sheets as sheet_rules
 from hazop.graph.query import GraphQuery
 
 DOC_DIR = "document-knowledge"
@@ -106,6 +107,7 @@ class Index:
             if n.get("sheet_entity_id"):
                 self.by_entity.setdefault(n["sheet_entity_id"], []).append(n["entity_id"])
         self.drawing_number = {s["graph_id"]: s.get("drawing_number") for s in pg["sheets"]}
+        self.sheet_names = {s["graph_id"]: sheet_rules.display_name(s) for s in pg["sheets"]}   # 사람용 도면 이름(임시 이름을 내지 않음)
         self.check = self._check_valves()
         self.uncertain = self._uncertain(ctx)
         self.node_of = {}  # 구성요소 ID -> 속한 검토구간 node_id 목록
