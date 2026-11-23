@@ -45,7 +45,9 @@ export function openCompare(gid, readMethod) {
     setView(gid, "clean");
     clean.set((s) => ({ overlay: Object.assign({}, s.overlay, { leftovers: true, original: false }) }));
   }
-  cmp.set({ gid, mode: dexpi ? "dexpi_list" : "side_by_side", idx: 0, seen: {}, listEnd: false, agreed: false, prev, sheet: null });
+  const st = conf.get().byGraph[gid];
+  const pin = st && st.ver ? { ver: st.ver, rev: st.rev } : null;      // 사람이 견주기 시작한 판(견줌·확정을 이 판으로 보낸다)
+  cmp.set({ gid, mode: dexpi ? "dexpi_list" : "side_by_side", idx: 0, seen: {}, listEnd: false, agreed: false, prev, sheet: null, pin });
   refit();
   read("sheet/" + encodeURIComponent(gid)).then((d) => { if (cmp.get().gid === gid) cmp.set({ sheet: d }); }).catch(() => { if (cmp.get().gid === gid) cmp.set({ sheet: false }); });     // 원본 그림 주소·크기·종류별 구성요소
 }
@@ -53,7 +55,7 @@ export function openCompare(gid, readMethod) {
 export function closeCompare() {
   const c = cmp.get();
   if (c.prev) clean.set({ overlay: c.prev });
-  cmp.set({ gid: null, idx: 0, seen: {}, listEnd: false, agreed: false, prev: null, sheet: null });
+  cmp.set({ gid: null, idx: 0, seen: {}, listEnd: false, agreed: false, prev: null, sheet: null, pin: null });
   refit();
 }
 
@@ -170,12 +172,12 @@ export function CompareCard() {
   useEffect(() => { if (total && !c.seen[c.idx]) cmp.set((s) => ({ seen: Object.assign({}, s.seen, { [s.idx]: true }) })); }, [total, c.idx]);
   const done = async () => {
     setError("");
-    const r = await saveCompare(c.gid, c.mode);
+    const r = await saveCompare(c.gid, c.mode, c.pin);
     if (r) closeCompare(); else setError(conf.get().error || "견줌을 기록하지 못했습니다.");
   };
   const doneAndConfirm = async () => {      // 견줌 기록과 확정을 한 번에(U8). 끝나면 견주기 화면과 쪽 확정 카드가 저절로 닫힌다
     setError("");
-    const r = await compareAndConfirm(c.gid, c.mode);
+    const r = await compareAndConfirm(c.gid, c.mode, c.pin);
     if (r.ok) { closeCompare(); conf.set({ open: false }); toast("쪽을 확정했습니다."); }
     else if (r.step === "confirm") { closeCompare(); conf.set({ open: true }); }      // 견줌은 기록됨: 확정을 막은 까닭을 카드에 보인다
     else setError(r.error || "견줌을 기록하지 못했습니다.");

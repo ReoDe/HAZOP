@@ -17,5 +17,6 @@ export function fixFor(reason) {
 /** 미확인 말풍선에 원본 조각이 없을 때의 글(그냥 '없습니다'로 끝내지 않는다). */
 export function noFragmentText(reason) {
   if (reason === "registration_unknown") return "표제란에서 온 항목이라 도면 위 자리가 없습니다. 표제란을 확정하면 사라집니다.";
-  return "이 도면은 원본 그림 조각이 없어 자리만 보입니다. 도면 고치기에서 이 자리를 고치세요.";
+  if (!fixFor(reason)) return "이 도면은 원본 그림 조각이 없어 자리만 보입니다. 위치를 주거나 도면에 없음으로 지워야 합니다.";
+  return "이 도면은 원본 그림 조각이 없어 자리만 보입니다. 아래 '" + fixFor(reason).label + "' 단추로 처리하세요.";
 }

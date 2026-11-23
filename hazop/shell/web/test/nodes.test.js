@@ -102,6 +102,49 @@ export const tests = [
     const sentConfirm = sent.filter((m) => m.name === "nodes.confirm").map((m) => m.args.node_ids);
     assert.equal(sentConfirm, [["S1", "S2"], ["S1"], ["S2"]], "한 번에, 그다음 하나씩(지금 있는 nodes.confirm만 씀)");
   } },
+  { name: "모두 확정(검토 차단): 카드를 연 뒤 다른 곳에서 바뀐 구간은 사람이 본 판으로만 보내고, 바뀐 것은 확정하지 않는다", async run(assert) {
+    await setup();
+    N.askConfirmAll();                                                       // 사람이 본 판: set_rev 4, S1 rev 2, S2 rev 1
+    engine.list.set_rev = 5;                                                  // 다른 곳에서 S2가 바뀜
+    engine.list.nodes = engine.list.nodes.map((n) => (n.node_id === "S2" ? Object.assign({}, n, { rev: 2 }) : n));
+    engine.reply = (name, args) => {                                          // 엔진 판 검사(api_nodes._check_targets)와 같은 대역
+      if (name !== "nodes.confirm") return { ok: true, data: {} };
+      if (args.set_rev !== engine.list.set_rev) return { ok: false, error: { code: "stale", message: "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요." } };
+      for (const t of args.targets || []) {
+        const n = engine.list.nodes.find((x) => x.node_id === t.node_id);
+        if (!n) return { ok: false, error: { code: "not_found", message: t.node_id + " 구간이 이미 없습니다." } };
+        if (n.rev !== t.rev || n.state !== t.state) return { ok: false, error: { code: "stale", message: t.node_id + " 구간이 다른 곳에서 바뀌어 저장하지 않았습니다." } };
+      }
+      engine.list.set_rev += 1;
+      engine.list.nodes = engine.list.nodes.map((n) => (args.node_ids.includes(n.node_id) ? Object.assign({}, n, { state: "confirmed" }) : n));
+      return { ok: true, data: { set_rev: engine.list.set_rev, node_ids: args.node_ids } };
+    };
+    const r = await N.confirmMany(N.nodes.get().confirmAsk);
+    assert.equal(r.ok, ["S1"], "바뀌지 않은 S1만");
+    assert.equal(r.failed.map((f) => f.node_id), ["S2"]);
+    const s2 = sent.filter((m) => m.name === "nodes.confirm" && m.args.node_ids.includes("S2")).flatMap((m) => m.args.targets.filter((t) => t.node_id === "S2").map((t) => t.rev));
+    assert(s2.every((rev) => rev === 1), "S2는 사람이 본 판(rev 1)으로만 보냄: " + JSON.stringify(s2));
+    assert(N.nodes.get().error.includes("바뀐 구간 1개는 확정하지 않았습니다"), N.nodes.get().error);
+  } },
+  { name: "모두 확정: 카드를 연 뒤 지워진 구간은 '이미 없습니다'로, 체크한 것이 확정된 구간뿐이면 아무것도 고르지 않는다", async run(assert) {
+    await setup();
+    N.askConfirmAll();
+    engine.list.nodes = engine.list.nodes.filter((n) => n.node_id !== "S2");
+    engine.list.set_rev = 5;
+    engine.reply = (name, args) => {
+      if (name !== "nodes.confirm") return { ok: true, data: {} };
+      if (args.set_rev !== engine.list.set_rev) return { ok: false, error: { code: "stale", message: "판이 다름" } };
+      const gone = (args.targets || []).find((t) => !engine.list.nodes.some((n) => n.node_id === t.node_id));
+      if (gone) return { ok: false, error: { code: "not_found", message: gone.node_id + " 구간이 이미 없습니다." } };
+      engine.list.set_rev += 1;
+      return { ok: true, data: { set_rev: engine.list.set_rev } };
+    };
+    const r = await N.confirmMany(N.nodes.get().confirmAsk);
+    assert.equal(r.failed.map((f) => [f.node_id, f.reason.includes("이미 없습니다")]), [["S2", true]]);
+    await setup();
+    N.nodes.set({ checked: ["S3"] });                                        // S3는 이미 확정
+    assert.equal(N.draftIds(), [], "체크한 것이 모두 확정됐으면 확정하지 않은 구간 전체로 넘어가지 않는다");
+  } },
   { name: "구간 계산: 상태 칩(AI 적용됨·적용됨·확정·잠금)과 수정 가능 여부", run(assert) {
     assert.equal(L.stateChip({ state: "applied", origin: "ai" }).label, "AI 적용됨");
     assert.equal(L.stateChip({ state: "applied", origin: "user" }).label, "적용됨");

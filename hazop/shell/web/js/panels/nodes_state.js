@@ -21,6 +21,7 @@ export const nodes = createStore({
   showOutside: true,        // 구간 밖 구성요소를 흐리게
   checked: [],              // 합치기용으로 체크한 구간
   confirmAsk: null,         // '모두 확정' 확인 중인 구간 ID 목록
+  confirmSeen: null,        // 그 카드를 열 때 사람이 본 판 {set_rev, targets}
   busy: false,
   error: null,              // 마지막 거절 사유(엔진 문장)
   needArchive: null,        // 지우기가 칸 판정 때문에 거절됨 → 보관 선택지를 보임
@@ -153,7 +154,8 @@ export async function submitCard() {
   editCard({ busy: true, error: null });
   try {
     const r = await cmd("nodes.create", { project_id: list.project_id, sheet, ids: selection, name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev });
-    nodes.set({ card: null, selection: [], truncated: false });      // 고르기 모드는 그대로: 다음 구간을 바로 끌어 고른다(HZ-DSN-06 U9, Esc·이동 단추로 끈다)
+    // 고르기 모드는 그대로: 다음 구간을 바로 끌어 고른다(HZ-DSN-06 U9, Esc·이동 단추로 끈다). 응답을 기다리는 사이 새로 고른 것은 남긴다
+    nodes.set((s) => (s.selection === selection ? { card: null, selection: [], truncated: false } : { card: null }));
     await refresh();
     if (r.node_ids && r.node_ids[0]) focusNode(r.node_ids[0]);
     return r;
@@ -192,40 +194,53 @@ export const rename = (id, name) => run("rename", { node_id: id, name }, [id]);
 export const setIntent = (id, text) => run("set_intent", { node_id: id, text }, [id]);
 export const confirm = (ids) => run("confirm", { node_ids: ids }, ids);
 
-/** 확정하지 않은 구간(적용됨) ID. 체크한 것이 있으면 그 가운데서만. */
-export function draftIds() {
+/** 확정하지 않은 구간(적용됨) ID. 체크한 것이 있으면 그 가운데서만(체크한 것이 모두 확정됐으면 빈 목록, 전체로 넘어가지 않음).
+ *  sheet를 주면 그 도면에 구성요소가 있는 구간만('이 도면' 범위). */
+export function draftIds(sheet) {
   const { list, checked } = nodes.get();
-  const drafts = list.nodes.filter((n) => n.state === "applied").map((n) => n.node_id);
-  const picked = drafts.filter((id) => checked.includes(id));
-  return picked.length ? picked : drafts;
+  const drafts = list.nodes.filter((n) => n.state === "applied" && (!sheet || (n.sheets || []).some((x) => x.graph_id === sheet))).map((n) => n.node_id);
+  return checked.length ? drafts.filter((id) => checked.includes(id)) : drafts;
 }
 
-/** '모두 확정' 확인 카드를 연다(목록을 먼저 보인다). */
-export function askConfirmAll() { const ids = draftIds(); nodes.set({ confirmAsk: ids.length ? ids : null }); return ids.length; }
-export function cancelConfirmAll() { nodes.set({ confirmAsk: null }); }
+/** '모두 확정' 확인 카드를 연다(목록을 먼저 보인다). 사람이 본 판(set_rev와 구간마다 rev·state)을 그때 붙잡는다: 확정은 그 판으로만 보낸다. */
+export function askConfirmAll(sheet) {
+  const ids = draftIds(sheet);
+  const { list } = nodes.get();
+  nodes.set({ confirmAsk: ids.length ? ids : null, confirmSeen: ids.length ? { set_rev: list.set_rev, targets: targetsOf(list.nodes, ids) } : null });
+  return ids.length;
+}
+export function cancelConfirmAll() { nodes.set({ confirmAsk: null, confirmSeen: null }); }
 
-/** 여러 구간을 한 번에 확정한다(지금 있는 nodes.confirm 명령에 node_ids를 모두 실어 한 번). 엔진이 한 묶음 전체를 거절하면(한 구간이 막힘)
- *  하나씩 다시 보내 되는 것은 확정하고, 안 된 구간과 까닭을 알린다. → {ok: [ID], failed: [{node_id, reason}]}. */
-export async function confirmMany(ids) {
+/** 여러 구간을 한 번에 확정한다(지금 있는 nodes.confirm 명령에 node_ids를 모두 실어 한 번). 구간마다 판(rev·state)은 사람이 확인 카드에서 본 판
+ *  그대로 보낸다(seen). 엔진이 한 묶음 전체를 거절하면 set_rev만 새로 읽어 하나씩 다시 보낸다: 그 사이 바뀐 구간은 엔진의 판 대조에 걸려
+ *  확정되지 않고 '바뀐 구간 n개는 확정하지 않았습니다'로 알린다(사람이 보지 않은 판으로 확정하지 않는다, 검토 차단 8092c3e).
+ *  → {ok: [ID], failed: [{node_id, reason, changed}]}. */
+export async function confirmMany(ids, seen) {
   ids = (ids || []).slice();
-  nodes.set({ confirmAsk: null });
+  seen = seen || nodes.get().confirmSeen;
+  nodes.set({ confirmAsk: null, confirmSeen: null });
   if (!ids.length) return { ok: [], failed: [] };
   nodes.set({ busy: true, error: null });
   if (reading) { try { await reading; } catch (e) { /* 가진 판으로 보낸다 */ } }
-  const send = (some) => { const { list } = nodes.get(); return cmd("nodes.confirm", { project_id: list.project_id, set_rev: list.set_rev, node_ids: some, targets: targetsOf(list.nodes, some) }); };
+  const seenOf = (some) => (seen ? seen.targets.filter((t) => some.includes(t.node_id)) : targetsOf(nodes.get().list.nodes, some));
+  const send = (some, setRev) => cmd("nodes.confirm", { project_id: nodes.get().list.project_id, set_rev: setRev, node_ids: some, targets: seenOf(some) });
   let ok = [], failed = [];
   try {
-    await send(ids);
+    await send(ids, seen ? seen.set_rev : nodes.get().list.set_rev);
     ok = ids;
   } catch (e) {
     for (const id of ids) {
-      await refresh();
-      try { await send([id]); ok.push(id); } catch (err) { failed.push({ node_id: id, reason: errorText(err) }); }
+      await refresh();                                                    // 새로 읽는 것은 집합 판(set_rev)뿐: 구간의 판은 사람이 본 그대로
+      try { await send([id], nodes.get().list.set_rev); ok.push(id); }
+      catch (err) { failed.push({ node_id: id, reason: errorText(err), changed: !!(err && err.code === "stale") }); }
     }
   }
   nodes.set({ busy: false });
   await refresh();
-  const text = failed.length ? ok.length + "개를 확정했습니다. " + failed.length + "개는 확정하지 못했습니다: " + failed.slice(0, 3).map((f) => f.node_id + " " + f.reason).join(" · ")
+  const changed = failed.filter((f) => f.changed), other = failed.filter((f) => !f.changed);
+  const text = failed.length ? [ok.length + "개를 확정했습니다.",
+    changed.length ? "바뀐 구간 " + changed.length + "개는 확정하지 않았습니다(" + changed.slice(0, 5).map((f) => f.node_id).join(", ") + ") — 다시 확인하세요." : "",
+    other.length ? other.length + "개는 확정하지 못했습니다: " + other.slice(0, 3).map((f) => f.node_id + " " + f.reason).join(" · ") : ""].filter(Boolean).join(" ")
     : ok.length + "개 구간을 확정했습니다.";
   shell.set({ toast: { text, kind: failed.length ? "err" : "info" } });
   if (failed.length) nodes.set({ error: text });

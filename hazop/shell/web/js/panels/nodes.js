@@ -134,6 +134,7 @@ export function NodesPanel({ onClose }) {
   const confirmAsk = N.useNodes((s) => s.confirmAsk);
   const sheet = useStore((s) => s.sheet);
   const drafts = list.nodes.filter((n) => n.state === "applied").length;
+  const scopeSheet = scope === "sheet" ? sheet : null;      // '이 도면' 범위면 그 도면 구간만 센다
   const drawings = useStore((s) => s.drawings.drawings);
   const shown = scope === "sheet" && sheet ? list.nodes.filter((n) => n.sheets.some((x) => x.graph_id === sheet)) : list.nodes;
   const focused = list.nodes.find((n) => n.node_id === focus);
@@ -156,9 +157,9 @@ export function NodesPanel({ onClose }) {
         <button type="button" class=${scope === "sheet" ? "on" : ""} aria-pressed=${scope === "sheet" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "sheet" })}>이 도면</button>
         <button type="button" class=${scope === "all" ? "on" : ""} aria-pressed=${scope === "all" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "all" })}>전체</button></div>
         ${checked.length >= 2 ? html`<${Btn} sm=${true} icon="plus" label="체크한 구간 합치기" disabled=${busy} onClick=${N.mergeChecked}>${checked.length}개 합치기<//>` : null}
-        ${drafts ? html`<${Btn} sm=${true} kind="primary" icon="check" label="확정하지 않은 구간 모두 확정" disabled=${busy || !!confirmAsk} onClick=${N.askConfirmAll}>모두 확정 (${N.draftIds().length})<//>` : null}</div>
+        ${drafts ? html`<${Btn} sm=${true} kind="primary" icon="check" label="확정하지 않은 구간 모두 확정" disabled=${busy || !!confirmAsk || !N.draftIds(scopeSheet).length} onClick=${() => N.askConfirmAll(scopeSheet)}>모두 확정 (${N.draftIds(scopeSheet).length})<//>` : null}</div>
       ${confirmAsk ? html`<div class="card confirm-all" role="dialog" aria-label="여러 구간 확정"><b>${confirmAsk.length}개 구간을 확정할까요?</b>
-        <ul class="tight">${confirmAsk.slice(0, 12).map((id) => { const n = list.nodes.find((x) => x.node_id === id); return html`<li key=${id}>${id} ${n ? n.name : ""}</li>`; })}
+        <ul class="tight">${confirmAsk.slice(0, 12).map((id) => { const n = list.nodes.find((x) => x.node_id === id); return html`<li key=${id}>${id} ${n ? n.name : ""}${n && n.lost ? html` <span class="chip warn">찾지 못한 구성요소 ${n.lost}개</span>` : null}</li>`; })}
           ${confirmAsk.length > 12 ? html`<li class="muted">그 밖에 ${confirmAsk.length - 12}개</li>` : null}</ul>
         <div class="acts-row"><${Btn} sm=${true} kind="primary" label="이 구간들 확정" disabled=${busy} onClick=${() => N.confirmMany(confirmAsk)}>확정<//>
           <${Btn} sm=${true} label="확정하지 않기" onClick=${N.cancelConfirmAll}>취소<//></div></div>` : null}

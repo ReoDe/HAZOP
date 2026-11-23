@@ -45,8 +45,9 @@ export async function load(gid) {
 
 export function reset() { seq++; conf.set({ byGraph: {}, open: false, busy: false, error: null }); }
 
-async function run(command, gid, extra) {
-  const st = conf.get().byGraph[gid];
+/** pin {ver, rev}: 사람이 본 판(견주기 화면을 연 때). 주면 그 판으로 보내 그새 바뀐 판으로 넘어가지 않는다(엔진이 stale로 거절). */
+async function run(command, gid, extra, pin) {
+  const st = pin || conf.get().byGraph[gid];
   conf.set({ busy: true, error: null });
   try {
     const r = await cmd("sheet." + command, Object.assign({ graph_id: gid, ver: st.ver, rev: st.rev }, extra || {}));
@@ -59,17 +60,18 @@ async function run(command, gid, extra) {
   }
 }
 
-export const compare = (gid, mode) => run("compare", gid, { mode });
+export const compare = (gid, mode, pin) => run("compare", gid, { mode }, pin);
 export const confirm = (gid) => run("confirm", gid);
 
 /** 견줌 기록과 확정을 한 흐름으로(U8: 쪽 확정 8 → 3클릭). 지금 있는 명령 sheet.compare → sheet.confirm을 차례로 부른다(견줌을 건너뛰는 길은 없다).
  *  견줌만 되고 확정이 막히면(조건이 그새 바뀜) 견줌 기록은 남고 까닭을 돌려준다. → {ok, step: "compare"|"confirm", error}. */
-export async function compareAndConfirm(gid, mode) {
-  const c = await run("compare", gid, { mode });
+export async function compareAndConfirm(gid, mode, pin) {
+  const c = await run("compare", gid, { mode }, pin);      // 견주기 화면을 연 때의 판으로(검토 지적: 그새 바뀐 자료로 견줌·확정이 남지 않게)
   if (!c) return { ok: false, step: "compare", error: conf.get().error };
   const st = conf.get().byGraph[gid];
   if (st && st.state === "confirmed") return { ok: true, step: "confirm" };
-  const r = await run("confirm", gid);
+  const r = await run("confirm", gid);                     // 확정은 방금 견줌이 남긴 기록 판으로(엔진 답의 status)
+  if (!r) conf.set({ open: true });                          // 견줌은 기록됨: 카드를 다시 열어 확정을 막은 까닭을 보인다
   return r ? { ok: true, step: "confirm" } : { ok: false, step: "confirm", error: conf.get().error };
 }
 
