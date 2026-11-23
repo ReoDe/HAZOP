@@ -259,7 +259,7 @@ class ScreenWordsTest(unittest.TestCase):
         import re
         from hazop import store_io
         from hazop.shell import errtext
-        path = os.path.join("C:" + os.sep, "work", "data", "results.json")
+        path = os.path.join("C:" + os.sep, "somewhere", "results.json")
         cases = [PermissionError(13, "Permission denied", path), FileNotFoundError(2, "No such file", path),
                  OSError(28, "No space left on device"), store_io.Conflict("changed"), RuntimeError("boom")]
         for exc in cases:
