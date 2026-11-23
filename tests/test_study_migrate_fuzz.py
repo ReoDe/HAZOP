@@ -28,6 +28,8 @@
   나누기를 되돌렸다 다시 해 같은 나눈 id·같은 종류(잃을 때 태그가 있었으면 같은 태그)로 돌아온 기호는, 그 기호를 든 열린
   묘비가 하나뿐이고 잃을 때 집합이 겉모습을 적어 두었으면 되찾는다.
 ⑬ 덧바르는 사람 고침(태그·종류·배관 번호·경로·끝, 기준 추출 판이 같음)은 새 판에도 있는 기호를 잃지 않는다.
+⑭ 다시 추출 없이 나누기만 하거나 되돌린 판 이전(sym 번호 기준이 같음)은 새 판에도 있는 sym 번호 기호를 잃지 않는다. 벡터 PDF의
+  기준 추출은 원본 sym 번호를 지키고 조각을 떼인 덩어리 몸체는 덩어리 번호를 잇는다(pdf_vector._sym_numbers).
 
 프로젝트 문서(M3: ⑥ 초기사건 문서·FMEA·잠재 후보 판단, hazop.study.follow)도 ⑤ 결과처럼 따라간다. 판 이전마다 따라가거나
 건너뛰고(판 표지로 늦게 따라옴), 되돌아온 판에서 새로 단 표제 대상을 함께 보며, 판 표지가 없는 옛 문서는 사슬 끝에 한 번
@@ -41,6 +43,7 @@ c00a(문서) < c01(첫 판 이전) < c01b(그 뒤 새로 제안한 집합) < c02
 import collections
 import copy
 import hashlib
+import itertools
 import json
 import os
 import random
@@ -70,6 +73,10 @@ LIMIT = "표지가 같은 다른 기호(알려진 한계)"
 LIMIT_PIPE = "같은 두 끝 사이 겉모습이 같은 상자 없는 배관(알려진 한계, 위 한계 수에 듦)"
 LIMIT_OLD = "시트 자료 칸이 없던 옛 집합의 참조가 같은 이름의 다른 자료 기호로 이어짐(설계의 남은 위험, 위 한계 수에 듦)"
 LIMIT_SOURCE = "같은 source id·같은 종류로 돌아온 다른 기호(알려진 한계, 위 한계 수에 듦)"
+# 나누기를 되돌리기 전 백업 집합에서 곧바로, 같은 나눈 id를 종류만 바꿔 다시 나눈 판으로 옮기면 source 참조로 잇는다(묘비를 거치면
+# 종류가 달라 되찾지 않음). 퍼즈는 다른 기호로 보지만 엔진은 연산 id를 정체로 본다. 2026-11-24 결정 대기로 올림
+# (tests/test_split_numbering.ResplitWithAnotherKindTest)
+LIMIT_RESPLIT = "같은 나눈 id로 종류만 바꿔 다시 나눈 조각에 그 전 판 집합이 바로 이어짐(결정 대기, 위 한계 수에 듦)"
 RULE = "R-1"
 SET_HOLDERS = tuple(p for p, s in idmap.FIELDS[idmap.SET] if s == idmap.MEMBERS)
 DOC_KINDS = (idmap.IE, idmap.FMEA, idmap.LATENT)
@@ -102,6 +109,7 @@ def to_a_form(ns, g):
 # ---------------------------------------------------------------- 합성 도면
 
 SUBST = {}   # 같은 파일 id·같은 종류로 돌아오게 만든 기호들의 uid -> 묶음 열쇠(LIMIT_SOURCE 생성). 사슬(시드)마다 비운다
+RESPLIT = {}   # 같은 나눈 id로 종류만 바꿔 다시 나눈 조각 uid -> 옛 조각 uid(LIMIT_RESPLIT). 사슬마다 비운다
 
 
 def same_file_id(a, b):
@@ -177,17 +185,32 @@ def split_or_unsplit(r, w):
     w["split_events"]에 적는다(판 문자열에는 들지 않음)."""
     if w["fmt"] not in ("pdf_vector", "raster_png"):
         return
-    events = w.setdefault("split_events", [])
     done = w.setdefault("split_blobs", [])
     if done and r.random() < 0.4:
         unsplit(r, w)
         return
     if redo_split(r, w):
         return
-    cand = [s for s in w["syms"] if s["kind"] != "continuation" and not s.get("fixed") and not s.get("split")
-            and s["uid"] not in {d["blob"]["uid"] for d in done}]
-    if not cand or r.random() >= 0.3:
+    if r.random() < 0.3:
+        split_new(r, w)
+
+
+def split_cands(w):
+    """새로 나눌 수 있는 덩어리 후보(나눈 조각·사람이 더한 것·이미 나눈 덩어리가 아닌 기호)."""
+    if w["fmt"] not in ("pdf_vector", "raster_png"):
+        return []
+    done = {d["blob"]["uid"] for d in w.get("split_blobs") or ()}
+    return [s for s in w["syms"] if s["kind"] != "continuation" and not s.get("fixed") and not s.get("split")
+            and s["uid"] not in done]
+
+
+def split_new(r, w):
+    """덩어리 하나를 새 연산으로 나눈다(split_or_unsplit). 나눌 것이 없으면 그대로."""
+    cand = split_cands(w)
+    if not cand:
         return
+    done = w.setdefault("split_blobs", [])
+    events = w.setdefault("split_events", [])
     blob = r.choice(cand)
     w["next"] += 1
     group = "g%d" % w["next"]
@@ -237,6 +260,7 @@ def redo_split(r, w):
     if other:  # 같은 연산 id로 다시 나누되 조각 하나를 다른 종류로: 같은 나눈 id의 다른 기호
         k = r.randrange(len(pieces))
         w["next"] += 1
+        RESPLIT["%s:s%d" % (pfx(w), w["next"])] = pieces[k]["uid"]
         pieces[k] = dict(pieces[k], uid="%s:s%d" % (pfx(w), w["next"]),
                          kind=r.choice(sorted(set(KINDS) - {pieces[k]["kind"]})))
     blob = next(s for s in w["syms"] if s["uid"] == rec["blob"]["uid"])
@@ -249,16 +273,34 @@ def redo_split(r, w):
 
 
 def undo_or_redo(kind):
-    """나누기를 되돌리기만, 또는 되돌린 나누기를 다시 하기만 하는 다시 추출(사람이 수정 기록에서 누름)."""
+    """다시 추출 없이 나누기만(split), 되돌리기만(unsplit), 되돌린 나누기를 다시 하기만(redo) 하는 입력 연산(사람이 수정 기록에서
+    누르거나 AI 나누기 후보를 수락). 원본 sym 번호(nums)는 그대로이고 기준 판만 바뀐다."""
     def step(r, w):
         w = copy.deepcopy(w)
         w["split_events"] = []
-        if kind == "redo":
-            redo_split(r, w)
-        else:
-            unsplit(r, w)
+        {"redo": redo_split, "unsplit": unsplit, "split": split_new}[kind](r, w)
         return w
     return step
+
+
+INPUT_KINDS = ("split", "redo", "unsplit")   # 다시 추출 없이 기준 추출만 바꾸는 입력 연산
+
+
+def renumber(w):
+    """다시 추출: 원본(나누기를 넣기 전, 나눈 덩어리는 그대로이고 조각은 없음)의 sym 번호를 열거 순서로 새로 매긴다. 벡터 PDF만
+    번호 기준(원본 판·끝 번호, scripts/build_graph.render_one의 numbering)을 남긴다. 번호 기준이 같은 판끼리는 sym-n이 같은 기호이거나
+    그 몸체다(나눈 덩어리는 몸체가 남지 않아도 번호를 가지고, 나누기를 되돌리면 그 번호로 돌아온다)."""
+    w.pop("nums", None)
+    w.pop("numbering", None)
+    if w["fmt"] != "pdf_vector" or not w.get("base"):
+        return w
+    here = {s["uid"] for s in w["syms"]}
+    original = [s for s in w["syms"] if not s.get("split")]
+    original += [d["blob"] for d in w.get("split_blobs") or () if d["blob"]["uid"] not in here]
+    key = random.Random(w["order_seed"])
+    w["nums"] = {s["uid"]: i for i, s in enumerate(sorted(original, key=lambda s: key.random()), 1)}
+    w["numbering"] = {"base": "o" + ver(w), "upto": len(w["nums"])}
+    return w
 
 
 def mutate(r, w):
@@ -417,6 +459,9 @@ def build(w, gid=GID):
     fmt, key = w["fmt"], random.Random(w["order_seed"])
     nodes, by_uid, edges = [], {}, []
 
+    nums = w.get("nums")
+    past = itertools.count((w.get("numbering") or {}).get("upto", 0) + 1)   # 원본 끝 번호 뒤(번호 기준에 들지 않는 번호)
+
     def add(eid, s, k, what, extra):
         soid, made = soid_of(fmt, s, k, what)
         n = dict({"entity_id": eid, "source_object_id": soid, "bbox": None if s["nobox"] else list(s["bbox"]),
@@ -430,7 +475,7 @@ def build(w, gid=GID):
         extra = {"node_type": "drawing_object", "kind": s["kind"], "tag": s["tag"]}
         if s["kind"] == "continuation":
             extra.update(label_text=s["label"], attributes={"kind": "continuation"})
-        add("entity-node-%03d" % i, s, i, "sym", extra)
+        add("entity-node-%03d" % i, s, i if nums is None else nums.get(s["uid"]) or next(past), "sym", extra)
     base = len(nodes)
     for j, s in enumerate(w["juncs"], 1):
         add("entity-node-%03d" % (base + j), s, j, "junction", {"node_type": "drawing_object", "kind": "tee", "tag": None})
@@ -444,7 +489,8 @@ def build(w, gid=GID):
     return dict({"project_id": None, "graph_id": gid, "graph_version": ver(w),
                  "source": dict({"drawing_number": w["sheet"]}, **({"material_id": w["material"]} if w.get("material") else {})),
                  "validation": {"status": "passed"}, "nodes": nodes, "edges": edges},
-                **({"base_version": w["base"]} if w.get("base") else {}))
+                **({"base_version": w["base"]} if w.get("base") else {}),
+                **({"numbering": w["numbering"]} if w.get("numbering") else {}))
 
 
 def build_any(world):
@@ -457,10 +503,12 @@ def build_any(world):
 def next_world(r, world, kind):
     if "sheets" not in world:
         out = {"mutate": mutate, "reorder": reorder, "recategorize": lambda r, w: recategorize(w), "overlay": overlay,
-               "redo": undo_or_redo("redo"), "unsplit": undo_or_redo("unsplit"), "switch": switch_material}.get(
-            kind, lambda r, w: restamp(w))(r, world)
+               "redo": undo_or_redo("redo"), "unsplit": undo_or_redo("unsplit"), "split": undo_or_redo("split"),
+               "switch": switch_material}.get(kind, lambda r, w: restamp(w))(r, world)
         if kind != "overlay":   # 다시 추출·나누기는 순번을 매긴 입력(기준 추출)을 바꾼다
             out["base"] = "b" + ver(out)
+        if kind not in INPUT_KINDS + ("overlay",):   # 다시 추출은 원본 sym 번호를 새로 매긴다
+            renumber(out)
         return out
     out = copy.deepcopy(world)
     for s in out["sheets"].values():
@@ -470,6 +518,8 @@ def next_world(r, world, kind):
         names = [n for n in names if redo_ready(out["sheets"][n])]
     elif kind == "unsplit":
         names = [n for n in names if out["sheets"][n].get("split_blobs")]
+    elif kind == "split":
+        names = [n for n in names if split_cands(out["sheets"][n])]
     elif kind == "switch":   # 파일 id가 정체인(source 근거) 시트만: 순번 근거는 표시가 같은 다른 기호가 알려진 한계다
         names = [n for n in names if out["sheets"][n]["fmt"] == "drawio"]
     pick = names if kind == "mutate" and r.random() < 0.3 else [r.choice(names)]  # 보통은 한 도면만 다시 추출
@@ -729,6 +779,9 @@ class Track:
                              | {self.tomb_truth[t] for t in lost or () if self.tomb_truth.get(t)}, "taint": False})
 
     def judge_limit(self, u_new, allowed, truth_new):
+        if RESPLIT.get(u_new) in allowed:
+            self.j.stats[LIMIT_RESPLIT] += 1
+            return True
         if any(same_file_id(u_new, a) for a in allowed):
             self.j.stats[LIMIT_SOURCE] += 1   # 같은 파일 id·같은 종류로 돌아온 다른 기호(되돌아온 판에서 원래 기호가 다시 나오는 것 포함)
             return True
@@ -830,13 +883,19 @@ class Track:
                 self.j.note("⑧ 같은 나눈 id로 돌아온 기호의 묘비를 되찾지 못함", (self.seed, ts[0], u))
 
     def check_seq_look(self, ns_b, g_a, g_b):
-        """⑦ 순번 구성요소는 표시로만 잇는다: 이은 앞뒤 기호의 종류·태그·위치가 같다."""
+        """⑦ 순번 구성요소는 표시로만 잇는다: 이은 앞뒤 기호의 종류·태그·위치가 같다. sym 번호 기준이 같은 판 사이(나누기 전후로
+        되돌아감)의 원본 번호 기호는 번호로 잇는다(몸체는 상자가 다름)."""
         d = ns_b["history"][-1]["detail"]
         ua = {n["entity_id"]: n for n in g_a["nodes"]}
         ub = {n["entity_id"]: n for n in g_b["nodes"]}
         basis = idmap.bases(g_a)
+        now = idmap.sheet_numbering(g_b)
+        same = {s: v["upto"] for s, v in idmap.sheet_numbering(g_a).items() if now.get(s) == v}
         for m, e in (d.get("renamed") or {}).items():
             o, n = ua.get(m), ub.get(e)
+            k = ids.sym_number((o or {}).get("source_object_id"))
+            if k is not None and k <= same.get(o.get("sheet") or g_a["graph_id"], -1):
+                continue
             if o and n and "_uid" in o and basis[m] == ids.SEQUENCE and o["_uid"] == n["_uid"] \
                     and not same_look(look_of(o), look_of(n)):
                 self.j.note("⑦ 순번 구성요소인데 표지가 다른 기호로 이음", (self.seed, m, e))
@@ -850,6 +909,18 @@ class Track:
         for m in ns_b["history"][-1]["detail"].get("lost") or {}:
             if idmap.drawing_of(refs.get(m)) in same_base and truth_a.eid.get(m) in truth_b.look:
                 self.j.note("⑬ 사람 고침만 한 기호를 잃음", (self.seed, m))
+
+    def check_input_op(self, ns_a, ns_b, g_b, truth_a, truth_b):
+        """⑭ 다시 추출 없는 나누기·되돌리기의 판 이전: 옛 판 사진과 새 그래프의 sym 번호 기준이 같은 시트에서, 원본 번호(끝 번호 이하)를
+        가진 옛 기호가 새 판에도 있으면 잃지 않는다(덩어리 몸체·되돌아온 덩어리 포함)."""
+        now = idmap.sheet_numbering(g_b)
+        same = {s: v["upto"] for s, v in (ns_a.get("graph_member_numbering") or {}).items() if now.get(s) == v}
+        refs = ns_a.get("graph_member_refs") or {}
+        self.j.stats["나누기만 한 판 이전(번호 기준 같음)" if same else "나누기만 한 판 이전(번호 기준 모름)"] += 1
+        for m in ns_b["history"][-1]["detail"].get("lost") or {}:
+            k = ids.sym_number((refs.get(m) or "").partition("#")[2])
+            if k is not None and k <= same.get(idmap.drawing_of(refs.get(m)), -1) and truth_a.eid.get(m) in truth_b.look:
+                self.j.note("⑭ 나누기만 한 판 이전에서 sym 번호 기호를 잃음", (self.seed, m))
 
     def check_same_content(self, ns_a, ns_b, plan, g_a):
         """⑧ 확인할 수 있는 구성요소(상자가 있고 표시가 겹치지 않는 순번, source)는 내용이 같은 다시 추출에서 잃지 않는다."""
@@ -968,6 +1039,7 @@ def plan_chain(r, project_mode):
     for w in first["sheets"].values() if project_mode else [first]:
         if r.random() < 0.8:   # 나머지는 기준 추출 판을 남기기 전에 지은 그래프
             w["base"] = "b" + ver(w)
+            renumber(w)
     worlds, steps = [first], []
     for _ in range(r.randint(3, 6)):
         x = r.random()
@@ -976,6 +1048,8 @@ def plan_chain(r, project_mode):
             kind, w = "redo", next_world(r, worlds[-1], "redo")
         elif any(w.get("split_blobs") for w in sheets) and r.random() < 0.3:
             kind, w = "unsplit", next_world(r, worlds[-1], "unsplit")
+        elif any(split_cands(w) for w in sheets) and r.random() < 0.15:
+            kind, w = "split", next_world(r, worlds[-1], "split")
         elif len(worlds) > 1 and x < 0.3:
             kind, w = "revisit", copy.deepcopy(r.choice(worlds[:-1]))
         elif x < 0.42:
@@ -1011,6 +1085,7 @@ def run(seeds, judge, after_step=None):
     for seed in seeds:
         r = random.Random(seed)
         SUBST.clear()
+        RESPLIT.clear()
         project_mode = r.random() < 0.3
         first, steps = plan_chain(r, project_mode)
         stage = "만들기"
@@ -1026,7 +1101,7 @@ def run(seeds, judge, after_step=None):
             judge.stats["사슬 " + ("프로젝트 그래프" if project_mode else "도면 " + first["fmt"])] += 1
             for kind, w in steps:
                 sheets = w["sheets"].values() if "sheets" in w else [w]
-                for e in [e for s in sheets for e in s.get("split_events") or ()] if kind in ("mutate", "redo", "unsplit") else ():
+                for e in [e for s in sheets for e in s.get("split_events") or ()] if kind in ("mutate",) + INPUT_KINDS else ():
                     judge.stats["나누기 연산 " + e] += 1
             track.adopt_set(ns, truth)
             live_slots = {}
@@ -1078,6 +1153,8 @@ def run(seeds, judge, after_step=None):
                 track.check_set(ns, ns2, truth, truth2)
                 if kind == "overlay":   # ⑦ 대신 ⑬: 사람 고침은 표시를 바꾸지만 기준 추출이 같으면 순번 구성요소를 잃지 않는다
                     track.check_overlay(ns, ns2, g2, truth, truth2)
+                elif kind in INPUT_KINDS:   # ⑦ 대신 ⑭: 나누기는 몸체 상자를 바꾸지만 sym 번호 기준이 같으면 번호로 잇는다
+                    track.check_input_op(ns, ns2, g2, truth, truth2)
                 else:
                     track.check_seq_look(ns2, g, g2)
                 if kind in ("reorder", "restamp", "recategorize") and not restored:  # 되돌린 집합에는 앞 세계가 다르다
@@ -1192,7 +1269,7 @@ def run(seeds, judge, after_step=None):
 
 
 def failures(judge):
-    return {k: v for k, v in judge.stats.items() if k[0] in "①②③④⑤⑥⑦⑧⑬"}
+    return {k: v for k, v in judge.stats.items() if k[0] in "①②③④⑤⑥⑦⑧⑬⑭"}
 
 
 def report(judge):
@@ -1224,6 +1301,8 @@ class MigrateFuzzTest(unittest.TestCase):
                   "되돌아온 판에서 새로 단 문서 참조", "표지 없는 옛 문서 옮김", "표지 없는 옛 문서 묘비(증명 못 함)",
                   "그래프 판으로 표지를 찍은 문서", "옛 표지 아래 새 판 쓰기를 거절함", "나누기 연산 split",
                   "나누기 연산 unsplit", "같은 source id로 되찾은 묘비", LIMIT_SOURCE):
+            self.assertGreater(s[k], SEEDS // 20, k)
+        for k in ("다시 추출 split", "나누기만 한 판 이전(번호 기준 같음)"):
             self.assertGreater(s[k], SEEDS // 20, k)
         for k in ("나누기 연산 redo", "나누기 연산 redo_other", "다시 추출 switch"):  # 나누고 되돌린 뒤 차례가 더 남은 사슬에서만 난다
             self.assertGreater(s[k], SEEDS // 40, k)
