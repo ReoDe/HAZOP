@@ -124,9 +124,12 @@ def tomb_handle(tomb):
 
 def discarded_tombs(node_set):
     """사람이 버렸고 지금 구간 어디에도 lost로 남지 않은 묘비 id 집합. 되찾지 않고 '되찾지 못한 묘비' 수에서 빠진다.
-    겹친 구간 하나에서만 버린 묘비는 다른 구간의 lost에 남아 있으면 아직 열린 묘비다."""
-    rows = [n for n in (node_set or {}).get("nodes") or [] if isinstance(n, dict)]
-    gone = {t for n in rows for t in n.get("discarded") or [] if is_tomb(t)}
+    구간의 discarded와, 버린 묘비를 가진 구간을 지울 때 옮긴 집합 수준 discarded를 함께 본다. 겹친 구간 하나에서만 버린
+    묘비는 다른 구간의 lost에 남아 있으면 아직 열린 묘비다."""
+    ns = node_set or {}
+    rows = [n for n in ns.get("nodes") or [] if isinstance(n, dict)]
+    gone = {t for n in rows for t in n.get("discarded") or [] if is_tomb(t)} | {
+        t for t in ns.get("discarded") or [] if is_tomb(t)}
     return gone - {t for n in rows for t in n.get("lost") or []}
 
 
@@ -798,14 +801,17 @@ def legacy_marks(graph):
 def needs_check(node_set, results=None):
     """'참조 확인 필요' 요약(화면이 띄울 근거). {"needs_check": bool, "lost_members": {node_id: 묘비 수},
     "lost_refs": {node_id: 묘비가 된 ⑤ 대상 참조(원인·영향·보호수단·잠재 후보) 수}, "tombstones": 되찾지 못한 묘비 수(사람이
-    버린 것은 빼고), "discarded": {node_id: 사람이 버린 묘비 수}, "discarded_refs": {node_id: lost_refs 가운데 사람이 버린 묘비를
+    버린 것은 빼고), "discarded": {node_id: 사람이 버렸고 되찾지 않은 묘비 수}, "discarded_refs": {node_id: lost_refs 가운데 사람이 버린 묘비를
     가리키는 수. ⑤ 항목의 대상은 사람이 고칠 몫이라 lost_refs에서 빼지 않는다},
     "unverified": 표시 없이 참조만 믿고 이은 옛 판 이전(cff108c 전 이력 줄)이 결과에 끼었는가, "unregistered": 등록되지 않은 자리 경로,
     "unproven": 이어진 것을 증명하지 못해 순번 참조를 묘비로 한 까닭들, "refs_unnamed": 새 판 구성요소에 안정 참조가 없어 묘비가 된 참조 수}."""
     ns = node_set or {}
     lost_members = {n["node_id"]: len(n["lost"]) for n in ns.get("nodes") or [] if isinstance(n, dict) and n.get("lost")}
-    discarded = {n["node_id"]: len(n["discarded"]) for n in ns.get("nodes") or [] if isinstance(n, dict) and n.get("discarded")}
     gone = discarded_tombs(ns)
+    tombs = ns.get("tombstones") or {}
+    shut = {t for t in gone if (tombs.get(t) or {}).get("found") is None}  # 겹친 다른 구간에서 되찾은 것은 뺌
+    discarded = {n["node_id"]: k for n in ns.get("nodes") or [] if isinstance(n, dict)
+                 for k in [sum(1 for t in n.get("discarded") or [] if t in shut)] if k}
     lost_refs, discarded_refs = {}, {}
     for cell in (results or {}).get("cells") or []:
         hits = []

@@ -243,5 +243,161 @@ class CommandTest(unittest.TestCase):
             sn._check_shape(broken, "x")
 
 
+def seq(g, shift=0):
+    """벡터 PDF처럼 순번 id와 상자를 단 그래프(표시로 되찾을 수 있게). shift는 다시 매긴 순번."""
+    g = copy.deepcopy(g)
+    spot = {soid: 10.0 * i for i, (soid, _k, _c) in enumerate(OBJECTS)}
+    for i, n in enumerate(g["nodes"]):
+        n["id_basis"] = "sequence"
+        if n["source_object_id"] in spot:
+            n["bbox"] = [spot[n["source_object_id"]], 0.0, 5.0, 5.0]
+        n["source_object_id"] = "pdf-p0-sym-%04d" % (i + shift)
+    return g
+
+
+def seq_world():
+    """(g1, g2, 판 이전한 집합 S1=TK·LT·V1·V2 + S2=TK·PP(AI 구간), V1 묘비, V2 묘비, 되돌아온 판 g3). g2에서 V1·V2가
+    사라지고 g3에서 같은 자리에 돌아온다."""
+    g1 = seq(graph("v1"))
+    g2 = seq(graph("v2", objects=[o for o in OBJECTS if o[0] not in ("V1", "V2")], pipes=[]), shift=50)
+    tag = {n["tag"]: n["entity_id"] for n in g1["nodes"]}
+    ns = sn.new_set(g1)
+    ns["nodes"] = [dict({"node_id": "S1", "name": "n", "basis": "b", "members": sorted([tag["TK"], tag["LT"], tag["V1"], tag["V2"]])},
+                        **sn._v2_fields("ai")),
+                   dict({"node_id": "S2", "name": "m", "basis": "b", "members": sorted([tag["TK"], tag["PP"]])},
+                        **sn._v2_fields("ai"))]
+    ns.update(idmap.snapshot(g1))
+    ns, _ = migrate.migrate_set(ns, g2, at="t1")
+    tombs = {ns["tombstones"][t]["mark"][3]: t for t in node(ns, "S1")["lost"]}
+    g3 = seq(graph("v1"), shift=100)
+    g3["graph_version"] = "v3"
+    return g1, g2, ns, tombs["V1"], tombs["V2"], g3
+
+
+def remove_s1(ns, g, origin="user", confirmed_by=None):
+    req = {"confirmed_by": confirmed_by} if confirmed_by else {}
+    return node_tools.apply_nodes(ns, {"cells": []}, g, [{"op": "remove", "node_id": "S1"}], req, origin, ns["set_rev"])
+
+
+class AfterDiscardEditTest(unittest.TestCase):
+    """버린 뒤의 삭제·병합·나누기(총괄 검토 1·2·4)."""
+
+    def test_ai_needs_a_person_to_remove_merge_or_split_a_node_with_discarded_tombs(self):
+        _g1, g2, ns, v1, _v2, _g3 = seq_world()
+        out = sn.discard_lost(ns, "S1", [v1], by="김검토", at="t2")
+        lt = next(n["entity_id"] for n in g2["nodes"] if n["tag"] == "LT")
+        ops = [[{"op": "remove", "node_id": "S1"}], [{"op": "merge", "node_ids": ["S1", "S2"]}],
+               [{"op": "merge", "node_ids": ["S2", "S1"]}], [{"op": "split", "node_id": "S1", "members": [lt]}]]
+        for op in ops:
+            with self.assertRaises(node_tools.Refused, msg=op) as cm:
+                node_tools.apply_nodes(out, {"cells": []}, g2, op, {}, "ai", out["set_rev"])
+            self.assertIn("사람이 버린", str(cm.exception.reasons), op)
+        ok, _res, _bid = node_tools.apply_nodes(out, {"cells": []}, g2, [{"op": "remove", "node_id": "S1"}],
+                                                {"confirmed_by": "김검토"}, "ai", out["set_rev"])
+        self.assertIn(v1, idmap.discarded_tombs(ok), "사람이 확인하면 지울 수 있고 버린 묘비는 닫힌 채")
+
+    def test_removing_a_node_keeps_its_discarded_tombs_closed_and_writes_them_to_history(self):
+        _g1, g2, ns, v1, _v2, g3 = seq_world()
+        out = sn.discard_lost(ns, "S1", [v1], by="김검토", at="t2")
+        before = idmap.needs_check(out)["tombstones"]
+        gone, _res, bid = remove_s1(out, g2)
+        self.assertIn(v1, idmap.discarded_tombs(gone))
+        self.assertEqual(gone["discarded"], [v1], "지운 구간의 버린 묘비는 집합 수준 기록으로")
+        row = next(h for h in reversed(gone["history"]) if h["op"] == "discarded_kept")
+        self.assertEqual(row["detail"], {"node_id": "S1", "batch_id": bid, "tombs": [v1]})
+        self.assertEqual(idmap.needs_check(gone)["tombstones"], before, "지워도 되찾지 못한 수가 늘지 않음")
+        back, _ = migrate.migrate_set(gone, g3, at="t3")
+        self.assertIsNone(back["tombstones"][v1]["found"], "지운 뒤에도 버린 묘비는 되찾지 않음")
+
+    def test_remove_member_and_remove_empty_paths_keep_discarded_too(self):
+        _g1, g2, ns, v1, v2, _g3 = seq_world()
+        out = sn.discard_lost(ns, "S1", by="김검토", at="t2")
+        first, last = node(out, "S1")["members"]
+        gone = sn.remove_member(sn.remove_member(out, "S1", first, at="t3"), "S1", last, at="t3")
+        self.assertEqual(gone["discarded"], sorted([v1, v2]))
+        removed = next(h for h in reversed(gone["history"]) if h["op"] == "remove")
+        self.assertEqual(removed["detail"]["discarded"], sorted([v1, v2]))
+
+    def test_merge_and_split_after_discard_keep_the_tombs_closed(self):
+        _g1, g2, ns, v1, v2, g3 = seq_world()
+        out = sn.discard_lost(ns, "S1", [v1], by="김검토", at="t2")
+        merged, _r, _b = node_tools.apply_nodes(out, {"cells": []}, g2, [{"op": "merge", "node_ids": ["S2", "S1"]}], {},
+                                                "user", out["set_rev"])
+        self.assertEqual((node(merged, "S2")["discarded"], node(merged, "S2")["lost"]), ([v1], [v2]))
+        legacy = sn.merge(out, ["S2", "S1"], at="t3")  # 옛 길은 집합 차례로 첫 구간(S1)을 남긴다
+        self.assertEqual(node(legacy, "S1")["discarded"], [v1])
+        pp = next(n["entity_id"] for n in g2["nodes"] if n["tag"] == "PP")
+        split, _r, _b = node_tools.apply_nodes(merged, {"cells": []}, g2,
+                                               [{"op": "split", "node_id": "S2", "members": [pp]}], {}, "user",
+                                               merged["set_rev"])
+        self.assertEqual(node(split, "S2")["discarded"], [v1])
+        for after in (merged, legacy, split):
+            back, _ = migrate.migrate_set(after, g3, at="t4")
+            self.assertIsNone(back["tombstones"][v1]["found"])
+            self.assertIsNotNone(back["tombstones"][v2]["found"])
+
+    def test_a_locked_node_refuses(self):
+        _g1, _g2, ns, _v1, _v2, _g3 = seq_world()
+        node(ns, "S1").update(state="locked", confirmed={"at": "t", "by": "김검토", "rev": 1},
+                              locked={"at": "t", "by": "김검토", "reason": None})
+        with self.assertRaises(ValueError) as cm:
+            sn.discard_lost(ns, "S1", by="김검토")
+        self.assertIn("잠긴", str(cm.exception))
+
+    def test_overlapping_tomb_recovered_elsewhere_is_not_counted_as_discarded(self):
+        _g1, _g2, ns, v1, _v2, g3 = seq_world()
+        node(ns, "S2")["lost"] = [v1]  # 같은 묘비가 겹친 S2에도 열려 있음
+        out = sn.discard_lost(ns, "S1", [v1], by="김검토", at="t2")
+        back, _ = migrate.migrate_set(out, g3, at="t3")
+        self.assertIsNotNone(back["tombstones"][v1]["found"], "열린 쪽에서 되찾음")
+        self.assertNotIn("S1", idmap.needs_check(back)["discarded"])
+
+
+class ProjectDocsTest(unittest.TestCase):
+    """⑥ 초기사건·FMEA·잠재 후보 문서의 같은 묘비 참조는 버려도 지우지 않고, 되돌아온 판에서도 되찾지 않는다."""
+
+    def test_docs_keep_the_discarded_tomb_and_resolve_the_open_one(self):
+        from hazop.study import follow
+        g1, g2, ns, v1, v2, g3 = seq_world()
+        ref = {n["tag"]: idmap.ref_of(n, g1["graph_id"]) for n in g1["nodes"]}
+        base = sn.new_set(g1)
+        base.update(idmap.snapshot(g1))
+        docs = {idmap.IE: {"headings": {"H-01": {"targets": [ref["V1"], ref["V2"]]}}, "basic_events": {}, "history": []},
+                idmap.FMEA: {"rows": {"FM-001": {"ref": ref["V1"], "status": "imported"},
+                                      "FM-002": {"ref": ref["V2"], "status": "imported"}}, "history": []},
+                idmap.LATENT: {"judgements": {}}}
+        docs = {k: follow.mark_for(d, g1["graph_id"], g1["graph_version"]) for k, d in docs.items()}
+        docs = {k: follow.follow(d, k, ns, at="t1a")[0] for k, d in docs.items()}
+        self.assertTrue(all(idmap.is_tomb(x) for x in docs[idmap.IE]["headings"]["H-01"]["targets"]))
+        out = sn.discard_lost(ns, "S1", [v1], by="김검토", at="t2")
+        back, _ = migrate.migrate_set(out, g3, at="t3")
+        ie, _ = follow.follow(docs[idmap.IE], idmap.IE, back, at="t3a")
+        fm, _ = follow.follow(docs[idmap.FMEA], idmap.FMEA, back, at="t3a")
+        v2_new = idmap.ref_of(next(n for n in g3["nodes"] if n["tag"] == "V2"), g3["graph_id"])
+        self.assertEqual(ie["headings"]["H-01"]["targets"], [v1, v2_new])
+        self.assertEqual((fm["rows"]["FM-001"]["ref"], fm["rows"]["FM-002"]["ref"]), (v1, v2_new))
+        gone = idmap.discarded_tombs(back)
+        self.assertEqual(idmap.label(v1, discarded=gone), idmap.DISCARDED_LABEL)
+
+
+class KeysTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        env = mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: self.tmp})
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_keys_must_be_a_list_of_strings(self):
+        _g1, g2, ns = lost_world()
+        sn.save(ns)
+        key = sn.lost_items(ns, "S1")[0]["key"]
+        for keys in ([{"key": key}], key, [None], {"a": 1}):
+            out = node_commands.execute(g2, "discard_lost", {"node_id": "S1", "keys": keys}, author="user",
+                                        confirmed_by="김검토")
+            self.assertEqual((out["ok"], out["refused"][0]["code"]), (False, "bad_args"), keys)
+        self.assertEqual(len(node(sn.load_fp(g2)[0], "S1")["lost"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

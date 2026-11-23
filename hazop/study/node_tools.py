@@ -435,6 +435,9 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
         if ai and n.get("origin") != "ai" and not confirmed_by:
             why.append((label, "AI가 사람·옛 규칙 구간을 %s하려면 사람이 확인해야 함(채팅 규격 §4.3)" % kind))
             return None
+        if ai and n.get("discarded") and kind in ("병합", "분할", "삭제") and not confirmed_by:
+            why.append((label, "사람이 버린 묘비가 있는 구간을 AI가 %s하려면 사람이 확인해야 함" % kind))
+            return None
         return n
 
     def members_ok(label, members):

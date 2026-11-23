@@ -289,6 +289,7 @@ def _record_batch(before, after, op, origin, at, request=None, tool=None, model=
     for n in after["nodes"]:
         if any(o["node_id"] == n["node_id"] and o["after"] is not None for o in ops):
             n["batch_id"] = bid
+    _keep_discarded(after, ops, bid, at)
     digests = after.get("member_digest") or {}
     for o in ops:  # 구성요소가 바뀐 구간의 내용 지문은 옛 것이라 지운다(확정할 때 다시 셈)
         if o["after"] is None or (o["before"] or {}).get("members") != o["after"].get("members"):
@@ -304,6 +305,24 @@ def _record_batch(before, after, op, origin, at, request=None, tool=None, model=
             "batch_id": old["batch_id"], "origin": old["origin"], "kind": old.get("kind"), "at": old["at"],
             "node_ids": sorted({o["node_id"] for o in old["ops"]}, key=lambda x: (len(x), x))}}, at))
     return after
+
+
+def _keep_discarded(after, ops, bid, at):
+    """사라진 구간(remove op)의 버린 묘비 가운데 남은 구간 어디에도 없는 것을 집합 수준 discarded로 옮기고 이력
+    discarded_kept {node_id, batch_id, tombs}를 남긴다(after를 고침). 구간과 함께 사라지면 그 묘비가 다시 되찾기 대상이
+    되기 때문이다."""
+    held = {t for n in after["nodes"] for k in ("lost", "discarded") for t in n.get(k) or []}
+    kept = set(after.get("discarded") or [])
+    for o in ops:
+        if o["after"] is not None or not (o["before"] or {}).get("discarded"):
+            continue
+        tombs = sorted(set(o["before"]["discarded"]) - held - kept)
+        if tombs:
+            kept.update(tombs)
+            after["history"].append(store_io.history_row("discarded_kept", {"detail": {
+                "node_id": o["node_id"], "batch_id": bid, "tombs": tombs}}, at))
+    if kept:
+        after["discarded"] = sorted(kept)
 
 
 def _find(node_set, node_id):
@@ -1006,7 +1025,8 @@ def _snapshot_ok(doc):
     from hazop.study import idmap
     tomb_ok = lambda r: isinstance(r, dict) and (r.get("mark") is None or idmap.valid_mark(r["mark"]))  # noqa: E731
     tombs = doc.get("tombstones")
-    return (_ids_map_ok(doc.get("graph_member_refs"), lambda x: x is None or isinstance(x, str))
+    return (_ids_ok(doc.get("discarded", [])) and all(idmap.is_tomb(t) for t in doc.get("discarded", []))
+            and _ids_map_ok(doc.get("graph_member_refs"), lambda x: x is None or isinstance(x, str))
             and _ids_map_ok(doc.get("graph_member_marks"), idmap.valid_mark)
             and _ids_map_ok(doc.get("graph_member_basis"), lambda x: x in ids.BASES)
             and _ids_map_ok(doc.get("graph_member_ends"), idmap.valid_ends)

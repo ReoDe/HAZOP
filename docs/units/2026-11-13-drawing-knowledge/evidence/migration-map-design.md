@@ -601,3 +601,19 @@ M2 검토(Claude reviewer high, Codex)는 구조가 맞다고 보았다. 퍼즈�
 | 같은 버리기 두 번 | 받은 집합 그대로 | 이미 버린 것·남은 것 없음은 할 일이 없음. 이 구간에 없던 묘비는 `ValueError` |
 
 **퍼즈.** `tests.test_study_discard_fuzz`가 판 이전 퍼즈(`run`에 갈고리 `after_step` 하나를 더함)에 버리기를 섞는다. 판 이전마다 적용됨 구간의 묘비 하나·여럿·전부를 퍼즈 난수와 따로 버리고, 퍼즈의 ①~⑧에 더해 ⑨ 버린 묘비를 되찾지 않음, ⑩ 버린 뒤 세는 수, ⑪ 두 번 버리기를 본다. ①은 `discarded`의 묘비도 '사람이 버림'으로 세어 사라짐이 아니다(`check_holder` 한 줄). 되찾기 제외를 지운 변이는 ⑨가 잡았다(300시드에서 32건).
+
+### 15.1 검토 1회 반영(2026-11-23, hazop-reviewer 조건부 승인)
+
+| 지적 | 고친 것 | 고치기 전 시험 결과(29ef407) |
+| --- | --- | --- |
+| AI 구간이면 확인 없이 AI 삭제를 받아, 버린 묘비가 다시 열림 | 버린 묘비가 있는 구간의 AI 병합·나누기·삭제는 사람 확인을 요구(`apply_nodes.changeable`) | `test_ai_needs_a_person_to_remove_merge_or_split_a_node_with_discarded_tombs`: Refused가 나지 않음 |
+| 규격은 '지우면 이력에 discarded'인데 `apply_nodes` 삭제는 적지 않음, 지운 뒤 묘비가 되찾기 대상으로 돌아옴 | 지운 구간의 버린 묘비를 집합 수준 `discarded`로 옮기고 이력 `discarded_kept`(`_record_batch`, 모든 삭제 길) | `test_removing_a_node_keeps_its_discarded_tombs_closed_and_writes_them_to_history`: 버린 묘비 집합이 빔. `test_remove_member_and_remove_empty_paths_keep_discarded_too`: KeyError |
+| 퍼즈 ⑨ 'lost로 돌아옴'이 늘 빔(`discarded_tombs`가 lost에 든 것을 뺌) | 앞 갈고리 뒤 버린 묘비 목록을 들고 다음 갈고리에서 found·lost·버린 기록을 본다. 그 사이 퍼즈가 집합을 되돌리거나 새로 제안했으면 보지 않음 | 변이 '판 이전 뒤 discarded를 lost로 되살림'이 이제 300시드에서 ⑨ 310건으로 잡힘 |
+| 버린 뒤 병합·나누기·삭제가 시험에 없음 | 퍼즈 갈고리가 버린 구간을 사람으로 병합·나누기·삭제하고 바로 ⑨를 본다. AI로 같은 일을 하면 거절되어야 한다(⑫). 단위 시험 `test_merge_and_split_after_discard_keep_the_tombs_closed` | 변이 'carry_tombs가 discarded를 버림'이 ⑨ 86건, '지운 구간을 집합에 옮기지 않음'이 ⑨ 728건, AI 확인 규칙을 끈 변이가 ⑫ 126건(100시드)과 단위 시험 하나로 잡힘 |
+| `keys` 꼴 검사 없음 | 글자 목록이 아니면 `bad_args` | `test_keys_must_be_a_list_of_strings`: TypeError가 밖으로 |
+| 경미: 겹친 구간에서 되찾은 뒤에도 `discarded`가 남음 | 되찾은 묘비는 `needs_check.discarded`에서 뺌 | `test_overlapping_tomb_recovered_elsewhere_is_not_counted_as_discarded`: {"S1": 1} |
+| 경미: 저장 규격 판 | 올리지 않음(규격 §2.6에 근거) | |
+
+확인 안 된 것을 시험으로 더했다. 잠금 구간 거절(`test_a_locked_node_refuses`)과 ⑥·FMEA 문서의 묘비 참조(`ProjectDocsTest`: 버린 묘비 참조는 묘비로 남고, 열린 묘비 참조는 되돌아온 판에서 새 참조로 풀림)는 29ef407에서도 통과했다. 동작은 맞았고 시험이 없었던 것이다.
+
+퍼즈 시각. 갈고리가 남기는 이력 줄의 시각을 퍼즈 차례(`c01a` 문서 < `c01a5` 갈고리 < `c01b` 새로 제안)에 맞췄다. 처음에는 `apply_nodes`가 지금 시각(`2026-…`)을 적어, 표지 없는 옛 문서의 판 추정(집합 이력 시각을 봄)이 틀려 ②가 150건 났다. 퍼즈 생성기의 시각 꼴 때문이고 엔진 결함이 아니다.
