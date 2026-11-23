@@ -97,7 +97,10 @@ def _export_excel(ns, doc, a, by, pg):
 def _export_ie_bundle(ns, doc, a, by, pg):
     from hazop.ie import bundle, bundle_xlsx
     from hazop.ie import store as ie_store
-    from hazop.study.nodes import now_utc
+    from hazop.study import follow
+    from hazop.study.nodes import is_stale, now_utc
+    if is_stale(ns, pg):  # 다시 추출 뒤 판 이전 전에는 IEC 번호도 저장하지 않고 내보내지 않는다
+        raise follow.Stale(follow.STALE)
     try:   # IEC 대응을 먼저 저장한다(저장하지 못하면 내보내지 않는다, ie_store.load_synced)
         ie_doc = ie_store.load_synced(ns.get("project_id"), doc, ns)[0]
     except ie_store.Conflict as exc:

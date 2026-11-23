@@ -459,6 +459,11 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=
     ie_doc이 hazop.ie.store.sync_all(또는 fmea.sync_basic_events)을 거쳐야 한다."""
     from hazop.ie import fmea as fm
     from hazop.ie import mld as ml
+    from hazop.study import follow
+    if pg and (node_set.get("graph_version") != pg.get("graph_version")
+               or any(((d or {}).get("ref_versions") or {}).get(pg.get("graph_id"), {}).get("graph_version")
+                      not in (None, pg.get("graph_version")) for d in (ie_doc, fmea))):
+        raise follow.Stale(follow.STALE)  # 옛 판 참조를 새 판 그래프 색인으로 읽지 않는다(다시 추출 뒤 검토구간을 열기 전)
     if fmea is not None and not fmea.get("rows") and not fmea.get("node_marks"):
         fmea = None          # 빈 FMEA 문서(파일 없음)는 '가져오지 않음'과 같다
     fmea_live = fm.live_sources(fmea) if fmea else frozenset()

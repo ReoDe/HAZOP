@@ -27,7 +27,8 @@
 
 프로젝트 문서(M3: ⑥ 초기사건 문서·FMEA·잠재 후보 판단, hazop.study.follow)도 ⑤ 결과처럼 따라간다. 판 이전마다 따라가거나
 건너뛰고(판 표지로 늦게 따라옴), 되돌아온 판에서 새로 단 표제 대상을 함께 보며, 판 표지가 없는 옛 문서는 사슬 끝에 한 번
-따라간다(문서 시각 사이에 판 이전이 끼면 묘비). ①~⑥을 같은 진짜 정체로 판정한다. 시각은 사슬 차례대로 c00(집합) <
+따라간다(문서 시각 사이에 판 이전이 끼면 묘비). 집합을 읽지 않고 그래프 판으로 표지를 찍은 문서(③을 ④보다 먼저)도 섞고,
+판 이전 전에 새 판 그래프로 쓰려 하면 거절되는지 본다(옛 표지 아래 새 판 참조를 쓰면 위반 ④). ①~⑥을 같은 진짜 정체로 판정한다. 시각은 사슬 차례대로 c00(집합) <
 c00a(문서) < c01(첫 판 이전) < c01b(그 뒤 새로 제안한 집합) < c02 … 이다.
 
 시드 수는 HAZOP_FUZZ_SEEDS(기본 SEEDS)로 늘린다.
@@ -56,7 +57,7 @@ from hazop.kg import expect  # noqa: E402
 from hazop.study import follow, idmap, migrate, node_tools  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 
-SEEDS = int(os.environ.get("HAZOP_FUZZ_SEEDS") or 200)
+SEEDS = int(os.environ.get("HAZOP_FUZZ_SEEDS") or 700)  # 200에서는 시드 174·584 같은 드문 꼴을 놓쳤다(700시드 약 32초)
 GID = "graph-T"
 KINDS = ["manual_valve", "manual_valve", "manual_valve", "pump", "tank", "check_valve"]
 TAGS = [None, None, None, "V-1", "V-2", "P-1", "V-1"]
@@ -739,6 +740,11 @@ def run(seeds, judge):
             old_docs = {}  # 판 표지가 없는 옛 문서: 사슬 끝에 한 번 따라간다
             for kind in DOC_KINDS:
                 docs[kind] = make_doc(r, kind, g)
+                if r.random() < 0.3:  # 집합을 읽지 않고 그래프만 보고 쓴 문서(③을 ④보다 먼저): 쓸 때 그래프 판을 표지로
+                    docs[kind] = follow.mark_for(docs[kind], g["graph_id"], g["graph_version"])
+                    judge.stats["그래프 판으로 표지를 찍은 문서"] += 1
+                else:
+                    docs[kind] = follow.follow(docs[kind], kind, ns, at="c00a")[0]
                 doc_slots_[kind] = {}
                 track.adopt_results(doc_slots_[kind], docs[kind], truth, kind)
                 old_docs[kind] = (make_doc(r, kind, g), {})
@@ -800,6 +806,13 @@ def run(seeds, judge):
                         judge.note("④ 판이 같은 결과를 다시 옮김", (seed, i))
                 stage = "문서 %d" % i
                 for kind in DOC_KINDS:
+                    m = (docs[kind].get("ref_versions") or {}).get(ns2["graph_id"]) or {}
+                    if m.get("graph_version") not in (None, g2["graph_version"]):  # 판 이전 전에 새 판 그래프로 쓰려 함
+                        try:
+                            follow.mark_for(docs[kind], ns2["graph_id"], g2["graph_version"])
+                            judge.note("④ 옛 표지 아래 새 판 참조를 씀", (seed, i, kind))
+                        except follow.Stale:
+                            judge.stats["옛 표지 아래 새 판 쓰기를 거절함"] += 1
                     if r.random() < 0.2:
                         judge.stats["문서가 이번 판 이전을 건너뜀"] += 1
                         continue
@@ -907,7 +920,8 @@ class MigrateFuzzTest(unittest.TestCase):
         for k in ("다시 추출 reorder", "다시 추출 restamp", "다시 추출 recategorize", "되돌림", "되찾은 묘비", "늦게 따라온 결과",
                   "되돌아온 판에서 새로 단 참조", "결과가 이번 판 이전을 건너뜀", "구간을 새로 제안", "옛 꼴 이력 줄",
                   "결과 줄 번호 없음", "집합을 백업으로 되돌림", "문서가 이번 판 이전을 건너뜀",
-                  "되돌아온 판에서 새로 단 문서 참조", "표지 없는 옛 문서 옮김", "표지 없는 옛 문서 묘비(증명 못 함)"):
+                  "되돌아온 판에서 새로 단 문서 참조", "표지 없는 옛 문서 옮김", "표지 없는 옛 문서 묘비(증명 못 함)",
+                  "그래프 판으로 표지를 찍은 문서", "옛 표지 아래 새 판 쓰기를 거절함"):
             self.assertGreater(s[k], SEEDS // 20, k)
         for form in ("new", "a", "b"):
             self.assertGreater(s["집합 꼴 " + form], SEEDS // 10)

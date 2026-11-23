@@ -240,6 +240,8 @@ class _Index:
 
     def __init__(self, graph, kg=None):
         project = bool(graph.get("sheets"))
+        # 판단 기록에 남기는 그래프 판(save_judgement가 문서의 판 표지와 맞대 봄, hazop.study.follow.mark_for)
+        self.graph_mark = {"graph_id": graph.get("graph_id"), "graph_version": graph.get("graph_version")}
         self.nodes = {n["entity_id"]: n for n in graph["nodes"]}
         self.ref_of, self.entity_of = {}, {}
         for e, n in self.nodes.items():
@@ -491,6 +493,7 @@ def _item(rule, rules, idx, e, found, note, j):
             "basis_level": rule["basis_level"], "basis_label": rules.levels[rule["basis_level"]],
             "basis": rule["basis_ko"], "hazop": rule["hazop_ko"],
             "target": ref, "target_entity": e, "target_tag": n.get("tag"), "target_kind": n.get("kind"),
+            "graph": idx.graph_mark,
             "graph_id": ref.split("#", 1)[0], "found": shown, "rejected": rejected, "note": note,
             "auto_state": auto, "state": state, "state_label": STATES[state], "previous_state": previous,
             "recheck": recheck, "digest": digest, "judgement": copy.deepcopy(j) if j else None,
@@ -617,6 +620,7 @@ def apply_action(item, action, by, reason="", evidence="", at=None, found_ref=No
         raise ExpectError("후보 목록에 없는 대상: %s" % found_ref)
     rejected = sorted(set(item["rejected"]) | (set(refs) if action == "reject" else set()))
     return {"key": item["key"], "rule_id": item["rule_id"], "rule_version": item["rule_version"],
+            **({"graph": dict(item["graph"])} if item.get("graph") else {}),
             "target": item["target"], "target_tag": item["target_tag"], "state": row[1], "action": action,
             "digest": item["digest"], "found": [found_ref] if found_ref else (refs if action == "confirm" else []),
             "rejected": rejected, "reason": given["reason"] or None, "evidence": given["evidence"] or None,
@@ -651,27 +655,35 @@ def read_store(path, project_id):
     return doc
 
 
-def load_store(path, project_id):
+def load_store(path, project_id, graph=None):
     """판단 파일 문서. 검토구간 판 이전에 맞춰 열쇠·대상 참조를 메모리에서 옮긴다(hazop.study.follow, 판 표지 ref_versions).
+    graph를 주면 그 그래프 판에 맞춘 읽기 전용 사본이다(다시 추출 뒤 검토구간을 열기 전이면 메모리에서 판 이전, follow.view).
     파일이 없으면 빈 문서."""
     from hazop.study import follow, idmap
     doc = read_store(path, project_id)
     if doc is None:
         return empty_store(project_id)
-    return follow.catch_up(doc, idmap.LATENT, project_id)[0]
+    doc = follow.catch_up(doc, idmap.LATENT, project_id)[0]
+    return follow.view(doc, idmap.LATENT, graph) if graph else doc
 
 
-def load_judgements(path, project_id):
+def load_judgements(path, project_id, graph=None):
     """판단 파일 -> {키: 기록}. 파일이 없으면 빈 dict. 파일 형식이 틀리면 ExpectError(덮어쓰지 않게 호출자가 멈춘다).
     기록 하나하나의 검사는 evaluate가 한다(어긋난 기록도 그대로 돌려줘 저장 때 잃지 않게). 열쇠와 대상 참조는 검토구간
-    판 이전에 맞춰 옮긴 것이다(묘비가 된 열쇠는 evaluate가 고아 판단으로 알림)."""
-    return load_store(path, project_id)["judgements"]
+    판 이전에 맞춰 옮긴 것이다(묘비가 된 열쇠는 evaluate가 고아 판단으로 알림). 판단을 graph로 계산할 때는 graph를 넘긴다."""
+    return load_store(path, project_id, graph)["judgements"]
 
 
 def save_judgement(path, project_id, rec):
     """판단 하나를 파일에 더한다(같은 키는 바꾸고 이전 기록은 history에 남김). 기존 파일을 읽지 못하면 쓰지 않는다.
     판 표지(ref_versions)와 옮긴 기록(ref_migrations)은 그대로 둔다."""
+    from hazop.study import follow, idmap
     doc = load_store(path, project_id)
+    g = rec.get("graph") or {}
+    try:  # 판단한 그래프 판과 문서의 판 표지가 다르면(다시 추출 뒤 검토구간을 열기 전) 쓰지 않는다
+        doc = follow.mark_for(doc, g.get("graph_id"), g.get("graph_version"))
+    except follow.Stale as exc:
+        raise ExpectError(str(exc)) from None
     current = doc["judgements"]
     prev = current.get(rec["key"])
     new = dict(rec)
@@ -680,6 +692,7 @@ def save_judgement(path, project_id, rec):
     elif prev is not None:
         new["history"] = [prev]
     current[rec["key"]] = new
+    follow.backup_new_tombs(path, doc, idmap.LATENT)
     build.write_json_atomic(path, dict(doc, kind=STORE_KIND, schema_version=STORE_SCHEMA_VERSION, project_id=project_id,
                                        judgements=dict(sorted(current.items()))))
     return current

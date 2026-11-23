@@ -1,15 +1,23 @@
 """판 이전을 프로젝트 문서(⑥ 초기사건 문서, FMEA, 잠재 후보 판단)에 잇는다. 무엇이 무엇으로 가는지는 집합 이력의 판 이전 줄
 (hazop.study.migrate), 어디에 id가 있는지는 등록부(hazop.study.idmap.FIELDS의 IE·FMEA·LATENT)가 맡고, 여기서는 어느 줄부터
-적용할지(판 표지)만 정한다. 근거: docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md §M3.
+적용할지(판 표지)와 쓰는 순간의 판 확인을 맡는다. 근거: docs/units/2026-11-13-drawing-knowledge/evidence/migration-map-design.md
+14절, docs/specs/ie-output-design.md §8.3.
 
-- 판 표지 ref_versions {집합 graph_id: {"graph_version", "step"}}: 문서의 참조가 그 집합의 몇째 판 이전 줄(step)까지 옮겨졌는지.
-  ⑤ 결과의 version_migrations[].step과 같은 셈이다. 표지가 있으면 그 뒤 줄만 적용하고(앞 판으로 돌아와도 다시 적용하지 않음),
-  줄들이 지금 판까지 빠짐없이 이어지지 않으면(집합을 백업에서 되돌림, 잘린 이력) 이어졌다는 것을 증명하지 못한 것이다.
-- 표지가 없는 문서(M3 전에 쓴 것)는 문서에 적힌 시각(at)이 모두 어느 두 판 이전 줄 사이에 들 때만 그 사이 판에서 쓴 것으로
-  보고 그 뒤 줄을 적용한다 [추론: 앱은 집합을 연 뒤(판 이전을 마친 뒤) ⑥을 고친다]. 판 이전 줄이 문서 시각 사이에 끼었거나,
-  시각이 없는 기록이 있거나, 집합 이력이 문서보다 늦게 시작하거나(구간을 새로 제안), 옮긴 기록(ref_migrations)은 있는데 표지가
-  없으면 증명하지 못한 것이다. 이 집합의 도면을 가리키는 값이 하나도 없으면 지금 판으로 표지만 찍는다.
-- 증명하지 못하면 이 집합 도면의 참조를 모두 묘비로 한다(M2 결과와 같은 원칙). 까닭은 ref_migrations[].unproven에 적는다.
+- 판 표지 ref_versions {집합 graph_id: {"graph_version", "step"}}: 문서의 참조가 어느 판의 것이고 그 집합의 몇째 판 이전 줄(step)
+  까지 옮겨졌는지. ⑤ 결과의 version_migrations[].step과 같은 셈이다. 표지가 있으면 그 뒤 줄만 적용하고(앞 판으로 돌아와도
+  다시 적용하지 않음), 줄들이 지금 판까지 빠짐없이 이어지지 않으면(집합을 백업에서 되돌림, 잘린 이력, 새로 제안) 이어졌다는
+  것을 증명하지 못한 것이다. 판 문자열이 같으면 내용이 같은 그래프라 참조가 그대로 맞다(줄 번호만 다시 찍음).
+- 쓰는 순간의 판: 그래프를 보고 참조를 쓰는 함수(FMEA 가져오기·고치기, 잠재 후보 판단 저장, ⑥ 규칙 초안)는 mark_for로 문서의
+  표지와 그 그래프 판을 맞대 보고, 다르면(다시 추출 뒤 검토구간을 열기 전) Stale로 거절한다. 표지가 없으면 그 판을 표지로
+  찍는다(step None: 그 판에서 시작하는 판 이전 줄부터 적용). 그래서 옛 표지 아래 새 판 참조가 저장되지 않는다.
+- 읽기 길: 읽는 쪽은 디스크의 집합 이력으로 메모리에서 이어 옮긴다(catch_up). 새 판 그래프로 계산하는 화면은 view로 그 판에
+  맞춘 사본을 쓴다(집합을 열기 전이면 메모리에서 판 이전, 파일은 쓰지 않음).
+- 표지가 없는 문서(M3 전에 쓴 것)는 문서의 기록마다 시각(at)이 있고 그 시각이 모두 어느 두 판 이전 줄 사이에 들며 집합 이력이
+  문서보다 먼저 시작했을 때만 그 사이 판에서 쓴 것으로 본다. 그 밖에는(시각 없는 기록, 판 이전이 시각 사이에 낌, 문서보다
+  늦게 만든 집합, 옮긴 기록은 있는데 표지가 없음) 증명하지 못한 것이다. 이 집합의 도면을 가리키는 값이 하나도 없으면 지금
+  판으로 표지만 찍는다.
+- 증명하지 못하면 이 집합 도면의 참조를 모두 묘비로 한다(M2 결과와 같은 원칙). 까닭은 ref_migrations[].unproven에, 묘비가 된
+  자리의 원래 값은 ref_migrations[].lost에 적고, 파일에 없던 묘비를 쓰기 전에는 옛 파일을 백업한다(backup_new_tombs).
 - 프로젝트 전체 집합(graph_id "project-…")이 있으면 그 집합만 따른다(옛 도면별 집합은 화면이 쓰지 않고, 같은 도면을 두 집합이
   옮기면 두 번 적용된다). 없으면 폴더의 집합을 모두 따른다.
 - 같은 입력에 두 번 적용해도 같다(표지가 지금 판이면 아무것도 하지 않음).
@@ -45,9 +53,9 @@ def drawings(node_set):
     return out - {None} | {node_set.get("graph_id")}
 
 
-def _values(doc, kind):
-    """(참조들, entity_id들). 등록된 자리의 살아 있는 값(열쇠 꼴은 참조 부분만)."""
-    refs, eids = set(), set()
+def slots(doc, kind):
+    """[(공간, 값)] 등록된 자리의 id 값 전부(차례 고정, 열쇠 꼴은 참조 부분만, 공간은 REF 또는 EID)."""
+    out = []
     for path, space in idmap.FIELDS[kind]:
         if path.endswith("{}"):
             vals = [k for h, key in idmap.walk(doc, path[:-2]) if isinstance(h[key], dict) for k in h[key]]
@@ -60,8 +68,15 @@ def _values(doc, kind):
                 v = v.partition("|")[0]
             elif space == idmap.TAIL:
                 v = v.partition("|")[2]
-            if idmap.is_tomb(v):
-                continue
+            out.append((idmap.EID if space == idmap.EID else idmap.REF, v))
+    return out
+
+
+def _values(doc, kind):
+    """(참조들, entity_id들). 등록된 자리의 살아 있는 값."""
+    refs, eids = set(), set()
+    for space, v in slots(doc, kind):
+        if not idmap.is_tomb(v):
             (eids if space == idmap.EID else refs).add(v)
     return refs, eids
 
@@ -93,23 +108,30 @@ def plan(doc, kind, node_set):
     mark = (doc.get("ref_versions") or {}).get(gid)
     if isinstance(mark, dict):
         have, step = mark.get("graph_version"), mark.get("step")
-        if have == want:
+        if have == want:  # 판 문자열은 내용 해시라 같은 판이면 참조가 그대로 맞다(줄 번호만 다시 찍음)
             return [], None
         if type(step) is int and 0 <= step < len(rows):
             start = rows[step - 1][1].get("to") if step else rows[0][1].get("from")
             if start == have and migrate._end([d for _a, d in rows[step:]], have) == want:
                 return [d for _a, d in rows[step:]], None
+        elif step is None:  # 그래프를 보고 쓰며 찍은 표지(집합의 줄 번호를 모름): 그 판에서 시작하는 줄이 하나뿐일 때만
+            starts = [i for i, (_a, d) in enumerate(rows) if d.get("from") == have]
+            todo = [d for _a, d in rows[starts[0]:]] if len(starts) == 1 else None
+            if todo and migrate._end(todo, have) == want:
+                return todo, None
         return None, BROKEN
     if any(isinstance(m, dict) and m.get("graph_id") == gid for m in doc.get("ref_migrations") or []):
         return None, BROKEN  # 옮긴 적이 있는데 표지를 잃음: 시각으로 미루어 보면 두 번 적용할 수 있다
     if not _touches(doc, kind, node_set):
         return [], None
-    times = [h[k] for p in TIMES[kind] for h, k in idmap.walk(doc, p)]
-    if not times or not all(isinstance(t, str) and t for t in times):
+    times = _times(doc, kind)
+    if times is None:
         return None, NO_TIME
     first, last = min(times), max(times)
     born = [h.get("at") for h in node_set.get("history") or [] if isinstance(h, dict) and isinstance(h.get("at"), str)]
-    if not born or min(born) > first:  # 문서보다 늦게 만든 집합(새로 제안 등)의 이력은 문서의 판을 말해 주지 않는다
+    if not born or min(born) > first:
+        # 문서보다 늦게 만든 집합(새로 제안 등)의 이력은 문서의 판을 말해 주지 않는다. 판 이전 줄이 없어도 그 사이에 다시
+        # 추출했을 수 있다(구간을 새로 제안). M3 뒤 문서는 쓸 때 그래프 판을 표지로 찍어(mark_for) 이 길을 타지 않는다
         return None, YOUNGER
     before = [i for i, (a, _d) in enumerate(rows) if isinstance(a, str) and a < first]
     after = [i for i, (a, _d) in enumerate(rows) if isinstance(a, str) and a > last]
@@ -120,6 +142,18 @@ def plan(doc, kind, node_set):
     if migrate._end(todo, have) != want:
         return None, BROKEN
     return todo, None
+
+
+def _times(doc, kind):
+    """문서에 사람이 쓴 기록의 시각들. 기록 하나라도 시각이 없으면 None(어느 판에서 쓴 것인지 모름)."""
+    out = []
+    for p in TIMES[kind]:
+        for h, k in idmap.walk(doc, p[:-len(".at")]):
+            t = h[k].get("at") if isinstance(h[k], dict) else None
+            if not (isinstance(t, str) and t):
+                return None
+            out.append(t)
+    return out or None
 
 
 def unproven_table(doc, kind, node_set):
@@ -135,10 +169,14 @@ def unproven_table(doc, kind, node_set):
 
 
 def _demote_lost_rows(doc, at):
-    """FMEA: 대상이 묘비가 된 승인 행은 가져옴으로 되돌린다(승인은 도면 구성요소에 대응한 행만). 되돌린 행 ID 목록."""
+    """FMEA: 대상이 묘비가 된 행은 대응 실패(match none)로 보이고, 승인 행은 가져옴으로 되돌린다(승인은 도면 구성요소에
+    대응한 행만). 되돌린 행 ID 목록."""
     out = []
     for rid, r in sorted(doc["rows"].items()):
-        if r.get("status") == "approved" and idmap.is_tomb(r.get("ref")):
+        if not idmap.is_tomb(r.get("ref")):
+            continue
+        r["match"] = "none"
+        if r.get("status") == "approved":
             r["status"] = "imported"
             out.append(rid)
     if out:
@@ -172,6 +210,7 @@ def follow(doc, kind, node_set, at=None):
         tables = [unproven_table(doc, kind, node_set)]
     at = at or now_utc()
     out = doc
+    old = slots(doc, kind)
     total = {"changed": 0, "lost": 0, "found": 0}
     unregistered = set()
     for t in tables:
@@ -181,14 +220,77 @@ def follow(doc, kind, node_set, at=None):
         unregistered.update(rep["unregistered"])
     if out is doc:
         out = copy.deepcopy(doc)
+    # 묘비가 된 자리의 원래 값(묘비 id는 해시라 되돌릴 수 없으므로 문서에 남김)
+    lost = {b: a for (_s, a), (_t, b) in zip(old, slots(out, kind)) if idmap.is_tomb(b) and not idmap.is_tomb(a)}
     after = AFTER.get(kind, lambda _d, _a: [])(out, at)
     row = {"at": at, "graph_id": gid, "from": (rows[0].get("from") if rows else None), "to": want, "step": mark["step"],
            "refs_changed": total["changed"] - total["lost"] - total["found"], "refs_lost": total["lost"],
            "refs_found": total["found"], "unregistered": sorted(unregistered),
-           **({"unproven": why} if why else {}), **({"reopened": after} if after else {})}
+           **({"unproven": why} if why else {}), **({"reopened": after} if after else {}),
+           **({"lost": dict(sorted(lost.items()))} if lost else {})}
     out["ref_versions"] = dict(out.get("ref_versions") or {}, **{gid: mark})
     out["ref_migrations"] = list(out.get("ref_migrations") or []) + [row]
     return out, row
+
+
+# ---------------------------------------------------------------- 쓰는 쪽: 쓰는 순간의 그래프 판
+
+STALE = "도면을 다시 추출해 그래프 판이 바뀌었습니다. 검토구간(④)을 열어 판 이전을 마친 뒤 하세요"
+
+
+class Stale(ValueError):
+    """문서의 참조는 옛 판인데 새 판 그래프로 고치거나 내보내려 함(다시 추출 뒤 검토구간을 열기 전)."""
+
+
+def mark_for(doc, graph_id, version):
+    """그래프(graph_id·판)를 보고 참조를 쓰기 전에 부른다. 문서의 판 표지가 그 판과 다르면 Stale(옛 표지 아래 새 판 참조를
+    쓰지 않음). 표지가 없으면 그 판으로 찍은 사본을 돌려준다(집합의 줄 번호를 모르므로 step None, 뒤의 판 이전은 그 판에서
+    시작하는 줄부터)."""
+    if not graph_id or not version:
+        return doc
+    m = (doc.get("ref_versions") or {}).get(graph_id)
+    if isinstance(m, dict):
+        if m.get("graph_version") != version:
+            raise Stale(STALE)
+        return doc
+    out = copy.copy(doc)
+    out["ref_versions"] = dict(doc.get("ref_versions") or {}, **{graph_id: {"graph_version": version, "step": None}})
+    return out
+
+
+def view(doc, kind, graph):
+    """읽기 전용: 문서를 그래프 판에 맞춘 사본(파일을 쓰지 않음). 다시 추출 뒤 검토구간을 열기 전이면 디스크의 집합을
+    메모리에서 판 이전해 같은 줄로 옮기고, 그럴 수 없으면 이 그래프의 참조를 모두 묘비로 한다. 표지가 없거나 같은 판이면 그대로."""
+    gid, ver = graph.get("graph_id"), graph.get("graph_version")
+    m = (doc.get("ref_versions") or {}).get(gid)
+    if not isinstance(m, dict) or m.get("graph_version") == ver:
+        return doc
+    ns = next((s for s in followed(graph.get("project_id")) if s.get("graph_id") == gid), None)
+    if ns is not None:
+        ns2, p = migrate.migrate_set(migrate.with_refs(ns, graph), graph)
+        if p["state"] in ("kept", "same") and ns2.get("graph_version") == ver:
+            moved = follow(doc, kind, ns2)[0]
+            if ((moved.get("ref_versions") or {}).get(gid) or {}).get("graph_version") == ver:
+                return moved
+    bare = {"graph_id": gid, "graph_version": ver, "graph_member_refs": {}, "history": []}
+    return idmap.apply(doc, kind, unproven_table(doc, kind, bare))[0]
+
+
+def backup_new_tombs(path, doc, kind, label="판이전묘비"):
+    """문서를 쓰기 전에 부른다. 파일에 없던 묘비를 쓰게 되면(읽을 때 옮긴 묘비를 사람이 저장) 옛 파일을 먼저 백업하고 백업
+    경로를 돌려준다. 원래 값은 ref_migrations[].lost에도 남는다. 백업하지 못하면 OSError(쓰지 말 것)."""
+    from hazop import store_io
+    data, _fp = store_io.read_bytes(path)
+    if data is None:
+        return None
+    try:
+        before = json.loads(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    had = {v for _s, v in slots(before, kind) if idmap.is_tomb(v)} if isinstance(before, dict) else set()
+    if {v for _s, v in slots(doc, kind) if idmap.is_tomb(v)} - had:
+        return store_io.backup_file(path, label)
+    return None
 
 
 # ---------------------------------------------------------------- 프로젝트의 집합

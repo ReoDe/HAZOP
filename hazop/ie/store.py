@@ -59,7 +59,14 @@ def save(doc, expect):
     bad = model.problems(doc)
     if bad:
         raise ValueError("초기사건 문서 형식 오류: %s" % "; ".join(bad[:3]))
+    _backup_new_tombs(store_path(doc["project_id"]), doc, idmap.IE)
     return store_io.write_json(store_path(doc["project_id"]), doc, expect)
+
+
+def _backup_new_tombs(path, doc, kind):
+    """파일에 없던 묘비(읽을 때 옮긴 것)를 쓰게 되면 옛 파일을 먼저 백업한다(묘비 id로는 원래 참조를 되찾지 못함)."""
+    from hazop.study import follow
+    follow.backup_new_tombs(path, doc, kind)
 
 
 def load_synced(project_id, results, node_set=None):
@@ -123,6 +130,7 @@ def save_fmea(doc, expect):
     bad = fmea.problems(doc)
     if bad:
         raise ValueError("FMEA 문서 형식 오류: %s" % "; ".join(bad[:3]))
+    _backup_new_tombs(fmea_path(doc["project_id"]), doc, idmap.FMEA)
     return store_io.write_json(fmea_path(doc["project_id"]), doc, expect)
 
 

@@ -523,6 +523,29 @@ class ProjectDocChainTest(WorkRoot):
             self.assertEqual(rep["unproven"], follow.BROKEN)
             self.assertEqual(set(self.uids(out, drawing("v-c", order=("PP", "V2", "TK", "V1")))), {"묘비"})
 
+    def test_same_version_after_cut_history_keeps_refs_and_later_migration_stays_right(self):
+        """판 이전 줄을 잃은 집합(같은 판 B)을 따라가면 표지 줄 번호만 1 → 0으로 다시 찍는다. 판 문자열은 내용 해시라 B의
+        참조는 B 그래프에서 그대로 맞고, 그 뒤 판 이전(B→C)도 처음 기호를 가리킨다(검토 경미 가: 재현으로 확인)."""
+        doc = ie_doc(self.r1, G + "#pdf-p0-sym-0003")
+        want = self.uids(doc, self.a)
+        ns1, _ = migrate.migrate_set(self.ns, self.b, at="t1")
+        doc, _ = follow.follow(doc, idmap.IE, ns1, at="t1a")
+        cut = copy.deepcopy(ns1)
+        cut["history"] = [h for h in cut["history"] if h.get("op") != migrate.OP]
+        doc, rep = follow.follow(doc, idmap.IE, cut, at="t2")
+        self.assertEqual((rep, doc["ref_versions"][G]), (None, {"graph_version": "v-b", "step": 0}))
+        gc = drawing("v-c", order=("PP", "V2", "TK", "V1"))
+        ns3, _ = migrate.migrate_set(cut, gc, at="t3")
+        doc, rep = follow.follow(doc, idmap.IE, ns3, at="t3a")
+        self.assertNotIn("unproven", rep)
+        self.assertEqual(self.uids(doc, gc), want)
+
+    def test_old_id_used_as_a_key_of_an_unregistered_map_is_reported(self):
+        doc = dict(ie_doc(self.r1), notes={self.r1: "메모"})
+        ns1, _ = migrate.migrate_set(self.ns, self.b, at="t1")
+        _out, rep = follow.follow(doc, idmap.IE, ns1, at="t1a")
+        self.assertEqual(rep["unregistered"], ["notes{%s}" % self.r1])
+
     def test_unmarked_doc_on_a_reproposed_set_is_lost(self):
         """표지 없는 옛 문서는 문서보다 늦게 만든 집합(구간을 새로 제안)의 이력으로 판을 미루어 보지 않는다."""
         ns, _ = migrate.migrate_set(self.ns, self.b, at="t1")

@@ -648,6 +648,8 @@ def _unregistered(doc, kind, table):
             return
         if isinstance(v, dict):
             for k, x in v.items():
+                if k in old and pat not in maps:  # 옛 id를 열쇠로 쓰는 등록되지 않은 사전
+                    hits.append(".".join(where).replace(".[", "[") + "{%s}" % k)
                 go(x, pat + "{}" if pat in maps else "%s.%s" % (pat, k) if pat else str(k), where + (str(k),))
         elif isinstance(v, list):
             for i, x in enumerate(v):

@@ -339,7 +339,7 @@ def confirm_problems(doc, gid, results, facts=None, node_set=None):
 
 def lost_problems(doc, gid, facts):
     """다시 추출 뒤 찾지 못한 대상(묘비)이 그룹에 남은 자리. 남아 있으면 확정하지 못한다: 사람이 ⑤를 다시 승인해 그룹을 다시
-    확정해도, 표제·기본사건이 가리킬 기호를 모르는 채로 확정 묶음이 나가지 않게 한다(설계 §M3)."""
+    확정해도, 표제·기본사건이 가리킬 기호를 모르는 채로 확정 묶음이 나가지 않게 한다(판 이전 설계 14절, HZ-PLN-17 §8.3)."""
     g = doc["groups"][gid]
     keys = {doc["candidates"][iec]["key"] for iec in members_of(doc, gid)}
     out = []
@@ -523,7 +523,10 @@ def suggest(doc, results, pg=None, at=None):
             picked.append((iec, f))
     if not picked:
         return doc
-    idx = refs.index(pg) if pg else {}
+    from hazop.study import follow
+    doc = follow.mark_for(doc, results.get("graph_id"), results.get("graph_version"))  # 참조는 ⑤ 결과 판의 것
+    # 이름표는 같은 판 그래프에서만 뽑는다(다시 추출 뒤 검토구간을 열기 전이면 새 판의 다른 기호 이름이 붙음)
+    idx = refs.index(pg) if pg and pg.get("graph_version") == results.get("graph_version") else {}
 
     def apply(o):
         by_rule = {v["rule_key"]: g for g, v in sorted(o["groups"].items())

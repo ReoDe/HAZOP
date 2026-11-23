@@ -302,7 +302,7 @@ def expectations_for(graph, kg):
     pid = graph.get("project_id")
     note = None
     try:
-        judgements = expect.load_judgements(expect.store_path(pid), pid) if pid else {}
+        judgements = expect.load_judgements(expect.store_path(pid), pid, graph=graph) if pid else {}
     except (OSError, expect.ExpectError) as exc:
         judgements, note = {}, "잠재 후보 판단 파일을 읽지 못함: %s" % exc
     try:

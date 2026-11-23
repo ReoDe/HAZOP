@@ -35,7 +35,7 @@ import os
 
 from hazop.ie import bundle, fmea, mld, model
 from hazop.ie import store as ie_store
-from hazop.study import idmap, nodes
+from hazop.study import follow, idmap, nodes
 from hazop.study import results as res
 
 LOG = logging.getLogger("hazop.shell.api_ie")
@@ -60,6 +60,8 @@ def _context(engine):
     ns, legacy = R._node_set(pg)
     if legacy:
         return None, "옛 판 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요."
+    if nodes.is_stale(ns, pg):  # 다시 추출 뒤 판 이전 전: 옛 판 참조를 새 판 그래프로 보거나 고치지 않는다(hazop.study.follow)
+        return None, follow.STALE + "."
     if not [n for n in ns["nodes"] if nodes.is_active(n)]:
         return None, "확정한 구간이 아직 없습니다. 구간을 확정하고 분석한 뒤 초기사건을 봅니다."
     try:
@@ -610,7 +612,7 @@ def fmea_view(engine):
         return {"tag": refs.node_text(n), "drawing": drawing.get(refs.drawing_of(r.get("ref"))) or refs.drawing_of(r.get("ref"))} if n else None
     rows = [dict(r, row_id=rid, fp=_row_fp(r), matched=matched(r)) for rid, r in sorted(fdoc["rows"].items())]
     counts = {k: sum(r["status"] == k for r in rows) for k in fmea.STATUSES}
-    counts["unmatched"] = sum(1 for r in rows if not r.get("ref"))
+    counts["unmatched"] = sum(1 for r in rows if not r.get("ref") or idmap.is_tomb(r["ref"]))
     homes = {}
     for n in ns["nodes"]:
         for m in n.get("members") or []:

@@ -252,6 +252,13 @@ def template_workbook(doc, ec_rows=()):
 
 # ---------------------------------------------------------------- 고치기
 
+def _graph_mark(doc, pg):
+    """그래프를 보고 행 참조를 쓰기 전: 문서의 판 표지가 그 그래프 판과 다르면 follow.Stale(다시 추출 뒤 검토구간을 열기 전).
+    표지가 없으면 그 판으로 찍는다."""
+    from hazop.study import follow
+    return follow.mark_for(doc, (pg or {}).get("graph_id"), (pg or {}).get("graph_version"))
+
+
 def _change(doc, op, ids, at, fn, **detail):
     out = copy.deepcopy(doc)
     value = fn(out)
@@ -285,6 +292,7 @@ def import_rows(doc, rows, pg, node_set, filename, by, at=None):
     - 승인한 행의 내용이 바뀌면 가져옴으로 돌린다. 이번 파일에 없는 옛 행은 지우지 않고 in_last_import를 False로 둔다.
     - 같은 열쇠(태그·고장모드·원인·운전 모드)의 다른 행과 겹치는 줄은 넣지 않고 몇째 줄인지와 이유를 problems에 적는다."""
     at = at or store_io.now_utc()
+    doc = _graph_mark(doc, pg)
     index = tag_index(pg)
     report = {"new": [], "changed": [], "same": [], "unmatched": [], "missing": [], "reopened": [], "conflicts": [], "problems": []}
     befores = {}
@@ -372,6 +380,7 @@ def edit_row(doc, rid, fields, pg, node_set, at=None):
     row = doc["rows"].get(rid)
     if row is None:
         raise ValueError("없는 FMEA 행: %s" % rid)
+    doc = _graph_mark(doc, pg)
     unknown = sorted(set(fields) - set(EDITABLE))
     if unknown:
         raise ValueError("고칠 수 없는 필드: %s" % ", ".join(unknown))

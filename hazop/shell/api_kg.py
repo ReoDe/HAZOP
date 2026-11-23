@@ -102,7 +102,7 @@ def _context(engine, study=False):
     ver = _ver(pid, path)
     judge_problem = None
     try:
-        judgements = expect.load_judgements(path, pid)
+        judgements = expect.load_judgements(path, pid, graph=pg)
     except (OSError, expect.ExpectError) as exc:
         judgements, judge_problem = {}, "잠재 후보 판단 파일을 읽을 수 없어 판단을 저장하지 않습니다(%s)." % str(exc)[:160]
     try:

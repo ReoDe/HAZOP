@@ -149,7 +149,7 @@ class IeRefsAfterReextractTest(unittest.TestCase):
         store.save_fmea(fm.set_status(f, ["FM-001", "FM-002", "FM-003"], "approved", "김검토", at=AT), expect=None)
         self.ie1, _fp = store.load_synced(PID, r, self.ns)
         self.fmea1 = store.load_fmea(PID)[0]
-        self.judged = []
+        self.judged, self.judged_recs = [], []
         for it in expect.evaluate(g)["items"]:
             who = names(g)[it["target_entity"]]
             if it["rule_id"] == "E04" and who == "CV1":
@@ -163,6 +163,7 @@ class IeRefsAfterReextractTest(unittest.TestCase):
                 continue
             expect.save_judgement(expect.store_path(PID), PID, rec)
             self.judged.append((rec["key"], who, [names(g)[x] for x in rec["found"]]))
+            self.judged_recs.append((rec, who))
         self.bundle1 = bundle.build_bundle(r, self.ns, g, self.ie1, AT, fmea=self.fmea1)
 
     def tearDown(self):
@@ -348,6 +349,134 @@ class IeRefsAfterReextractTest(unittest.TestCase):
         for kind, d in docs.items():
             self.assertEqual(d["ref_migrations"][-1]["unregistered"], [], kind)
             self.assertTrue(d["ref_migrations"][-1]["refs_changed"], "순번이 당겨져 실제로 옮김: %s" % kind)
+
+    # ---------------------------------------------------------------- 검토 반려(02c5c8f) 차단: 다시 추출 뒤 ④를 열기 전의 틈
+
+    def test_writing_with_the_new_graph_before_opening_the_set_never_lands_on_another_symbol(self):
+        """다시 추출 뒤 집합을 판 이전하기 전에 새 판 그래프로 FMEA 행 구성요소를 고르거나 잠재 후보를 판단하면, 거절되거나
+        판 이전 뒤에도 사람이 고른 그 기호를 가리켜야 한다(옛 표지 아래 새 판 참조를 써 두 번 옮기지 않음)."""
+        g2 = drawn("v-2", SWAP)
+        n2 = names(g2)
+        ns_old = sn.read_as_is(g2)
+        refused = []
+        try:
+            f, fp = store.load_fmea(PID)
+            f = fm.edit_row(f, "FM-001", {"entity_id": ent(g2, "CV1")}, g2, ns_old, at="2026-11-19T00:00:00Z")
+            store.save_fmea(f, expect=fp)
+        except ValueError:
+            refused.append("fmea")
+        judg = expect.load_judgements(expect.store_path(PID), PID)
+        it = next(i for i in expect.evaluate(g2, None, judg)["items"] if i["rule_id"] == "E04" and i["state"] == "expected")
+        who = n2[it["target_entity"]]
+        try:
+            rec = expect.apply_action(it, "absent", "김검토", reason="r", evidence="e", at="2026-11-19T00:00:00Z")
+            expect.save_judgement(expect.store_path(PID), PID, rec)
+        except (ValueError, expect.ExpectError):
+            refused.append("latent")
+        sn.load(g2)
+        rows = store.load_fmea(PID)[0]["rows"]
+        if "fmea" not in refused:
+            self.assertEqual(n2.get(rows["FM-001"]["ref"]), "CV1", "FM-001은 사람이 고른 CV1")
+        for rid, row in self.fmea1["rows"].items():  # 고치지 않은 행은 처음 기호이거나 묘비
+            if rid != "FM-001":
+                self.assertSameOrTomb(row["ref"], rows[rid]["ref"], g2, "FMEA %s" % rid)
+        was = {(rec["rule_id"], rec["action"]): who_ for rec, who_ in self.judged_recs}
+        for k, rec in expect.load_judgements(expect.store_path(PID), PID).items():
+            target = k.partition("|")[2]
+            if idmap.is_tomb(target):
+                continue
+            want = who if rec.get("at") == "2026-11-19T00:00:00Z" else was[(rec["rule_id"], rec["action"])]
+            self.assertEqual(n2.get(target), want, "판단 %s는 판단한 그 기호" % k)
+
+    def test_bundle_before_opening_the_set_does_not_read_old_refs_on_the_new_graph(self):
+        """④를 열기 전(웹 ⑥의 차례: read_as_is, results.load_fp, ie.store.load)에 묶음을 만들면 거절되거나, 표제 대상·기본사건
+        태그가 원래 기호이거나 '확인 필요'여야 한다."""
+        g2 = drawn("v-2", SWAP)
+        ns = sn.read_as_is(g2)
+        r, _fp = res.load_fp(ns, DEVS)
+        ie, _ = store.load(PID)
+        try:
+            b = bundle.build_bundle(r, ns, g2, ie, AT, fmea=store.load_fmea(PID)[0])
+        except ValueError as exc:
+            self.assertIn("판 이전", str(exc))
+            return
+        before = {t["heading_id"]: t["targets"] for t in self.bundle1["top_events"]}
+        for t in b["top_events"]:
+            for x, y in zip(before[t["heading_id"]], t["targets"]):
+                self.assertIn(y, (x, idmap.LOST_LABEL), "표제 %s 대상" % t["heading_id"])
+        tags = {x["be_id"]: x["tag"] for x in self.bundle1["basic_events"]}
+        for x in b["basic_events"]:
+            self.assertTrue(x["tag"] == tags[x["be_id"]] or x["tag"].startswith(bundle.CHECK_TAG), x)
+
+    def test_latent_judgements_read_before_opening_the_set_follow_the_new_graph(self):
+        """③은 집합을 열지 않고 새 판 그래프로 잠재 후보를 계산한다. 그 그래프로 읽은 판단은 판단한 기호에 붙어야 한다."""
+        g2 = drawn("v-2", SWAP)
+        judg = expect.load_judgements(expect.store_path(PID), PID, graph=g2)
+        was = {(rec["rule_id"], rec["action"]): who for rec, who in self.judged_recs}
+        self.assertEqual(len(judg), len(was))
+        for k, rec in judg.items():
+            target = k.partition("|")[2]
+            if not idmap.is_tomb(target):
+                self.assertEqual(names(g2).get(target), was[(rec["rule_id"], rec["action"])], k)
+
+    def test_record_without_time_is_not_guessed(self):
+        """표지 없는 옛 문서에 시각 없는 기록이 하나라도 있으면 어느 판에서 쓴 참조인지 모르므로 묘비다(다른 기록의 시각으로
+        판을 어림하지 않음)."""
+        with open(store.store_path(PID), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc.pop("ref_versions", None)
+        doc.pop("ref_migrations", None)
+        doc["history"].append({"op": "edit", "ids": []})
+        g2 = drawn("v-2", SWAP)
+        moved, rep = follow.follow(doc, idmap.IE, sn.load(g2))
+        self.assertEqual(rep["unproven"], follow.NO_TIME)
+        self.assertTrue(all(idmap.is_tomb(t) for h in moved["headings"].values() for t in h["targets"]))
+
+    def test_saving_new_tombs_backs_up_and_keeps_the_original_refs(self):
+        """읽을 때 묘비가 된 참조를 사람이 저장하면 옛 파일을 먼저 백업하고, 원래 참조는 ref_migrations[].lost에 남는다."""
+        with open(store.store_path(PID), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        doc.pop("ref_versions", None)
+        doc.pop("ref_migrations", None)
+        doc["history"].append({"op": "edit", "ids": []})
+        sn.load(drawn("v-2", DROP))  # 집합은 판 이전을 마쳤고 이 문서만 표지 없이 남음(읽을 때 메모리에서 묘비)
+        store_io.write_json(store.store_path(PID), doc)
+        moved, fp = store.load(PID)
+        lost = moved["ref_migrations"][-1]["lost"]
+        self.assertEqual(sorted(set(lost.values())), sorted({t for h in doc["headings"].values() for t in h["targets"]}
+                                                            | {b["ref"] for b in doc["basic_events"].values()}))
+        store.save(moved, expect=fp)
+        backups = [os.path.join(dp, f) for dp, _d, fs in os.walk(paths.folder("backup")) for f in fs
+                   if "판이전묘비" in dp and f == os.path.basename(store.store_path(PID))]
+        self.assertTrue(backups, "묘비를 굳히기 전 백업")
+        with open(backups[0], encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["headings"], doc["headings"], "백업은 묘비 전 원래 참조")
+
+
+class JudgementsBeforeSetTest(unittest.TestCase):
+    """집합을 만들기 전(③)에 저장한 잠재 후보 판단은, 판 이전이 한 번도 없으면 집합이 생겨도 묘비가 되지 않는다."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        env = mock.patch.dict(os.environ, {paths.ENV_WORK_ROOT: self.tmp})
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(shutil.rmtree, self.tmp)
+
+    def test_judgements_saved_before_the_set_keep_their_keys(self):
+        g = drawn("v-1", CHAIN)
+        p = expect.store_path(PID)
+        e04 = [i for i in expect.evaluate(g)["items"] if i["rule_id"] == "E04"]
+        for it in e04[:2]:
+            expect.save_judgement(p, PID, expect.apply_action(it, "not_applicable", "김검토", reason="수동",
+                                                              at="2026-11-17T00:00:00Z"))
+        keys = sorted(expect.load_judgements(p, PID))
+        sn.save(sn.confirm(sn.propose(g, at="2026-11-18T00:00:00Z"), g, "김검토", at="2026-11-18T00:00:00Z"))
+        self.assertEqual(sorted(expect.load_judgements(p, PID)), keys)
+        expect.save_judgement(p, PID, expect.apply_action(e04[2], "not_applicable", "김검토", reason="수동",
+                                                          at="2026-11-19T00:00:00Z"))
+        with open(p, encoding="utf-8") as fh:
+            self.assertFalse([k for k in json.load(fh)["judgements"] if idmap.is_tomb(k.partition("|")[2])])
 
 
 if __name__ == "__main__":
