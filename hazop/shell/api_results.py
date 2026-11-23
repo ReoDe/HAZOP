@@ -47,6 +47,17 @@ def _node_set(pg):
     return doc, False
 
 
+def _stamp(ns):
+    """집합이 바뀌었는지 견줄 표지(그래프 판, 집합 판). 판 이전은 앞을, 구간 고치기는 뒤를 바꾼다."""
+    return (ns or {}).get("graph_version"), (ns or {}).get("set_rev") or 0
+
+
+def _set_changed(pg, ns):
+    """계획에 쓴 집합(ns)과 지금 파일을 _plan과 같은 길(_node_set)로 다시 읽은 것이 다른가. 파일이 없으면 _plan처럼 새 집합으로 본다."""
+    now, _legacy = _node_set(pg)
+    return _stamp(now) != _stamp(ns), now
+
+
 def _need_current(pg, ns):
     """다시 추출 뒤 판 이전 전이면 거절한다(stale). 옛 판 구간 집합과 새 그래프를 섞어 분석 맥락·Excel을 만들면 옛 참조가 새 그래프의 다른 기호로 저장·내보내진다.
     구간 집합이 없는 프로젝트(새 집합)는 판이 같아 막히지 않는다."""
@@ -690,8 +701,8 @@ def _run(engine, a):
         conn.set_run_override(via)                 # 연결 칩에 '이번 실행만'(끝나면 되돌림)
     run = engine.analysis
     with engine._study_lock:             # 판 이전과 엇갈리지 않게: 계획에 쓴 집합이 지금 파일과 같고 지금 그래프와도 같은 판일 때만 '도는 중'을 세운다
-        now = nodes.read_as_is(pg)
-        if not now or now.get("graph_version") != ns.get("graph_version") or (now.get("set_rev") or 0) != (ns.get("set_rev") or 0):
+        moved, now = _set_changed(pg, ns)
+        if moved:
             raise api.CommandError("stale", "분석을 준비하는 사이 검토구간이 바뀌어 시작하지 않았습니다. 다시 눌러 주세요.")
         _need_current(_pg(engine), now)
         if run.running:
@@ -720,8 +731,13 @@ def _run(engine, a):
         try:
             # 다른 일괄 AI 작업(AI 검토·추출 뒤 자동 검토)이 돌면 끝날 때까지 기다린다(구독 호출은 한 번에 하나). 분석 안의 호출은 차례대로다
             with engine.ai_turn("AI 분석 실행", lambda text, done, total: tick(text, done, len(units)), stop):
-                summary_ = analysis_run.run(client, ns, pg, units, intent_of, tick, stop,
-                                            on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)), test=test)
+                if _set_changed(pg, ns)[0]:      # 차례를 기다리는 사이 다른 작업이 구간을 고쳤다: 옛 집합으로 부르지 않고 멈춘다(남은 칸은 이어서 실행으로)
+                    summary_ = {"calls": 0, "planned": len(units), "ok_calls": 0, "failed_calls": 0, "cells": 0, "reason": "stale", "limit": None,
+                                "error_kind": None, "error": None, "conn_state": None, "usage": None,
+                                "rest": [[u["node_id"], d] for u in units for d in u["deviation_ids"]], "unsaved": [], "test": bool(test)}
+                else:
+                    summary_ = analysis_run.run(client, ns, pg, units, intent_of, tick, stop,
+                                                on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)), test=test)
         finally:
             run.running = False
             if this_run:

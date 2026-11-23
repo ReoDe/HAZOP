@@ -50,6 +50,16 @@ def wait_for(cond, timeout=5.0):
     return cond()
 
 
+def real_plan(unit):
+    """_plan을 바꿔 넣되 그래프·집합은 실제 것(지금 프로젝트 그래프와 그 집합 파일을 _plan과 같은 길로 읽음)으로, 칸만 unit 하나로."""
+    from hazop.shell import api_results
+
+    def plan(engine, a):
+        pg = api_results._pg(engine)
+        return pg, api_results._node_set(pg)[0], None, [unit]
+    return plan
+
+
 class QueueBase(Base):
     def setUp(self):
         super().setUp()
@@ -114,7 +124,7 @@ class SerialTest(QueueBase):
             return {"calls": 1, "rest": [], "reason": "done"}
 
         unit = {"node_id": "S1", "deviation_ids": ["D01"], "unit_id": "u1"}
-        with mock.patch.object(api_results, "_plan", lambda engine, a: ({}, {"graph_id": "g"}, None, [unit])), \
+        with mock.patch.object(api_results, "_plan", real_plan(unit)), \
                 mock.patch.object(analysis_run, "run", fake_run):
             first = self.review_job()
             self.assertTrue(wait_for(lambda: self.client.active == 1))
@@ -159,7 +169,7 @@ class SerialTest(QueueBase):
             return {"calls": 0, "rest": [], "reason": "done"}
 
         unit = {"node_id": "S1", "deviation_ids": ["D01"], "unit_id": "u1"}
-        with mock.patch.object(api_results, "_plan", lambda engine, a: ({}, {"graph_id": "g"}, None, [unit])),                 mock.patch.object(analysis_run, "run", fake_run):
+        with mock.patch.object(api_results, "_plan", real_plan(unit)),                 mock.patch.object(analysis_run, "run", fake_run):
             self.review_job()
             self.assertTrue(wait_for(lambda: self.client.active == 1))
             second = self.engine.dispatch("results.run", {"scope": "all"})["data"]["job"]

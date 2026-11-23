@@ -52,6 +52,9 @@ function RunState({ run }) {
   const resume = rest && !l.test ? html` <${Btn} sm=${true} kind="primary" label=${"남은 " + rest + "칸 이어서 실행"} onClick=${() => R.planRun("resume")}>남은 ${rest}칸 이어서<//>
     ${l.method === "subscription" ? html`<${Btn} sm=${true} label="API 키로 이어서 실행(요금 확인)" onClick=${() => R.planRun("resume", "api")}>API 키로 이어서…<//>` : null}` : null;
   const test = l.test ? " 시험용 고정 응답 결과라 시험 파일에만 저장했습니다(실제 결과에 섞지 않음)." : "";
+  if (l.reason === "stale" && !l.calls) {     // 차례를 기다리는 사이 구간이 바뀜: 한 번도 부르지 않았다
+    return html`<${Notice} kind="warn" icon="alert-triangle">분석 차례를 기다리는 사이 검토구간이 바뀌어 AI를 부르지 않고 멈췄습니다. 다시 실행하면 바뀐 구간으로 계획합니다.${resume}<//>`;
+  }
   if (l.reason === "stale") {          // 분석 중에 도면 변경이 검토구간에 반영됨: 옛 판으로 만든 답은 결과에 합치지 않고 따로 남겼다
     return html`<${Notice} kind="warn" icon="alert-triangle">분석하는 사이 도면이 바뀌어 AI 분석을 멈췄습니다. 마지막으로 받은 답 ${(l.unsaved || []).length}건은 바뀐 도면과 맞지 않아 결과에 넣지 않고 따로 보관했습니다.${resume}<//>`;
   }
