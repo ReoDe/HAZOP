@@ -101,7 +101,6 @@ class SeatRegressTest(SheetCase):
             json.dump(doc, fh, ensure_ascii=False)
         return a, b
 
-    @unittest.expectedFailure
     def test_e6_a_stuck_project_recovers_by_confirming_the_shared_number_and_choosing_back(self):
         """고르기로 붙박기를 풀던 앱에서 a를 다시 추출해 갇힌 프로젝트(a는 임시 이름, 묘비 6, 고르기 줄 없음). 사람이 a에 b와 같은 번호를 확정하면
         a가 그 이름의 후보로 돌아오고, 다시 고르면 같은 자료·같은 쪽·같은 기호의 묘비가 되돌아와야 한다. E6 때문에 되돌아오지 않는다."""
@@ -168,7 +167,6 @@ class SeatRegressTest(SheetCase):
     def test_choosing_back_after_reextracting_the_unpinned_file_restores_its_segment(self):
         self.choose_back(self.reextract)
 
-    @unittest.expectedFailure
     def test_e6_choosing_back_after_leaving_and_retaking_the_number_restores_its_segment(self):
         """번호를 쓰는 두 파일 a·b 가운데 b를 고른 뒤 a가 번호를 취소했다가(임시 이름으로 보임) 같은 번호를 다시 확정하고 a를 다시 고른다.
         E6 때문에 a의 구성요소가 묘비로 남는다."""
@@ -255,7 +253,6 @@ class SeatRegressTest(SheetCase):
         for todo in ("번호를 그대로 두거나", "그 파일의 번호를 먼저 바꾸거나", "다시 취소하세요"):
             self.assertIn(todo, reason)
 
-    @unittest.expectedFailure
     def test_e6_choosing_back_after_numbering_and_unnumbering_the_pinned_file_restores_its_segment(self):
         """붙박힌 a를 따로 보려고 다른 번호를 확정했다가 취소하고 a를 다시 고른다. a가 그 번호로 잠시 보였던 탓에 같은 기호의 묘비가 두 이름에 생겨
         E6으로 구성요소 6개가 묘비로 남는다."""
