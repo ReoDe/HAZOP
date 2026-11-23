@@ -118,11 +118,44 @@ class CommandTest(Base):
         same = self.cmd("confirm", material_id=self.mid, ver=self.ver(), fields={"drawing_number": "SNP-M-101"})
         self.assertEqual(same["changed"], False)
 
+    def test_a_dry_confirm_shows_what_moves_and_writes_nothing(self):
+        """시트 정체 U5c: 번호 없이 넣은 도면에 구간을 만든 뒤 번호를 확정하면 기록이 새 번호로 따라간다(U5). 화면은 승인 전에
+        dry로 '구간 n건을 SNP-M-101로 옮깁니다'를 보이고, 확정 결과의 이름 바뀜으로 열린 도면을 새 이름으로 바꾼다."""
+        self.make_nodes(self.mid)
+        before = self.read(self.mid)["version"]
+        dry = self.cmd("confirm", material_id=self.mid, ver=self.ver(), fields={"drawing_number": "SNP-M-101"}, dry=True)
+        self.assertTrue(dry["dry"])
+        self.assertEqual(self.read(self.mid)["version"], before, "dry는 저장하지 않음")
+        self.assertTrue(any(c["place"] == "구간" and c["count"] > 0 for c in dry["carries"]), dry)
+        self.assertEqual([r["to_label"] for r in dry["renames"]], ["SNP-M-101"])
+        self.assertIn("구간", dry["text"])
+        self.assertIn("SNP-M-101", dry["text"])
+        self.assertNotRegex(dry["text"], r"graph-|material-|SCN__")
+        out = self.cmd("confirm", material_id=self.mid, ver=self.ver(), fields={"drawing_number": "SNP-M-101"})
+        self.assertTrue(self.engine.wait_jobs(120))
+        done = [d for d in self.events.of("job.done") if d["id"] == out["job"]][0]["result"]
+        self.assertEqual([r["to"] for r in done["renames"]], ["graph-SNP-M-101"], "결과의 이름 바뀜(열린 도면을 새 이름으로)")
+        self.assertEqual(done["carries"], dry["carries"], "dry와 결과가 같다")
+
+    def test_the_unconfirmed_number_notice_no_longer_says_confirm_before_sections(self):
+        """시트 정체 U5c(설계 §6 4): 번호를 나중에 확정해도 구간이 따라가므로 '구간을 만들기 전에 확정' 안내를 하지 않는다."""
+        from hazop.graph import sheets
+        from hazop.shell import api_drawings
+        n = api_drawings._notice({"code": sheets.CONFIRM_FIRST, "text": sheets.TEXTS[sheets.CONFIRM_FIRST]})
+        self.assertNotIn("만들기 전에", n["text"])
+        self.assertIn("따라갑니다", n["text"])
+        self.assertEqual(api_drawings._notice({"code": "x", "text": "y"}), {"code": "x", "text": "y"})
+
     def test_material_without_extraction_is_confirmed_without_a_job(self):
         other = self.add("SNP-M-102", extract=False)
         out = self.cmd("confirm", material_id=other, ver=self.read(other)["ver"], fields={"title": "가압기"})
         self.assertNotIn("job", out)
         self.assertEqual(out["row"]["fields"][2]["value"], "가압기")
+
+
+def project_ctx_graph(case):
+    from hazop.app import project_ctx
+    return project_ctx.project_graph("P1")
 
 
 def tearDownModule():
@@ -141,7 +174,7 @@ def pump(sec):
 
 
 class PanelTest(Base):
-    """실제 새 화면(화면 밖)의 표제란 패널: 번호 칸이 잠긴 도면에서 개정·제목만 고쳐 확정하면 번호 후보를 보내지 않는다."""
+    """실제 새 화면(화면 밖)의 표제란 패널: 구간이 가리키는 도면에서 제목만 고쳐 확정하면 고친 칸만 보낸다(번호 칸은 잠그지 않음, U5c)."""
 
     def js(self, win, code, timeout=60.0):
         import time
@@ -169,11 +202,11 @@ class PanelTest(Base):
             if (!b || b.disabled) return false;
             b.click(); window.__tbClicked[%s] = true; return true; })()""" % (json.dumps(key), json.dumps(label), json.dumps(key)))
 
-    def test_locked_number_is_not_sent_and_only_edited_fields_go(self):
+    def test_only_edited_fields_go_and_the_number_stays_open(self):
         from hazop.app import make_application
         from hazop.shell.window import ShellWindow
         self.qapp = make_application(["titleblock-test"])
-        self.make_nodes(self.mid)          # 번호 칸이 잠기는 도면(구간이 가리킴)
+        self.make_nodes(self.mid)          # 구간이 가리키는 도면
         settings = os.path.join(self.tmp, "shell-settings.json")
         with open(settings, "w", encoding="utf-8") as fh:
             json.dump({"reviewer_name": "검토자A", "project_id": "P1"}, fh)
@@ -187,7 +220,8 @@ class PanelTest(Base):
         self.assertTrue(self.wait(win, "!!window.__hz && document.querySelector('.rail') !== null"), "웹 화면이 뜨지 않음")
         self.js(win, "window.__hz.store.set({panel: 'titleblock'})")
         self.assertTrue(self.wait(win, "document.querySelectorAll('.titleblock .tb-row').length === 1"))
-        self.assertTrue(self.wait(win, "document.querySelector('.titleblock input.tb-input').disabled === true"), "번호 칸이 잠김")
+        # 시트 정체 U5c: 구간이 가리켜도 번호 칸을 잠그지 않는다(확정하면 기록이 새 이름을 따라감, 확정 전에 미리 보임)
+        self.assertTrue(self.wait(win, "document.querySelector('.titleblock input.tb-input').disabled === false"), "번호 칸이 열림")
         self.assertTrue(self.wait(win, """(() => { const inp = document.querySelectorAll('.titleblock input.tb-input')[2];
             if (!inp) return false; if (inp.value !== '주 배관(고침)') {
               inp.value = '주 배관(고침)'; inp.dispatchEvent(new Event('input', { bubbles: true })); }
@@ -197,18 +231,24 @@ class PanelTest(Base):
                         self.js(win, "document.querySelector('.titleblock').innerText"))
         r = self.read(self.mid)
         self.assertEqual([f["value"] for f in r["fields"]], [None, None, "주 배관(고침)"],
-                         "고친 제목만 확정되고 잠긴 번호 후보는 보내지 않음")
+                         "고친 제목만 확정되고 손대지 않은 번호 후보는 보내지 않음")
         # 패널이 첫 확정 뒤의 행을 다시 읽은 뒤(행이 '일부 확정'이 됨)에 누른다. 작업 끝 알림('확정했습니다')은 다시 읽기보다 먼저 오므로,
         # 그 사이에 누르면 낡은 판(ver)을 보내 엔진이 거절한다
         self.assertTrue(self.wait(win, "document.querySelectorAll('.titleblock .tb-row.partial').length === 1"),
                         self.js(win, "document.querySelector('.titleblock').innerText"))
         self.assertTrue(self.click_once(win, "c2", "확정 전 항목을 후보 그대로 확정"), "후보 그대로 확정 단추")
-        self.assertTrue(self.wait(win, "document.querySelectorAll('.titleblock .tb-row.partial').length === 1 && "
-                                       "(document.querySelector('.titleblock').innerText || '').includes('등록 버전 3')"),
+        # 구간이 가리키는 도면의 번호 확정: 먼저 옮겨 갈 기록을 보이고(dry), '옮기고 확정'을 누르면 보낸다(시트 정체 U5c)
+        self.assertTrue(self.wait(win, "(document.querySelector('.titleblock .tb-ask') || {}).innerText !== undefined && "
+                                       "document.querySelector('.titleblock .tb-ask').innerText.includes('구간')"),
+                        self.js(win, "document.querySelector('.titleblock').innerText"))
+        self.assertEqual(self.read(self.mid)["version"], 2, "승인 전에는 저장하지 않음")
+        self.assertTrue(self.click_once(win, "c3", "옮기고 확정"), "옮기고 확정 단추")
+        self.assertTrue(self.wait(win, "(document.querySelector('.titleblock').innerText || '').includes('등록 버전 3')"),
                         self.js(win, "document.querySelector('.titleblock').innerText"))
         r = self.read(self.mid)
-        self.assertEqual((r["fields"][0]["value"], r["fields"][1]["value"]), (None, "0"),
-                         "'후보 그대로 확정'도 잠긴 번호는 빼고 개정만 확정")
+        self.assertEqual((r["fields"][0]["value"], r["fields"][1]["value"]), ("SNP-M-101", "0"), "번호와 개정을 후보 그대로 확정")
+        pg_nodes = nodes.load(project_ctx_graph(self))["nodes"]
+        self.assertTrue(pg_nodes and not any(n.get("lost") for n in pg_nodes), "구간이 새 번호를 따라감(찾지 못한 구성요소 없음)")
 
 
 if __name__ == "__main__":

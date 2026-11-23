@@ -12,7 +12,7 @@ const EMPTY = { project_id: null, reviewer: null, rows: [], fields: [], totals: 
 const STATE = { unconfirmed: ["warn", "확정 전"], partial: ["warn", "일부 확정"], confirmed: ["ok", "확정"] };
 const FORMAT = { drawio: "drawio", pdf: "PDF", dexpi: "DEXPI" };
 
-export const tb = createStore({ data: EMPTY, error: null, notice: null, busy: null, focus: null, drafts: {}, reasons: {}, jobs: {} });
+export const tb = createStore({ data: EMPTY, error: null, notice: null, busy: null, focus: null, drafts: {}, reasons: {}, jobs: {}, ask: null });
 let seq = 0;
 
 function useTb(selector) {
@@ -55,6 +55,8 @@ function wire() {
     const carried = (r.carried || []).filter((c) => c.edits || c.ai_review).length;
     const parts = ["확정했습니다(등록 버전 " + r.version + ")."];
     if (r.re_extracted) parts.push("도면을 다시 읽었습니다.");
+    if ((r.carries || []).length) parts.push("구간·분석 결과 등 기록(" + r.carries.map((c) => c.place + " " + c.count + "건").join(", ") + ")을 바뀐 도면 이름으로 옮겼습니다.");
+    followRenames(r.renames);
     if (carried) parts.push("사람 수정·AI 후보 기록을 새 버전으로 옮겼습니다.");
     if ((r.released || []).length) parts.push("쪽 확정이 풀렸습니다. 도면을 다시 보고 쪽 확정을 하세요.");
     if ((r.number_conflicts || []).length) parts.push("같은 도면 번호의 다른 형식 원본이 있습니다. 도면 패널에서 그래프에 쓸 쪽을 고르세요.");
@@ -88,7 +90,36 @@ function clearDraft(mid) {
   tb.set({ drafts, reasons });
 }
 
+/** 번호 확정·취소로 도면 이름이 바뀌었으면(시트 정체 U5) 지금 열린 도면을 새 이름으로 바꾼다. 고른 구성요소·표시는 비운다(옛 이름의 것). */
+export function followRenames(renames) {
+  const hit = (renames || []).find((x) => x.from && x.to && x.from === store.get().sheet);
+  if (hit) store.set({ sheet: hit.to, marks: { rid: null, bySheet: {} } });
+  return !!hit;
+}
+
+/** 확정·취소 전에 엔진에 검사만 시켜(dry) 옮겨 갈 기록·바뀔 도면 이름이 있으면 먼저 보인다(시트 정체 U5c). 없으면 바로 보낸다. */
 async function send(name, row, args) {
+  tb.set({ busy: row.material_id, error: null, notice: null, ask: null });
+  let pre = null;
+  try {
+    pre = await cmd(name, Object.assign({ material_id: row.material_id, ver: row.ver, dry: true }, args));
+  } catch (e) {
+    tb.set({ busy: null, error: (e && e.message) || "확정하지 못했습니다." });
+    if (e && e.code === "stale") load();
+    return;
+  }
+  if (pre && pre.changed !== false && pre.text) { tb.set({ busy: null, ask: { mid: row.material_id, name, row, args, text: pre.text } }); return; }
+  return go(name, row, args);
+}
+
+/** 미리 보인 카드에서 '옮기고 확정'. */
+export function answerAsk(yes) {
+  const a = tb.get().ask;
+  tb.set({ ask: null });
+  if (a && yes) go(a.name, a.row, a.args);
+}
+
+async function go(name, row, args) {
   tb.set({ busy: row.material_id, error: null, notice: null });
   try {
     const out = await cmd(name, Object.assign({ material_id: row.material_id, ver: row.ver }, args));
@@ -98,6 +129,7 @@ async function send(name, row, args) {
       return;
     }
     tb.set({ busy: null, notice: out && out.changed === false ? "바뀐 값이 없습니다." : "확정했습니다." });
+    if (out) followRenames(out.renames);
     load();
   } catch (e) {
     tb.set({ busy: null, error: (e && e.message) || "확정하지 못했습니다." });
@@ -105,8 +137,10 @@ async function send(name, row, args) {
   }
 }
 
-/** 도면 번호를 바꿀 수 없는 도면(구간·결과 등이 걸렸거나 여러 쪽 자료)인가. 그때는 번호 칸을 잠그고 보내지도 않는다. */
-export function numberLocked(row) { return row.review_data.length > 0 || row.multi_page; }
+/** 도면 번호를 바꿀 수 없는 도면(여러 쪽 자료)인가. 그때는 번호 칸을 잠그고 보내지도 않는다.
+ *  구간·결과 등이 가리키는 도면은 이제 잠그지 않는다: 번호를 확정하면 그 기록이 새 이름을 따라 옮겨 가고(시트 정체 U5),
+ *  옮기지 못하는 기록이 있으면 엔진이 그 자리 이름으로 막는다. 확정 전에 무엇을 옮기는지 보인다(send의 dry). */
+export function numberLocked(row) { return row.multi_page; }
 
 /** 보낼 값 {항목: 값}. asIs면 확정 전 항목의 후보를, 아니면 사람이 입력칸에서 고친 항목만 보낸다(손대지 않은 칸은 보내지 않음).
  * 잠긴 번호 칸은 어느 쪽이든 보내지 않는다(개정·제목만 확정할 수 있게). drafts는 {항목: 입력한 글}. */
@@ -171,6 +205,15 @@ function Field({ row, f, locked }) {
       onClick=${() => cancelField(row, f.field)}>확정 취소<//>` : null}</span></div>`;
 }
 
+/** 확정 전 미리 보기(시트 정체 U5c): 옮겨 갈 기록·바뀔 도면 이름. */
+function AskCard({ row }) {
+  const ask = useTb((s) => s.ask);
+  if (!ask || ask.mid !== row.material_id) return null;
+  return html`<div class="card tb-ask" role="dialog" aria-label="확정 전 확인"><div>${ask.text}</div>
+    <div class="acts-row"><${Btn} sm=${true} kind="primary" label="옮기고 확정" onClick=${() => answerAsk(true)}>옮기고 확정<//>
+      <${Btn} sm=${true} label="확정하지 않기" onClick=${() => answerAsk(false)}>취소<//></div></div>`;
+}
+
 function Row({ row, onOpen, open, noReviewer }) {
   const busy = useTb((s) => s.busy) === row.material_id;
   const reason = useTb((s) => s.reasons[row.material_id] || "");
@@ -188,7 +231,8 @@ function Row({ row, onOpen, open, noReviewer }) {
       ${row.needs_reextract ? html`<${Notice} kind="warn" icon="refresh">확정은 저장했지만 도면을 다시 읽지 못했습니다. 지금 보이는 도면은 앞 값으로 읽은 것입니다.
         <${Btn} sm=${true} label="도면 다시 읽기" disabled=${busy || noReviewer} onClick=${() => rereadRow(row)}>다시 읽기<//><//>` : null}
       ${row.multi_page ? html`<${Notice} kind="warn" icon="alert-triangle">여러 쪽 자료(${row.pages}쪽)는 쪽마다 도면 번호가 달라 자료 하나에 번호를 확정하지 않습니다.<//>` : null}
-      ${row.review_data.length ? html`<${Notice} kind="warn" icon="lock">이 도면의 구성요소를 ${row.review_data.join("·")}이 가리키고 있어 도면 번호를 바꾸면 끊깁니다. 번호는 바꿀 수 없고 개정·제목은 확정할 수 있습니다.<//>` : null}
+      ${row.review_data.length ? html`<${Notice} kind="info" icon="info-circle">이 도면을 가리키는 기록(${row.review_data.join("·")})은 번호를 확정하면 바뀐 도면 이름을 따라 옮겨 갑니다. 확정 전에 무엇을 옮기는지 보입니다.<//>` : null}
+      <${AskCard} row=${row} />
       <div class="tb-grid">${row.fields.map((f) => html`<${Field} key=${f.field} row=${row} f=${f} locked=${locked} />`)}</div>
       <div class="tb-foot">
         <input class="tb-reason" placeholder="까닭(선택, 기록에 남음)" maxlength="300" value=${reason} aria-label="확정 까닭"

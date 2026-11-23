@@ -68,12 +68,35 @@ def _refuse(out):
     raise api.CommandError(CODE_MAP.get(r.get("code"), "failed"), str(r.get("reason") or "처리하지 못했습니다."))
 
 
+def carry_view(out):
+    """엔진 답의 carries {자리: 수}·carries_lost {자리: 수}·renames [{from, to, from_label, to_label}] → 화면 값과 사람 말(시트 정체 U5c).
+    → {"carries": [{place, count}], "lost": [{place, count}], "renames": [{from, to, from_label, to_label}], "text": 글 또는 ""}."""
+    carries = [{"place": k, "count": int(n)} for k, n in sorted((out.get("carries") or {}).items()) if n]
+    lost = [{"place": k, "count": int(n)} for k, n in sorted((out.get("carries_lost") or {}).items()) if n]
+    renames = [{"from": r.get("from"), "to": r.get("to"), "from_label": r.get("from_label"), "to_label": r.get("to_label")}
+               for r in out.get("renames") or []]
+    parts = []
+    names = "·".join("%s → %s" % (r["from_label"], r["to_label"]) for r in renames)
+    if carries:
+        parts.append("이 도면의 기록(%s)이 바뀐 도면 이름을 따라 옮겨 갑니다%s." % (", ".join("%s %d건" % (c["place"], c["count"]) for c in carries),
+                                                              ": " + names if names else ""))
+    elif renames:
+        parts.append("도면 이름이 바뀝니다: %s." % names)
+    if lost:
+        parts.append("지금 도면과 대조한 적이 없는 기록(%s)은 옮기지 못하고 '찾지 못한 구성요소'로 남습니다."
+                     % ", ".join("%s %d건" % (c["place"], c["count"]) for c in lost))
+    return {"carries": carries, "lost": lost, "renames": renames, "text": " ".join(p for p in parts if p)}
+
+
 def _run(engine, a, fn):
-    """fn(dry, progress) -> 엔진 답. 먼저 dry로 검사하고, 다시 추출할 쪽이 있으면 작업으로 돌린다."""
+    """fn(dry, progress) -> 엔진 답. 먼저 dry로 검사하고, 다시 추출할 쪽이 있으면 작업으로 돌린다.
+    a["dry"]면 검사만 하고 옮길 기록·이름 바뀜(carry_view)을 돌려준다(저장하지 않음, 화면이 승인 전에 보인다)."""
     pid = engine.project_id()
     check = fn(pid, True, None)
     if not check["ok"]:
         _refuse(check)
+    if a.get("dry"):
+        return dict(carry_view(check), dry=True, changed=bool(check.get("changed")))
     if not check.get("changed"):
         return {"changed": False, "row": tb.row(pid, a["material_id"])}
 
@@ -86,9 +109,9 @@ def _run(engine, a, fn):
         engine.changed("titleblock")
         engine.changed("sheetconf")
         engine.changed("kg")
-        return {"material_id": a["material_id"], "version": out["version"], "re_extracted": out["re_extracted"],
-                "carried": out["carried"], "released": out["released_sheet_confirmations"],
-                "number_conflicts": [c.get("drawing_number") for c in out.get("conflicts") or []], "notes": out["notes"]}
+        return dict(carry_view(out), material_id=a["material_id"], version=out["version"], re_extracted=out["re_extracted"],
+                    carried=out["carried"], released=out["released_sheet_confirmations"],
+                    number_conflicts=[c.get("drawing_number") for c in out.get("conflicts") or []], notes=out["notes"])
     if not check.get("re_extract"):
         result = job(lambda *_: None)
         return dict(result, changed=True, row=tb.row(pid, a["material_id"]))
@@ -119,7 +142,8 @@ def register(commands):
             raise ValueError("명령 이름이 겹침: %s" % key)
         commands[key] = C(spec_, handler, doc)
 
-    base = {"material_id": (v_str(1, 80), True), "ver": (v_str(1, 100), True), "reason": (v_str(0, 300), False)}
+    base = {"material_id": (v_str(1, 80), True), "ver": (v_str(1, 100), True), "reason": (v_str(0, 300), False),
+            "dry": (api.v_bool(), False)}             # 검사만: 옮길 기록·이름 바뀜을 보인다(시트 정체 U5c)
     put("confirm", dict(base, fields=(v_obj(**{f: value for f in FIELD_IDS}), True)), _h_confirm,
         "표제란 값(도면 번호·개정·제목)을 사람이 확정한다(후보 그대로 또는 고친 값). 이미 추출한 도면은 다시 추출한다")
     put("unconfirm", dict(base, fields=(v_list(v_enum(*FIELD_IDS), len(FIELD_IDS)), False)), _h_unconfirm,
