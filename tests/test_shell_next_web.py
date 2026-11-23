@@ -135,5 +135,45 @@ class QueueFocusTest(ShellBase):
         self.assertEqual(self.js(win, "window.__hz.queue.get().undo.length"), before + 1, "대기열이 처음부터 다시 열림")
 
 
+class LayoutTest(ShellBase):
+    """실제 창 결함 2·3·6: 열린 패널이 다음에 할 일 줄을 가리지 않고, 알림 줄은 도면·보기 도구를 덮지 않으며 패널에 잘리지 않고,
+    대기열이 열린 동안은 숨는다. '그 밖에 n건' 펼침은 Esc로 닫힌다(1366×768)."""
+
+    def rect(self, win, sel):
+        r = self.js(win, "(() => { const e = document.querySelector(%s); if (!e) return null; const r = e.getBoundingClientRect();"
+                         " return JSON.stringify([r.left, r.top, r.right, r.bottom]); })()" % json.dumps(sel))
+        return json.loads(r) if r else None
+
+    def test_panel_and_notice_do_not_cover_the_line_or_the_drawing(self):
+        win = self.window((1366, 768))
+        gid = self.js(win, "window.__hz.store.get().drawings.drawings[0].graph_id")
+        self.js(win, "window.__hz.store.set({ sheet: '%s', panel: 'nodes', notices: [{ id: 't', kind: 'warn', text: '도면이 바뀌어 2곳을 다시 확인해야 합니다(찾지 못한 구성요소 2개)' }] })" % gid)
+        self.assertTrue(wait_for(lambda: self.rect(win, ".pwrap") and self.rect(win, ".notice-row") and self.rect(win, ".topbar .next .line"), 15))
+        line, panel, row, canvas = (self.rect(win, s) for s in (".topbar .next .line", ".pwrap", ".notice-row", ".canvas"))
+        hit = self.js(win, "(() => { const r = document.querySelector('.topbar .next .line').getBoundingClientRect();"
+                           " const e = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2); return !!(e && e.closest('.next')); })()")
+        self.assertTrue(hit, "열린 패널이 다음에 할 일 줄을 가림")
+        self.assertGreaterEqual(panel[1], line[3] - 1, "패널은 위 막대 아래에서 시작")
+        self.assertGreaterEqual(row[0], panel[2] - 1, "알림은 패널 오른쪽에서 시작(글이 패널에 잘리지 않음)")
+        self.assertGreaterEqual(canvas[1], row[3] - 1, "알림이 도면을 덮지 않음")
+        nt = self.js(win, "(() => { const t = document.querySelector('.notice-row .nt'); return t.scrollWidth <= t.clientWidth + 1; })()")
+        self.assertTrue(nt, "알림 글이 잘림")
+        self.js(win, "window.__hz.store.set({ panel: null })")
+        self.js(win, "window.__hz.queue.set({ open: true, kind: 'lost', i: 0, done: false, items: [{ qid: 'lost|S1|L-1', kind: 'lost', node_id: 'S1', node_name: 'S1',"
+                     " key: 'L-1', label: '밸브', graph_id: null, sheet: null, target: { node_id: 'S1', rev: 1, state: 'applied' }, held: false, cands: [], state: 'open' }] })")
+        self.assertTrue(wait_for(lambda: self.rect(win, "aside.chat.queue") is not None, 10))
+        self.assertTrue(wait_for(lambda: self.js(win, "getComputedStyle(document.querySelector('.notice-bar')).display") == "none", 5), "대기열 동안 알림이 남음")
+
+    def test_the_list_closes_with_escape(self):
+        win = self.window((1366, 768))
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.topbar .next .line')"), 15))
+        self.js(win, """window.__hz.next.set({ running: null, open: true, items: [
+            { kind: 'titleblock', count: 1, text: '표제란을 확정하지 않은 도면이 1장 있습니다', detail: null, action: { label: '표제란 확정', go: 'panel:drawings#titleblock' }, tone: '' },
+            { kind: 'nodes_draft', count: 2, text: '확정하지 않은 검토구간이 2개 있습니다', detail: null, action: { label: '모두 확정', go: 'confirm:nodes.confirm' }, tone: '' }] })""")
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.next-list')"), 5))
+        self.js(win, "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+        self.assertTrue(wait_for(lambda: self.js(win, "!document.querySelector('.next-list')"), 5), "Esc로 닫히지 않음")
+
+
 if __name__ == "__main__":
     unittest.main()

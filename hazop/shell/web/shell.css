@@ -47,7 +47,7 @@ select:disabled { color: var(--faint); cursor: not-allowed; }
 .actbox.confirm .actbox-h .ic { color: var(--warn); }
 
 /* 패널을 감싸는 틀: 묶음 탭이 있으면 위에 붙는다. 넓은 패널(.panel.wide)이면 틀도 도면 칸 전체를 덮는다 */
-.pwrap { position: absolute; top: 0; bottom: 0; left: 0; width: var(--panel-w); z-index: 6; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); box-shadow: var(--sh-3); }
+.pwrap { position: absolute; top: var(--top-h); bottom: 0; left: 0; width: var(--panel-w); z-index: 6; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); box-shadow: var(--sh-3); }
 .pwrap:has(> .panel.wide) { width: auto; right: 0; border-right: 0; box-shadow: none; }
 .pwrap > .panel { position: static; width: auto; flex: 1; min-height: 0; box-shadow: none; border-right: 0; }
 .ptabs { display: flex; gap: 2px; padding: var(--sp-2) var(--sp-3) 0; border-bottom: 1px solid var(--line); flex: none; background: var(--surface); }
@@ -93,6 +93,9 @@ ul.tight { margin: 0; padding-left: 16px; }
 .conf-list li.bad::before { content: "! "; color: var(--warn); font-weight: bold; }
 .check { display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-sm); }
 .btn:disabled { opacity: .45; cursor: default; }
-.notice-bar { position: absolute; left: 50%; top: 48px; transform: translateX(-50%); z-index: 5; display: flex; flex-direction: column; gap: 6px; max-width: min(720px, 92%); }
+/* 알림 줄은 위 막대 바로 아래 흐름 안에 둔다: 도면을 아래로 밀고 덮지 않는다(실제 창 결함 2). 패널이 열리면 패널 오른쪽에서 시작하고, 대기열이 열린 동안은 숨긴다 */
+.notice-bar { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 6px 12px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.app:has(.pwrap) .notice-bar { padding-left: calc(var(--panel-w) + 12px); }
+.app.queue-open .notice-bar { display: none; }
 .notice-row { display: flex; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--warn-line); border-left-width: 4px; border-radius: var(--r-md); padding: 6px 8px 6px 12px; box-shadow: var(--sh-2, 0 2px 8px rgba(0,0,0,.12)); font-size: var(--fs-sm); }
 .notice-row .nt { flex: 1; }

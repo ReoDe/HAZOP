@@ -65,6 +65,9 @@ export function wire() {
       if (top && top.kind !== "none") { e.preventDefault(); go(top.action); }
     }
   });
+  window.addEventListener("keydown", (e) => {          // Esc로 펼침을 닫는다(패널 닫기보다 먼저)
+    if (e.key === "Escape" && next.get().open) { e.preventDefault(); e.stopImmediatePropagation(); next.set({ open: false }); }
+  }, true);
   document.addEventListener("click", (e) => { if (next.get().open && !(e.target.closest && e.target.closest(".next"))) next.set({ open: false }); });
   load();
 }

@@ -24,7 +24,7 @@ body { font-family: var(--font); font-size: var(--fs-md); color: var(--ink); bac
 .tip { position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%); background: var(--ink); color: #fff; font-size: var(--fs-xs); padding: 3px 8px; border-radius: var(--r-sm); white-space: nowrap; }
 
 .center { position: relative; display: flex; flex-direction: column; min-width: 0; }
-.topbar { height: var(--top-h); display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4); background: var(--surface); border-bottom: 1px solid var(--line); z-index: 3; }
+.topbar { height: var(--top-h); display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4); background: var(--surface); border-bottom: 1px solid var(--line); z-index: 7; }   /* 열린 패널(.pwrap 6)보다 위: 다음에 할 일 펼침이 패널 위로 나온다 */
 .crumb { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 .crumb .proj { color: var(--muted); }
 .crumb .sheet { all: unset; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; padding: 4px 8px; border-radius: var(--r-sm); cursor: pointer; }

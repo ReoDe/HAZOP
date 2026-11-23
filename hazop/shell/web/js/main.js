@@ -230,11 +230,11 @@ function App() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
-  return html`<div class=${"app" + (collapsed && !queueOpen ? " chat-collapsed" : "")}>
+  return html`<div class=${"app" + (collapsed && !queueOpen ? " chat-collapsed" : "") + (queueOpen ? " queue-open" : "")}>
     <${Rail} />
-    <main class="center"><${TopBar} /><${SheetHost} />
+    <main class="center"><${TopBar} /><${Notices} /><${SheetHost} />
       ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
-      <${Notices} /><${Toast} /><${ReviewConfirm} /></main>
+      <${Toast} /><${ReviewConfirm} /></main>
     ${queueOpen ? html`<${QueueCard} onChat=${() => { closeQueue(); if (store.get().chatCollapsed) toggleChat(); }} />`
       : html`<${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />`}
   </div>`;      // 오른쪽 칸은 채팅 또는 대기열 카드 하나(HZ-DSN-06 §3.5)
