@@ -129,7 +129,7 @@ export function MldSection() {
   const gaps = m.branches.filter((b) => b.status === "gap" || b.status === "unmapped").length;
   const rule = m.branches.filter((b) => b.status === "rule").length;
   return html`<div class="ie-mld">
-    <div class="acts-row res-head"><span class="small">${m.loaded ? html`주논리도(MLD) <b>${m.source.title || m.source.mld_id}</b> 판 ${m.source.revision || "-"} · 잎 가지 ${m.branches.length} · 공백·범주 없음 ${gaps}${rule ? " · 사람 확인 전(규칙 대조) " + rule : ""}`
+    <div class="acts-row res-head"><span class="small">${m.loaded ? html`주논리도(MLD) <b>${m.source.title || m.source.mld_id}</b> 개정 ${m.source.revision || "-"} · 잎 가지 ${m.branches.length} · 공백·범주 없음 ${gaps}${rule ? " · 사람 확인 전(규칙 대조) " + rule : ""}`
       : "주논리도(MLD)를 받지 않았습니다. 대상 노형의 MLD 파일을 가져오면 잎 가지마다 후보가 있는지 대조합니다."}</span>
       <span class="acts"><${Btn} sm=${true} label="MLD 가져오기" disabled=${busy} onClick=${I.mldImport}>${m.loaded ? "MLD 다시 가져오기" : "MLD 가져오기"}<//></span></div>
     ${m.gone_links.length ? html`<div class="small reason">MLD에 없어진 가지에 남은 연결: ${m.gone_links.join(", ")}</div>` : null}

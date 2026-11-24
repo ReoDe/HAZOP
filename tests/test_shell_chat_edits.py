@@ -112,7 +112,7 @@ class DrawingTest(RunBase):
     def test_engine_question_seen_in_the_box_is_passed_as_confirm(self):
         self.ask_text = "지우기: local-node-003을(를) 지웁니다. 되돌리기로 살릴 수 있습니다."
         item = self.one("drawing.edit", op="delete_node", id="rc-pp01")
-        self.assertEqual({r["label"]: r["after"] for r in item["details"]}["엔진 확인"], self.ask_text)
+        self.assertEqual({r["label"]: r["after"] for r in item["details"]}["확인할 점"], self.ask_text)
         self.approve(item)
         (_k, _a, k), = self.saved
         self.assertEqual(k["confirm"], self.ask_text, "엔진이 물은 글을 상자에서 본 그대로 넘긴다")
@@ -202,7 +202,7 @@ class DocsRevisionTest(RunBase):
         with mock.patch("hazop.shell.api_docs.list_documents", lambda engine: copy.deepcopy(docs)), \
                 mock.patch("hazop.shell.api_docs._h_revision", lambda engine, a: jobs.append(a) or {"job": "j5"}):
             item = self.one("docs.revision", material_id="D-002", answer="replace", old="D-001")
-            self.assertIn("설계 기준 Rev.0", {r["label"]: r["after"] for r in item["details"]}["대신할 옛 판"])
+            self.assertIn("설계 기준 Rev.0", {r["label"]: r["after"] for r in item["details"]}["대신할 이전 개정"])
             self.actions.runner.watch = False
             self.approve(item)
             self.assertEqual(jobs, [{"material_id": "D-002", "answer": "replace", "old": "D-001"}])
@@ -319,7 +319,7 @@ class LinksChatTest(RunBase):
         self.assertEqual(rows["짝"]["before"], "(짝 없음)")
         self.assertIn("SNP-M-102 ← M-101", rows["짝"]["after"])
         self.assertIn("배관 번호가 다름", rows["주의"]["after"])
-        self.assertEqual(rows["엔진 확인"]["after"], self.ask_text)
+        self.assertEqual(rows["확인할 점"]["after"], self.ask_text)
         self.approve(item)
         (a, k), = self.saved
         self.assertEqual(a[1:6], ("graph-SNP-M-101", "c1", "graph-SNP-M-102", "c9", "lv-1"))
@@ -360,7 +360,7 @@ class ExcludeDrawingTest(RunBase):
         self.assertEqual((rows["구간 분석"]["before"], rows["구간 분석"]["after"][:1]), ("씀", "뺌"))
         pg = project_ctx.project_graph(self.engine.project_id())
         engine_ask = nc.exclude_drawing(pg, held, True, by="검토자", ver=self.rows()[held]["ver"])["needs_confirm"]
-        self.assertEqual(rows["엔진 확인"]["after"], engine_ask, "상자의 확인 글이 엔진이 묻는 글과 같다")
+        self.assertEqual(rows["확인할 점"]["after"], engine_ask, "상자의 확인 글이 엔진이 묻는 글과 같다")
         self.assertFalse(self.rows()[held]["excluded"], "묻기만 하고 저장하지 않는다")
         self.assertTrue(self.approve(item)["ok"])
         self.assertTrue(self.rows()[held]["excluded"])

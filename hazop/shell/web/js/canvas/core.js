@@ -5,7 +5,7 @@
 // 보안: 도면·모델에서 온 글(태그, 라벨, 이름)은 textContent로만 넣는다. innerHTML·dangerouslySetInnerHTML을 쓰지 않는다(정적 검사 대상).
 
 import { SpatialIndex, MAX_SELECTION, capSelection, changeSelection, selectionEvent, normRect } from "./index.js";
-import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags, badgeBoxes } from "./marks.js";
+import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags, badgeBoxes, placeChips } from "./marks.js";
 import { buildBase, recolor, fragmentBox, layoutLabels, labelDescriptor } from "./clean_view.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -712,18 +712,12 @@ export class SheetCore {
     box.textContent = "";
     const all = this._links && this._links.length ? this._links : (this.data && Array.isArray(this.data.links) ? this.data.links : null);   // 도면 자료의 links 또는 구간 화면이 주는 links
     if (!this.data || !all) return;
-    const rows = new Map();
-    for (const link of all) {
-      if (!link || typeof link.id !== "string") continue;
-      const rect = this.index.rectOf(link.id);
-      if (!rect) continue;
-      const sr = this._toScreenRect(rect), row = rows.get(link.id) || 0;
-      rows.set(link.id, row + 1);
+    for (const c of placeChips(all, (id) => { const rect = this.index.rectOf(id); return rect ? this._toScreenRect(rect) : null; })) {
       const b = this.doc.createElement("button");
-      b.type = "button"; b.className = "hz-cv-chip" + (link.status === "linked" ? "" : " warn");
-      b.textContent = link.status === "linked" ? "→ " + (link.label || link.peer_graph_id || "") : "미연결" + (link.reason ? " · " + link.reason : "");
-      b.style.left = sr.x + "px"; b.style.top = sr.y + sr.h + 4 + row * 20 + "px";
-      b.addEventListener("click", (ev) => { ev.stopPropagation(); if (this.cb.onLinkClick) this.cb.onLinkClick(link); });
+      b.type = "button"; b.className = "hz-cv-chip" + (c.warn ? " warn" : "");
+      b.textContent = c.text; b.title = c.title;
+      b.style.left = c.x + "px"; b.style.top = c.y + "px";
+      b.addEventListener("click", (ev) => { ev.stopPropagation(); if (this.cb.onLinkClick) this.cb.onLinkClick(c.link); });
       box.appendChild(b);
     }
   }

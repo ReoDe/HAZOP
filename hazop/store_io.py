@@ -9,7 +9,9 @@
   쓰는 중인 다른 쓰기를 건드리지 않게 만든 지 10분이 지난 것만 지운다. 쓰는 쪽이 하나뿐인 파일은 remove_temps로
   나이와 관계없이 지울 수 있다. expect를 주면 바꾸기 직전에 지문을 다시 보고 다르면 Conflict다.
   Windows에서는 os.replace 뒤 대상 파일의 접근 권한이 폴더에서 물려받은 값이 된다(임시 파일을 새로 만들기 때문).
-  지문 확인과 교체 사이의 틈은 남는다. 그 틈에 다른 프로세스가 끼어드는 것은 단일 실행 잠금(app.startup)이 막는다.
+  지문 확인과 교체는 파일별 잠금(_path_lock) 안에서 한다. 한 프로세스 안의 두 스레드가 같은 판을 읽고 둘 다 확인을 통과해 한쪽을 잃지 않게,
+  Windows에서 같은 파일을 동시에 바꾸다 접근 거부가 나지 않게 하려는 것이다. 다른 쪽이 그 파일을 읽으려고 잠깐 열고 있어 교체가
+  공유 위반으로 실패하면 2초 안에서 짧게 물러났다가 다시 바꾼다(_replace). 다른 프로세스가 끼어드는 것은 단일 실행 잠금(app.startup)이 막는다.
 - 백업은 이미 있는 백업 파일을 덮어쓰지 않는다.
 """
 
@@ -19,6 +21,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -28,6 +31,14 @@ ANY = object()
 STALE_TEMP_SECONDS = 600
 BACKUP_TRIES = 1000
 _log = logging.getLogger(__name__)
+_LOCKS = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _path_lock(path):
+    key = os.path.normcase(os.path.abspath(path))
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(key, threading.Lock())
 
 
 class Conflict(ValueError):
@@ -89,6 +100,39 @@ def remove_temps(path, older_than=0):
                 pass
 
 
+# Windows에서 교체 대상 파일을 다른 쪽(같은 앱의 읽는 스레드, 백신·탐색기 미리보기)이 잠깐 열고 있으면 os.replace가
+# 접근 거부(WinError 5)나 공유 위반(32)으로 실패한다. 읽기는 한 번에 읽고 닫으므로 곧 풀린다: 짧게 물러났다가 다시 바꾼다.
+# WinError 5는 대상이 읽기 전용일 때도 같은 번호라, 대상에 읽기 전용 속성이 있으면 다시 하지 않고 바로 올린다.
+# 폴더 권한(ACL)이 지우기·바꾸기를 막은 경우는 공유 위반과 가릴 수 없어 2초 동안 다시 한 뒤 올린다(임시 파일은 같은 폴더에
+# 만들었으므로 폴더에 쓸 권한은 있다).
+REPLACE_RETRY_SECONDS = 2.0
+_SHARING_ERRORS = (5, 32)
+
+
+def _read_only(path):
+    try:
+        return not os.access(path, os.W_OK)      # Windows의 os.access는 읽기 전용 속성만 본다
+    except OSError:
+        return False
+
+
+def _replace(tmp, path):
+    """os.replace를 공유 위반일 때만(읽기 전용 대상은 빼고) REPLACE_RETRY_SECONDS 안에서 다시 한다. 그래도 안 되면 마지막 오류를 그대로 올린다
+    (원본은 그대로, 임시 파일은 write_bytes가 지운다)."""
+    end = time.monotonic() + REPLACE_RETRY_SECONDS
+    delay = 0.005
+    while True:
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError as exc:
+            if (getattr(exc, "winerror", None) not in _SHARING_ERRORS or time.monotonic() >= end
+                    or (os.path.exists(path) and _read_only(path))):
+                raise
+        time.sleep(delay)
+        delay = min(delay * 2, 0.1)
+
+
 def write_bytes(path, data, expect=ANY):
     """data를 path에 원자적으로 쓰고 새 지문을 돌려준다. expect(읽을 때 지문, 없던 파일이면 None)를 주면
     지금 파일의 지문이 다를 때 쓰지 않고 Conflict를 낸다."""
@@ -101,9 +145,10 @@ def write_bytes(path, data, expect=ANY):
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
-        if expect is not ANY and fingerprint(path) != expect:
-            raise Conflict("읽은 뒤 저장 파일이 바뀜: %s" % path)
-        os.replace(tmp, path)
+        with _path_lock(path):
+            if expect is not ANY and fingerprint(path) != expect:
+                raise Conflict("읽은 뒤 저장 파일이 바뀜: %s" % path)
+            _replace(tmp, path)
     finally:
         try:
             os.remove(tmp)

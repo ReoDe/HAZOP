@@ -54,6 +54,7 @@ DOC_IDS = {
     "docs/design/screen-spec.md": "HZ-DSN-03",
     "docs/design/ai-connection-screens.md": "HZ-DSN-04",
     "docs/design/app-shell-web.md": "HZ-DSN-05",
+    "docs/design/guided-flow.md": "HZ-DSN-06",
     "docs/methodology/combined-risk-methods.md": "HZ-MTH-01",
     "docs/records/README.md": "HZ-REC-01",
     "docs/records/decision-log.md": "HZ-REC-02",

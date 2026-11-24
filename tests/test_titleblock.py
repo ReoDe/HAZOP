@@ -180,24 +180,24 @@ class ConfirmTest(Base):
 
 
 class NumberChangeTest(Base):
-    def test_number_change_is_blocked_while_nodes_exist_and_allowed_without(self):
+    def test_number_change_with_nodes_carries_them_and_unconfirm_too(self):
+        """구간이 있어도 번호 바꾸기·취소는 같은 자료의 이름 바뀜이라 허락하고, 구간 구성원은 하나도 끊기지 않고 새 이름을 따라간다(U5)."""
         mid = self.add()
         self.confirm(mid, self.candidates(mid))
         pg, ns = self.make_nodes(mid)
         members = sorted({m for x in ns["nodes"] for m in x["members"]})
         self.assertTrue(members and all(m.startswith("graph-SNP-M-101/") for m in members))
-        before = self.row(mid)["version"]
-        out = self.confirm(mid, {"drawing_number": "SNP-M-999"})
-        self.assertFalse(out["ok"])
-        self.assertEqual(out["refused"][0]["code"], "rule")
-        self.assertIn("구간", out["refused"][0]["reason"])
-        self.assertEqual(self.row(mid)["version"], before, "막히면 등록정보를 바꾸지 않음")
         self.assertTrue(self.row(mid)["review_data"][0].startswith("구간 "), self.row(mid)["review_data"])
+        out = self.confirm(mid, {"drawing_number": "SNP-M-999"})
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(out["carries"], {"구간": 1})
         from hazop.app import project_ctx
-        ids = {x["entity_id"] for x in project_ctx.project_graph(P)["nodes"]}
-        self.assertEqual([m for m in members if m not in ids], [], "구간 구성원이 하나도 끊기지 않음")
-        undo = tb.unconfirm(P, mid, ["drawing_number"], BY, ver=self.row(mid)["ver"])
-        self.assertTrue(undo["ok"], "번호 취소로 그래프 ID가 그대로면(쪽 이름 SNP-M-101) 막지 않음")
+        pg = project_ctx.project_graph(P)
+        ids = {x["entity_id"] for x in pg["nodes"]}
+        now = sorted({m for x in nodes.load(pg)["nodes"] for m in x["members"]})
+        self.assertEqual(now, [m.replace("graph-SNP-M-101/", "graph-SNP-M-999/") for m in members])
+        self.assertTrue(set(now) <= ids, "구간 구성원이 하나도 끊기지 않음")
+        self.assertTrue(tb.unconfirm(P, mid, ["drawing_number"], BY, ver=self.row(mid)["ver"])["ok"])
         os.remove(nodes.store_path(P, pg["graph_id"]))   # 사람이 구간을 정리한 뒤
         moved = self.confirm(mid, {"drawing_number": "SNP-M-999"})
         self.assertTrue(moved["ok"], moved)
@@ -243,8 +243,6 @@ class InterrogateFindingsTest(Base):
         self.assertEqual((r["version"], r["needs_reextract"], r["sheets"][0]["name"]), (2, True, old["name"]))
         self.assertTrue(os.path.isfile(os.path.join(paths.output_root("graph"), old["name"], "graph.json")), "앞 그래프를 되돌림")
         self.assertTrue(r["review_data"] and r["review_data"][0].startswith("구간"), "지금 쪽은 앞 버전의 추출")
-        blocked = self.confirm(mid, {"drawing_number": "SNP-M-999"})
-        self.assertEqual(blocked["refused"][0]["code"], "rule", "다시 읽기 실패 뒤에도 구간이 있는 번호 바꾸기는 막음")
         again = self.confirm(mid, {"title": "주 배관"})
         self.assertTrue(again["ok"] and again["re_extracted"], again)
         self.assertEqual(again["version"], 2, "새 버전 없이 다시 읽기만")
@@ -269,14 +267,19 @@ class InterrogateFindingsTest(Base):
         self.assertEqual(sorted(project.pick_graphs(P)), ["graph-SNP-M-555"], "앞 그래프는 비켜 둠")
         self.assertTrue(os.path.isfile(os.path.join(paths.output_root("graph"), old, tb.SUPERSEDED)))
 
-    def test_number_that_collides_through_a_page_name_case_or_file_key_is_refused(self):
+    def test_number_that_collides_through_case_or_file_key_is_refused(self):
+        """번호 확정 전 시트는 graph-<자료>-p<쪽>이라 쪽 이름으로는 겹치지 않는다(hazop.graph.sheets). 확정한 번호와 글자만 다른 번호는 막는다.
+        같은 번호는 형식이 같아도 막지 않는다: 같은 번호의 다른 파일은 고르기 줄(kind file)에 오르고 먼저 있던 파일이 주인으로 남는다(시트 정체 U2)."""
         a = self.add("SNP-M-101")
+        self.assertTrue(self.confirm(a, {"drawing_number": "SNP-M-101"})["ok"])
         b = self.add("SNP-M-102", extract=False)
-        for number in ("SNP-M-101", "snp-m-101", "SNP-M-101_"):
+        same = self.confirm(b, {"drawing_number": "SNP-M-101"}, dry=True)
+        self.assertTrue(same["ok"], same)
+        self.assertEqual(len(same["notes"]), 1, "이미 다른 파일이 쓰는 번호라고 알림")
+        for number in ("snp-m-101", "SNP-M-101_"):
             with self.subTest(number):
                 out = self.confirm(b, {"drawing_number": number})
                 self.assertEqual(out["refused"][0]["code"], "conflict", out)
-        self.confirm(a, {"drawing_number": "SNP-M-101"})
         pdf = self.add("SNP-M-101", "pdf", extract=False)
         self.assertEqual(self.confirm(pdf, {"drawing_number": "snp-m-101"})["refused"][0]["code"], "conflict",
                          "형식이 달라도 글자만 다르면 같은 파일을 쓰므로 막음")
@@ -324,21 +327,21 @@ class ReviewFindingsTest(Base):
     def boom(self, _path):
         raise RuntimeError("추출 실패 흉내")
 
-    def test_r1_project_graph_nodes_block_the_number_change_and_stay_whole(self):
+    def test_r1_project_graph_nodes_follow_the_number_change_and_stay_whole(self):
         mid = self.add()
         self.confirm(mid, self.candidates(mid))
         pg, ns = self.make_nodes(mid, n=10)
         dry = tb.confirm(P, mid, {"drawing_number": "SNP-M-555"}, BY, self.row(mid)["ver"], dry=True)
-        self.assertFalse(dry["ok"], "dry 검사도 막음")
-        self.assertIn("구간", dry["refused"][0]["reason"])
+        self.assertEqual(dry["carries"], {"구간": 1}, "dry가 옮길 구간을 알림")
         out = self.confirm(mid, {"drawing_number": "SNP-M-555"})
-        self.assertFalse(out["ok"])
-        self.assertEqual(self.row(mid)["fields"][0]["value"], "SNP-M-101")
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(self.row(mid)["fields"][0]["value"], "SNP-M-555")
         from hazop.app import project_ctx
         pg2 = project_ctx.project_graph(P)
         ids = {x["entity_id"] for x in pg2["nodes"]}
         saved = nodes.load(pg2)
         self.assertEqual(sum(1 for x in saved["nodes"] for m in x["members"] if m not in ids), 0)
+        self.assertEqual(sum(len(x.get("lost") or []) for x in saved["nodes"]), 0)
         self.assertTrue(self.confirm(mid, {"title": "개정과 제목은 확정 가능"})["ok"], "번호를 안 바꾸는 확정은 그대로 됨")
 
     def test_r1_every_record_that_points_at_the_graph_is_counted(self):

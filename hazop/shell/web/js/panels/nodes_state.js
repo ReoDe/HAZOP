@@ -4,7 +4,7 @@ import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore, store as shell } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
 import { openSheet as openSheetVia } from "./results_state.js";
-import { blankCard, errorText, targetsOf } from "./nodes_logic.js";
+import { blankCard, catchUpText, errorText, targetsOf } from "./nodes_logic.js";
 
 const EMPTY_LIST = {project_id: null,  available: false, set_rev: 0, nodes: [], batches: [], outside: { count: 0, total: 0 }, stale: false, read_only: null, pending_ai: 0 };
 
@@ -20,6 +20,8 @@ export const nodes = createStore({
   scope: "sheet",           // 목록 범위: "sheet"(이 도면) | "all"
   showOutside: true,        // 구간 밖 구성요소를 흐리게
   checked: [],              // 합치기용으로 체크한 구간
+  confirmAsk: null,         // '모두 확정' 확인 중인 구간 ID 목록
+  confirmSeen: null,        // 그 카드를 열 때 사람이 본 판 {set_rev, targets}
   busy: false,
   error: null,              // 마지막 거절 사유(엔진 문장)
   needArchive: null,        // 지우기가 칸 판정 때문에 거절됨 → 보관 선택지를 보임
@@ -38,8 +40,16 @@ export function useNodes(selector) {
 
 // ---------------------------------------------------------------- 읽기
 let seq = 0;
+let reading = null;          // 지금 도는 목록 읽기(명령이 그 판을 기다렸다 보낸다)
 
-export async function loadList() {
+export function loadList() {
+  const p = loadListNow();
+  reading = p;
+  p.catch(() => {}).then(() => { if (reading === p) reading = null; });
+  return p;
+}
+
+async function loadListNow() {
   const mine = ++seq;
   const list = await read("nodes");
   if (mine !== seq) return nodes.get().list;           // 더 늦게 시작한 읽기가 이긴다
@@ -73,7 +83,10 @@ export async function refresh() {
 
 // ---------------------------------------------------------------- 보기 동작
 export function setMode(mode) { nodes.set({ mode: mode === "pick" ? "pick" : "pan" }); }
-export function setSelection(ids, truncated = false) { nodes.set({ selection: ids, truncated: !!truncated }); }
+export function setSelection(ids, truncated = false) {
+  // 다음 구간을 고르기 시작하면 앞서 만든 구간의 카드는 닫는다(고친 것이 없으면 잃을 것이 없고, 고친 것은 저장을 눌러야 남는다)
+  nodes.set((s) => ({ selection: ids, truncated: !!truncated, card: s.card && s.card.made && ids.length && s.card.name === s.card.saved.name && (s.card.intent || "") === (s.card.saved.intent || "") ? null : s.card }));
+}
 export function clearSelection() { nodes.set({ selection: [], truncated: false }); }
 
 export function focusNode(id, { zoom = false } = {}) {
@@ -122,31 +135,56 @@ export function followLink(link) {
 export function dismissError() { nodes.set({ error: null, needArchive: null }); }
 
 // ---------------------------------------------------------------- 카드
+/** '구간 만들기'(또는 고른 뒤 Enter): 제안 이름으로 바로 만들고, 만든 구간의 이름·설계 의도를 고치는 카드를 연다(실제 창 4차: 2단 → 1단).
+ *  잘못 만들었으면 그 카드의 '되돌리기'(만든 묶음 되돌리기)나 구간 패널의 지우기로 푼다. 제안 이름이 없으면 '구간 S<n>'. */
 export async function openCard() {
   const { selection } = nodes.get(), sheet = shell.get().sheet;
   if (!selection.length || !sheet) return;
-  nodes.set({ card: blankCard({ busy: true }) });
+  if (nodes.get().card && !nodes.get().card.made) return;      // 만드는 중
+  nodes.set({ card: blankCard({ busy: true, loading: true }) });
   try {
     const sg = await cmd("nodes.suggest", { project_id: nodes.get().list.project_id, sheet, ids: selection });
-    if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, suggest: sg, name: s.card.name || sg.name }) }));
+    if (!nodes.get().card) return null;                          // 그새 Esc로 닫음: 만들지 않는다
+    const list = nodes.get().list.nodes;
+    const fallback = "구간 S" + (Math.max(0, ...list.map((n) => parseInt(String(n.node_id).slice(1), 10) || 0)) + 1);
+    nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, loading: false, suggest: sg, name: s.card.name || sg.name || fallback }) }));
+    return submitCard();
   } catch (e) {
-    if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, error: errorText(e) }) }));
+    if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, loading: false, submitWhenReady: false, error: errorText(e) }) }));
   }
+  return null;
 }
 
 export function editCard(patch) { nodes.set((s) => ({ card: s.card ? Object.assign({}, s.card, patch) : s.card })); }
 export function closeCard() { nodes.set({ card: null }); }
 
+/** 만든 구간 카드의 '되돌리기': 만든 묶음을 되돌린다(구간이 사라진다). */
+export async function undoMade() {
+  const c = nodes.get().card;
+  if (!c || !c.made || c.busy) return null;
+  editCard({ busy: true });
+  const r = c.batch ? await undo(c.batch) : null;
+  nodes.set({ card: null });
+  if (r) shell.set({ toast: { text: c.made + " 구간 만들기를 되돌렸습니다.", kind: "info" } });
+  return r;
+}
+
 export async function submitCard() {
   const { card, selection, list } = nodes.get(), sheet = shell.get().sheet;
+  if (card && card.loading) return null;                          // 만드는 중(제안 이름이 오면 저절로 만든다)
   if (!card || card.busy) return null;
+  if (card.made) return saveMade(card);
   if (!card.name.trim()) { editCard({ error: "구간 이름을 입력하세요." }); return null; }
   editCard({ busy: true, error: null });
   try {
     const r = await cmd("nodes.create", { project_id: list.project_id, sheet, ids: selection, name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev });
-    nodes.set({ card: null, selection: [], truncated: false, mode: "pan" });
+    // 고르기 모드는 그대로: 다음 구간을 바로 끌어 고른다(HZ-DSN-06 U9, Esc·이동 단추로 끈다). 응답을 기다리는 사이 새로 고른 것은 남긴다
+    const made = r.node_ids && r.node_ids[0];
+    const after = made ? Object.assign(blankCard({ made, batch: r.batch_id, name: card.name.trim(), intent: card.intent || "", suggest: card.suggest }), { saved: { name: card.name.trim(), intent: card.intent || "" } }) : null;
+    nodes.set((s) => (s.selection === selection ? { card: after, selection: [], truncated: false } : { card: after }));
+    if (made) import("../next/next.js").then((m) => m.adjustDrafts(1)).catch(() => {});      // 한 줄의 수를 바로(엔진 읽기가 덮는다)
     await refresh();
-    if (r.node_ids && r.node_ids[0]) focusNode(r.node_ids[0]);
+    if (made) focusNode(made);
     return r;
   } catch (e) {
     await afterError(e);
@@ -155,16 +193,31 @@ export async function submitCard() {
   }
 }
 
+/** 만든 구간 카드의 저장(Enter): 고친 이름·설계 의도만 보내고 카드를 닫는다. 안 고쳤으면 닫기만. */
+async function saveMade(card) {
+  const name = card.name.trim(), intent = (card.intent || "").trim();
+  if (!name) { editCard({ error: "구간 이름을 입력하세요." }); return null; }
+  editCard({ busy: true, error: null });
+  let ok = true;
+  if (name !== card.saved.name) ok = !!(await rename(card.made, name));
+  if (ok && intent !== (card.saved.intent || "").trim()) ok = !!(await setIntent(card.made, intent));
+  if (!ok) { editCard({ busy: false, error: nodes.get().error }); return null; }
+  nodes.set({ card: null });
+  return true;
+}
+
 // ---------------------------------------------------------------- 명령
 async function afterError(e) {
   nodes.set({ error: errorText(e), busy: false });
+  shell.set({ toast: { text: errorText(e), kind: "err" } });      // 패널 위 안내는 목록을 내려 본 사람에게 안 보일 수 있다: 토스트로도 알린다
   if (e && (e.code === "stale" || e.code === "not_found")) await refresh();
 }
 
 /** 구간 명령 하나. 화면이 본 판(set_rev, 대상 rev·state)을 함께 보낸다. 거절되면 엔진 사유를 error에 둔다. */
 export async function run(name, args, targetIds) {
-  const { list } = nodes.get();
   nodes.set({ busy: true, error: null, needArchive: null });
+  if (reading) { try { await reading; } catch (e) { /* 읽기 실패: 가진 판으로 보낸다(엔진이 판을 대조한다) */ } }   // 패널을 열며 읽는 중이면 그 판으로 보낸다
+  const { list } = nodes.get();
   try {
     const r = await cmd("nodes." + name, Object.assign({ project_id: list.project_id, set_rev: list.set_rev }, args, targetIds && targetIds.length ? { targets: targetsOf(list.nodes, targetIds) } : {}));
     nodes.set({ busy: false });
@@ -180,10 +233,66 @@ export async function run(name, args, targetIds) {
 export const rename = (id, name) => run("rename", { node_id: id, name }, [id]);
 export const setIntent = (id, text) => run("set_intent", { node_id: id, text }, [id]);
 export const confirm = (ids) => run("confirm", { node_ids: ids }, ids);
+
+/** 확정하지 않은 구간(적용됨) ID. 체크한 것이 있으면 그 가운데서만(체크한 것이 모두 확정됐으면 빈 목록, 전체로 넘어가지 않음).
+ *  sheet를 주면 그 도면에 구성요소가 있는 구간만('이 도면' 범위). */
+export function draftIds(sheet) {
+  const { list, checked } = nodes.get();
+  const drafts = list.nodes.filter((n) => n.state === "applied" && (!sheet || (n.sheets || []).some((x) => x.graph_id === sheet))).map((n) => n.node_id);
+  return checked.length ? drafts.filter((id) => checked.includes(id)) : drafts;
+}
+
+/** '모두 확정' 확인 카드를 연다(목록을 먼저 보인다). 사람이 본 판(set_rev와 구간마다 rev·state)을 그때 붙잡는다: 확정은 그 판으로만 보낸다. */
+export function askConfirmAll(sheet) {
+  const ids = draftIds(sheet);
+  const { list } = nodes.get();
+  nodes.set({ confirmAsk: ids.length ? ids : null, confirmSeen: ids.length ? { set_rev: list.set_rev, targets: targetsOf(list.nodes, ids) } : null });
+  return ids.length;
+}
+export function cancelConfirmAll() { nodes.set({ confirmAsk: null, confirmSeen: null }); }
+
+/** 여러 구간을 한 번에 확정한다(지금 있는 nodes.confirm 명령에 node_ids를 모두 실어 한 번). 구간마다 판(rev·state)은 사람이 확인 카드에서 본 판
+ *  그대로 보낸다(seen). 엔진이 한 묶음 전체를 거절하면 set_rev만 새로 읽어 하나씩 다시 보낸다: 그 사이 바뀐 구간은 엔진의 판 대조에 걸려
+ *  확정되지 않고 '바뀐 구간 n개는 확정하지 않았습니다'로 알린다(사람이 보지 않은 판으로 확정하지 않는다, 검토 차단 8092c3e).
+ *  → {ok: [ID], failed: [{node_id, reason, changed}]}. */
+export async function confirmMany(ids, seen) {
+  ids = (ids || []).slice();
+  seen = seen || nodes.get().confirmSeen;
+  nodes.set({ confirmAsk: null, confirmSeen: null });
+  if (!ids.length) return { ok: [], failed: [] };
+  nodes.set({ busy: true, error: null });
+  if (reading) { try { await reading; } catch (e) { /* 가진 판으로 보낸다 */ } }
+  const seenOf = (some) => (seen ? seen.targets.filter((t) => some.includes(t.node_id)) : targetsOf(nodes.get().list.nodes, some));
+  const send = (some, setRev) => cmd("nodes.confirm", { project_id: nodes.get().list.project_id, set_rev: setRev, node_ids: some, targets: seenOf(some) });
+  let ok = [], failed = [];
+  try {
+    await send(ids, seen ? seen.set_rev : nodes.get().list.set_rev);
+    ok = ids;
+  } catch (e) {
+    for (const id of ids) {
+      await refresh();                                                    // 새로 읽는 것은 집합 판(set_rev)뿐: 구간의 판은 사람이 본 그대로
+      try { await send([id], nodes.get().list.set_rev); ok.push(id); }
+      catch (err) { failed.push({ node_id: id, reason: errorText(err), changed: !!(err && err.code === "stale") }); }
+    }
+  }
+  nodes.set({ busy: false });
+  await refresh();
+  const changed = failed.filter((f) => f.changed), other = failed.filter((f) => !f.changed);
+  const text = failed.length ? [ok.length + "개를 확정했습니다.",
+    changed.length ? "바뀐 구간 " + changed.length + "개는 확정하지 않았습니다(" + changed.slice(0, 5).map((f) => f.node_id).join(", ") + ") — 다시 확인하세요." : "",
+    other.length ? other.length + "개는 확정하지 못했습니다: " + other.slice(0, 3).map((f) => f.node_id + " " + f.reason).join(" · ") : ""].filter(Boolean).join(" ")
+    : ok.length + "개 구간을 확정했습니다.";
+  shell.set({ toast: { text, kind: failed.length ? "err" : "info" } });
+  if (failed.length) nodes.set({ error: text });
+  if (ok.length) import("../next/next.js").then((m) => m.adjustDrafts(-ok.length)).catch(() => {});      // 한 줄의 수를 바로
+  return { ok, failed };
+}
 export const unconfirm = (ids) => run("unconfirm", { node_ids: ids }, ids);
 export const lock = (ids) => run("lock", { node_ids: ids }, ids);
 export const unlock = (ids, reason) => run("unlock", { node_ids: ids, reason }, ids);
 export const undo = (batchId) => run("undo", { batch_id: batchId });
+/** 찾지 못한 구성요소를 사람이 확인하고 버린다(keys는 상세의 lost_items key). 되돌리기 묶음으로 남는다. */
+export const discardLost = (id, keys) => run("discard_lost", { node_id: id, keys }, [id]);
 
 export async function mergeChecked() {
   const ids = nodes.get().checked.slice();
@@ -233,6 +342,19 @@ export async function migrate() {
   }
 }
 
+/** 다시 추출 뒤 판 이전을 지금 한다(읽기는 파일을 바꾸지 않으므로 사용자가 누른다). 끝나면 이어진 수와 되찾지 못한 묘비 수를 알린다. */
+export async function catchUp() {
+  nodes.set({ busy: true, error: null });
+  try {
+    const r = await cmd("nodes.catch_up", { project_id: nodes.get().list.project_id });
+    nodes.set({ busy: false });
+    shell.set({ toast: { text: catchUpText(r), kind: "info" } });
+    await refresh();
+  } catch (e) {
+    await afterError(e);
+  }
+}
+
 export function toggleChecked(id) {
   nodes.set((s) => ({ checked: s.checked.includes(id) ? s.checked.filter((x) => x !== id) : s.checked.concat(id) }));
 }
@@ -249,7 +371,8 @@ let wired = false;
 export function wire() {
   if (wired) return;
   wired = true;
-  onChanged((topic) => { if (topic === "nodes") refresh(); });
+  // 구간 목록은 프로젝트 그래프에서 나온다: 도면 등록·원본 선택·도면 연결이 바뀌어도 다시 읽는다('프로젝트 그래프가 아직 없습니다'가 남지 않게)
+  onChanged((topic) => { if (topic === "nodes" || topic === "drawings" || topic === "sources" || topic === "links") refresh(); });
   on("chat.answer", () => { setTimeout(refresh, 150); });   // 채팅이 구간을 만들었을 수 있다
   let lastProject = shell.get().drawings.project_id;
   let last = null;

@@ -9,7 +9,8 @@ import { read } from "./bridge.js";
 import { clean, setView, useClean } from "./canvas/clean_ui.js";
 import { Icon } from "./ui/icon.js";
 import { Btn, Notice } from "./ui/parts.js";
-import { compare as saveCompare, conf } from "./sheet_confirm.js";
+import { compare as saveCompare, compareAndConfirm, conf } from "./sheet_confirm.js";
+const toast = (text) => store.set({ toast: { text } });
 
 const cssHref = new URL("compare.css", import.meta.url).href;
 if (typeof document !== "undefined" && !document.querySelector("link[data-compare-css]")) {
@@ -44,7 +45,9 @@ export function openCompare(gid, readMethod) {
     setView(gid, "clean");
     clean.set((s) => ({ overlay: Object.assign({}, s.overlay, { leftovers: true, original: false }) }));
   }
-  cmp.set({ gid, mode: dexpi ? "dexpi_list" : "side_by_side", idx: 0, seen: {}, listEnd: false, agreed: false, prev, sheet: null });
+  const st = conf.get().byGraph[gid];
+  const pin = st && st.ver ? { ver: st.ver, rev: st.rev } : null;      // 사람이 견주기 시작한 판(견줌·확정을 이 판으로 보낸다)
+  cmp.set({ gid, mode: dexpi ? "dexpi_list" : "side_by_side", idx: 0, seen: {}, listEnd: false, agreed: false, prev, sheet: null, pin });
   refit();
   read("sheet/" + encodeURIComponent(gid)).then((d) => { if (cmp.get().gid === gid) cmp.set({ sheet: d }); }).catch(() => { if (cmp.get().gid === gid) cmp.set({ sheet: false }); });     // 원본 그림 주소·크기·종류별 구성요소
 }
@@ -52,7 +55,7 @@ export function openCompare(gid, readMethod) {
 export function closeCompare() {
   const c = cmp.get();
   if (c.prev) clean.set({ overlay: c.prev });
-  cmp.set({ gid: null, idx: 0, seen: {}, listEnd: false, agreed: false, prev: null, sheet: null });
+  cmp.set({ gid: null, idx: 0, seen: {}, listEnd: false, agreed: false, prev: null, sheet: null, pin: null });
   refit();
 }
 
@@ -169,8 +172,15 @@ export function CompareCard() {
   useEffect(() => { if (total && !c.seen[c.idx]) cmp.set((s) => ({ seen: Object.assign({}, s.seen, { [s.idx]: true }) })); }, [total, c.idx]);
   const done = async () => {
     setError("");
-    const r = await saveCompare(c.gid, c.mode);
+    const r = await saveCompare(c.gid, c.mode, c.pin);
     if (r) closeCompare(); else setError(conf.get().error || "견줌을 기록하지 못했습니다.");
+  };
+  const doneAndConfirm = async () => {      // 견줌 기록과 확정을 한 번에(U8). 끝나면 견주기 화면과 쪽 확정 카드가 저절로 닫힌다
+    setError("");
+    const r = await compareAndConfirm(c.gid, c.mode, c.pin);
+    if (r.ok) { closeCompare(); conf.set({ open: false }); toast("쪽을 확정했습니다."); }
+    else if (r.step === "confirm") { closeCompare(); conf.set({ open: true }); }      // 견줌은 기록됨: 확정을 막은 까닭을 카드에 보인다
+    else setError(r.error || "견줌을 기록하지 못했습니다.");
   };
   const it = items[c.idx];
   return html`<div class="float cmpcard" role="dialog" aria-label="견주기 화면">
@@ -179,7 +189,7 @@ export function CompareCard() {
     ${dexpi ? html`<div class="muted small">DEXPI는 원본 그림이 없어 변환 도면의 종류별 수를 끝까지 넘겨 견줍니다.</div>` : html`<div class="seg cmp-mode" role="group" aria-label="견주기 방식">
       <button type="button" class=${c.mode === "side_by_side" ? "on" : ""} aria-pressed=${c.mode === "side_by_side" ? "true" : "false"} onClick=${() => setMode("side_by_side")}>나란히</button>
       <button type="button" class=${c.mode === "overlay" ? "on" : ""} aria-pressed=${c.mode === "overlay" ? "true" : "false"} onClick=${() => setMode("overlay")}>겹쳐(원본 30%)</button></div>`}
-    ${dexpi ? html`<${KindTable} sheet=${c.sheet} />` : (!counted ? html`<${Notice} kind="warn" icon="alert-triangle">이 읽은 방법은 엔진이 원본에 남은 것을 세지 못해 견줄 수 없습니다.<//>`
+    ${dexpi ? html`<${KindTable} sheet=${c.sheet} />` : (!counted ? html`<${Notice} kind="warn" icon="alert-triangle">이 방법으로 읽은 도면은 원본에 남은 것을 셀 수 없어 견줄 수 없습니다.<//>`
       : total === 0 ? html`<div class="muted small" role="status">원본에 남은 것이 없습니다. 두 도면을 훑어 빠진 구성요소가 없는지 본 뒤 아래 체크를 켜세요.</div>`
       : html`<div class="cmp-step" role="group" aria-label="원본에 남은 것">
           <div><b>${c.idx + 1} / ${total}</b> <span class="muted small">${(it && it.kind) === "unclassified" ? "분류하지 못한 셀" : (it && it.kind)}${it && it.text ? " · " + it.text : ""}</span></div>
@@ -188,7 +198,8 @@ export function CompareCard() {
     ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error}<//>` : null}
     <label class="check"><input type="checkbox" checked=${c.agreed} disabled=${!viewed || (!dexpi && !counted)} onChange=${(e) => cmp.set({ agreed: e.target.checked })} />
       빠진 구성요소가 없음을 원본과 견주어 확인했습니다</label>
-    <div class="acts-row"><${Btn} sm=${true} kind="primary" label="견줌 완료" disabled=${busy || !viewed || !c.agreed || (!dexpi && !counted)} onClick=${done}>견줌 완료<//></div></div>`;
+    <div class="acts-row"><${Btn} sm=${true} kind="primary" label="견줌 기록하고 이 쪽 확정" disabled=${busy || !viewed || !c.agreed || (!dexpi && !counted)} onClick=${doneAndConfirm}>견줌 기록하고 확정<//>
+      <${Btn} sm=${true} kind="ghost" label="견줌만 기록" disabled=${busy || !viewed || !c.agreed || (!dexpi && !counted)} onClick=${done}>견줌만 기록<//></div></div>`;
 }
 
 function useConfBusy() {

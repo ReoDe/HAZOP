@@ -72,15 +72,15 @@ export function DrawingExclude({ graphId }) {
   };
   const held = d.nodes || [];
   const heldText = held.length ? held.map((h) => h.node_id + "(" + h.count + ")").join(", ") : null;
-  return html`<div class="card dexclude" aria-label=${(d.drawing_number || graphId) + " 분석 범위"}>
+  return html`<div class="card dexclude" aria-label=${(d.display || d.drawing_number || "도면") + " 분석 범위"}>
     ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error}<//>` : null}
     ${d.excluded
       ? html`<div class="kv"><span class="small">구간 분석에서 뺌 · ${d.reason || ""}${d.by ? " · " + d.by : ""}${d.at ? " · " + when(d.at) : ""}</span>
-          <${Btn} sm=${true} icon="arrow-back-up" label=${(d.drawing_number || graphId) + " 분석에 다시 넣기"} disabled=${busy} onClick=${() => send(false)}>다시 넣기<//></div>`
+          <${Btn} sm=${true} icon="arrow-back-up" label=${(d.display || d.drawing_number || "도면") + " 분석에 다시 넣기"} disabled=${busy} onClick=${() => send(false)}>다시 넣기<//></div>`
       : !open
         ? html`${d.legend_hint ? html`<div class="small">범례·기호표 도면으로 보입니다. 공정 흐름이 없으면 분석에서 빼세요.</div>` : null}
           <div class="kv"><span class="small muted">${heldText ? "이 도면 구성요소를 품은 구간: " + heldText : "구간 분석에 들어가는 도면"}</span>
-            <${Btn} sm=${true} kind="ghost" label=${(d.drawing_number || graphId) + " 분석에서 빼기"} disabled=${busy || !d.drawing_number}
+            <${Btn} sm=${true} kind="ghost" label=${(d.display || d.drawing_number || "도면") + " 분석에서 빼기"} disabled=${busy || !d.drawing_number}
               title=${d.drawing_number ? "범례·기호표 도면을 구간 제안에서 뺍니다" : "표제란에서 도면 번호를 먼저 확정하세요"} onClick=${() => setOpen(true)}>분석에서 빼기<//></div>`
         : html`<div class="field"><label for=${"dx-reason-" + graphId}>빼는 이유</label>
             <input id=${"dx-reason-" + graphId} class="textbox" maxlength="500" value=${reason} onInput=${(e) => { setReason(e.target.value); setAsk(null); }} />

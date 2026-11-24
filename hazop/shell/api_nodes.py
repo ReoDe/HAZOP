@@ -12,8 +12,11 @@
 import collections
 import logging
 
+from hazop import store_io
+
 from hazop.chat import view as chatview
 from hazop.study import idmap, node_commands, node_tools, nodes
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_nodes")
 MEMBERS_SHOWN = 200        # 상세에 보이는 구성요소 수(나머지는 개수만)
@@ -24,6 +27,15 @@ INT_MAX = 10 ** 9
 
 
 # ---------------------------------------------------------------- 엔진 접근
+
+
+def _kind_label(kind):
+    """구성요소 종류의 한글 이름(종류 사전). 없으면 '구성요소'(화면에 영문 종류 코드를 싣지 않는다, 실제 창 3차 D)."""
+    from hazop.shell import sheet_items
+    try:
+        return sheet_items.kind_label(kind) or "구성요소"
+    except Exception:  # noqa: BLE001 - 이름 한 칸: 사전을 못 읽으면 일반 말
+        return "구성요소"
 
 def _api():
     from hazop.shell import api
@@ -37,7 +49,7 @@ def _pg(engine, strict=True):
         return project_ctx.project_graph(engine.project_id())
     except (OSError, ValueError, KeyError):
         if strict:
-            raise _api().CommandError("failed", "프로젝트 그래프를 만들 수 없습니다. 도면을 먼저 추출하세요.")
+            raise _api().CommandError("failed", "도면을 먼저 읽어야 합니다.")
         return None
 
 
@@ -47,7 +59,7 @@ def _peek(pg):
     try:
         doc = nodes.read_as_is(pg)
     except (OSError, ValueError) as exc:
-        raise _api().CommandError("failed", "검토구간 파일을 읽을 수 없습니다(%s)." % str(exc)[:120])
+        raise _api().CommandError("failed", "검토구간 파일을 읽을 수 없습니다(%s)." % errtext.why(exc, 120))
     if doc is None:
         return nodes.new_set(pg), False
     if (doc.get("schema_version") or nodes.LEGACY_SCHEMA_VERSION) == nodes.LEGACY_SCHEMA_VERSION:
@@ -190,9 +202,9 @@ def sheet_view(engine, graph_id):
 def sheet_links(pg, graph_id, ns):
     """이 도면 위 다른 도면 연결(오각형) 목록: {id(도면 안 local_id), status, label(맞은편 도면 번호), peer_graph_id, peer_id(맞은편 local_id), reason, nodes(이 연결이 든 구간 ID)}.
     이어지지 않은 연결은 사유와 함께 싣는다(이전 화면의 '미연결' 표시와 같다)."""
-    from hazop.graph import project
+    from hazop.graph import project, sheets
     fwd, _ = chatview._locals(pg)
-    nums = {s["graph_id"]: s.get("drawing_number") for s in pg.get("sheets") or []}
+    nums = {s["graph_id"]: sheets.display_name(s) for s in pg.get("sheets") or []}      # 사람용 이름(번호, 없으면 '파일 · n쪽')
     owners = _owners(ns)
     reasons = {}
     for l in pg.get("sheet_links") or []:
@@ -210,7 +222,7 @@ def sheet_links(pg, graph_id, ns):
         hit = fwd.get(peer) if peer else None
         row = {"id": n["local_id"], "status": link.get("status") or "unlinked", "nodes": owners.get(n["entity_id"], [])}
         if link.get("status") == "linked" and hit:
-            row.update(peer_graph_id=hit[0], peer_id=hit[1], label=nums.get(hit[0]) or hit[0].replace("graph-", "", 1))
+            row.update(peer_graph_id=hit[0], peer_id=hit[1], label=nums.get(hit[0]) or sheets.display_name({"graph_id": hit[0]}))
         else:
             row["reason"] = reasons.get(n["entity_id"]) or link.get("reason")
         out.append(row)
@@ -244,14 +256,28 @@ def detail(engine, node_id):
     for m in node["members"][:MEMBERS_SHOWN]:
         d, hit = info.get(m) or {}, fwd.get(m)
         if hit:
-            members.append({"sheet": hit[0], "id": hit[1], "tag": d.get("tag"), "kind": d.get("kind"), "category": d.get("category"),
+            members.append({"sheet": hit[0], "id": hit[1], "tag": d.get("tag"), "kind": d.get("kind"), "kind_label": _kind_label(d.get("kind")), "category": d.get("category"),
                             "shared": [o for o in owners.get(m, ()) if o != node_id]})
     history = [{"batch_id": b["batch_id"], "origin": b.get("origin"), "kind": b.get("kind"), "at": b.get("at"),
                 "undone": bool(b.get("undone")), "ops": sorted({o["op"] for o in b["ops"] if o["node_id"] == node_id})}
                for b in ns.get("batches") or [] if any(o["node_id"] == node_id for o in b.get("ops") or [])]
+    from hazop.shell import api_drawings
+    lost_items = [{"key": x["key"], "name": lost_name(x["name"], x.get("ref"), lambda g: api_drawings.display(engine, g))}
+                  for x in nodes.lost_items(ns, node_id)]
     return dict(row, set_rev=ns.get("set_rev") or 0, majors=majors[:MAJORS_SHOWN], majors_total=len(majors),
                 boundary=[majors[0], majors[-1]] if len(majors) >= 2 else majors[:1], kinds=dict(kinds.most_common(8)),
-                members=members, members_total=len(node["members"]), history=history)
+                members=members, members_total=len(node["members"]), history=history,
+                lost_items=lost_items, discarded=(idmap.needs_check(ns).get("discarded") or {}).get(node_id, 0))
+
+
+def lost_name(name, ref, sheet_name=None):
+    """찾지 못한 구성요소의 화면 이름. 표시(종류·태그)가 없어 안정 참조('graph-SNP-M-102#n16')가 이름으로 온 것은 내부 ID라 보이지 않고
+    도면 번호로 바꾼다(실제 창 확인 2026-11-23). 판 이름(lost_at)도 화면에 내지 않는다."""
+    if ref and name == ref and "#" in ref:
+        gid = ref.split("#", 1)[0]
+        from hazop.graph import sheets
+        return "%s 도면의 구성요소(이름 모름)" % (sheet_name(gid) if sheet_name else sheets.display_name({"graph_id": gid}))
+    return name
 
 
 def suggest(engine, sheet, ids):
@@ -270,7 +296,9 @@ def suggest(engine, sheet, ids):
     elif majors:
         name = "%s 주변" % majors[0]
     else:
-        name = "%s 구간" % sheet.replace("graph-", "", 1)
+        # 큰 기기 태그가 없으면 짧은 기본 이름(실제 창 5차: 번호 없는 도면은 '…drawio · 1쪽 구간'처럼 길었다). 사람이 만든 뒤 카드에서 고친다
+        nums = [int(n["node_id"][1:]) for n in (ns or {}).get("nodes") or [] if str(n.get("node_id", ""))[1:].isdigit()]
+        name = "구간 S%d" % (max(nums, default=0) + 1)
     owners = _owners(ns)
     shared = collections.Counter(o for m in members for o in owners.get(m, ()))
     return {"count": len(members), "asked": len(ids), "name": name, "majors": majors[:MAJORS_SHOWN],
@@ -307,14 +335,15 @@ def drawings_view(engine):
         marked = nodes.load_excluded(pid)
         problem = None
     except (OSError, ValueError) as exc:
-        marked, problem = {}, "도면 빼기 표시를 읽지 못했습니다(%s)." % str(exc)[:120]
+        marked, problem = {}, "도면 빼기 표시를 읽지 못했습니다(%s)." % errtext.why(exc, 120)
     keys = {nodes.drawing_key(k): v for k, v in marked.items()}
     texts = {nodes.drawing_key(k): v for k, v in _drawing_texts().items()}
+    from hazop.graph import sheets as sheet_names
     sheets = pg.get("sheets") or [{"graph_id": pg.get("graph_id"), "drawing_number": (pg.get("source") or {}).get("drawing_number")}]
     rows = []
     for sh in sheets:
         mark = keys.get(nodes.drawing_key(sh.get("drawing_number"))) if sh.get("drawing_number") else None
-        rows.append({"graph_id": sh["graph_id"], "drawing_number": sh.get("drawing_number"), "excluded": mark is not None,
+        rows.append({"graph_id": sh["graph_id"], "drawing_number": sh.get("drawing_number"), "display": sheet_names.display_name(sh), "excluded": mark is not None,
                      "reason": (mark or {}).get("reason"), "by": (mark or {}).get("by"), "at": (mark or {}).get("at"),
                      "nodes": node_commands.drawing_nodes(pg, ns, sh["graph_id"]), "ver": ver,
                      "legend_hint": mark is None and nodes.looks_like_legend(*texts.get(nodes.drawing_key(sh.get("drawing_number")), ()))})
@@ -354,12 +383,17 @@ def _error(out, ns, targets, name):
         return _api().CommandError("stale", STALE_TEXT)
     if codes & {"unreadable", "read_only"}:
         return _api().CommandError("failed", text)
-    if codes & {"bad_actor", "unknown_command"}:
-        return _api().CommandError("bad_args", text)
+    if codes & {"bad_actor", "unknown_command", "bad_args"}:
+        return _api().CommandError("bad_args", DISCARD_BAD if name == "discard_lost" else text)
     held = [t["node_id"] for t in targets if nodes.node_state(node_tools._node(ns, t["node_id"]) or {}) != "applied"]
-    if name in EDIT_COMMANDS and held:
-        return _api().CommandError("locked", text)
-    return _api().CommandError("failed", text)
+    if name in EDIT_COMMANDS + ("discard_lost",) and held:
+        return _api().CommandError("locked", DISCARD_HELD if name == "discard_lost" else text)
+    return _api().CommandError("failed", DISCARD_GONE if name == "discard_lost" else text)
+
+
+DISCARD_HELD = "확정했거나 잠근 구간입니다. 확정을 해제한 뒤에 찾지 못한 구성요소를 버릴 수 있습니다."
+DISCARD_GONE = "고른 구성요소를 이 구간의 찾지 못한 목록에서 찾지 못했습니다. 목록을 다시 읽었으니 다시 골라 주세요."
+DISCARD_BAD = "버릴 구성요소를 다시 골라 주세요."
 
 
 def _check_project(eng, a):
@@ -420,7 +454,7 @@ def _run(name, build):
         pg = _pg(eng)
         ns, legacy = _peek(pg)
         if legacy:
-            raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널의 '새 판으로 바꾸기'를 먼저 눌러 주세요.")
+            raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
         _check_targets(ns, a)
         args, skipped = build(pg, a)
         if name == "remove" and not args.get("archive") and _judged(pg, ns, args["node_id"]):
@@ -460,6 +494,35 @@ def _exclude_drawing(eng, a):
     return {"ver": out["ver"], "changed": out["changed"]}
 
 
+def _catch_up(eng, a):
+    """다시 추출 뒤 판 이전만 한다(구간 집합이 지금 그래프보다 옛 판일 때 사용자가 누른다). 읽기 API는 파일을 바꾸지 않으므로 이 길이 없으면 ④를 열어도
+    판 이전이 끝나지 않았다. 프로젝트 잠금 안에서 nodes.load_fp(판 이전과 ⑤ 결과 잇기를 하고 바뀐 파일을 쓴다)만 부른다. 같은 판이면 아무것도 쓰지 않는다.
+    쓰다 실패하면 옛 파일이 그대로 남는다(store_io의 원자적 쓰기). → {changed, matched(이어진 구성요소 수), tombstones(되찾지 못한 묘비 수), lost_members}."""
+    api = _api()
+    _check_project(eng, a)
+    pg = _pg(eng)
+    ns, legacy = _peek(pg)
+    if legacy:
+        raise api.CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
+    if not nodes.is_stale(ns, pg):
+        info = idmap.needs_check(ns)
+        return {"changed": False, "matched": 0, "tombstones": info["tombstones"], "lost_members": info["lost_members"]}
+    from hazop.app import data
+    with eng._study_lock:
+        if eng.analysis.running:
+            raise api.CommandError("busy", "AI 분석이 도는 중이라 도면 변경을 반영하지 않았습니다. 분석이 끝나면 다시 눌러 주세요.")
+        try:
+            out = data.migrate_study(pg)
+        except (OSError, ValueError, store_io.Conflict) as exc:
+            out = exc
+    if isinstance(out, Exception):
+        exc = out
+        raise api.CommandError("failed", "도면 변경을 반영하지 못했습니다(%s). 저장된 구간은 그대로입니다. 다시 눌러 주세요." % errtext.why(exc, 120))
+    for topic in ("nodes", "results", "ie", "kg"):
+        eng.changed(topic)
+    return {"changed": True, "matched": out["matched"], "tombstones": out["tombstones"], "lost_members": out["lost_members"]}
+
+
 def _migrate(eng, a):
     """0.1 구간 파일을 새 판으로 바꾼다(사용자가 누를 때 한 번. 읽기 API는 바꾸지 않는다)."""
     _check_project(eng, a)
@@ -467,7 +530,7 @@ def _migrate(eng, a):
     try:
         ns = nodes.load(pg)
     except (OSError, ValueError) as exc:
-        raise _api().CommandError("failed", "구간 파일을 바꾸지 못했습니다(%s)." % str(exc)[:120])
+        raise _api().CommandError("failed", "구간 파일을 바꾸지 못했습니다(%s)." % errtext.why(exc, 120))
     eng.changed("nodes", (ns or {}).get("set_rev"))
     return {"set_rev": (ns or {}).get("set_rev") or 0, "read_only": (ns or {}).get("read_only")}
 
@@ -517,6 +580,9 @@ def register(commands):
     add("lock", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "분석을 마치고 구간을 잠근다")
     add("unlock", dict(node_ids=nids, reason=(v_str(1, 500), True)), lambda pg, a: ({"node_ids": a["node_ids"], "reason": a["reason"]}, 0),
         "잠금을 푼다(이유를 적어야 함)")
+    add("discard_lost", dict(node_id=nid, keys=(v_list(v_str(1, 100), 500), False)),
+        lambda pg, a: (dict({"node_id": a["node_id"]}, **({"keys": a["keys"]} if a.get("keys") is not None else {})), 0),
+        "다시 추출 뒤 찾지 못한 구성요소를 사람이 확인하고 버린다(keys는 상세의 lost_items key, 없으면 그 구간의 남은 것 전부). 되돌리기 묶음으로 남는다")
     add("undo", dict(batch_id=(v_str(2, 20), True)), lambda pg, a: ({"batch_id": a["batch_id"]}, 0), "묶음을 되돌린다", needs_target=False)
     put("exclude_drawing", {"project_id": proj, "graph_id": (v_str(1, 200), True), "excluded": (v_bool(), True),
                             "reason": (v_str(0, 500), False), "ver": (v_str(1, 100), True), "confirm": (v_str(0, 2000), False)},
@@ -525,6 +591,7 @@ def register(commands):
         _check_project(eng, a)
         return suggest(eng, a["sheet"], a["ids"])
     put("suggest", {"project_id": proj, "sheet": sheet, "ids": ids}, h_suggest, "고른 구성요소로 만들 구간의 카드 초안(저장하지 않음)")
+    put("catch_up", {"project_id": proj}, _catch_up, "다시 추출 뒤 검토구간에 도면 변경을 지금 반영한다(이미 반영돼 있으면 아무것도 쓰지 않음). 이어진 수·찾지 못한 구성요소 수를 답한다")
     put("migrate", {"project_id": proj}, _migrate, "0.1 구간 파일을 새 판으로 바꾼다(사용자가 누를 때 한 번)")
     return commands
 

@@ -321,7 +321,8 @@ class RegisterFlowTest(EngineBase):
         self.assertEqual(len(r["jobs"]), 1)
         self.assertTrue(self.events.of("job.done"), self.events.items)
         d = api.ReadApi(e).drawings()
-        self.assertEqual([x["graph_id"] for x in d["drawings"]], ["graph-SNP-M-102"])   # 표제란은 사람이 확정하기 전이라 번호는 비어 있을 수 있다
+        mid = d["documents"][0]["material_id"]
+        self.assertEqual([x["graph_id"] for x in d["drawings"]], ["graph-%s-p0" % mid])   # 표제란을 사람이 확정하기 전이라 (자료, 쪽) 이름(hazop.graph.sheets)
         self.assertEqual(d["documents"][0]["status"], "registered")
         self.assertTrue(d["documents"][0]["graphed"])
         self.assertIn("drawings", self.events.names(), "changed 사건으로 웹이 다시 읽는다")

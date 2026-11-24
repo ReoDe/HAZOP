@@ -56,7 +56,7 @@ function installStubs() {
     const body = (data) => ({ ok: true, status: 200, json: async () => data });
     if (u === "/api/nodes") return body(engine.list);
     if (u.startsWith("/api/nodes/sheet/")) return body(engine.sheet);
-    if (u.startsWith("/api/nodes/node/")) return body({ node_id: u.split("/").pop(), members: [{ sheet: "graph-A", id: "n1", tag: "RC-RV01", kind: "reactor_vessel", shared: [] }], members_total: 6,
+    if (u.startsWith("/api/nodes/node/")) return body({ node_id: u.split("/").pop(), members: [{ sheet: "graph-A", id: "n1", tag: "RC-RV01", kind: "reactor_vessel", kind_label: "원자로 용기", shared: [] }, { sheet: "graph-A", id: "n2", tag: null, kind: "manual_valve", kind_label: "수동 밸브", shared: [] }], members_total: 6,
       boundary: ["RC-RV01", "RC-SG01"], majors: ["RC-RV01", "RC-SG01"], majors_total: 2, history: [{ batch_id: "B1", origin: "user", ops: ["add"], undone: false }] });
     return { ok: false, status: 404, json: async () => ({}) };
   };
@@ -74,6 +74,77 @@ async function setup() {
 const lastCmd = () => sent[sent.length - 1];
 
 export const tests = [
+  { name: "구간 만들기(U9): 만든 뒤에도 고르기 모드가 그대로다", async run(assert) {
+    await setup();
+    N.setMode("pick");
+    N.setSelection(["n1", "n2"]);
+    N.nodes.set({ card: { name: "새 구간", intent: "", busy: false, error: null, suggest: null } });
+    const r = await N.submitCard();
+    assert(r, "만들기 답");
+    assert.equal(N.nodes.get().mode, "pick", "다음 구간을 바로 끌어 고른다");
+    assert.equal(N.nodes.get().selection, [], "고른 것은 비운다");
+  } },
+  { name: "모두 확정(U9): 목록을 먼저 보이고, 한 번에 보내 막히면 하나씩 다시 보내 안 된 것과 까닭을 알린다", async run(assert) {
+    await setup();
+    const n = N.askConfirmAll();
+    assert.equal(N.nodes.get().confirmAsk, ["S1", "S2"], "확정하지 않은 구간만(S3는 이미 확정)");
+    assert.equal(n, 2);
+    engine.reply = (name, args) => {
+      if (name !== "nodes.confirm") return { ok: true, data: {} };
+      if (args.node_ids.length > 1 || args.node_ids[0] === "S2") return { ok: false, error: { code: "failed", message: "겹치는 구간이 확정되어 있습니다" } };
+      return { ok: true, data: { set_rev: 5, node_ids: args.node_ids } };
+    };
+    const r = await N.confirmMany(N.nodes.get().confirmAsk);
+    assert.equal(r.ok, ["S1"]);
+    assert.equal(r.failed.map((f) => f.node_id), ["S2"]);
+    assert(N.nodes.get().error && N.nodes.get().error.includes("S2") && N.nodes.get().error.includes("겹치는"), N.nodes.get().error);
+    assert.equal(N.nodes.get().confirmAsk, null, "확인 카드는 닫힌다");
+    const sentConfirm = sent.filter((m) => m.name === "nodes.confirm").map((m) => m.args.node_ids);
+    assert.equal(sentConfirm, [["S1", "S2"], ["S1"], ["S2"]], "한 번에, 그다음 하나씩(지금 있는 nodes.confirm만 씀)");
+  } },
+  { name: "모두 확정(검토 차단): 카드를 연 뒤 다른 곳에서 바뀐 구간은 사람이 본 판으로만 보내고, 바뀐 것은 확정하지 않는다", async run(assert) {
+    await setup();
+    N.askConfirmAll();                                                       // 사람이 본 판: set_rev 4, S1 rev 2, S2 rev 1
+    engine.list.set_rev = 5;                                                  // 다른 곳에서 S2가 바뀜
+    engine.list.nodes = engine.list.nodes.map((n) => (n.node_id === "S2" ? Object.assign({}, n, { rev: 2 }) : n));
+    engine.reply = (name, args) => {                                          // 엔진 판 검사(api_nodes._check_targets)와 같은 대역
+      if (name !== "nodes.confirm") return { ok: true, data: {} };
+      if (args.set_rev !== engine.list.set_rev) return { ok: false, error: { code: "stale", message: "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요." } };
+      for (const t of args.targets || []) {
+        const n = engine.list.nodes.find((x) => x.node_id === t.node_id);
+        if (!n) return { ok: false, error: { code: "not_found", message: t.node_id + " 구간이 이미 없습니다." } };
+        if (n.rev !== t.rev || n.state !== t.state) return { ok: false, error: { code: "stale", message: t.node_id + " 구간이 다른 곳에서 바뀌어 저장하지 않았습니다." } };
+      }
+      engine.list.set_rev += 1;
+      engine.list.nodes = engine.list.nodes.map((n) => (args.node_ids.includes(n.node_id) ? Object.assign({}, n, { state: "confirmed" }) : n));
+      return { ok: true, data: { set_rev: engine.list.set_rev, node_ids: args.node_ids } };
+    };
+    const r = await N.confirmMany(N.nodes.get().confirmAsk);
+    assert.equal(r.ok, ["S1"], "바뀌지 않은 S1만");
+    assert.equal(r.failed.map((f) => f.node_id), ["S2"]);
+    const s2 = sent.filter((m) => m.name === "nodes.confirm" && m.args.node_ids.includes("S2")).flatMap((m) => m.args.targets.filter((t) => t.node_id === "S2").map((t) => t.rev));
+    assert(s2.every((rev) => rev === 1), "S2는 사람이 본 판(rev 1)으로만 보냄: " + JSON.stringify(s2));
+    assert(N.nodes.get().error.includes("바뀐 구간 1개는 확정하지 않았습니다"), N.nodes.get().error);
+  } },
+  { name: "모두 확정: 카드를 연 뒤 지워진 구간은 '이미 없습니다'로, 체크한 것이 확정된 구간뿐이면 아무것도 고르지 않는다", async run(assert) {
+    await setup();
+    N.askConfirmAll();
+    engine.list.nodes = engine.list.nodes.filter((n) => n.node_id !== "S2");
+    engine.list.set_rev = 5;
+    engine.reply = (name, args) => {
+      if (name !== "nodes.confirm") return { ok: true, data: {} };
+      if (args.set_rev !== engine.list.set_rev) return { ok: false, error: { code: "stale", message: "판이 다름" } };
+      const gone = (args.targets || []).find((t) => !engine.list.nodes.some((n) => n.node_id === t.node_id));
+      if (gone) return { ok: false, error: { code: "not_found", message: gone.node_id + " 구간이 이미 없습니다." } };
+      engine.list.set_rev += 1;
+      return { ok: true, data: { set_rev: engine.list.set_rev } };
+    };
+    const r = await N.confirmMany(N.nodes.get().confirmAsk);
+    assert.equal(r.failed.map((f) => [f.node_id, f.reason.includes("이미 없습니다")]), [["S2", true]]);
+    await setup();
+    N.nodes.set({ checked: ["S3"] });                                        // S3는 이미 확정
+    assert.equal(N.draftIds(), [], "체크한 것이 모두 확정됐으면 확정하지 않은 구간 전체로 넘어가지 않는다");
+  } },
   { name: "구간 계산: 상태 칩(AI 적용됨·적용됨·확정·잠금)과 수정 가능 여부", run(assert) {
     assert.equal(L.stateChip({ state: "applied", origin: "ai" }).label, "AI 적용됨");
     assert.equal(L.stateChip({ state: "applied", origin: "user" }).label, "적용됨");
@@ -101,6 +172,84 @@ export const tests = [
     assert.equal([k("v"), k("S"), k("f"), k("Enter"), k("Enter", { ctrlKey: true }), k("x")], ["pan", "pick", "fit", "card", null, null]);
     assert.equal(L.keyAction({ key: "v" }, { selection: [], typing: true, panelWide: false }), null);
     assert.equal(L.keyAction({ key: "Enter" }, { selection: [], typing: false, panelWide: false }), null);
+    assert.equal(L.keyAction({ key: "Enter" }, { selection: ["a"], typing: false, panelWide: false, card: true }), "submit", "카드가 열려 있으면 Enter는 만들기");
+    assert.equal(L.keyAction({ key: "s" }, { selection: ["a"], typing: false, panelWide: false, card: true }), null);
+  } },
+  { name: "구간 만들기(실제 창 4차): 끌기 → Enter 한 번에 제안 이름으로 만들고, 만든 카드에서 이름을 고쳐 Enter로 저장한다", async run(assert) {
+    await setup();
+    engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "제안 이름", count: 2, asked: 2, boundary: [], overlaps: [] } }
+      : name === "nodes.create" ? { ok: true, data: { set_rev: 5, node_ids: ["S4"], batch_id: "B9" } } : { ok: true, data: { set_rev: 6 } });
+    N.setMode("pick");
+    N.setSelection(["n1", "n2"]);
+    const Keys = () => { useNodeCanvas("graph-A"); return null; };
+    const host = mount(html`<${Keys} /><${NodeOverlay} />`);
+    await tick();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await tick();
+    const created = sent.filter((m) => m.name === "nodes.create");
+    assert.equal(created.length, 1, "Enter 한 번이 만들기: " + JSON.stringify(sent.map((m) => m.name)));
+    assert.equal(created[0].args.name, "제안 이름");
+    const c = N.nodes.get().card;
+    assert(c && c.made === "S4" && c.batch === "B9", "만든 구간의 카드: " + JSON.stringify(c));
+    assert.equal(N.nodes.get().mode, "pick", "고르기 모드는 그대로");
+    N.editCard({ name: "저온관" });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await tick();
+    const ren = sent.filter((m) => m.name === "nodes.rename");
+    assert.equal(ren.map((m) => [m.args.node_id, m.args.name]), [["S4", "저온관"]], "고친 이름만 보낸다");
+    assert.equal(N.nodes.get().card, null, "저장하면 닫힌다");
+    host.remove();
+  } },
+  { name: "구간 만들기(실제 창 4차): 만든 카드의 되돌리기는 만든 묶음을 되돌리고, 안 고친 카드는 다음 고르기에서 닫힌다", async run(assert) {
+    await setup();
+    engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "", count: 1, asked: 1, boundary: [], overlaps: [] } }
+      : name === "nodes.create" ? { ok: true, data: { set_rev: 5, node_ids: ["S4"], batch_id: "B9" } } : { ok: true, data: { set_rev: 6 } });
+    N.setMode("pick");
+    N.setSelection(["n1"]);
+    await N.openCard();
+    assert.equal(sent.find((m) => m.name === "nodes.create").args.name, "구간 S4", "제안 이름이 없으면 기본 이름");
+    await N.undoMade();
+    assert.equal(sent.filter((m) => m.name === "nodes.undo").map((m) => m.args.batch_id), ["B9"]);
+    assert.equal(N.nodes.get().card, null);
+    N.setSelection(["n2"]);
+    await N.openCard();
+    N.setSelection(["n3"]);
+    assert.equal(N.nodes.get().card, null, "안 고친 카드는 다음 고르기에서 닫힌다");
+    N.setMode("pan");
+  } },
+  { name: "구간 만들기: 고르기 모드에서 고른 것이 없으면 할 일을 한 줄로 안내한다", async run(assert) {
+    await setup();
+    N.setMode("pick");
+    const host = mount(html`<${NodeOverlay} />`);
+    await tick();
+    const h = host.querySelector(".pickhint");
+    assert(h && h.textContent.includes("네모로 끌어 고르세요"), "안내 줄");
+    N.setSelection(["n1"]);
+    await tick();
+    assert(!host.querySelector(".pickhint"), "고르면 'n개 고름' 막대로 바뀐다");
+    N.setMode("pan");
+    host.remove();
+  } },
+  { name: "모두 확정(실제 창 3차): 구간 패널을 열지 않고 도면 위 확인 창, Enter로 확정", async run(assert) {
+    await setup();
+    store.set({ panel: null });
+    const { ConfirmAllModal } = await import("../js/panels/nodes_confirm.js");
+    const host = mount(html`<${ConfirmAllModal} />`);
+    N.askConfirmAll();
+    await tick();
+    const m = host.querySelector(".na-modal");
+    assert(m && m.textContent.includes("2개 구간을 확정할까요?"), "확인 창");
+    assert.equal(store.get().panel, null, "패널은 열지 않음");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await tick();
+    assert.equal(sent.filter((x) => x.name === "nodes.confirm").map((x) => x.args.node_ids), [["S1", "S2"]]);
+    assert(!host.querySelector(".na-modal"), "확정하면 닫힘");
+    N.askConfirmAll();
+    await tick();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+    assert.equal(N.nodes.get().confirmAsk, null, "Esc는 취소");
+    host.remove();
   } },
   { name: "구간 연결: 명령은 set_rev와 대상의 rev·state를 함께 보내고, 성공하면 다시 읽는다", async run(assert) {
     await setup();
@@ -241,6 +390,42 @@ export const tests = [
     assert.equal([lastCmd().name, lastCmd().args.archive], ["nodes.remove", true]);
     host.remove();
   } },
+  { name: "구간 패널: 찾지 못한 구성요소를 골라 버리고, 확정 구간이면 단추 대신 까닭을 보인다", async run(assert) {
+    await setup();
+    N.nodes.set({ scope: "all" });
+    const plain = window.fetch;
+    window.fetch = async (url) => {
+      const r = await plain(url);
+      if (!String(url).startsWith("/api/nodes/node/")) return r;
+      const d = await r.json();
+      return { ok: true, status: 200, json: async () => Object.assign(d, { lost_items: [{ key: "k1", name: "수동 밸브 RC-V001", lost_at: "2026-11-20T01:02:03Z" }, { key: "k2", name: "이름 없는 구성요소", lost_at: null }], discarded: 0 }) };
+    };
+    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    await tick();
+    host.querySelectorAll(".nrow-b")[0].click();         // S1 적용됨
+    await tick();
+    const list = host.querySelector(".lost-items");
+    assert(list && list.textContent.includes("찾지 못한 구성요소 2개") && list.textContent.includes("RC-V001"), "목록");
+    assert(!list.textContent.includes("k1") && !list.textContent.includes("lost:"), "key·묘비 id는 보이지 않는다");
+    const by = (label) => [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label);
+    assert(by("S1 찾지 못한 구성요소 고른 것 버리기").disabled, "고르기 전에는 꺼짐");
+    list.querySelector("input[type=checkbox]").click();
+    await tick();
+    by("S1 찾지 못한 구성요소 고른 1개 버리기").click();
+    await tick();
+    assert.equal([lastCmd().name, JSON.stringify(lastCmd().args.keys), lastCmd().args.node_id], ["nodes.discard_lost", '["k1"]', "S1"]);
+    assert(lastCmd().args.targets && lastCmd().args.targets[0].node_id === "S1", "판 검사용 대상");
+    by("S1 찾지 못한 구성요소 모두 버리기").click();
+    await tick();
+    assert.equal(JSON.stringify(lastCmd().args.keys), '["k1","k2"]');
+    host.querySelectorAll(".nrow-b")[2].click();         // S3 확정
+    await tick();
+    const held = host.querySelector(".lost-items");
+    assert(held.textContent.includes("확정을 해제한 뒤에 버릴 수 있습니다"), "확정 구간 까닭");
+    assert(!by("S3 찾지 못한 구성요소 모두 버리기"), "확정 구간에는 버리기 단추가 없다");
+    window.fetch = plain;
+    host.remove();
+  } },
   { name: "구간 패널: 최근 묶음 되돌리기와 나머지도 나누기(채팅)", async run(assert) {
     await setup();
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
@@ -255,7 +440,7 @@ export const tests = [
     assert.equal(lastCmd().name, "chat.ask");
     host.remove();
   } },
-  { name: "도면 고르기: 'n개 고름' 막대 → 구간 만들기 카드 → 만들기 명령(sheet·local_id)", async run(assert) {
+  { name: "도면 고르기: 'n개 고름' 막대 → 구간 만들기(제안 이름으로 바로) → 만든 카드에서 설계 의도 저장", async run(assert) {
     await setup();
     engine.reply = (name) => (name === "nodes.suggest"
       ? { ok: true, data: { count: 3, asked: 3, name: "RC-RV01 → RC-SG01", majors: ["RC-RV01", "RC-SG01"], boundary: ["RC-RV01", "RC-SG01"], overlaps: [{ node_id: "S1", shared: 1 }], set_rev: 4 } }
@@ -266,21 +451,23 @@ export const tests = [
     assert(host.textContent.includes("3개 고름"), "막대");
     [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "구간 만들기").click();
     await tick();
-    assert.equal(lastCmd().name, "nodes.suggest");
+    const m = sent.find((x) => x.name === "nodes.create");
+    assert(m, "누르면 바로 만든다");
+    assert.equal(m.args, { project_id: "P", sheet: "graph-A", ids: ["n1", "n2", "n3"], name: "RC-RV01 → RC-SG01", set_rev: 4 });
+    assert.equal(N.nodes.get().selection, []);
+    assert.equal(N.nodes.get().focus, "S4");
     const card = host.querySelector(".newnode");
-    assert(card && card.textContent.includes("새 구간 S4") && card.textContent.includes("S1 구간과 1개가 겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
+    assert(card && card.textContent.includes("구간 S4을 만들었습니다") && card.textContent.includes("S1 구간과 1개가 겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
     const intent = card.querySelector("#nn-intent");
     intent.value = "원자로 출구를 증기발생기로 보냄";
     intent.dispatchEvent(new Event("input", { bubbles: true }));
     await tick();
-    [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "만들기").click();
+    [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "이름·설계 의도 저장").click();
     await tick();
-    const m = lastCmd();
-    assert.equal(m.name, "nodes.create");
-    assert.equal(m.args, { project_id: "P", sheet: "graph-A", ids: ["n1", "n2", "n3"], name: "RC-RV01 → RC-SG01", design_intent: "원자로 출구를 증기발생기로 보냄", set_rev: 4 });
-    assert.equal(N.nodes.get().selection, []);
+    const si = sent.filter((x) => x.name === "nodes.set_intent");
+    assert.equal(si.map((x) => [x.args.node_id, x.args.text]), [["S4", "원자로 출구를 증기발생기로 보냄"]]);
+    assert(!sent.some((x) => x.name === "nodes.rename"), "이름은 안 고쳤으니 보내지 않음");
     assert(!host.querySelector(".newnode"), "카드가 닫힘");
-    assert.equal(N.nodes.get().focus, "S4");
     host.remove();
   } },
   { name: "도면 고르기: 강조한 구간에 더하기·빼기는 적용됨 구간에서만, 확정이면 숨김", async run(assert) {
@@ -322,6 +509,50 @@ export const tests = [
     assert.equal(N.nodes.get().selection, ["n1"]);
     store.set({ panel: null });
     host.remove();
+  } },
+  { name: "구간 패널(측정 2): 등록·추출 뒤 도면 알림만 와도 '도면을 먼저 읽어야 합니다'를 거둔다", async run(assert) {
+    await setup();
+    engine.list = Object.assign({}, engine.list, { available: false, nodes: [], set_rev: 0 });
+    await N.refresh();
+    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    await tick();
+    assert(host.textContent.includes("도면을 먼저 읽어야 합니다"), "시험의 전제");
+    engine.list = Object.assign({}, engine.list, { available: true, set_rev: 1 });
+    deliver(JSON.stringify({ t: "changed", topic: "drawings", rev: null }));      // 등록은 drawings·sources만 알린다
+    await tick();
+    assert(!host.textContent.includes("도면을 먼저 읽어야 합니다"), "도면이 바뀌면 구간 목록도 다시 읽는다");
+    host.remove();
+  } },
+  { name: "구간 패널(측정 2): 패널을 열 때마다 다시 읽는다(알림을 놓쳤어도 낡은 안내가 남지 않게)", async run(assert) {
+    await setup();
+    engine.list = Object.assign({}, engine.list, { available: false, nodes: [], set_rev: 0 });
+    await N.refresh();
+    engine.list = Object.assign({}, engine.list, { available: true, set_rev: 1 });     // 알림 없이 바뀜
+    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    await tick();
+    assert(!host.textContent.includes("도면을 먼저 읽어야 합니다"), "열 때 읽은 목록을 보인다");
+    host.remove();
+  } },
+  { name: "구간 패널(측정 7): 열자마자 누른 확정은 열 때 읽는 목록을 기다려 지금 판으로 보낸다", async run(assert) {
+    await setup();
+    N.nodes.set({ scope: "all", focus: "S1" });
+    engine.list = Object.assign({}, engine.list, { set_rev: 7 });                  // 뒤에서 판 이전이 집합 판을 올렸다(알림 전)
+    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    N.confirm(["S1"]);                                                               // 그리자마자(열 때 읽기가 끝나기 전) 누름
+    await tick();
+    const m = sent.filter((x) => x.name === "nodes.confirm").pop();
+    assert(m, "명령을 보냄");
+    assert.equal(m.args.set_rev, 7, "열 때 읽은 판으로 보낸다");
+    host.remove();
+  } },
+  { name: "구간 패널(측정 7): 거절되면 패널 위 안내와 함께 토스트로도 알린다", async run(assert) {
+    await setup();
+    store.set({ toast: null });
+    engine.reply = () => ({ ok: false, error: { code: "stale", message: "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요." } });
+    const r = await N.confirm(["S1"]);
+    assert(r === null);
+    const t = store.get().toast;
+    assert(t && t.text.includes("바뀌어 저장하지 않았습니다") && t.kind === "err", JSON.stringify(t));
   } },
   { name: "구간 연결: 엔진의 changed(nodes) 알림을 받으면 다시 읽는다", async run(assert) {
     await setup();
@@ -392,15 +623,15 @@ tests.push({ name: "구간 연결: 뺀 선(신호선·계측선)이 있으면 �
   store.set({ toast: null });
 } });
 
-tests.push({ name: "구간 패널: 옛 판(0.1) 파일은 안내와 '새 판으로 바꾸기'를 보이고 누르면 nodes.migrate", async run(assert) {
+tests.push({ name: "구간 패널: 이전 형식 파일은 안내와 '새 형식으로 바꾸기'를 보이고 누르면 nodes.migrate", async run(assert) {
   await setup();
   engine.list = Object.assign({}, engine.list, { legacy: true, nodes: [] });
   await N.refresh();
   const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
   await tick();
-  assert(host.textContent.includes("옛 판(0.1) 구간 파일"), "안내");
+  assert(host.textContent.includes("이전 형식으로 저장돼"), "안내");
   engine.reply = () => ({ ok: true, data: { set_rev: 1, read_only: null } });
-  [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "새 판으로 바꾸기").click();
+  [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "새 형식으로 바꾸기").click();
   await tick();
   assert.equal(lastCmd().name, "nodes.migrate");
   host.remove();
@@ -423,4 +654,17 @@ tests.push({ name: "구간 연결: 프로젝트가 바뀌면 앞 프로젝트의
   store.set({ drawings: Object.assign({}, store.get().drawings, { project_id: "P" }) });
   engine.list = Object.assign({}, engine.list, { project_id: "P" });
   await tick();
+} });
+
+tests.push({ name: "구간 상세(실제 창 3차 D): 구성요소 칩의 글·마우스 올림·접근성 이름에 종류 코드·그래프 이름이 없다", async run(assert) {
+  await setup();
+  const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+  N.focusNode("S1");
+  await tick(); await tick();
+  const chips = [...host.querySelectorAll(".memlist .chip")];
+  assert(chips.length >= 2, "칩이 그려짐: " + chips.length);
+  const said = chips.flatMap((c) => [c.textContent, c.getAttribute("title") || "", c.getAttribute("aria-label") || ""]);
+  for (const t of said) assert(!/graph-|_[a-z]|SCN__/.test(t), "내부 말: " + t);
+  assert(said.some((t) => t.includes("원자로 용기 · SNP-M-101")), JSON.stringify(said));
+  host.remove();
 } });

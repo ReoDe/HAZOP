@@ -14,6 +14,7 @@ import logging
 import os
 
 from hazop.extract import confirmation
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_drawings")
 MAX_ROWS = 200
@@ -37,6 +38,53 @@ def _trim(rows, n=MAX_ROWS):
     return list(rows[:n])
 
 
+# ---------------------------------------------------------------- 사람용 도면 이름(시트 정체 U4)
+_LABELS = {}
+
+
+def labels(engine):
+    """{graph_id: 도면 목록 한 줄 엔진 값(hazop.graph.sources.sheet_rows) + display(사람용 이름, sheets.display_name)}.
+    셸이 도면을 부르는 모든 글(도면 목록·위 막대·구간·다음에 할 일·AI 검토·대기열)이 이 이름 하나를 쓴다(임시 이름·폴더 이름이 보이지 않게,
+    한 화면에 두 이름이 섞이지 않게). 프로젝트 그래프 입력이 같으면 다시 읽지 않는다. 읽기만 한다(정착하지 않음)."""
+    from hazop.app import project_ctx
+    from hazop.graph import sheets, sources
+    pid = engine.project_id()
+    try:
+        key = project_ctx._graph_inputs(pid)
+    except (OSError, ValueError):
+        key = None
+    hit = _LABELS.get(pid)
+    if hit is not None and key is not None and hit[0] == key:
+        return hit[1]
+    try:
+        rows = sources.sheet_rows(pid)
+    except (OSError, ValueError, KeyError):
+        LOG.warning("도면 목록 이름을 읽지 못함", exc_info=True)
+        rows = []
+    out = {r["graph_id"]: dict(r, display=sheets.display_name(r), notice=_notice(r.get("notice"))) for r in rows if r.get("graph_id")}
+    _LABELS[pid] = (key, out)
+    return out
+
+
+CONFIRM_FIRST_TEXT = ("도면 번호를 아직 확정하지 않았습니다. 표제란에서 번호를 확정하면 도면 연결·DEXPI 내보내기를 쓸 수 있습니다. "
+                      "만들어 둔 구간·분석 결과는 바뀐 도면 이름을 따라갑니다.")
+
+
+def _notice(n):
+    """도면 목록 행 알림. 번호 미확정 알림은 시트 정체 U5 뒤의 사실로 고친다('구간을 만들기 전에 확정하세요'가 아님, 설계 §6 4)."""
+    from hazop.graph import sheets
+    if isinstance(n, dict) and n.get("code") == sheets.CONFIRM_FIRST:
+        return dict(n, text=CONFIRM_FIRST_TEXT)
+    return n
+
+
+def display(engine, graph_id, rows=None):
+    """한 도면의 사람용 이름. 목록에 없으면 graph-를 뗀 이름(임시 이름이면 '번호 미확정 도면')."""
+    from hazop.graph import sheets
+    row = (rows if rows is not None else labels(engine)).get(graph_id)
+    return row["display"] if row else sheets.display_name({"graph_id": graph_id})
+
+
 def status(engine, graph_id):
     """도면 한 쪽의 확정 상태(엔진이 센 값 그대로, 긴 목록만 자른다). 못 읽으면 {"available": False, "reason"}."""
     name = engine.graph_names().get(graph_id)
@@ -47,7 +95,7 @@ def status(engine, graph_id):
     except FileNotFoundError:
         return {"available": False, "reason": "이 도면의 추출 결과가 없습니다."}
     except (OSError, ValueError) as exc:
-        return {"available": False, "reason": "쪽 자료를 읽을 수 없습니다(%s)." % str(exc)[:120]}
+        return {"available": False, "reason": "쪽 자료를 읽을 수 없습니다(%s)." % errtext.why(exc, 120)}
     out = {k: v for k, v in st.items() if k not in ("unconfirmed", "unplaced", "files", "released")}
     out.update(available=True, graph_id=graph_id, ver=st["fingerprint"], unconfirmed=_trim(st["unconfirmed"]), unconfirmed_total=len(st["unconfirmed"]),
               unplaced=_trim(st["unplaced"]), unplaced_total=len(st["unplaced"]),
@@ -64,7 +112,7 @@ def exportable(engine):
         gid = names.get(r["name"])
         if gid is None:
             continue
-        rows.append({"graph_id": gid, "name": r["name"], "drawing_number": r.get("drawing_number"), "state": r.get("state"),
+        rows.append({"graph_id": gid, "name": r["name"], "display": display(engine, gid), "drawing_number": r.get("drawing_number"), "state": r.get("state"),
                      "unconfirmed": r.get("unconfirmed") or 0, "exportable": bool(r.get("exportable")), "why": list(r.get("why") or [])[:6]})
     return {"drawings": rows, "any": any(x["exportable"] for x in rows)}
 
@@ -82,20 +130,104 @@ def read(engine, parts, query):
     return None
 
 
+FORMAT_WORD = {"drawio": "drawio 파일", "pdf_vector": "PDF 파일", "dexpi": "DEXPI 파일"}
+
+
+def _format_word(fmt):
+    return FORMAT_WORD.get(fmt or "", "형식을 모르는 파일")
+
+
+def conflict_text(c, shown):
+    """원본 고르기 줄의 사람용 글(실제 창 3차 D). 엔진 글(hazop.graph.sources.REASONS)은 형식 코드·폴더 이름을 실어 화면에 그대로 쓰지 않는다.
+    c는 sources.conflicts 한 줄, shown은 사람용 도면 이름(display)."""
+    using = c.get("in_use_file") or _format_word(c.get("in_use_format"))
+    if c.get("in_use_file") and c.get("in_use_format"):
+        using = "%s(%s)" % (c["in_use_file"], _format_word(c["in_use_format"]))
+    reason = c.get("reason")
+    if reason == "same_number_other_format":
+        kinds = "과 ".join(_format_word(f) for f in c.get("formats") or [])      # 말이 모두 '파일'로 끝나 '과'(실제 창 4차 조사 오류)
+        return "같은 도면 번호 %s의 원본이 %s로 함께 있습니다. 사람이 고르기 전에는 %s을(를) 씁니다." % (shown, kinds, using)
+    if reason == "same_number_other_file":
+        return "같은 도면 번호 %s의 다른 파일이 들어왔습니다. 쓸 파일을 고르세요. 사람이 고르기 전에는 %s을(를) 씁니다." % (shown, using)
+    if reason == "same_name_before_settle":
+        return "번호가 없는 도면 %d장이 한 자리를 나눠 써서 %s만 보입니다. 다음 추출 때 도면마다 따로 들어옵니다." % (len(c.get("candidates") or []), using)
+    if reason == "settle_rebuild_failed":
+        stuck = [x.get("file") for x in c.get("candidates") or [] if not x.get("in_use") and x.get("file")]
+        return "가려졌던 도면 %s을(를) 다시 읽지 못해 %s만 보입니다. 그 도면을 다시 추출하면 따로 들어옵니다." % ("·".join(stuck) or "한 장", using)
+    return c.get("text")
+
+
 def source_conflicts(engine):
-    """같은 도면 번호의 원본이 형식 둘 이상으로 들어온 것(hazop.graph.sources.conflicts). 읽기만 하고 파일을 쓰지 않는다.
-    -> {"conflicts": [{"drawing_number", "graph_id", "formats", "in_use_format", "chosen", "candidates": [{"format", "modified"}]}]}.
-    폴더 이름·경로는 싣지 않는다(형식 이름과 바뀐 시각만)."""
+    """같은 시트 자리에 고를 원본이 둘 이상인 것(hazop.graph.sources.conflicts). 읽기만 하고 파일을 쓰지 않는다.
+    -> {"conflicts": [{"kind": format|file, "reason", "text", "display", "drawing_number", "graph_id", "formats", "in_use_format",
+         "in_use_material", "in_use_file", "chosen", "chosen_material", "nodes_on_sheet"(지금 이 도면 구성요소를 품은 구간 수: 갈아타기 미리 알림),
+         "candidates": [{"material_id", "file"(원본 파일 이름), "format", "modified", "in_use"}]}]}.
+    폴더 이름·경로는 싣지 않는다(원본 파일 이름·형식·바뀐 시각만)."""
     import datetime
     from hazop.graph import sources
     rows = []
-    for c in sources.conflicts(engine.project_id())[:MAX_ROWS]:
-        rows.append({"drawing_number": c["drawing_number"], "graph_id": c["graph_id"], "formats": list(c["formats"]),
-                     "in_use_format": c.get("in_use_format"), "chosen": c.get("chosen"),
-                     "candidates": [{"format": x.get("format"),
-                                     "modified": datetime.datetime.fromtimestamp(x["modified"]).strftime("%Y-%m-%d %H:%M")}
+    found = sources.conflicts(engine.project_id())[:MAX_ROWS]
+    held = _nodes_on(engine, [c["graph_id"] for c in found]) if found else {}
+    firm = _confirmed_on(engine, [c["graph_id"] for c in found]) if found else {}
+    unknown = held is None or firm is None          # 구간 파일을 읽지 못함: 0으로 안심시키지 않고 '알 수 없음'으로 보인다(검토 ⑥ 나)
+    held, firm = held or {}, firm or {}
+    lb = labels(engine) if found else {}
+    for c in found:
+        shown = display(engine, c["graph_id"], lb)
+        rows.append({"kind": c.get("kind") or "format", "reason": c.get("reason"), "text": conflict_text(c, shown), "display": shown,
+                     "drawing_number": c["drawing_number"], "graph_id": c["graph_id"], "formats": list(c["formats"]),
+                     "in_use_format": c.get("in_use_format"), "in_use_material": c.get("in_use_material"), "in_use_file": c.get("in_use_file"),
+                     "chosen": c.get("chosen"), "chosen_material": c.get("chosen_material"), "nodes_on_sheet": held.get(c["graph_id"], 0),
+                     "confirmed_on_sheet": firm.get(c["graph_id"], 0), "nodes_unknown": unknown,
+                     "candidates": [{"material_id": x.get("material_id"), "file": x.get("file"), "format": x.get("format"),
+                                     "in_use": bool(x.get("in_use")),
+                                     # 이 후보로 바꾸면 다시 확인할 구간 수(지금 쓰는 파일이면 바뀌는 것이 없어 0, 검토 지적 3)
+                                     "recheck": 0 if x.get("in_use") else None if unknown else held.get(c["graph_id"], 0),
+                                     "released": 0 if x.get("in_use") else None if unknown else firm.get(c["graph_id"], 0),       # 바꾸면 확정이 풀리는 구간 수
+                                     "modified": datetime.datetime.fromtimestamp(x["modified"]).strftime("%Y-%m-%d %H:%M") if x.get("modified") else None}
                                     for x in c["candidates"]]})
     return {"conflicts": rows}
+
+
+def _nodes_on(engine, graph_ids):
+    """{graph_id: 그 도면 구성요소를 품은 구간 수}(갈아타기 전 미리 알림). 프로젝트 그래프가 아직 없으면 {}(구간도 없음),
+    구간 파일을 읽지 못하면 None(영향을 알 수 없음: 0으로 안심시키지 않는다)."""
+    from hazop.shell import api_nodes
+    from hazop.study import node_commands
+    pg = api_nodes._pg(engine, strict=False)
+    if pg is None:
+        return {}
+    try:
+        ns, _legacy = api_nodes._peek(pg)
+    except Exception:  # noqa: BLE001 - 미리 알림의 수다: 못 읽으면 '알 수 없음'(None)
+        return None
+    return {g: len(node_commands.drawing_nodes(pg, ns, g)) for g in graph_ids}
+
+
+def _confirmed_on(engine, graph_ids):
+    """{graph_id: 그 도면 구성요소를 품은 구간 가운데 확정·잠금한 수}: 원본을 바꾸면 그 확정이 풀린다(실제 창 4차, 미리 알림)."""
+    from hazop.shell import api_nodes
+    from hazop.study import node_commands, nodes
+    pg = api_nodes._pg(engine, strict=False)
+    if pg is None:
+        return {}
+    try:
+        ns, _legacy = api_nodes._peek(pg)
+    except Exception:  # noqa: BLE001 - 미리 알림의 수다: 못 읽으면 '알 수 없음'(None)
+        return None
+    state = {n["node_id"]: nodes.node_state(n) for n in (ns or {}).get("nodes") or []}
+    return {g: sum(1 for x in node_commands.drawing_nodes(pg, ns, g) if state.get(x["node_id"]) != "applied") for g in graph_ids}
+
+
+def choose_impact(engine, conflict, fmt=None, material_id=None):
+    """채팅 확인 상자의 미리 알림 수(웹 카드와 같은 셈): {"recheck": n 또는 None, "released": n 또는 None}. None은 구간 파일을
+    읽지 못해 알 수 없음. 지금 쓰는 원본을 고르면 바뀌는 것이 없어 0."""
+    same = (material_id and material_id == conflict.get("in_use_material")) or (not material_id and fmt and fmt == conflict.get("in_use_format"))
+    if same:
+        return {"recheck": 0, "released": 0}
+    g = conflict.get("graph_id")
+    held, firm = _nodes_on(engine, [g]), _confirmed_on(engine, [g])
+    return {"recheck": None if held is None else held.get(g, 0), "released": None if firm is None else firm.get(g, 0)}
 
 
 # ---------------------------------------------------------------- 쓰기
@@ -131,15 +263,39 @@ def _choose_source(engine, a):
     from hazop.graph import sources
     api = _api()
     try:
-        record = sources.choose(engine.project_id(), a["drawing_number"], a["format"], _by(engine))
+        if not a.get("format") and not a.get("material_id"):
+            raise api.CommandError("bad_args", "쓸 형식이나 파일을 골라 주세요.")
+        record = sources.choose(engine.project_id(), a["drawing_number"], a.get("format"), _by(engine), material_id=a.get("material_id"))
     except store_io.Conflict:
         raise api.CommandError("stale", "다른 곳에서 선택이 바뀌었습니다. 목록을 다시 읽었으니 한 번 더 골라 주세요.")
     except ValueError as exc:
         engine.changed("sources", None)
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
+    from hazop.app import data
+    data.notify_graph_changed(engine.project_id())      # 쓸 원본이 바뀌면 프로젝트 그래프 판도 바뀐다: 검토구간을 이어서 맞춘다
     engine.changed("sources", None)
     engine.changed("drawings", None)
-    return {"chosen": {"drawing_number": a["drawing_number"], "format": record["format"]}}
+    applied = _applied(engine)
+    out = {"chosen": {"drawing_number": a["drawing_number"], "format": record.get("format"), "material_id": record.get("material_id")},
+           "applied": applied}
+    if not applied:      # 고르기는 저장했지만 검토구간에 반영하지 못함(검토 지적 2): 화면이 '도면 변경 반영하기' 안전망을 보인다
+        out["apply_text"] = APPLY_FAILED_TEXT
+    return out
+
+
+APPLY_FAILED_TEXT = ("쓸 파일은 바꿨지만 검토구간에 도면 변경을 반영하지 못했습니다. '도면 변경 반영하기'를 눌러 다시 맞추세요. "
+                     "그 전까지 구간 고치기와 분석은 막혀 있습니다.")
+
+
+def _applied(engine):
+    """고른 뒤 검토구간이 지금 그래프에 맞춰졌는가. AI 작업이 끝나기를 기다리는 자동 반영(catching)은 실패가 아니다.
+    읽지 못하면 True(알 수 없음을 실패로 알리지 않음)."""
+    from hazop.shell import api_nodes
+    try:
+        s = api_nodes.summary(engine)
+    except Exception:  # noqa: BLE001
+        return True
+    return not (s.get("available") and s.get("stale")) or engine.catching(engine.project_id())
 
 
 def _export(engine, a):
@@ -158,7 +314,7 @@ def _export(engine, a):
     if not names:
         if skipped:
             raise api.CommandError("failed", "내보낼 수 있는 쪽이 없습니다.\n" + "\n".join(
-                "%s: %s" % (r.get("drawing_number") or r["name"], (r.get("why") or ["내보낼 수 없음"])[0]) for r in skipped[:12])[:700])
+                "%s: %s" % (r["display"], (r.get("why") or ["내보낼 수 없음"])[0]) for r in skipped[:12])[:700])
         raise api.CommandError("failed", "확정된 쪽이 하나도 없어 내보낼 것이 없습니다. 도면에서 '쪽 확정'을 마친 쪽만 내보냅니다.")
     pick = engine.hooks.get("save_dir")
     if pick is None:
@@ -177,14 +333,15 @@ def _export(engine, a):
     except dexpi_export.ExportError as exc:
         raise api.CommandError("failed", "\n".join(exc.reasons)[:900])
     except OSError as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:160])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 160))
     to_gid = {v: k for k, v in by_gid.items()}
-    not_exported = [{"graph_id": to_gid.get(x["name"]), "drawing_number": x.get("drawing_number"), "state": x.get("state"),
+    lb = labels(engine)
+    not_exported = [{"graph_id": to_gid.get(x["name"]), "display": display(engine, to_gid.get(x["name"]), lb), "drawing_number": x.get("drawing_number"), "state": x.get("state"),
                      "unconfirmed": x.get("unconfirmed") or 0, "reason": x.get("reason")} for x in res["not_exported"]]
-    not_exported += [{"graph_id": r["graph_id"], "drawing_number": r.get("drawing_number"), "state": r.get("state"),
+    not_exported += [{"graph_id": r["graph_id"], "display": r["display"], "drawing_number": r.get("drawing_number"), "state": r.get("state"),
                       "unconfirmed": r.get("unconfirmed") or 0, "reason": (r.get("why") or [None])[0]} for r in skipped]
     return {"cancelled": False, "folder": os.path.basename(out_dir.rstrip("\\/")),
-            "drawings": [{"graph_id": to_gid.get(d["name"]), "drawing_number": d.get("drawing_number"), "files": d["files"], "stats": d.get("stats") or {},
+            "drawings": [{"graph_id": to_gid.get(d["name"]), "display": display(engine, to_gid.get(d["name"]), lb), "drawing_number": d.get("drawing_number"), "files": d["files"], "stats": d.get("stats") or {},
                           "graph_rebuilt": bool(d.get("graph_rebuilt"))} for d in res["drawings"]],
             "not_exported": not_exported}
 
@@ -215,7 +372,9 @@ def register(commands):
         "'원본과 견줌' 기록(미확인 0·위치 없음 0일 때). 화면이 읽은 세 파일 지문과 기록 판을 함께 보낸다")
     put("sheet.confirm", dict(base), _sheet_command("confirm"), "이 쪽 확정(조건을 엔진이 센다, 확정자는 검토자 이름)")
     put("sheet.unconfirm", dict(base, reason=(v_str(0, 500), False)), _sheet_command("unconfirm"), "견줌·확정 취소")
-    put("sources.choose", {"drawing_number": (v_str(1, 200), True), "format": (v_enum("drawio", "pdf_vector", "dexpi"), True)},
-        _choose_source, "같은 도면 번호의 원본이 여러 형식일 때 프로젝트 그래프에 쓸 형식을 고른다(고르기 전에는 먼저 있던 형식)")
+    put("sources.choose", {"drawing_number": (v_str(1, 200), True), "format": (v_enum("drawio", "pdf_vector", "dexpi"), False),
+                           "material_id": (v_str(1, 120), False)},
+        _choose_source, "같은 시트 자리에 원본이 둘 이상일 때 프로젝트 그래프에 쓸 형식(format) 또는 파일(material_id)을 고른다. drawing_number는 번호나 graph_id. "
+                        "갈아타면 검토구간을 이어서 맞추고(자동 반영), 잃은 것이 있으면 알림이 간다")
     put("dexpi.export", {"graph_ids": (v_list(v_str(1, 200), 200), True)}, _export_command,
         "확정된 쪽을 DEXPI XML로 내보낸다(저장 폴더는 창이 대화상자로 묻고, 덮어쓰면 확인한다)")

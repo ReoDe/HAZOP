@@ -519,7 +519,7 @@ class KnowledgeScreen(QWidget):
             return None
         pid = self.pg["project_id"]
         try:
-            judgements = expect.load_judgements(expect.store_path(pid), pid)
+            judgements = expect.load_judgements(expect.store_path(pid), pid, graph=self.pg)
         except (OSError, expect.ExpectError) as exc:
             self.app.log_error("잠재 후보 판단 읽기", exc)
             self.expect_error = str(exc)

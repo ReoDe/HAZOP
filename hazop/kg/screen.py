@@ -753,8 +753,8 @@ def panel_model(pg, kg=None, expectations=None):
     - 노드마다 group(도면 graph_id, 또는 도면에 걸리지 않은 지식 노드는 KN_GROUP). 지식 노드와 잠재 후보는 이어진 도면 노드의 도면에 둔다.
     - 지식그래프 관계 중 기각(rejected)은 넣지 않는다. 끝이 프로젝트 그래프에 없으면 세기만 한다(skipped).
     - 잠재 후보는 expect.evaluate 결과의 상태·재확인을 그대로 싣는다."""
-    from hazop.graph import project
-    drawing = {s["graph_id"]: s.get("drawing_number") or s["graph_id"].replace("graph-", "", 1) for s in pg.get("sheets") or []}
+    from hazop.graph import project, sheets
+    drawing = {s["graph_id"]: sheets.display_name(s) for s in pg.get("sheets") or []}
     pg_nodes = {n["entity_id"]: n for n in pg["nodes"]}
     seg_ends = {}
     for e in pg["edges"]:

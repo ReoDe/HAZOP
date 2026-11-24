@@ -58,7 +58,7 @@ function JudgeForm({ d, onSaved }) {
         ${d.choices.categories.map((c) => html`<option value=${c.code} key=${c.code}>${c.label}</option>`)}</select></label>
       <label>도전받는 안전기능(쉼표로)<input class="textbox" aria-label="도전받는 안전기능" maxlength="500" value=${f.functions} onInput=${set("functions")} /></label>
       <label>판정 이유<input class="textbox" aria-label="판정 이유" maxlength="1000" value=${f.reason} onInput=${set("reason")} /></label></div>
-    <div class="muted small">항목 승인과 따로 확정합니다. 사람이 정한 판정으로 ⑤ 결과에 저장되고${d.targets.length > 1 ? ", 겹친 구간의 같은 원인 항목 " + d.targets.length + "개에 함께 적힙니다" : ""}. 맞는 범주가 없으면 미분류로 두세요.</div>
+    <div class="muted small">항목 승인과 따로 확정합니다. 사람이 정한 판정으로 분석 결과에 저장되고${d.targets.length > 1 ? ", 겹친 구간의 같은 원인 항목 " + d.targets.length + "개에 함께 적힙니다" : ""}. 맞는 범주가 없으면 미분류로 두세요.</div>
     <div class="acts-row"><${Btn} sm=${true} kind="primary" label="판정 확정" disabled=${busy} onClick=${save}>판정 확정<//></div></div>`;
 }
 

@@ -13,9 +13,10 @@ import logging
 import os
 
 from hazop.analysis.risk import FREQUENCIES, SEVERITIES
-from hazop.study import idmap, nodes
+from hazop.study import follow, idmap, nodes
 from hazop.study import result_commands
 from hazop.study import results as res
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_results")
 INT_MAX = 10 ** 9
@@ -33,7 +34,7 @@ def _pg(engine, strict=True):
         return project_ctx.project_graph(engine.project_id())
     except (OSError, ValueError, KeyError):
         if strict:
-            raise _api().CommandError("failed", "프로젝트 그래프를 만들 수 없습니다. 도면을 먼저 추출하세요.")
+            raise _api().CommandError("failed", "도면을 먼저 읽어야 합니다.")
         return None
 
 
@@ -45,6 +46,24 @@ def _node_set(pg):
     if (doc.get("schema_version") or nodes.LEGACY_SCHEMA_VERSION) == nodes.LEGACY_SCHEMA_VERSION:
         return nodes.new_set(pg), True
     return doc, False
+
+
+def _stamp(ns):
+    """집합이 바뀌었는지 견줄 표지(그래프 판, 집합 판). 판 이전은 앞을, 구간 고치기는 뒤를 바꾼다."""
+    return (ns or {}).get("graph_version"), (ns or {}).get("set_rev") or 0
+
+
+def _set_changed(pg, ns):
+    """계획에 쓴 집합(ns)과 지금 파일을 _plan과 같은 길(_node_set)로 다시 읽은 것이 다른가. 파일이 없으면 _plan처럼 새 집합으로 본다."""
+    now, _legacy = _node_set(pg)
+    return _stamp(now) != _stamp(ns), now
+
+
+def _need_current(pg, ns):
+    """다시 추출 뒤 판 이전 전이면 거절한다(stale). 옛 판 구간 집합과 새 그래프를 섞어 분석 맥락·Excel을 만들면 옛 참조가 새 그래프의 다른 기호로 저장·내보내진다.
+    구간 집합이 없는 프로젝트(새 집합)는 판이 같아 막히지 않는다."""
+    if nodes.is_stale(ns, pg):
+        raise _api().CommandError("stale", follow.STALE + ".")
 
 
 def _load(ns):
@@ -156,18 +175,19 @@ def _rec_rows(doc, ns, only_node=None):
 def summary(engine):
     pg = _pg(engine, strict=False)
     if pg is None:
-        return {"available": False, "reason": "프로젝트 그래프가 없습니다. 도면을 먼저 추출하세요."}
+        return {"available": False, "reason": "도면을 먼저 읽어야 합니다."}
     ns, legacy = _node_set(pg)
     active = scope_rows(ns)
-    base = {"available": True, "legacy": legacy, "set_rev": ns.get("set_rev") or 0}
+    base = {"available": True, "legacy": legacy, "set_rev": ns.get("set_rev") or 0,
+            "stale": nodes.is_stale(ns, pg)}       # 다시 추출로 그래프 판이 바뀌었는데 구간 집합이 아직 판 이전 전이면 True: 옛 참조의 자리를 새 그래프로 확인하지 않는다
     if legacy or not active:
         return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
-                    reason="옛 판 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요." if legacy else "확정한 구간이 아직 없습니다.")
+                    reason="구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요." if legacy else "확정한 구간이 아직 없습니다.")
     try:
         doc, fp = _load(ns)
     except (OSError, ValueError) as exc:
         return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
-                    reason="분석 결과 파일을 읽을 수 없습니다(%s)." % str(exc)[:120])
+                    reason="분석 결과 파일을 읽을 수 없습니다(%s)." % errtext.why(exc, 120))
     from hazop.shell import api_nodes
     info = api_nodes._span_info(ns, pg)
     check = idmap.needs_check(ns, doc)
@@ -230,6 +250,9 @@ def _run_state(engine):
     return snap
 
 
+STALE_LABEL = "위치 확인 전(도면 변경 반영 전)"
+
+
 def cell_view(engine, node_id, deviation_id):
     pg = _pg(engine, strict=False)
     if pg is None:
@@ -246,12 +269,12 @@ def cell_view(engine, node_id, deviation_id):
     problem = res.editable_problem(doc, node_id, deviation_id, ns)
     return {"cell": cell, "node": {"node_id": node_id, "name": node.get("name"), "state": nodes.node_state(node) if node else None},
             "deviation": dev, "editable": problem is None, "not_editable_reason": problem, "ver": _ver(fp),
-            "set_rev": ns.get("set_rev") or 0,
+            "set_rev": ns.get("set_rev") or 0, "stale": look.stale,
             "cause_kinds": res.CAUSE_KINDS, "read_only": doc.get("read_only"),
             "severities": list(SEVERITIES), "frequencies": list(FREQUENCIES),
             "intent": _intent(ns, node) if node else None,
             "roles": refs_mod().ROLES, "actuations": refs_mod().ACTUATIONS, "bases": res.CONSEQUENCE_BASES,
-            "targets": look.targets(node)}
+            "targets": [] if look.stale else look.targets(node)}      # 판 이전 전에는 새 그래프의 참조를 고르지 않게 한다
 
 
 def refs_mod():
@@ -286,6 +309,7 @@ class _Lookup:
         self.dn = {s["graph_id"]: s["drawing_number"] for s in pg.get("sheets") or []}
         self.labels = study_xlsx.entity_labels(pg)
         self.entities = {n.get("entity_id") for n in pg.get("nodes") or []}
+        self.stale = ns is not None and nodes.is_stale(ns, pg)      # 구간 집합이 지금 그래프보다 옛 판: 참조·경로의 자리를 확인하지 않는다
         self._docs = None
         self._expect = False
 
@@ -294,6 +318,8 @@ class _Lookup:
 
     def ref(self, r, **extra):
         """참조 하나 {ref, label, missing}: 그래프에서 사라진 대상이면 missing(화면이 '도면에서 사라짐'으로 보임). 저장 값은 원래 참조 그대로."""
+        if self.stale and not idmap.is_tomb(r):
+            return dict({"ref": r, "label": STALE_LABEL, "missing": False}, **extra)      # 순번 id는 다시 추출로 다른 기호를 가리킬 수 있다
         return dict({"ref": r, "label": self.label(r), "missing": r not in self.idx}, **extra)
 
     def expectations(self):
@@ -333,6 +359,9 @@ class _Lookup:
         paths = []
         for p in basis.get("kg_paths") or []:
             if not p:
+                continue
+            if self.stale:      # 판 이전 전: 도면에서 보기가 다른 기호를 강조하지 않게 경로를 그리지 않는다
+                paths.append({"labels": [STALE_LABEL] * len(p), "marks": {}, "sheet": None, "missing": 0, "stale": True})
                 continue
             by_sheet = chatview.path_steps(self.pg, [{"id": x, "flow": None} for x in p])
             marks = {g: [{"op": "path", "steps": steps, "style": "path", "numbered": True}] for g, steps in by_sheet.items()}
@@ -453,7 +482,7 @@ def _execute(engine, name, a, writes=True):
     pg = _pg(engine)
     ns, legacy = _node_set(pg)
     if legacy:
-        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+        raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
     by = _need_reviewer(engine) if writes else engine.reviewer()
     ver = a.get("ver")
     if writes:
@@ -491,7 +520,8 @@ def _export_excel(engine, a):
     pg = _pg(engine)
     ns, legacy = _node_set(pg)
     if legacy:
-        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+        raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
+    _need_current(pg, ns)
     doc, _fp = _load(ns)
     scope = a.get("scope") or "all"
     node_ids = a.get("node_ids") or None
@@ -512,7 +542,7 @@ def _export_excel(engine, a):
         path, rows = study_xlsx.export(path, doc, scope_set(ns), pg, doc["deviations"], scope=scope, node_ids=node_ids,
                                        reviewer=engine.reviewer() or "", intents=inputs["intents"], now=now, expectations=inputs["expectations"])
     except (OSError, ValueError) as exc:
-        raise _api().CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % str(exc)[:200])
+        raise _api().CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % errtext.why(exc, 200))
     return {"path": os.path.basename(path), "rows": rows, "cancelled": False}
 
 
@@ -539,7 +569,7 @@ def _export_ie(engine, a):
     pg = _pg(engine)
     ns, legacy = _node_set(pg)
     if legacy:
-        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+        raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
     from hazop.ie import bundle_xlsx
     path = _save_path(engine, "ie", bundle_xlsx.default_stem(ns.get("project_id"), nodes.now_utc()) + ".xlsx")
     if not path:
@@ -575,7 +605,8 @@ def _plan(engine, a):
     pg = _pg(engine)
     ns, legacy = _node_set(pg)
     if legacy:
-        raise _api().CommandError("failed", "옛 판(0.1) 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요.")
+        raise _api().CommandError("failed", "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요.")
+    _need_current(pg, ns)
     doc, _fp = _load(ns)
     ns = scope_set(ns)                       # 확정·잠금 구간만 호출·요금에 들어간다
     rest = None
@@ -586,9 +617,36 @@ def _plan(engine, a):
     return pg, ns, doc, units
 
 
+def _left_out(pg, scope):
+    """확정하지 않아 이번 실행에서 빠지는 구간 [{node_id, name}](전체 실행일 때만). 실행 확인 카드가 말없이 빼지 않게 이름을 보인다(HZ-DSN-06 U9)."""
+    if scope != "all":
+        return []
+    from hazop.study import nodes
+    try:
+        full, _legacy = _node_set(pg)
+    except Exception:  # noqa: BLE001 - 안내 한 줄: 못 읽으면 비운다
+        return []
+    # lost: 도면이 바뀌어 찾지 못한 구성요소가 남은 구간(판 이전이 확정을 푼 구간이 대개 이것). 화면이 '그냥 초안'과 갈라 말한다
+    return [{"node_id": n["node_id"], "name": n.get("name") or n["node_id"], "lost": len(n.get("lost") or [])}
+            for n in full.get("nodes") or [] if nodes.node_state(n) == "applied"]
+
+
+def _locked_out(pg, scope):
+    """분석을 마치고 잠가 이번 전체 실행에서 다시 묻지 않는 구간 수(전체 실행일 때만). 카드가 말없이 빼지 않게 수를 보인다."""
+    if scope != "all":
+        return 0
+    from hazop.study import nodes
+    try:
+        full, _legacy = _node_set(pg)
+    except Exception:  # noqa: BLE001 - 안내 한 줄: 못 읽으면 0
+        return 0
+    return sum(1 for n in full.get("nodes") or [] if nodes.node_state(n) == "locked")
+
+
 def _run_plan(engine, a):
     from hazop.shell import analysis_run
     _pg_, _ns, _doc, units = _plan(engine, a)
+    left_out = _left_out(_pg_, a["scope"])
     ai = engine.ai
     status = ai.status() if ai is not None else {}
     terms = bool(getattr(ai, "terms_acked", lambda: True)()) if ai is not None else True
@@ -600,7 +658,8 @@ def _run_plan(engine, a):
     else:                    # 연결 설정이 없는 엔진(시험의 가짜 AI): 옛 상태 읽기
         can, label, guide = bool(status.get("can_start")), status.get("label") or "", status.get("guide") or ""
     return dict(s, conn=conn, can_start=can and bool(units), state=label, guide=guide,
-                needs_terms=not terms, running=_run_state(engine)["running"], method=a.get("method"),
+                needs_terms=not terms, running=_run_state(engine)["running"], method=a.get("method"), left_out=left_out,
+                locked_out=_locked_out(_pg_, a["scope"]),
                 scope_fp=analysis_run.scope_fp(units, conn),     # 확인한 범위(칸·구간·호출 수·비용·모델)의 지문. 시작할 때 그대로 보낸다
                 empty_text=None if units else {"node": "분석할 구간의 행을 고르세요(확정한 구간만 분석합니다).",
                                               "failed": "다시 실행할 실패 칸이 없습니다.", "cell": "분석할 칸이 없습니다.",
@@ -664,13 +723,20 @@ def _run(engine, a):
     try:
         client = conn.make_client(via) if plan is not None and hasattr(conn, "make_client") else ai.make_client()
     except ValueError as exc:
-        raise api.CommandError("failed", str(exc)[:200])
+        raise api.CommandError("failed", errtext.why(exc, 200))
     this_run = bool(plan and plan.get("this_run")) and hasattr(conn, "set_run_override")
     test = bool(plan and plan.get("test"))
     if this_run:
         conn.set_run_override(via)                 # 연결 칩에 '이번 실행만'(끝나면 되돌림)
     run = engine.analysis
-    run.running, run.stop, run.done, run.total, run.text, run.last = True, False, 0, len(units), "AI 연결을 확인하는 중", None
+    with engine._study_lock:             # 판 이전과 엇갈리지 않게: 계획에 쓴 집합이 지금 파일과 같고 지금 그래프와도 같은 판일 때만 '도는 중'을 세운다
+        moved, now = _set_changed(pg, ns)
+        if moved:
+            raise api.CommandError("stale", "분석을 준비하는 사이 검토구간이 바뀌어 시작하지 않았습니다. 다시 눌러 주세요.")
+        _need_current(_pg(engine), now)
+        if run.running:
+            raise api.CommandError("busy", "분석이 이미 돌고 있습니다.")
+        run.running, run.stop, run.done, run.total, run.text, run.last = True, False, 0, len(units), "AI 연결을 확인하는 중", None
     engine.changed("results.run", None)
     review_holder = {}
 
@@ -690,13 +756,22 @@ def _run(engine, a):
             engine.changed("results.run", None)
             progress(text, done, total)
 
+        stop = lambda: run.stop or engine.stop_requested()   # noqa: E731
         try:
-            summary_ = analysis_run.run(client, ns, pg, units, intent_of, tick, lambda: run.stop or engine.stop_requested(),
-                                        on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)), test=test)
+            # 다른 일괄 AI 작업(AI 검토·추출 뒤 자동 검토)이 돌면 끝날 때까지 기다린다(구독 호출은 한 번에 하나). 분석 안의 호출은 차례대로다
+            with engine.ai_turn("AI 분석 실행", lambda text, done, total: tick(text, done, len(units)), stop):
+                if _set_changed(pg, ns)[0]:      # 차례를 기다리는 사이 다른 작업이 구간을 고쳤다: 옛 집합으로 부르지 않고 멈춘다(남은 칸은 이어서 실행으로)
+                    summary_ = {"calls": 0, "planned": len(units), "ok_calls": 0, "failed_calls": 0, "cells": 0, "reason": "stale", "limit": None,
+                                "error_kind": None, "error": None, "conn_state": None, "usage": None,
+                                "rest": [[u["node_id"], d] for u in units for d in u["deviation_ids"]], "unsaved": [], "test": bool(test)}
+                else:
+                    summary_ = analysis_run.run(client, ns, pg, units, intent_of, tick, stop,
+                                                on_saved=lambda ur, doc, fp: engine.emit("results.cells", cells_delta(doc, ur, fp)), test=test)
         finally:
             run.running = False
             if this_run:
                 conn.set_run_override(None)
+            engine.changed("results.run", None)         # 차례를 기다리다 멈춰도 화면의 '도는 중'이 풀리게
         summary_ = dict(summary_, method=via, method_name=(plan or {}).get("method_name"), this_run=this_run, project_id=engine.project_id(),
                         resume=analysis_run.resume_record(ns, summary_.get("rest"), via, engine.project_id()))
         run.last = summary_

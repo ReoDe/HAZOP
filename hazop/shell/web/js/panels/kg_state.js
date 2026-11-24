@@ -102,7 +102,7 @@ export async function refresh() {
 
 // ---------------------------------------------------------------- 살펴보기·검토 층·관계(완료 목록 3 B6)
 export const EXPLORES = [["reach", "도달 범위", "고른 도면 구성요소가 든 검토구간 안에서 닿는 곳"],
-  ["orphans", "고아 지식", "설비에 적용되지 않았거나 도면과 이어지지 않은 지식"],
+  ["orphans", "이어지지 않은 지식", "설비에 적용되지 않았거나 도면과 이어지지 않은 지식"],
   ["gaps", "근거 공백", "문서가 언급하지만 설정치·요건이 걸리지 않은 구성요소"]];
 
 let exploreSeq = 0;
@@ -154,7 +154,7 @@ export async function expand(gid) {
   if (!groupOf(gid)) return false;
   let next = kg.get().expanded.filter((x) => x !== gid).concat([gid]);
   while (next.length > 1 && countOf(next) > cap) next = next.slice(1);
-  if (countOf(next) > cap) { kg.set({ error: "이 도면 하나의 노드가 상한을 넘습니다. 찾기로 노드를 고르세요." }); return false; }
+  if (countOf(next) > cap) { kg.set({ error: "이 도면 하나의 항목이 그림 상한을 넘습니다. 찾기로 항목을 고르세요." }); return false; }
   kg.set({ expanded: next, error: null });
   await loadGraph();
   return true;
@@ -178,7 +178,7 @@ export async function focus(id, group) {
   let g = group;
   if (!g) {
     const d = await read("kg/node?id=" + encodeURIComponent(id) + st("&")).catch(() => null);
-    if (!d) { kg.set({ error: "그래프에서 그 노드를 찾지 못했습니다." }); return false; }
+    if (!d) { kg.set({ error: "그래프에서 그 항목을 찾지 못했습니다." }); return false; }
     g = d.group;
   }
   // 그 도면 하나가 상한보다 커서 그림에 펼치지 못해도 상세는 보인다(찾기로 고른 노드의 무엇·근거·판단은 그림 없이도 쓸 수 있다)
@@ -186,7 +186,7 @@ export async function focus(id, group) {
   if (drawn && !kg.get().graph) await loadGraph();
   await select(id);
   kg.set((s) => (drawn ? { center: id, seq: s.seq + 1, hits: [] }
-    : { hits: [], error: null, notice: "이 도면은 노드가 많아 그림에는 펼치지 않았습니다. 오른쪽 상세는 그대로 볼 수 있습니다." }));
+    : { hits: [], error: null, notice: "이 도면은 항목이 많아 그림에는 펼치지 않았습니다. 오른쪽 상세는 그대로 볼 수 있습니다." }));
   return true;
 }
 

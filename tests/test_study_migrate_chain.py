@@ -7,6 +7,8 @@
 - 재검토(59aca9a) A: 구간을 새로 제안하거나 집합만 백업에서 되돌려도 결과가 든 묘비 id를 다른 기호에 다시 쓰지 않는다.
 - 재검토 B: 결과가 지금 판까지 이어졌다는 것을 증명하지 못하면(잘린 이력, 번호 없는 결과의 판이 이력에 둘 이상) 순번
   참조를 모두 묘비로 하고, 이은 새 구성요소에 안정 참조가 없으면 즉시 옮겨도 이력으로 옮겨도 묘비다.
+- M3: 프로젝트 문서(⑥ 초기사건 문서·FMEA·잠재 후보 판단)도 판 표지로 같은 사슬을 따른다. 앞 판으로 돌아와도 다시 옮기지
+  않고, 늦게 따라와도 즉시 옮긴 것과 같으며, 잘린 이력·백업에서 되돌린 집합·새로 제안한 집합에서는 옮기지 않고 묘비로 한다.
 - 재검토 C·D: 끝으로 잇기는 끝을 보고(한쪽 끝만 있거나 나뉘며 우회선이 생기면 잇지 않음), 옛 둘이 새 하나로 모이면
   둘 다 묘비, 표시가 같은 여럿은 참조로 고른다.
 """
@@ -26,7 +28,7 @@ sys.path.insert(0, REPO_ROOT)
 from hazop import paths  # noqa: E402
 from hazop.graph import project  # noqa: E402
 from hazop.kg import expect  # noqa: E402
-from hazop.study import idmap, migrate, node_review as nr, refs  # noqa: E402
+from hazop.study import follow, idmap, migrate, node_review as nr, refs  # noqa: E402
 from hazop.study import nodes as sn  # noqa: E402
 from tests.test_study_idmap import drawing  # noqa: E402
 
@@ -259,6 +261,13 @@ class LinkRuleTest(WorkRoot):
         g2 = graph("v2", [self.PP, self.VV, self.WW], [("L9", ["q", "w"])])
         self.assertEqual(moved_uids(g1, g2, ["L1"]), {"L1": None})
 
+    def test_pipe_redrawn_between_the_same_ends_is_linked(self):
+        """상자 없는 배관 L1(p–q)을 지우고 같은 두 끝에 겉모습이 같은 L9를 그으면 도면에서 둘을 가를 정보가 없어 잇는다
+        (같은 두 기기를 잇는 배관이라 ⑤·⑥ 참조의 뜻이 바뀌지 않음). 퍼즈 시드 584(M3 생성기)는 이 경우다."""
+        g1 = graph("v1", [self.PP, self.VV, self.WW], [("L1", ["p", "q"]), ("L2", ["q", "w"])])
+        g2 = graph("v2", [self.PP, self.VV, self.WW], [("L2", ["q", "w"]), ("L9", ["p", "q"])])
+        self.assertEqual(moved_uids(g1, g2, ["L1", "L2"]), {"L1": "L9", "L2": "L2"})
+
     def test_renumbered_pipes_follow_their_ends(self):
         g1 = graph("v1", [self.PP, self.VV, self.WW], [("L1", ["p", "q"]), ("L2", ["q", "w"])])
         g2 = graph("v2", [self.WW, self.VV, self.PP], [("L2", ["q", "w"]), ("L1", ["p", "q"])])
@@ -442,6 +451,125 @@ class LegacyConvertTest(WorkRoot):
         names = {n["entity_id"]: n["_name"] for n in b["nodes"]}
         self.assertEqual(sorted(names[m] for m in out["nodes"][0]["members"]), ["TK", "V1"])
         self.assertNotIn("lost", out["nodes"][0])
+
+
+def ie_doc(*refs_, at="t0"):
+    """표제 대상·기본사건 참조만 든 ⑥ 문서(등록부 자리만 채운 꼴)."""
+    return {"headings": {"H-01": {"targets": list(refs_)}},
+            "basic_events": {"BE-%03d" % i: {"ref": r, "key": r + "|FTO"} for i, r in enumerate(refs_, 1)},
+            "history": [{"at": at, "op": "suggest"}]}
+
+
+def who(g):
+    """{안정 참조: 기호 이름}(drawing의 _name, graph의 _uid)."""
+    return {idmap.ref_of(n, G): n.get("_name") or n.get("_uid") for n in g["nodes"] if idmap.ref_of(n, G)}
+
+
+def doc_uids(doc, g):
+    by_ref = who(g)
+    look = lambda r: "묘비" if idmap.is_tomb(r) else by_ref.get(r, r)  # noqa: E731
+    out = [look(r) for r in doc["headings"]["H-01"]["targets"]]
+    for b in doc["basic_events"].values():
+        if look(b["ref"]) != look(b["key"].partition("|")[0]):
+            raise AssertionError("기본사건 열쇠와 참조가 따로 옮겨짐: %r" % b)
+    return out + [look(b["ref"]) for b in doc["basic_events"].values()]
+
+
+class ProjectDocChainTest(WorkRoot):
+    def setUp(self):
+        super().setUp()
+        self.a, self.b = drawing("v-a"), drawing("v-b", order=("V1", "TK", "V2", "PP"))
+        self.ns = sn.confirm_nodes(add_node(sn.new_set(self.a), "S1", ["entity-node-001"]), self.a, ["S1"], "x", at="t")
+        self.r1 = G + "#pdf-p0-sym-0001"
+
+    def uids(self, doc, g):
+        return doc_uids(doc, g)
+
+    def test_doc_moved_once_is_not_moved_again_after_a_round_trip(self):
+        doc = ie_doc(self.r1)
+        want = self.uids(doc, self.a)
+        ns, _ = migrate.migrate_set(self.ns, self.b, at="t1")
+        doc, _ = follow.follow(doc, idmap.IE, ns, at="t1a")
+        self.assertEqual(self.uids(doc, self.b), want, "B에서도 같은 기호")
+        ns, _ = migrate.migrate_set(ns, self.a, at="t2")
+        doc, _ = follow.follow(doc, idmap.IE, ns, at="t2a")
+        self.assertEqual((doc["headings"]["H-01"]["targets"], self.uids(doc, self.a)), ([self.r1], want), "A로 돌아옴")
+        doc["headings"]["H-02"] = {"targets": [G + "#pdf-p0-sym-0002"]}
+        self.assertIs(follow.follow(doc, idmap.IE, ns, at="again")[0], doc, "돌아온 판에서 단 참조는 다시 옮기지 않음")
+        self.assertEqual([m["step"] for m in doc["ref_migrations"]], [1, 2])
+
+    def test_late_doc_matches_immediate_follow(self):
+        doc = ie_doc(self.r1, G + "#pdf-p0-sym-0003")
+        ns1, _ = migrate.migrate_set(self.ns, self.b, at="t1")
+        now, _ = follow.follow(doc, idmap.IE, ns1, at="x")
+        ns2, _ = migrate.migrate_set(ns1, drawing("v-c", order=("PP", "V2", "TK", "V1")), at="t2")
+        now, _ = follow.follow(now, idmap.IE, ns2, at="x")
+        late, _ = follow.follow(doc, idmap.IE, ns2, at="x")
+        self.assertEqual(late["headings"], now["headings"])
+        self.assertEqual(late["basic_events"], now["basic_events"])
+
+    def test_truncated_history_or_restored_set_loses_refs_instead_of_moving_them(self):
+        doc = ie_doc(self.r1)
+        ns1, _ = migrate.migrate_set(self.ns, self.b, at="t1")
+        doc, _ = follow.follow(doc, idmap.IE, ns1, at="t1a")
+        cut = copy.deepcopy(ns1)
+        cut["history"] = [h for h in cut["history"] if h.get("op") != migrate.OP]  # 집합을 판 이전 전 백업으로 되돌림
+        ns3, _ = migrate.migrate_set(copy.deepcopy(self.ns), drawing("v-c", order=("PP", "V2", "TK", "V1")), at="t3")
+        for s in (cut, ns3):
+            out, rep = follow.follow(doc, idmap.IE, s, at="t4")
+            if s is cut:
+                self.assertEqual(out["headings"], doc["headings"], "판이 같으면 그대로")
+                continue
+            self.assertEqual(rep["unproven"], follow.BROKEN)
+            self.assertEqual(set(self.uids(out, drawing("v-c", order=("PP", "V2", "TK", "V1")))), {"묘비"})
+
+    def test_same_version_after_cut_history_keeps_refs_and_later_migration_stays_right(self):
+        """판 이전 줄을 잃은 집합(같은 판 B)을 따라가면 표지 줄 번호만 1 → 0으로 다시 찍는다. 판 문자열은 내용 해시라 B의
+        참조는 B 그래프에서 그대로 맞고, 그 뒤 판 이전(B→C)도 처음 기호를 가리킨다(검토 경미 가: 재현으로 확인)."""
+        doc = ie_doc(self.r1, G + "#pdf-p0-sym-0003")
+        want = self.uids(doc, self.a)
+        ns1, _ = migrate.migrate_set(self.ns, self.b, at="t1")
+        doc, _ = follow.follow(doc, idmap.IE, ns1, at="t1a")
+        cut = copy.deepcopy(ns1)
+        cut["history"] = [h for h in cut["history"] if h.get("op") != migrate.OP]
+        doc, rep = follow.follow(doc, idmap.IE, cut, at="t2")
+        self.assertEqual((rep, doc["ref_versions"][G]), (None, {"graph_version": "v-b", "step": 0}))
+        gc = drawing("v-c", order=("PP", "V2", "TK", "V1"))
+        ns3, _ = migrate.migrate_set(cut, gc, at="t3")
+        doc, rep = follow.follow(doc, idmap.IE, ns3, at="t3a")
+        self.assertNotIn("unproven", rep)
+        self.assertEqual(self.uids(doc, gc), want)
+
+    def test_old_id_used_as_a_key_of_an_unregistered_map_is_reported(self):
+        doc = dict(ie_doc(self.r1), notes={self.r1: "메모"})
+        ns1, _ = migrate.migrate_set(self.ns, self.b, at="t1")
+        _out, rep = follow.follow(doc, idmap.IE, ns1, at="t1a")
+        self.assertEqual(rep["unregistered"], ["notes{%s}" % self.r1])
+
+    def test_unmarked_doc_on_a_reproposed_set_is_lost(self):
+        """표지 없는 옛 문서는 문서보다 늦게 만든 집합(구간을 새로 제안)의 이력으로 판을 미루어 보지 않는다."""
+        ns, _ = migrate.migrate_set(self.ns, self.b, at="t1")
+        fresh = sn.confirm_nodes(add_node(sn.new_set(self.b), "S1", ["entity-node-002"]), self.b, ["S1"], "x", at="t2")
+        gc = drawing("v-c", order=("PP", "V2", "TK", "V1"))
+        fresh, _ = migrate.migrate_set(fresh, gc, at="t3")
+        out, rep = follow.follow(ie_doc(self.r1), idmap.IE, fresh, at="t4")
+        self.assertEqual(rep["unproven"], follow.YOUNGER)
+        self.assertEqual(set(self.uids(out, gc)), {"묘비"})
+        old, _ = migrate.migrate_set(ns, gc, at="t3")
+        out, rep = follow.follow(ie_doc(self.r1), idmap.IE, old, at="t4")
+        self.assertNotIn("unproven", rep)
+        self.assertEqual(self.uids(out, gc), self.uids(ie_doc(self.r1), self.a), "처음부터 있던 집합이면 두 줄을 옮김")
+
+    def test_latent_keys_follow_and_never_collide(self):
+        r2 = G + "#pdf-p0-sym-0002"
+        doc = {"judgements": {"E04|" + r: {"key": "E04|" + r, "target": r, "found": [], "rejected": [], "at": "t0"}
+                              for r in (self.r1, r2)}}
+        ns, _ = migrate.migrate_set(self.ns, self.b, at="t1")
+        out, _ = follow.follow(doc, idmap.LATENT, ns, at="t1a")
+        by_ref, was = who(self.b), who(self.a)
+        self.assertEqual(sorted(by_ref[k.partition("|")[2]] for k in out["judgements"]), sorted(was[r] for r in (self.r1, r2)))
+        for k, rec in out["judgements"].items():
+            self.assertEqual((rec["key"], rec["target"]), (k, k.partition("|")[2]))
 
 
 if __name__ == "__main__":

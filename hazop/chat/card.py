@@ -336,8 +336,9 @@ class ContextEnv(CardEnv):
         return False
 
     def sheet_label(self, sheet):
+        named = (getattr(self.idx, "sheet_names", None) or {}).get(sheet)
         number = (getattr(self.idx, "drawing_number", None) or {}).get(sheet)
-        return number or str(sheet).replace("graph-", "", 1)
+        return named or number or str(sheet).replace("graph-", "", 1)
 
     def describe(self, ident):
         n = self.idx.nodes.get(ident)

@@ -29,6 +29,7 @@ import threading
 
 from hazop import paths
 from hazop.extract import ids
+from hazop.graph import sheets as sheet_rules
 from hazop.graph import sources
 from hazop.graph.build import to_networkx
 
@@ -470,7 +471,7 @@ def _duplicate_tags(graphs):
             for t, ids in sorted(seen.items()) if len({i.split(SEP)[0] for i in ids}) > 1]
 
 
-def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None):
+def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None, source_notes=(), contested=()):
     """도면 그래프 목록 -> 프로젝트 그래프 dict. 도면 graph_id가 겹치면 ValueError(auto.project_graphs가 먼저 고른다).
     copies: {도면 graph_id: _copy_sheet(그 도면) 결과(새 객체)}. 주면 그 도면은 다시 복사하지 않는다(load_with_names의 쪽별 캐시)."""
     graphs = sorted(graphs, key=lambda g: g["graph_id"])
@@ -514,15 +515,28 @@ def build(project_id, graphs, manual_ops=(), system_codes=None, copies=None):
             edges.append({"entity_id": "%s-%s" % (l["link_id"], suffix), "kind": PHYSICAL, "nodes": [l["link_id"], node],
                           "segment": l["link_id"], "node": node, "end": end, "sheet": None,
                           "sheet_link": l["link_id"], "origin": origin})
-    sheets = [{"graph_id": g["graph_id"], "graph_version": g["graph_version"],
-               "drawing_number": (g.get("source") or {}).get("drawing_number")} for g in graphs]
-    version = "pv-" + _sha({"sheets": sheets, "links": [(l["link_id"], l["status"], l["reason"]) for l in links]})
+    heads = [{"graph_id": g["graph_id"], "graph_version": g["graph_version"],
+              "drawing_number": (g.get("source") or {}).get("drawing_number")} for g in graphs]
+    version = "pv-" + _sha({"sheets": heads, "links": [(l["link_id"], l["status"], l["reason"]) for l in links]})
+    # 시트 정체 (자료, 쪽). 이 규칙 전 graph.json에는 없어 None. 판(version)에는 넣지 않는다(같은 시트면 같은 판)
+    # contested: 이 이름을 다른 자료도 원함(hazop.graph.sources). 판 이전이 시트 자료를 모르는 옛 판 사진에서 파일 id를 믿지 않는 근거
+    # label: 사람용 이름(hazop.graph.sheets.display_name이 씀)
+    # base_version: 순번 id를 매긴 기준 추출의 판(scripts/build_graph.render_one). 판 이전이 순번 구성요소를 참조로 이을지 정한다
+    # numbering: sym 번호가 기댄 원본 추출(scripts/build_graph.render_one). 나누기로 기준 판이 바뀌어도 몸체를 참조로 이을지 정한다
+    sheets = [dict(h, material_id=(g.get("source") or {}).get("material_id"), page_index=(g.get("source") or {}).get("page_index"),
+                   **({"contested": True} if g["graph_id"] in contested else {}),
+                   **({"base_version": g["base_version"]} if g.get("base_version") else {}),
+                   **({"numbering": g["numbering"]} if g.get("numbering") else {}),
+                   **({"label": sheet_rules.label(sheet_rules.from_graph(g))} if (g.get("source") or {}).get("material_id")
+                      and not h["drawing_number"] else {}))
+              for h, g in zip(heads, graphs)]
     return {
         "schema_version": SCHEMA_VERSION, "kind": KIND, "project_id": project_id,
         "graph_id": project_graph_id(project_id), "graph_version": version,
         "source": {"drawing_number": None, "drawings": [s["drawing_number"] for s in sheets]},
         "sheets": sheets, "nodes": nodes, "edges": edges, "sheet_links": links, "manual_skipped": skipped,
         **({"manual_relocated": relocated} if relocated else {}),
+        "source_notes": list(source_notes),   # 같은 시트 이름을 원하는 그래프가 여럿일 때 고른 사유(hazop.graph.sources.conflicts의 text)
         "duplicate_tags": _duplicate_tags(graphs),
         "validation": {"status": "blocked" if blockers else "passed", "blockers": blockers, "unknowns": []},
     }
@@ -580,7 +594,7 @@ def _sheet_copy(p, stamp, g):
 
 
 def _pick(project_id, graph_root=None):
-    """{graph_id: 고른 후보 {"gid", "key", "graph", "name", "path", "stamp"}}."""
+    """({graph_id: 고른 후보 {"gid", "key", "graph", "name", "path", "stamp"}}, 고르기 알림 글 목록)."""
     root = graph_root or paths.output_root("graph")
     cands, seen = [], set()
     for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
@@ -596,27 +610,34 @@ def _pick(project_id, graph_root=None):
     with _SHEETS_LOCK:                          # 이 폴더에서 사라진 도면은 캐시에서도 뺀다
         for p in [p for p in _SHEETS if os.path.dirname(os.path.dirname(p)) == root and p not in seen]:
             del _SHEETS[p]
-    # 같은 graph_id는 가장 최근 것(hazop.kg.auto.project_graphs와 같은 규칙). 단 같은 도면 번호가 다른 형식으로 섞이면
-    # 사람이 고르기 전에는 먼저 있던 형식을 바꾸지 않는다(hazop.graph.sources)
-    chosen, _notes = sources.pick(project_id, cands, graph_root=root if graph_root else None)
-    return chosen
+    # 같은 graph_id를 여러 그래프가 원하면 hazop.graph.sources가 고른다(지식그래프 자동 빌드 hazop.kg.auto.project_graphs와 같은 규칙)
+    return sources.pick(project_id, cands, graph_root=root if graph_root else None)
 
 
 def pick_graphs(project_id, graph_root=None):
     """{graph_id: ((바뀐 시각, 경로), graph, 폴더 이름)} 이 프로젝트의 도면. 같은 graph_id는 가장 최근 것
     (hazop.kg.auto.project_graphs와 같은 규칙). load와 ② 도면 이름표(project_ctx.graph_names)가 함께 쓴다."""
-    return {gid: (c["key"], c["graph"], c["name"]) for gid, c in _pick(project_id, graph_root).items()}
+    return {gid: (c["key"], c["graph"], c["name"]) for gid, c in _pick(project_id, graph_root)[0].items()}
 
 
 def load_with_names(project_id, graph_root=None):
     """(load와 같은 프로젝트 그래프, {도면 graph_id: 고른 output/graph 폴더 이름}). 도면 파일을 한 번만 읽으려고 둔다."""
-    best = _pick(project_id, graph_root)
+    best, notes = _pick(project_id, graph_root)
+    for c in best.values():     # 이 규칙 전 graph.json도 시트 정체를 갖게(판 이전의 시트 자료 검사, hazop.study.idmap.sheet_materials)
+        mid, page = sources.sheet_key(c)
+        src = c["graph"].setdefault("source", {})
+        if mid and not src.get("material_id"):
+            src["material_id"], src["page_index"] = mid, page
+            if not src.get("drawing_number"):   # 번호 없는 옛 시트의 사람용 이름(파일 이름·쪽)
+                src.update({k: v for k, v in sources.facts_of(c, sources.extract_root_for(graph_root)).items()
+                            if k in ("file", "page_count") and v is not None})
     graphs = [best[k]["graph"] for k in sorted(best)]
     if not graphs:
         raise ValueError("프로젝트 %s에 추출한 도면이 없음" % project_id)
     copies = {c["graph"]["graph_id"]: _sheet_copy(c["path"], c["stamp"], c["graph"]) for c in best.values()}
     pg = build(project_id, graphs, (load_manual(project_id) or {}).get("ops") or (),
-               load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)), copies=copies)
+               load_system_codes(paths.folder("APR1400", SYSTEM_CODES_FILE)), copies=copies, source_notes=notes,
+               contested={gid for gid, c in best.items() if c.get("rivals")})
     return pg, {gid: c["name"] for gid, c in best.items() if gid}
 
 

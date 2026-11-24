@@ -35,8 +35,9 @@ import os
 
 from hazop.ie import bundle, fmea, mld, model
 from hazop.ie import store as ie_store
-from hazop.study import idmap, nodes
+from hazop.study import follow, idmap, nodes
 from hazop.study import results as res
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_ie")
 
@@ -56,16 +57,18 @@ def _context(engine):
     R = _results()
     pg = R._pg(engine, strict=False)
     if pg is None:
-        return None, "프로젝트 그래프가 없습니다. 도면을 먼저 추출하세요."
+        return None, "도면을 먼저 읽어야 합니다."
     ns, legacy = R._node_set(pg)
     if legacy:
-        return None, "옛 판 구간 파일입니다. 구간 패널에서 새 판으로 바꾸세요."
+        return None, "구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요."
+    if nodes.is_stale(ns, pg):  # 다시 추출 뒤 판 이전 전: 옛 판 참조를 새 판 그래프로 보거나 고치지 않는다(hazop.study.follow)
+        return None, follow.STALE + "."
     if not [n for n in ns["nodes"] if nodes.is_active(n)]:
         return None, "확정한 구간이 아직 없습니다. 구간을 확정하고 분석한 뒤 초기사건을 봅니다."
     try:
         doc, _fp = R._load(ns)
     except (OSError, ValueError) as exc:
-        return None, "분석 결과 파일을 읽을 수 없습니다(%s)." % str(exc)[:120]
+        return None, "분석 결과 파일을 읽을 수 없습니다(%s)." % errtext.why(exc, 120)
     try:
         ie_doc, ie_fp = ie_store.load(ns.get("project_id"))
     except ie_store.Unreadable as exc:
@@ -137,7 +140,10 @@ def item_fps(b):
 def summary(engine):
     ctx, why = _context(engine)
     if ctx is None:
-        return {"available": False, "reason": why}
+        out = {"available": False, "reason": why}
+        if why == follow.STALE + ".":
+            out["action"] = "nodes"      # 화면이 '검토구간 패널 열기'를 보인다(거기서 판 이전 지금 하기)
+        return out
     pg, ns, doc, ie_doc, ie_fp = ctx
     ie_doc = _view_doc(ie_doc, doc, ns)
     b = _build(doc, ns, pg, ie_doc, nodes.now_utc())
@@ -270,7 +276,7 @@ def _write(engine, a, fn, keys=None, ask=None, demote_ok=False):
     try:
         out = fn(base, doc, ns, pg, by)
     except ValueError as exc:
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
     new, value = out if isinstance(out, tuple) else (out, None)
     if new is base or new == base:
         return {"ver": _ver(ie_fp), "changed": False, "value": value}
@@ -292,7 +298,7 @@ def _write(engine, a, fn, keys=None, ask=None, demote_ok=False):
     except ie_store.Conflict:
         raise api.CommandError("stale", STALE)
     except (ValueError, OSError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     out = {"ver": fp, "changed": True, "value": value}
     if demoted:
@@ -366,7 +372,7 @@ def _chat(fn, engine, a):
     """채팅 실행 함수의 공통 길: 판 지문(ver)이 없으면 거절하고, 되물을 일이 있으면 'confirm' 오류로 올린다."""
     api = _api()
     if not a.get("ver"):
-        raise api.CommandError("bad_args", "초기사건 판 지문(ver)을 함께 보내야 합니다(먼저 view_groups로 읽음).")
+        raise api.CommandError("bad_args", "화면에서 본 초기사건 내용을 함께 보내야 합니다(먼저 view_groups로 읽음).")
     out = fn(engine, a)
     if out.get("ask"):
         raise api.CommandError("confirm", "%s (다시 부를 때 confirmed=true, confirm_groups=[%s])"
@@ -499,7 +505,7 @@ def _replace_unreadable(engine, a):
     try:
         _doc, fp, saved = ie_store.replace_unreadable(pid)
     except (OSError, ValueError, ie_store.Conflict) as exc:
-        raise api.CommandError("failed", "백업하지 못해 바꾸지 않았습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "백업하지 못해 바꾸지 않았습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     return {"ver": fp, "backup": os.path.basename(saved)}
 
@@ -535,14 +541,14 @@ def _export(engine, a):
     except ie_store.Conflict:
         raise api.CommandError("stale", STALE)
     except (ValueError, OSError) as exc:
-        raise api.CommandError("failed", "초기사건 번호를 저장하지 못해 내보내지 않았습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "초기사건 번호를 저장하지 못해 내보내지 않았습니다(%s)." % errtext.why(exc, 200))
     if synced is not ie_doc:
         engine.changed("ie", None)
     b = _build(doc, ns, pg, synced, now)
     try:
         path, json_path = bundle_xlsx.export(path, b)
     except (OSError, ValueError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % errtext.why(exc, 200))
     return {"path": os.path.basename(path), "json_path": os.path.basename(json_path), "candidates": len(b["candidates"]),
             "groups": len(b["groups"]), "cancelled": False}
 
@@ -610,7 +616,7 @@ def fmea_view(engine):
         return {"tag": refs.node_text(n), "drawing": drawing.get(refs.drawing_of(r.get("ref"))) or refs.drawing_of(r.get("ref"))} if n else None
     rows = [dict(r, row_id=rid, fp=_row_fp(r), matched=matched(r)) for rid, r in sorted(fdoc["rows"].items())]
     counts = {k: sum(r["status"] == k for r in rows) for k in fmea.STATUSES}
-    counts["unmatched"] = sum(1 for r in rows if not r.get("ref"))
+    counts["unmatched"] = sum(1 for r in rows if not r.get("ref") or idmap.is_tomb(r["ref"]))
     homes = {}
     for n in ns["nodes"]:
         for m in n.get("members") or []:
@@ -645,7 +651,7 @@ def _fmea_write(engine, a, fn, keys=()):
     try:
         new = fn(fdoc, pg, ns, doc, by)
     except ValueError as exc:
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
     new, value = new if isinstance(new, tuple) else (new, None)
     if new is fdoc:
         return {"fver": _ver(ffp), "changed": False, "value": value}
@@ -654,7 +660,7 @@ def _fmea_write(engine, a, fn, keys=()):
     except ie_store.Conflict:
         raise api.CommandError("stale", "FMEA가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
     except (ValueError, OSError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     return {"fver": fp, "changed": True, "value": value}
 
@@ -695,7 +701,7 @@ def _fmea_template(engine, a):
         from hazop.export.study_xlsx import save_workbook
         save_workbook(fmea.template_workbook(fdoc, ec_rows), path)
     except (OSError, ValueError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(파일이 열려 있으면 닫고 다시 하세요). %s" % errtext.why(exc, 200))
     return {"cancelled": False, "path": os.path.basename(path), "rows": len(fdoc["rows"])}
 
 
@@ -706,7 +712,7 @@ def _fmea_import(engine, a):
     try:
         got, problems = fmea.read_rows(path)
     except Exception as exc:  # noqa: BLE001 - 깨진 Excel은 이유만 알린다
-        raise _api().CommandError("failed", "Excel을 읽지 못했습니다(%s)." % str(exc)[:160])
+        raise _api().CommandError("failed", "Excel을 읽지 못했습니다(%s)." % errtext.why(exc, 160))
     if not got:
         raise _api().CommandError("failed", "가져올 행이 없습니다. %s" % " ".join(problems)[:200])
     name = os.path.basename(path)
@@ -730,7 +736,7 @@ def _fmea_status(engine, a):
 def set_fmea_status(engine, a):
     """채팅 실행 함수: {row_ids, status(approved·excluded·imported), fver}. fver 없이는 거절."""
     if not a.get("fver"):
-        raise _api().CommandError("bad_args", "FMEA 판 지문(fver)을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
+        raise _api().CommandError("bad_args", "화면에서 본 FMEA 내용을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
     return _fmea_status(engine, a)
 
 
@@ -745,7 +751,7 @@ def _fmea_mark(engine, a):
 def mark_ec_node(engine, a):
     """채팅 실행 함수: {node_id, mark(include·exclude·빈 글자), fver}."""
     if not a.get("fver"):
-        raise _api().CommandError("bad_args", "FMEA 판 지문(fver)을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
+        raise _api().CommandError("bad_args", "화면에서 본 FMEA 내용을 함께 보내야 합니다(먼저 view_fmea로 읽음).")
     return _fmea_mark(engine, a)
 
 
@@ -792,7 +798,7 @@ def _mld_write(engine, a, fn, keys=()):
     try:
         new = fn(mdoc, by)
     except ValueError as exc:
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
     if new is mdoc:
         return {"mver": _ver(mfp), "changed": False}
     try:
@@ -800,7 +806,7 @@ def _mld_write(engine, a, fn, keys=()):
     except ie_store.Conflict:
         raise api.CommandError("stale", "MLD가 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요.")
     except (ValueError, OSError) as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     return {"mver": fp, "changed": True}
 
@@ -812,7 +818,7 @@ def _mld_import(engine, a):
     try:
         data = mld.read_file(path)
     except (OSError, ValueError) as exc:
-        raise _api().CommandError("failed", "MLD 파일을 읽지 못했습니다(%s)." % str(exc)[:200])
+        raise _api().CommandError("failed", "MLD 파일을 읽지 못했습니다(%s)." % errtext.why(exc, 200))
     codes = {c["code"] for c in res.ie_category_table()["categories"]}
     name = os.path.basename(path)
     out = _mld_write(engine, a, lambda mdoc, by: mld.import_mld(mdoc, data, name, by, codes))
@@ -837,7 +843,7 @@ def _mld_confirm(engine, a):
 def confirm_mld_branch(engine, a):
     """채팅 실행 함수: {branch_id, on(참·거짓), mver}. 규칙 대조로 맞은 가지를 사람이 확인한다."""
     if not a.get("mver"):
-        raise _api().CommandError("bad_args", "MLD 판 지문(mver)을 함께 보내야 합니다(먼저 view_mld로 읽음).")
+        raise _api().CommandError("bad_args", "화면에서 본 주논리도 내용을 함께 보내야 합니다(먼저 view_mld로 읽음).")
     return _mld_confirm(engine, a)
 
 
@@ -859,7 +865,7 @@ def _side_replace(engine, a, which):
     try:
         fp, saved = ie_store.replace_side_unreadable(pid, which)
     except (OSError, ValueError, ie_store.Conflict) as exc:
-        raise api.CommandError("failed", "백업하지 못해 바꾸지 않았습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "백업하지 못해 바꾸지 않았습니다(%s)." % errtext.why(exc, 200))
     engine.changed("ie", None)
     return {"changed": True, "backup": os.path.basename(saved), "ver": fp}
 
@@ -867,7 +873,7 @@ def _side_replace(engine, a, which):
 def link_mld_branch(engine, a):
     """채팅 실행 함수: {branch_id, group_ids, mver}."""
     if not a.get("mver"):
-        raise _api().CommandError("bad_args", "MLD 판 지문(mver)을 함께 보내야 합니다(먼저 view_mld로 읽음).")
+        raise _api().CommandError("bad_args", "화면에서 본 주논리도 내용을 함께 보내야 합니다(먼저 view_mld로 읽음).")
     return _mld_link(engine, a)
 
 
@@ -971,7 +977,7 @@ def _judge(engine, a):
         raise api.CommandError("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 판정한 사람으로 남습니다.")
     view = candidate_view(engine, a["iec"])
     if view is None:
-        raise api.CommandError("failed", "인계 묶음에 없는 후보입니다(⑤ 승인이 풀렸거나 없는 ID): %s" % a["iec"])
+        raise api.CommandError("failed", "인계 묶음에 없는 후보입니다(분석 결과 승인이 풀렸거나 없는 후보): %s" % a["iec"])
     if a.get("rver") is None or a["rver"] != view["rver"]:
         raise api.CommandError("stale", STALE_RESULTS)
     if a.get("seen") is not None and a["seen"].get("member:" + a["iec"]) != view["fp"]:
@@ -1009,7 +1015,7 @@ def judge_candidate(engine, a):
     그룹이 있으면 'confirm' 오류로 되묻는다(confirmed=true와 confirm_groups를 붙여 다시 부른다)."""
     api = _api()
     if not a.get("rver"):
-        raise api.CommandError("bad_args", "분석 결과 판 지문(rver)을 함께 보내야 합니다(먼저 view_groups로 읽음).")
+        raise api.CommandError("bad_args", "화면에서 본 분석 결과 내용을 함께 보내야 합니다(먼저 view_groups로 읽음).")
     out = _judge(engine, a)
     if out.get("ask"):
         raise api.CommandError("confirm", "%s (다시 부를 때 confirmed=true, confirm_groups=[%s])"
@@ -1110,10 +1116,10 @@ def v_fmea_fields(v):
 def v_seen(v):
     """화면이 본 항목 지문 {"group:IEG-01": "sha256:…"}."""
     if not isinstance(v, dict) or len(v) > 5000:
-        raise ValueError("항목 지문 객체(최대 5000개)여야 함")
+        raise ValueError("seen은 객체(최대 5000개)여야 함")
     for k, x in v.items():
         if not isinstance(k, str) or len(k) > 80 or not (x is None or (isinstance(x, str) and len(x) <= 100)):
-            raise ValueError("항목 지문 형식 오류")
+            raise ValueError("seen 형식 오류")
     return dict(v)
 
 

@@ -14,10 +14,12 @@
 - 같은 입력에 두 번 적용해도 결과가 같다(판이 같으면 아무것도 하지 않음, 묘비 id는 잃은 기호의 지문으로 결정됨).
 """
 
+import contextlib
 import copy
 import hashlib
 import json
 import logging
+import threading
 
 from hazop import store_io
 from hazop.study import idmap
@@ -185,6 +187,20 @@ def _upgrade(node_set):
     return out
 
 
+_STRICT = threading.local()
+
+
+@contextlib.contextmanager
+def filling_new_fields():
+    """이 안의 with_refs는 나중에 들인 판 사진 칸(idmap.OPTIONAL_SNAPSHOT)이 없는 집합도 채운다(다시 추출 직전 표지 채우기)."""
+    before = getattr(_STRICT, "on", False)
+    _STRICT.on = True
+    try:
+        yield
+    finally:
+        _STRICT.on = before
+
+
 def with_refs(node_set, graph):
     """판이 같은 집합을 묘비 꼴로 바꾸고, 판 사진이나 확정·잠금 구간의 지문(md3-)이 모자라면 채운 사본. 할 일이 없으면
     입력 그대로. 묘비를 만들지 않는다(읽기만으로 구성요소를 잃지 않음)."""
@@ -195,7 +211,7 @@ def with_refs(node_set, graph):
     todo = {n["node_id"]: n["members"] for n in out["nodes"]  # 적용됨 구간은 지문이 없어도 됨(판이 바뀌면 rev만 오름)
             if n.get("state") in ("confirmed", "locked") and not str(have.get(n["node_id"]) or "").startswith("md3-")}
     fresh = node_digests(graph, todo) if todo else {}
-    if out is node_set and not fresh and idmap.has_snapshot(node_set, graph):
+    if out is node_set and not fresh and idmap.has_snapshot(node_set, graph, strict=getattr(_STRICT, "on", False)):
         return node_set
     out = copy.deepcopy(out)
     out.update(idmap.snapshot(graph))
@@ -227,12 +243,15 @@ def plan(node_set, graph):
         nid = n["node_id"]
         gone = sorted(m for m, x in zip(n["members"], moved[nid]) if idmap.is_tomb(x))
         back = [t for t in n.get("lost") or [] if t in table["found"]]
+        by_mark = [t for t in back if idmap.valid_mark((ns.get("tombstones") or {}).get(t, {}).get("mark"))]
         rec = str(recorded.get(nid) or "")
         if gone:
             recheck[nid] = "새 판에서 찾지 못한 구성요소 %d개(%s)" % (
                 len(gone), ", ".join(idmap.describe(ns, m) for m in gone[:3]))
         elif back:
-            recheck[nid] = "잃었던 구성요소 %d개를 같은 자리에서 되찾음" % len(back)
+            parts = (["%d개는 같은 자리에서" % len(by_mark)] if by_mark else []) + (
+                ["%d개는 같은 파일 id·같은 종류로" % (len(back) - len(by_mark))] if len(back) > len(by_mark) else [])
+            recheck[nid] = "잃었던 구성요소 %d개를 되찾음(%s)" % (len(back), ", ".join(parts))
         elif rec.startswith("md3-"):
             if rec != fresh.get(nid):
                 recheck[nid] = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
@@ -407,10 +426,13 @@ def notice(node_set):
     h = (node_set or {}).get("history") or []
     if not h or h[-1].get("op") != OP:
         return None
+    from hazop.graph import sheets
     d = h[-1]["detail"]
     again = len(d.get("recheck") or {})
-    return "그래프 판이 바뀌어(%s → %s) 구성요소 %d개를 새 판에 다시 맞췄습니다. %s" % (
-        d["from"], d["to"], d["matched"],
+    renamed = ", ".join("%s → %s" % (sheets.display_name({"graph_id": a}), sheets.display_name({"graph_id": b}))
+                        for a, b in sorted((d.get("sheets") or {}).items()))
+    return "%s그래프 판이 바뀌어(%s → %s) 구성요소 %d개를 새 판에 다시 맞췄습니다. %s" % (
+        "도면 이름이 바뀐 것(%s)을 따라 옮겼습니다. " % renamed if renamed else "", d["from"], d["to"], d["matched"],
         "내용이 바뀐 구간 %d개만 다시 확인이 필요합니다." % again if again else "확정은 그대로입니다.")
 
 
@@ -453,4 +475,8 @@ def on_load(node_set, graph, path, fp):
                 res.write(rpath, moved, expect=rfp)
             except (OSError, store_io.Conflict) as exc:  # 결과 파일은 다음에 읽을 때 results.load가 메모리에서 다시 이전한다
                 _log.warning("분석 결과 판 이전을 저장하지 못함: %s (%s)", rpath, exc)
+    from hazop.study import follow
+    for kind, what in follow.write_after(out, BACKUP_LABEL):  # ⑥ 문서·FMEA·잠재 후보 판단. 못 쓴 것은 읽을 때 따라 옮긴다
+        if isinstance(what, str):
+            _log.warning("%s 문서 판 이전을 저장하지 못함: %s", kind, what)
     return out, fp

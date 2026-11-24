@@ -46,6 +46,18 @@ function recsOf(index, id) { return index.byId.get(id) || []; }
  */
 export function resolveMark(mark, index) {
   const out = { id: mark.id, op: mark.op, items: [], missing: [], dim: mark.op === "path" ? true : mark.dim_others !== false, badges: [], arrows: [], labels: [] };
+  if (mark.op === "box") {        // 도면 그림 좌표의 상자(반영 전 나누기 자리 등): 점선 테두리와 글 하나
+    const color = styleColor(mark.style || "warn");
+    for (const b of mark.boxes || []) {
+      const r = b.rect;
+      if (!Array.isArray(r) || r.length !== 4) continue;
+      const rec = { id: "box", layer: "box", rect: { x0: r[0], y0: r[1], x1: r[2], y1: r[3] } };
+      out.items.push({ id: "box", rec, color, box: "pending" });
+      if (b.label) out.badges.push({ rect: rec.rect, text: String(b.label), color });
+    }
+    out.dim = false;
+    return out;
+  }
   if (mark.op === "mark") {
     for (const g of mark.groups || []) {
       const color = styleColor(g.style);
@@ -258,7 +270,11 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
   for (const m of resolved) {
     if (m.missing.length) missing.set(m.id, m.missing);
     for (const it of m.items) {
-      if (it.box && recolor) {
+      if (it.box === "pending") {          // 자리만 있는 상자(도면 항목이 아님): 늘 점선 네모
+        const r = it.rec.rect;
+        nodes.push(el("rect", { x: r.x0, y: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0, rx: 2 / k, fill: it.color, "fill-opacity": 0.06, stroke: it.color,
+          "stroke-width": 1.8, "vector-effect": "non-scaling-stroke", "stroke-dasharray": "6 4", "pointer-events": "none" }));
+      } else if (it.box && recolor) {
         nodes.push(...mk({ rec: it.rec, color: it.color, dashed: it.box === "unknown" }, 2.6, null));
       } else if (it.box) {
         const r = it.rec.rect, pad = 5 / k;
@@ -332,4 +348,40 @@ export function uncrowdTags(labels, cell = 48) {
     for (const key of cells) { if (!grid.has(key)) grid.set(key, []); grid.get(key).push({ x0, y0, x1, y1 }); }
   }
   return shown;
+}
+
+// ---------------------------------------------------------------- 도면 연결 칩 놓기
+const CHIP_H = 18, CHIP_GAP = 2;
+const chipWidth = (text) => [...text].reduce((w, ch) => w + (ch.charCodeAt(0) > 0x2e80 ? 12 : 7), 16);
+const hits = (a, b) => a.x < b.x + b.w + CHIP_GAP && b.x < a.x + a.w + CHIP_GAP && a.y < b.y + b.h + CHIP_GAP && b.y < a.y + a.h + CHIP_GAP;
+
+/**
+ * 도면 연결 칩의 자리(화면 좌표). 미연결 칩은 짧게 '미연결'만 쓰고 사유는 title에 둔다. 미연결 칩이 서로 겹치면 한 칩으로 모아
+ * '미연결 n곳'으로 쓴다(누르면 첫 곳의 연결 카드, 사유는 title에 모두). 이어진 칩이 겹치면 아래 줄로 내린다(네 줄까지).
+ * screenRectOf(id) → {x, y, w, h} 또는 null. → [{link, text, title, warn, x, y, w, h, count}]
+ */
+export function placeChips(links, screenRectOf) {
+  const placed = [];
+  for (const link of links || []) {
+    if (!link || typeof link.id !== "string") continue;
+    const sr = screenRectOf(link.id);
+    if (!sr) continue;
+    const warn = link.status !== "linked";
+    const text = warn ? "미연결" : "→ " + (link.label || link.peer_graph_id || "");
+    const why = warn ? "미연결" + (link.reason ? " · " + link.reason : "") : text;
+    const c = { link, text, title: why, warn, x: sr.x, y: sr.y + sr.h + 4, w: chipWidth(text), h: CHIP_H, count: 1 };
+    if (warn) {
+      const near = placed.find((p) => p.warn && hits(p, c));
+      if (near) {
+        near.count += 1;
+        near.text = "미연결 " + near.count + "곳";
+        near.w = chipWidth(near.text);
+        if (!near.title.split("\n").includes(why)) near.title += "\n" + why;
+        continue;
+      }
+    }
+    for (let row = 0; row < 4 && placed.some((p) => hits(p, c)); row++) c.y += CHIP_H + CHIP_GAP;
+    placed.push(c);
+  }
+  return placed;
 }

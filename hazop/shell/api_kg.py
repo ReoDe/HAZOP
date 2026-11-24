@@ -23,6 +23,7 @@ import os
 
 from hazop import gcpause, paths
 from hazop.kg import expect, screen
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_kg")
 TOPICS = ("kg",)
@@ -74,15 +75,16 @@ def _blocks(kg, pg):
         return out
     v = kg.get("validation") or {}
     if v.get("status") != "passed":
-        out.append({"kind": "kg_blocked", "text": "지식그래프 검증이 막혀 있습니다(%s, 차단 %d건). 지식 노드와 관계는 확인 전 자료로만 보고, "
-                    "막힌 까닭을 고친 뒤 도면이나 문서를 다시 추출하면 지식그래프도 다시 만들어집니다."
-                    % (v.get("status") or "상태 없음", len(v.get("blockers") or []))})
+        out.append({"kind": "kg_blocked", "text": "지식그래프 검증이 막혀 있습니다(막힌 곳 %d건). 지식 항목과 관계는 확인 전 자료로만 보고, "
+                    "막힌 까닭을 고친 뒤 도면이나 문서를 다시 읽으면 지식그래프도 다시 만들어집니다."
+                    % len(v.get("blockers") or [])})
     have = {s["graph_id"]: (s["graph_version"], s.get("drawing_number")) for s in pg.get("sheets") or []}
-    bad = sorted((have.get(r.get("graph_id")) or (None, r.get("graph_id")))[1] or r.get("graph_id")
+    from hazop.graph import sheets as _sheets
+    bad = sorted((have.get(r.get("graph_id")) or (None, None))[1] or _sheets.display_name({"graph_id": r.get("graph_id") or ""})   # 그래프 이름 대신 사람용 이름
                  for r in kg.get("graph_refs") or [] if (have.get(r.get("graph_id")) or (None,))[0] != r.get("graph_version"))
     if bad:
         out.append({"kind": "graph_mismatch", "text": "지식그래프를 만든 뒤 도면 %d장이 바뀌었거나 빠졌습니다(%s). 지식 관계가 지금 도면과 맞지 않을 수 있습니다. "
-                    "도면을 다시 추출하면 지식그래프도 다시 만들어집니다." % (len(bad), ", ".join(bad[:5]) + (" 외" if len(bad) > 5 else ""))})
+                    "도면을 다시 읽으면 지식그래프도 다시 만들어집니다." % (len(bad), ", ".join(bad[:5]) + (" 외" if len(bad) > 5 else ""))})
     return out
 
 
@@ -94,7 +96,7 @@ def _context(engine, study=False):
     try:
         pg = project_ctx.project_graph(pid)
     except (OSError, ValueError, KeyError):
-        return None, "프로젝트 그래프를 만들 수 없습니다. 도면을 먼저 추출하세요."
+        return None, "도면을 먼저 읽어야 합니다."
     if not pg or not pg.get("nodes"):
         return None, "추출한 도면이 없습니다. 도면을 등록하고 추출하면 지식그래프가 만들어집니다."
     kg, kg_note = _load_kg(pid)
@@ -102,13 +104,13 @@ def _context(engine, study=False):
     ver = _ver(pid, path)
     judge_problem = None
     try:
-        judgements = expect.load_judgements(path, pid)
+        judgements = expect.load_judgements(path, pid, graph=pg)
     except (OSError, expect.ExpectError) as exc:
-        judgements, judge_problem = {}, "잠재 후보 판단 파일을 읽을 수 없어 판단을 저장하지 않습니다(%s)." % str(exc)[:160]
+        judgements, judge_problem = {}, "잠재 후보 판단 파일을 읽을 수 없어 판단을 저장하지 않습니다(%s)." % errtext.why(exc, 160)
     try:
         expectations = expect.evaluate_cached(pg, kg, judgements)
     except expect.ExpectError as exc:
-        expectations, judge_problem = None, "잠재 후보를 계산하지 못했습니다(%s)." % str(exc)[:160]
+        expectations, judge_problem = None, "잠재 후보를 계산하지 못했습니다(%s)." % errtext.why(exc, 160)
     items = (expectations or {}).get("items") or ()
     exp_fp = hashlib.sha256("\n".join("%s %s %s" % (i["id"], i["digest"], i["state"]) for i in items).encode("utf-8")).hexdigest()
     key = (pid, pg.get("graph_version"), len(pg.get("nodes") or ()), (kg or {}).get("kg_version"), ver, exp_fp, judge_problem)
@@ -184,7 +186,7 @@ def _read_base(pg):
     try:
         ns = study_nodes.load(pg)
     except (OSError, ValueError) as exc:
-        return {"node_set": None, "full": None, "results": None, "note": "검토구간 파일을 읽을 수 없습니다(%s)." % str(exc)[:160]}
+        return {"node_set": None, "full": None, "results": None, "note": "검토구간 파일을 읽을 수 없습니다(%s)." % errtext.why(exc, 160)}
     if not ns or not study_nodes.active_nodes(ns) or study_nodes.is_stale(ns, pg):
         return {"node_set": None, "full": None, "results": None, "note": "확정된 검토구간이 없거나 지금 도면과 맞지 않습니다."}
     from hazop.shell import api_results
@@ -192,7 +194,7 @@ def _read_base(pg):
     try:
         doc = study_results.load(ns)
     except (OSError, ValueError) as exc:
-        return {"node_set": scoped, "full": ns, "results": None, "note": "분석 결과를 읽을 수 없습니다(%s)." % str(exc)[:160]}
+        return {"node_set": scoped, "full": ns, "results": None, "note": "분석 결과를 읽을 수 없습니다(%s)." % errtext.why(exc, 160)}
     if doc is not None:
         doc, problems, _bad = study_results.partition(doc, ns)
         if problems:
@@ -366,7 +368,7 @@ def component(engine, sheet, local):
     pg, m = ctx["pg"], ctx["model"]
     ids = chatview.lift(pg, sheet, [local]) if sheet and local else []
     if not ids:
-        return {"found": False, "reason": "그 구성요소를 프로젝트 그래프에서 찾지 못했습니다."}
+        return {"found": False, "reason": "그 구성요소를 도면에서 찾지 못했습니다."}
     nid = ids[0]
     node = m["pg_nodes"].get(nid) or {}
     by_type, unchecked = {}, 0
@@ -474,9 +476,9 @@ def judge(engine, expectation_id, action, digest, state, reason="", evidence="",
             raise api.CommandError("stale", STALE_TEXT)
         expect.save_judgement(ctx["path"], ctx["pid"], rec)
     except expect.ExpectError as exc:
-        raise api.CommandError("failed", str(exc)[:300])
+        raise api.CommandError("failed", errtext.why(exc, 300))
     except OSError as exc:
-        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % str(exc)[:200])
+        raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 200))
     engine.changed("kg")
     return {"ver": _ver(ctx["pid"], ctx["path"]), "state": rec["state"], "state_label": expect.STATES[rec["state"]]}
 

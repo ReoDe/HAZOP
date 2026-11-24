@@ -247,7 +247,7 @@ class AiReviewDialog(QDialog):
         self.doc = ai_review.load_doc(name) or ai_review.new_doc(name, self.original)
         # 지금 값은 사람 수정을 적용한 값으로 보인다(②에서 고친 태그가 '없음'으로 보이지 않게)
         from hazop.extract import corrections
-        self.shown = corrections.apply_saved(self.original, name)
+        self.shown = corrections.resolve(name, self.original)["corrected"]      # 기준 추출(나누기 반영) 위 고친 값
         lay = QVBoxLayout(self)
         self.head = QLabel("")
         self.head.setWordWrap(True)
@@ -358,7 +358,14 @@ class AiReviewDialog(QDialog):
             elif action == "reject":
                 ai_review.reject(self.doc, ids, by=self._by())
             else:
-                ai_review.revert(self.doc, ids, self.name, by=self._by())
+                try:
+                    ai_review.revert(self.doc, ids, self.name, by=self._by())
+                except ai_review.RevertNeedsConfirm as need:      # 입력 연산 U2: 기댄 사람 고침이 함께 빠진다. 알리고 확인받아 다시 부른다
+                    ask = QMessageBox.question(self, "함께 빠지는 고침",
+                                               "이 수락에 기대 사람이 한 고침 %d건이 함께 빠집니다.\n그래도 되돌릴까요?" % len(need.dependents))
+                    if ask != QMessageBox.Yes:
+                        return
+                    ai_review.revert(self.doc, ids, self.name, by=self._by(), confirm=list(need.dependents))
         except Exception as exc:  # 저장 충돌(그새 ②에서 수정 저장) 등은 다시 읽고 알린다
             QMessageBox.warning(self, "저장하지 못함", "%s\n다시 읽은 뒤 다시 하세요." % exc)
             self.doc = ai_review.load_doc(self.name) or self.doc

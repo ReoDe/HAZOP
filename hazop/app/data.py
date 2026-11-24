@@ -19,10 +19,13 @@ from hazop.analysis import ai as ai_mod
 from hazop.extract import corrections
 from hazop.extract.adapters import raster_scan
 from hazop.graph import build as graph_build
+from hazop.graph import project as graph_project
+from hazop.graph import sources as graph_sources
 from hazop.kg import auto, docextract
 from hazop.kg import build as kg_build
 from hazop.kg.context import omission_texts
 from hazop.register import registry
+from hazop.study import idmap, migrate
 from hazop.study import nodes as study_nodes
 from hazop.study import results as study_results
 from hazop.viewer import build as viewer_build
@@ -54,8 +57,10 @@ def script_module(name):
 
 
 def read_json(path):
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+    """한 번에 읽고 닫은 뒤 푼다(푸는 동안 파일을 쥐고 있으면 다른 스레드의 저장 교체가 Windows에서 접근 거부로 막힌다)."""
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    return json.loads(raw.decode("utf-8"))
 
 
 # ---------------------------------------------------------------- ① 등록 목록
@@ -116,7 +121,8 @@ _MARKED = {}                       # 표지를 이미 가진 검토구간 파일
 
 
 def _needs_marks(folder):
-    """folder의 검토구간 파일 가운데 위치 표지(graph_member_marks)가 없는 것(0.1·0.2 또는 표지 없는 0.3)이 있는가."""
+    """folder의 검토구간 파일 가운데 위치 표지(graph_member_marks)나 나중에 들인 판 사진 칸(idmap.OPTIONAL_SNAPSHOT: source 겉모습·시트 자료)이
+    없는 것(0.1·0.2 또는 그 칸 없는 0.3)이 있는가."""
     if not os.path.isdir(folder):
         return False
     need = False
@@ -134,7 +140,8 @@ def _needs_marks(folder):
             continue
         if not isinstance(doc, dict) or doc.get("kind") != study_nodes.KIND:
             continue
-        if doc.get("schema_version") != study_nodes.SCHEMA_VERSION or "graph_member_marks" not in doc:
+        if doc.get("schema_version") != study_nodes.SCHEMA_VERSION or any(
+                k not in doc for k in ("graph_member_marks",) + idmap.OPTIONAL_SNAPSHOT):
             need = True
         else:
             _MARKED[path] = (st.st_mtime_ns, st.st_size)
@@ -157,7 +164,8 @@ def prepare_reextract(project_id, graph_fn=None):
         if graph_fn is None:
             from hazop.graph import project as graph_project
             graph_fn = graph_project.load    # 디스크의 그래프 그대로(낡은 그래프 다시 만들기를 먼저 돌리는 project_ctx를 거치지 않는다: 그것이 덮어쓴 뒤의 그래프로 읽게 된다)
-        study_nodes.load(graph_fn(project_id))
+        with migrate.filling_new_fields():      # 열기만으로는 채우지 않는 칸도 여기서는 채운다(다시 추출이 순번을 밀기 전에)
+            study_nodes.load(graph_fn(project_id))
         return True
     except Exception:  # noqa: BLE001 - 표지 채우기는 덤이다: 실패해도 다시 추출은 그대로 한다
         LOG.warning("다시 추출 전에 검토구간 표지를 채우지 못함(%s)", project_id, exc_info=True)
@@ -177,7 +185,155 @@ def prepared_for_reextract(project_id):
         _PREPARED.on = before
 
 
+_LISTENER = [None]                  # 그래프 판이 바뀐 뒤 앱(엔진)이 이어서 할 일(검토구간 판 이전). 마지막으로 만든 엔진 하나가 꽂는다
+_CATCHING = threading.local()      # 판 이전 안에서 다시 판 이전을 부르지 않는다(프로젝트 그래프 짓기가 낡은 그래프를 다시 만들며 이 길을 되부름)
+
+
+def set_graph_listener(fn):
+    """fn(project_id): 그래프 판이 바뀐 길(다시 추출, 사람 수정 뒤 다시 짓기)이 끝나면 불린다. 앱의 엔진이 꽂는다(없으면 아무 일 없음)."""
+    _LISTENER[0] = fn
+
+
+def notify_graph_changed(project_id):
+    """그래프 판이 바뀌었다고 알린다. 듣는 쪽의 실패는 알리는 길을 막지 않는다."""
+    fn = _LISTENER[0]
+    if fn is None or not project_id:
+        return
+    try:
+        fn(project_id)
+    except Exception:  # noqa: BLE001 - 판 이전은 덤이다: 실패해도 다시 추출·다시 짓기는 끝난 대로다(막음·단추가 안전망)
+        LOG.warning("그래프가 바뀐 뒤 이어서 할 일이 실패함(%s)", project_id, exc_info=True)
+
+
+def _has_study_sets(project_id):
+    folder = os.path.join(study_nodes.store_dir(), paths.safe_name(project_id))
+    try:
+        return os.path.isdir(folder) and any(n.endswith(".json") for n in os.listdir(folder))
+    except OSError:
+        return False
+
+
+def migrate_study(pg):
+    """프로젝트 그래프 pg 기준으로 검토구간 집합의 판 이전만 한다(프로젝트 잠금 안, nodes.load_fp가 집합과 ⑤ 결과 이음을 쓴다). 쓰다 실패하면 OSError·ValueError·
+    store_io.Conflict를 올리고 옛 파일은 그대로다. 같은 판이거나 집합이 없거나 0.1 파일이면 아무것도 쓰지 않는다.
+    → {changed, matched(이어진 구성요소), new_lost(이번에 새로 찾지 못한 구성요소), tombstones(되찾지 못한 묘비 합계), lost_members {구간: 수}, first_node,
+    graph_version, demoted(이번 판 이전이 확정을 푼 구간 id 목록)}."""
+    from hazop.study import idmap, node_commands
+    ns = study_nodes.read_as_is(pg)
+    quiet = {"changed": False, "matched": 0, "new_lost": 0}
+    if ns is None or (ns.get("schema_version") or study_nodes.LEGACY_SCHEMA_VERSION) == study_nodes.LEGACY_SCHEMA_VERSION \
+            or not study_nodes.is_stale(ns, pg):
+        info = idmap.needs_check(ns or {})
+        return dict(quiet, tombstones=info["tombstones"], lost_members=info["lost_members"], first_node=next(iter(info["lost_members"]), None))
+    with node_commands.project_lock(pg.get("project_id")):
+        got, _fp = study_nodes.load_fp(pg)
+    if got is None or got.get("read_only"):
+        raise ValueError("판 이전을 할 수 없습니다: %s" % ((got or {}).get("read_only") or "구간 파일이 없음"))
+    if study_nodes.is_stale(got, pg):
+        raise ValueError("판 이전을 마치지 못했습니다")
+    row = next((h.get("detail") or {} for h in reversed(got.get("history") or []) if isinstance(h, dict) and h.get("op") == "migrate_version"), {})
+    info = idmap.needs_check(got)
+    return {"changed": True, "matched": int(row.get("matched") or 0), "new_lost": len(row.get("lost") or {}), "tombstones": info["tombstones"],
+            "lost_members": info["lost_members"], "first_node": next(iter(info["lost_members"]), None), "graph_version": got.get("graph_version"),
+            "demoted": list(row.get("demoted") or [])}
+
+
+def catch_up_study(project_id):
+    """그래프 판이 바뀐 뒤 앱이 이어서 하는 판 이전. 집합이 없으면 아무것도 안 하고(그래프도 짓지 않는다) None. 실패하면 {"error": 글}을 돌려주고 예외를 올리지 않는다."""
+    if not project_id or getattr(_CATCHING, "on", False) or not _has_study_sets(project_id):
+        return None
+    _CATCHING.on = True
+    try:
+        from hazop.app import project_ctx
+        return migrate_study(project_ctx.project_graph(project_id))
+    except Exception as exc:  # noqa: BLE001 - 실패하면 막음과 '판 이전 지금 하기' 단추가 그대로 남는다
+        LOG.warning("자동 판 이전에 실패함(%s)", project_id, exc_info=True)
+        return {"error": str(exc)[:160]}
+    finally:
+        _CATCHING.on = False
+
+
+_STAMPED = set()                  # 기준 판을 찍었지만 검토구간 판 사진은 아직 채우지 않은 도면 이름(다시 짓기 직전에 채운다)
+_STAMPED_LOCK = threading.Lock()
+
+
+def stamp_base_version(name):
+    """기준 판(base_version)을 남기기 전에 지은 도면 그래프 name에 그 판을 한 번 찍는다(scripts/build_graph.render_one이 새 그래프에 적는 것과 같은 값).
+    사람 고침을 저장하기 직전(corrections.save_fp)에 부른다: 저장 뒤에는 기록에 새 고침이 들어 디스크 그래프와 판이 맞지 않는다.
+    디스크 판(graph_version)이 지금 기록·추출로 다시 계산한 판과 같을 때만 찍는다(기준 추출을 새로 짓지 않음). 다르거나 낡은 그래프 표시가 있으면
+    그대로 둔다. 143쪽 프로젝트 전부를 열 때 하면 판 확인만 5.9~6.2초라 쪽마다 처음 고칠 때 한다. 검토구간 판 사진 채우기(3.3~4.7초)는 화면이
+    기다리는 저장 답에 넣지 않고 다시 짓기 직전(fill_stamped_base)에 한다. 수치는 찍기 단위 측정 기록(2026-11-24, 143쪽 프로젝트 사본, c38a404 위
+    고침 코드, 판 확인 두 번·채우기 네 번, CPU 부하 10~77%, 보류 쪽 포함·내용 미열람)이고 설계 migration-map-design.md §17에 적었다. 실패해도 저장을 막지 않는다(그 쪽은 전처럼 첫 고침에 표시로 잇는다). → 찍었으면 True."""
+    try:
+        from hazop.shell import sheet_refresh
+        path = os.path.join(paths.safe_join(paths.output_root("graph"), paths.safe_name(name)), "graph.json")
+        raw, fp = store_io.read_bytes(path)
+        if raw is None or sheet_refresh.graph_stale(name):
+            return False
+        graph = json.loads(raw.decode("utf-8"))
+        if graph.get("base_version"):
+            return False
+        resolved = corrections.resolve(name, allow_extract=False)
+        if graph_build._graph_version(resolved["corrected"]) != graph.get("graph_version"):
+            return False
+        graph["base_version"] = graph_build.base_version(resolved["base"])
+        store_io.write_bytes(path, (json.dumps(graph, ensure_ascii=False, indent=2) + "\n").encode("utf-8"), expect=fp)
+    except Exception:  # noqa: BLE001 - 찍기는 덤이다: 고침 저장을 막지 않는다
+        LOG.warning("옛 그래프에 기준 판을 찍지 못함(%s)", name, exc_info=True)
+        return False
+    with _STAMPED_LOCK:
+        _STAMPED.add(name)
+    return True
+
+
+def fill_stamped_base(name, project_id):
+    """stamp_base_version이 찍은 도면 name을 다시 짓기 직전(scripts/build_graph.build_one, 그래프를 덮어쓰기 전)에 프로젝트 검토구간 집합을
+    지금(찍은) 그래프로 한 번 읽어 판 사진 칸을 채운다. 그래야 다시 지은 뒤 판 이전이 그 쪽의 순번 구성요소를 참조로 잇는다. 판이 같은 집합만
+    채우고 묘비는 만들지도 되찾지도 않는다(migrate.with_refs). 찍지 않았으면 아무것도 안 한다 → 채우려고 읽었으면 True."""
+    with _STAMPED_LOCK:
+        if name not in _STAMPED:
+            return False
+        _STAMPED.discard(name)
+    if not project_id or not _has_study_sets(project_id):
+        return False
+    try:
+        with migrate.filling_new_fields():      # 이 칸이 아예 없는 옛 집합도 채운다(prepare_reextract와 같음)
+            study_nodes.load(graph_project.load(project_id))
+        return True
+    except Exception:  # noqa: BLE001 - 채우기는 덤이다: 다시 짓기를 막지 않는다(그 쪽은 전처럼 첫 고침에 표시로 잇는다)
+        LOG.warning("기준 판을 찍은 뒤 검토구간 판 사진을 채우지 못함(%s)", project_id, exc_info=True)
+        return False
+
+
+_SETTLE_LOCK = threading.Lock()
+
+
+def settle_sheets(project_id, prepare=True):
+    """그 프로젝트의 시트 자리를 정착한다(hazop.graph.sources.settle, 작업 루트에서만, 멱등). 추출·그래프 짓기 같은 명시적인 차례가
+    맨 앞에서 부른다. 읽는 길(프로젝트 그래프·도면 이름·고르기 줄)에서는 부르지 않는다. 다른 곳에서 먼저 정착해 자리 표가 바뀌었으면
+    한 번 더 읽어 끝낸다. 실패하면 예외를 그대로 올리고 파일은 옛 상태 그대로다. -> settle 결과 또는 None(프로젝트 없음).
+    prepare: 정착 전에 옛 검토구간 집합의 판 사진 칸을 채운다(prepare_reextract). 이미 채운 길(추출 맨 앞, prepared_for_reextract 안)은 False."""
+    if not project_id:
+        return None
+    bg = script_module("build_graph")
+    if prepare and not getattr(_PREPARED, "on", False) and not graph_sources.load_seats(project_id)[1]:
+        prepare_reextract(project_id)      # 자리를 바꾸기 전에 옛 집합의 판 사진 칸(시트 자료)을 지금 그래프로 채운다
+    with _SETTLE_LOCK:
+        try:
+            return graph_sources.settle(project_id, lambda path, seats: bg.render_one(path, seats=seats))
+        except store_io.Conflict:
+            return graph_sources.settle(project_id, lambda path, seats: bg.render_one(path, seats=seats))
+
+
 def extract_and_graph(registration_path, progress=None):
+    """등록정보 → 추출 → 그래프 → 지식그래프(아래 _extract_and_graph). 끝나면 그래프 판이 바뀌었다고 알려 앱이 검토구간 판 이전을 이어서 하게 한다(실패하면 알리지 않음)."""
+    ctx = {}
+    out = _extract_and_graph(registration_path, progress, ctx)
+    notify_graph_changed(graph_project.project_id_of({"project_id": ctx.get("project")}))
+    return out
+
+
+def _extract_and_graph(registration_path, progress=None, ctx=None):
     """등록정보 → `--registration` 추출 → 그래프 생성 (scripts/extract_drawio.run_one 또는 PDF면
     scripts/extract_pdf.run_pages로 등록된 모든 쪽, 그리고 scripts/build_graph.build_one) → 프로젝트 지식그래프 다시 빌드.
     출력 폴더 이름은 두 형식이 같다.
@@ -187,8 +343,11 @@ def extract_and_graph(registration_path, progress=None):
     ex = script_module("extract_drawio")
     bg = script_module("build_graph")
     record, original = registry.load_for_extraction(registration_path)
+    if ctx is not None:
+        ctx["project"] = record.get("project_id")
     if not getattr(_PREPARED, "on", False):
         prepare_reextract(record.get("project_id"))     # 추출 결과를 덮어쓰기 전에 검토구간 표지를 채운다
+    settle_sheets(record.get("project_id"), prepare=False)   # 추출 결과를 쓰기 전에 지금 시트 이름을 자리 표에 붙박는다(표지는 위에서 채움)
     if raster_scan.is_scan_record(record, original):  # 스캔 PDF·PNG·JPG(HZ-PLN-23 §8): 쪽마다 20초 안팎이라 progress로 알린다
         return _extract_scan_pages(record, original, ex, bg, progress)
     if record.get("format") == "pdf":
@@ -197,6 +356,7 @@ def extract_and_graph(registration_path, progress=None):
         warnings = []
         result, out_dir = script_module("extract_dexpi").run_one(original, paths.output_root("extract"),
                                                                  registration=record, warnings=warnings)
+        _keep_owners(record, [out_dir])
         graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
         return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir,
                          "warnings": warnings}, record["project_id"])
@@ -204,9 +364,61 @@ def extract_and_graph(registration_path, progress=None):
     warnings = []
     result, out_dir = ex.run_one(original, paths.output_root("extract"), svg="auto", page=0, registration=record,
                                  registered_svgs=reg_svg, warnings=warnings)
+    _keep_owners(record, [out_dir])
     graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
     return _with_kg({"extraction": result, "extract_dir": out_dir, "graph": graph, "graph_dir": gdir,
                      "warnings": warnings}, record["project_id"])
+
+
+def _keep_owners(record, out_dirs):
+    """새로 지을 그래프가 받을 시트 이름을 지금 다른 자료가 쓰고 있으면 그 자료를 주인으로 붙박는다(sources.keep_owner). 먼저 등록했을 뿐
+    늦게 추출된 자료가 '먼저 등록한 자료' 차례로 쓰이던 자료에게서 이름을 말없이 가져가지 않고 고르기 줄에 오른다(등록 단조).
+    그래프를 쓰기 전에 부른다. 붙박을 것이 없으면 자리 표를 쓰지 않는다.
+    표제란 확정 길(prepared_for_reextract 안)은 하지 않는다: 그 길은 이 자료의 앞 그래프를 비켜 둔 뒤라 디스크로는 지금 주인을 알 수 없고
+    (이 자료가 주인이어도 다른 자료가 주인으로 보임), 새 이름을 다른 파일이 쓰면 가드가 비키기 전에 이미 붙박았다(titleblock._apply의 keep).
+    확정 길이 비켜 둔 뒤 앱이 죽어 그 쪽에 비켜 둔 그래프만 남은 경우(_set_aside_only)도 그 이름은 붙박지 않는다: 디스크로는 다른 자료가
+    주인으로 보이지만 이 쪽이 비켜 두기 직전까지 쓰던 이름이다. 자리 표를 쓰지 못하면(다른 곳이 연달아 씀) 그래프를 짓지 않고 ValueError."""
+    from hazop.app import project_ctx
+    from hazop.graph import sheets
+    pid, mid = record.get("project_id"), record.get("material_id")
+    if not mid or getattr(_PREPARED, "on", False) or not graph_sources.load_seats(pid)[1]:
+        return
+    names = project_ctx.graph_names(pid)
+    held = _set_aside_only(mid)
+    for out_dir in out_dirs:
+        gid = graph_sources.sheet_name(pid, read_json(os.path.join(out_dir, "extraction.json")))
+        owner = sheets.from_out_name(names.get(gid) or "")
+        page = (sheets.from_out_name(os.path.basename(out_dir)) or (None, None, 0))[2]
+        if not owner or owner[0] == mid or (page, gid) in held:
+            continue
+        for attempt in (1, 2):
+            try:
+                graph_sources.keep_owner(pid, gid, "extract")
+                break
+            except store_io.Conflict:
+                if attempt == 2:
+                    raise ValueError("같은 번호를 쓰는 다른 파일의 자리를 적지 못해 도면 그래프를 짓지 않았습니다. 잠시 뒤 다시 추출하세요.")
+
+
+def _set_aside_only(material_id):
+    """{(쪽, 비켜 둔 그래프의 graph_id)} 그 자료의 쪽 가운데 표제란 확정 길이 비켜 둔 그래프(graph.superseded.json)만 있고 살아 있는
+    graph.json은 어느 등록 판에도 없는 것. 확정 중 다시 추출하다 앱이 죽어 되돌리지 못한 자리다(성공한 확정은 새 판의 graph.json이 있다)."""
+    from hazop.graph import sheets
+    from hazop.register.titleblock import SUPERSEDED
+    root = paths.output_root("graph")
+    live, aside = set(), set()
+    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        key = sheets.from_out_name(name)
+        if not key or key[0] != material_id:
+            continue
+        if os.path.isfile(os.path.join(root, name, "graph.json")):
+            live.add(key[2])
+        elif os.path.isfile(os.path.join(root, name, SUPERSEDED)):
+            try:
+                aside.add((key[2], read_json(os.path.join(root, name, SUPERSEDED)).get("graph_id")))
+            except (OSError, ValueError):
+                continue
+    return {k for k in aside if k[0] not in live}
 
 
 def _extract_scan_pages(record, original, ex, bg, progress=None):
@@ -225,6 +437,7 @@ def _extract_scan_pages(record, original, ex, bg, progress=None):
             os.remove(stale)
     if not done:
         raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
+    _keep_owners(record, [out_dir for _page, _result, out_dir in done])
     pages = []
     for page, result, out_dir in done:
         graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
@@ -249,6 +462,7 @@ def _extract_pdf_pages(record, original, ex, bg):
             os.remove(stale)
     if not done:
         raise ValueError("추출한 쪽이 없음: %s" % "; ".join("%s %s" % (s["page_id"], s["reason"]) for s in skipped))
+    _keep_owners(record, [out_dir for _page, _result, out_dir in done])
     pages = []
     for page, result, out_dir in done:
         graph, gdir = bg.build_one(os.path.join(out_dir, "extraction.json"), paths.output_root("graph"))
@@ -414,11 +628,10 @@ def extraction_path(name):
 
 
 def load_extraction(name, ops=None):
-    """(원본, 고친 추출). ops가 None이면 저장된 수정 기록(data/drawing-edits)을, 아니면 주어진 작업 중 ops를 적용한다."""
+    """(원본, 고친 추출). ops가 None이면 저장된 수정 기록(data/drawing-edits)을, 아니면 주어진 작업 중 ops를 적용한다.
+    나누기는 지어 둔 기준 추출이 있으면 그 위에, 없으면 대기로 둔다(corrections.resolve, 여기서 다시 추출하지 않는다)."""
     original = read_json(extraction_path(name))
-    corrected = (corrections.apply_saved(original, name) if ops is None
-                 else corrections.apply(original, ops))
-    return original, corrected
+    return original, corrections.resolve(name, original, ops)["corrected"]
 
 
 def viewer_html_for(name, ops=None):
@@ -430,8 +643,8 @@ def viewer_html_for(name, ops=None):
     if ops is None:
         graph = viewer_build.load_graph(paths.output_root("graph"), name)
     else:
-        graph = graph_build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path(name),
-                                                                                   paths.work_root()))
+        graph = graph_build.build_graph(extraction, extraction_file=paths.rel_or_abs(extraction_path(name), paths.work_root()),
+                                        graph_id=graph_sources.sheet_name(graph_project.project_id_of(extraction), extraction))
     al = extraction["coordinate_system"].get("svg_alignment") or {}
     info = {"html": None, "extraction": extraction, "corrected": extraction, "original": original, "graph": graph,
             "svg": bool(al.get("svg_file")), "error": None}
@@ -499,6 +712,7 @@ def save_corrections(name, ops, by, expect=store_io.ANY):
         _with_kg(out, graph["project_id"])
     else:
         out["kg_error"] = "프로젝트에 등록되지 않은 도면이라 지식그래프를 다시 만들지 않음"
+    notify_graph_changed(graph.get("project_id"))       # 지식그래프까지 다시 만든 뒤에 알린다(판 이전 뒤 화면이 옛 지식그래프를 읽지 않게)
     recheck = []
     try:  # 도면별 저장본은 바꾸지 않고 읽는다(0.1 변환·판 이전은 그 집합을 여는 화면이 함. 옛 도면별 파일을 건드리지 않게)
         node_set = study_nodes.read_as_is(graph)

@@ -24,7 +24,7 @@ body { font-family: var(--font); font-size: var(--fs-md); color: var(--ink); bac
 .tip { position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%); background: var(--ink); color: #fff; font-size: var(--fs-xs); padding: 3px 8px; border-radius: var(--r-sm); white-space: nowrap; }
 
 .center { position: relative; display: flex; flex-direction: column; min-width: 0; }
-.topbar { height: var(--top-h); display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4); background: var(--surface); border-bottom: 1px solid var(--line); z-index: 3; }
+.topbar { height: var(--top-h); display: flex; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-4); background: var(--surface); border-bottom: 1px solid var(--line); z-index: 7; }   /* 열린 패널(.pwrap 6)보다 위: 다음에 할 일 펼침이 패널 위로 나온다 */
 .crumb { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 .crumb .proj { color: var(--muted); }
 .crumb .sheet { all: unset; display: inline-flex; align-items: center; gap: 4px; font-weight: 700; padding: 4px 8px; border-radius: var(--r-sm); cursor: pointer; }
@@ -186,3 +186,86 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .foot { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--muted); }
 .foot .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
 
+
+/* ── 다음에 할 일 한 줄(HZ-DSN-06 §3.1, web/js/next/next.js) ───────── */
+.next { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; }
+.next .line { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 32px; padding: 0 4px 0 10px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--line); }
+.next .line.warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn); }
+.next .line.info { background: var(--accent-weak); border-color: var(--accent-weak); color: var(--accent-ink); }
+.next .line.calm { background: transparent; border-color: transparent; color: var(--muted); }
+.next .line .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.next .line.warn .txt { color: var(--warn); font-weight: 700; }
+.next .line.info .txt { color: var(--accent-ink); }
+.next .line.calm .txt { color: var(--muted); }
+.next .line .btn { height: 26px; padding: 0 10px; font-size: var(--fs-sm); border-radius: var(--r-pill); flex: none; }
+.next .more { all: unset; display: inline-flex; align-items: center; gap: 2px; height: 26px; padding: 0 6px 0 8px; border-radius: var(--r-pill); font-size: var(--fs-sm); color: var(--muted); cursor: pointer; white-space: nowrap; flex: none; }
+.next .more:hover { background: var(--surface-2); color: var(--ink); }
+.next .bar { width: 72px; height: 6px; border-radius: 3px; background: var(--accent-weak); overflow: hidden; flex: none; }
+.next .bar i { display: block; height: 100%; background: var(--accent); }
+.next-list { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: 440px; max-width: 92vw; padding: 6px; z-index: 9; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-2); }
+.next-list .h { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px 6px; font-size: var(--fs-xs); color: var(--muted); }
+.next-list button.item { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--r-sm); cursor: pointer; }
+.next-list button.item:hover, .next-list button.item.top, .next-list button.item:focus-visible { background: var(--surface-2); }
+.next-list .item .n { width: 18px; color: var(--faint); font-size: var(--fs-xs); text-align: right; flex: none; }
+.next-list .item .t { flex: 1; min-width: 0; }
+.next-list .item .t span { display: block; font-size: var(--fs-xs); color: var(--muted); }
+.next-list .item .go { color: var(--accent-ink); font-size: var(--fs-sm); white-space: nowrap; }
+.next-list .item.warn .ic { color: var(--warn); }
+@media (max-width: 1400px) { .search { width: 168px; } }
+
+/* ── 검토 대기열 카드(HZ-DSN-06 §3.3, web/js/queue/*.js). 오른쪽 칸(채팅 자리)에 온다 ───────── */
+.chat.queue .qwrap { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-3); display: flex; flex-direction: column; gap: 12px; }
+.qprog .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.qprog .bar, .next .line .bar { display: block; height: 6px; border-radius: 3px; background: var(--accent-weak); overflow: hidden; }
+.qprog .bar i { display: block; height: 100%; background: var(--accent); }
+.qbody { display: flex; flex-direction: column; gap: 8px; }
+.qbody .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.qbody .target b { display: block; font-size: var(--fs-lg, 16px); }
+.qbody .target .muted { font-size: var(--fs-sm); }
+.qbody .change { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-md); }
+.qbody .change .now { color: var(--muted); text-decoration: line-through; }
+.qbody .change .to { font-weight: 700; color: var(--accent-ink); }
+.qbody .conf { font-size: var(--fs-sm); color: var(--ink-2); }
+.qbody .why { padding: 8px 10px; border-radius: var(--r-sm); border: 1px dashed var(--ai-line); background: repeating-linear-gradient(135deg, var(--ai-a) 0 5px, var(--ai-b) 5px 10px); font-size: var(--fs-sm); }
+.qbody .why .muted { display: block; font-size: var(--fs-xs); margin-bottom: 2px; }
+.qbody .edit input { width: 100%; box-sizing: border-box; height: 32px; padding: 0 8px; border: 1px solid var(--accent); border-radius: var(--r-sm); font: inherit; }
+.qbody .ask, .qmsg { padding: 6px 9px; border-radius: var(--r-sm); background: var(--warn-bg); color: var(--warn); font-size: var(--fs-sm); }
+.qmsg { background: var(--surface-2); color: var(--ink-2); }
+.qmsg.err { background: var(--err-bg); color: var(--err); }
+.qacts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.qacts .btn { height: 40px; padding: 0 6px; }
+.qsub { display: flex; gap: 6px; flex-wrap: wrap; }
+.qbulk { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); font-size: var(--fs-sm); flex-wrap: wrap; }
+.qbulk.open { flex-direction: column; align-items: stretch; border-color: var(--accent); }
+.qbulk ul { margin: 0; padding-left: 18px; max-height: 220px; overflow: auto; }
+.qbulk .acts { display: flex; gap: 6px; }
+.qdone { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 0; color: var(--ink); text-align: center; }
+.qdone svg { color: var(--ok); }
+.qkeys { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px; }
+.chat.queue .small { font-size: var(--fs-xs); }
+
+/* ── 도면별 AI 검토(HZ-DSN-06 §3.7, web/js/review/review.js): 칩과 확인 창 ───────── */
+.chip.review.act { cursor: pointer; }
+.chip.review.act b { font-weight: 700; color: var(--accent-ink); }
+.chip.review.act:hover { border-color: var(--accent); }
+.rv-back { position: fixed; inset: 0; z-index: 30; background: rgba(15, 20, 25, .28); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.rv-modal { width: 460px; max-width: 100%; max-height: 90vh; overflow: auto; box-sizing: border-box; padding: 18px 20px; border-radius: var(--r-lg); background: var(--surface); color: var(--ink); box-shadow: var(--sh-2); display: flex; flex-direction: column; gap: 10px; }
+.rv-modal h3 { margin: 0; font-size: var(--fs-lg, 16px); }
+.rv-modal dl { display: grid; grid-template-columns: 92px 1fr; gap: 8px 10px; margin: 0; font-size: var(--fs-sm); }
+.rv-modal dt { color: var(--muted); }
+.rv-modal dd { margin: 0; }
+.rv-modal input[type=number] { width: 64px; height: 26px; }
+.rv-modal .acts { display: flex; gap: 8px; justify-content: flex-end; }
+.rv-modal .small, .qdone .small { font-size: var(--fs-xs); }
+.qnext { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); width: 100%; box-sizing: border-box; }
+.chat.queue:focus { outline: none; }
+.selbar.pickhint { white-space: normal; max-width: min(760px, calc(100% - 32px)); gap: var(--sp-2); }
+.na-modal .card.confirm-all { border: 0; box-shadow: none; padding: 0; margin: 0; }
+.qinputs .warn { color: var(--warn-ink, #74430a); }
+.job-line { display: flex; align-items: center; gap: 6px; min-height: 26px; font-size: var(--fs-sm); overflow: hidden; white-space: nowrap; }
+.job-line span { overflow: hidden; text-overflow: ellipsis; }
+.jobs-done summary { cursor: pointer; padding: 2px 0; }
+/* 도면이 많아도 추출 설정(AI 검토 스위치) 줄은 패널 아래에 붙박는다: 목록만 스크롤된다(실제 창 6차) */
+.card.ai-foot { position: sticky; bottom: calc(-1 * var(--sp-4)); z-index: 1; box-shadow: 0 -6px 12px -8px rgba(0,0,0,.25); padding-top: 8px; padding-bottom: 8px; }
+.card.ai-foot h3 { display: none; }

@@ -23,6 +23,7 @@ import hashlib
 import json
 import math
 import random
+import time
 
 from hazop import paths, store_io
 from hazop.extract import ai_connect, corrections, rules
@@ -501,19 +502,49 @@ def refuse_reason(client):
     return None
 
 
+# 일시 오류는 그 묶음을 기다렸다가 다시 묻는다: error_kind → 다시 묻기 전 기다릴 초(차례대로, 길이가 다시 묻는 횟수 상한).
+# 다시 묻기도 호출 하나로 세어 도면당·실행당 상한(run의 limit)을 넘지 않는다. 같은 오류가 STREAK_LIMIT번 이어지면 지금처럼 멈춘다.
+# 시간 초과는 한 번에 600초까지 쓰므로 한 번만 다시 묻는다. 한도·초과 사용 같은 멈춤 종류는 다시 묻지 않는다(providers.ERROR_KINDS).
+RETRY_DELAYS = {"rate_limited": (30, 90), "transient": (5, 20), "timeout": (5,)}
+_RETRY = "_retry"      # stats 안에 실행 동안만 두는 (limit, should_stop). run이 돌려주기 전에 뺀다
+
+
+def _wait(seconds, should_stop):
+    """seconds초 기다린다. 그 사이 멈추라고 하면 바로 False."""
+    end = time.monotonic() + seconds
+    while True:
+        if should_stop and should_stop():
+            return False
+        left = end - time.monotonic()
+        if left <= 0:
+            return True
+        time.sleep(min(0.2, left))
+
+
 def _send(client, request, stats, kinds):
-    """호출 하나. stats의 호출·오류 수와 kinds(오류 종류 목록)를 그 자리에서 고친다. → 완료한 응답 또는 None."""
-    res = _call(client, request)
-    stats["calls"] += 1
-    stats["legacy_key_hits"] += bool(res.get("legacy_key"))
-    kind = res.get("error_kind")
-    if kind is None and res.get("status") != "completed":
-        kind = providers.api_error_kind(res)[0] or "other"
-    kinds.append(kind)
-    if kind:
-        stats["errors"] += 1
-        stats["error_kinds"].append(kind)
-    return res if res.get("status") == "completed" else None
+    """호출 하나(일시 오류면 RETRY_DELAYS대로 다시 묻는다). stats의 호출·오류 수와 kinds(오류 종류 목록, 시도마다 하나)를
+    그 자리에서 고친다. → 완료한 응답 또는 None."""
+    limit, should_stop = stats.get(_RETRY) or (None, None)
+    attempt = 0
+    while True:
+        res = _call(client, request)
+        stats["calls"] += 1
+        stats["legacy_key_hits"] += bool(res.get("legacy_key"))
+        kind = res.get("error_kind")
+        if kind is None and res.get("status") != "completed":
+            kind = providers.api_error_kind(res)[0] or "other"
+        kinds.append(kind)
+        if kind:
+            stats["errors"] += 1
+            stats["error_kinds"].append(kind)
+        delays = RETRY_DELAYS.get(kind) or ()
+        if limit is None or attempt >= len(delays) or stats["calls"] >= limit or providers.halts(kinds):
+            return res if res.get("status") == "completed" else None
+        if not _wait(delays[attempt], should_stop):
+            stats["stopped"] = True
+            return None
+        attempt += 1
+        stats["retries"] = stats.get("retries", 0) + 1
 
 
 def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
@@ -611,7 +642,7 @@ def _recheck_pass(ex, client, images, answer_kinds, stats, kinds, limit, batch, 
 
 
 def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_progress=None,
-        should_stop=None, budget=None, exclude=(), images=None, connect=0):
+        should_stop=None, budget=None, exclude=(), images=None, connect=0, kinds=None):
     """AI 검토 한 번. ex는 바꾸지 않는다. → {candidates, stats}.
     cap: 도면당 호출 상한, budget: 이번 실행에 남은 호출 수(RUN_CAP에서 앞 도면이 쓴 만큼 뺀 값). 둘 중 작은 값까지만 부른다.
     exclude: 묻지 않을 대상 source_object_id(사람이 고친 자리).
@@ -622,13 +653,15 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
     묻기에 필요한 호출 수를 넘지 않음)을 뺀 상한까지 부르고, 연결 묻기는 첫 묻기 뒤 넓혀 다시 묻기보다 먼저 남은 호출로 돈다.
     0이면 연결 묻기를 하지 않는다(그 전과 같은 요청).
     on_progress(끝낸 호출 수, 이번 호출 수, 남은 항목 수), should_stop() → True면 다음 호출 전에 멈춘다.
+    kinds: 앞 도면부터 이어지는 오류 종류 목록(실행 전체에서 하나, 이 실행이 그 자리에서 덧붙인다). 주면 '같은 오류 3번이면 멈춤'이
+    도면 경계에서 풀리지 않는다(run_many·ai_image_flow.run_pages가 넘긴다). 없으면 이 도면만의 목록.
     멈춤은 응답 상태와 관계없이 error_kind로 providers.halts를 따른다. 호출은 끝났는데 한도·초과 사용이 온 응답은 받은
     답은 반영하고 남은 호출은 멈춘다."""
     stats = {"items": 0, "planned_calls": 0, "needed_calls": 0, "calls": 0, "errors": 0, "dropped": 0, "confirmed": 0,
              "halted": False, "stopped": False, "left": 0, "error_kinds": [], "refused": refuse_reason(client),
              "excluded": 0, "kind_items": 0, NOT_SYMBOL: 0, UNKNOWN: 0, "wide_calls": 0, "wide_changed": 0,
              "wide_dropped": 0, "no_image": 0, "legacy_key_hits": 0, "recheck_items": 0, "recheck_calls": 0,
-             "recheck_asked": 0, "recheck_no_kind": 0, "recheck_rules": {},
+             "recheck_asked": 0, "recheck_no_kind": 0, "recheck_rules": {}, "retries": 0,
              "legend_source": getattr(images, "legend_source", None),
              "legend_boards": len(getattr(images, "legend", None) or ())}
     if stats["refused"]:
@@ -644,6 +677,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         stats["no_image"] = len(items) - len(croppable)
         items = croppable
     limit = cap if budget is None else max(0, min(cap, budget))
+    stats[_RETRY] = (limit, should_stop)
     batch = batch or (IMAGE_BATCH if images else DEFAULT_BATCH)
     answer_kinds = set(images.kinds) if images else None
     connect_items, reserve = [], 0
@@ -652,13 +686,16 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         connect_items = ai_connect.page_items(ex, images.page, exclude)
         reserve = min(connect, ai_connect.calls_needed(len(connect_items)))
     p = plan(items, max(0, limit - reserve), batch)
-    cands, kinds = [], []
+    cands = []
+    kinds = [] if kinds is None else kinds
     stats.update(items=len(items), planned_calls=len(p["calls"]), needed_calls=p["needed"], left=len(items),
                  kind_items=sum(1 for i in items if i["task"] == "kind"))
     done_items = 0
     for n, call in enumerate(p["calls"]):
         if should_stop and should_stop():
             stats["stopped"] = True
+            break
+        if stats["calls"] >= limit - reserve:   # 다시 묻기로 첫 묻기 몫을 다 쓰면 남은 묶음을 부르지 않는다(남은 항목은 left에 남는다)
             break
         done, new, no_kind = _ask(ex, client, call, images, answer_kinds, stats, kinds)
         if done:
@@ -685,6 +722,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         from hazop.extract import ai_split
         cands += ai_split.run(ex, client, images, stats, kinds, limit, should_stop, exclude)
         stats["halted"] = providers.halts(kinds)
+    stats.pop(_RETRY, None)
     return {"candidates": _dedupe(cands), "stats": stats}
 
 
@@ -707,16 +745,33 @@ def human_targets(name):
 
 def decided_targets(name):
     """다시 묻지 않을 대상: 사람이 고친 자리, AI 후보를 수락해 들어간 자리, 사람이 거절한 후보의 자리(검토 8).
-    되돌린 후보(제안 상태로 돌아감)는 다시 물을 수 있다."""
+    되돌린 후보(제안 상태로 돌아감)는 다시 물을 수 있다. 나누기는 덩어리 안 묶음 하나를 정한 것이라 덩어리를 닫지 않는다.
+    덩어리는 그 split 후보가 모두 정해졌거나 사람이 그 덩어리를 고쳤을 때 닫는다."""
     rec = corrections.load(name)
-    out = {o.get("target") for o in (rec or {}).get("ops") or [] if o.get("target")}
+    ops = (rec or {}).get("ops") or []
+    out = {o.get("target") for o in ops if o.get("target") and o.get("op") != "split"}
+    human = {o.get("target") for o in ops if o.get("target") and o.get("op") != "split" and o.get("origin") != "ai"}
     try:
         doc = load_doc(name)
     except ValueError:
         doc = None
-    out |= {c.get("target") for c in (doc or {}).get("candidates") or [] if c.get("status") in ("accepted", "rejected")}
+    open_lumps = set()
+    for c in (doc or {}).get("candidates") or []:
+        if c.get("field") == "split" and c.get("status") == "proposed":
+            open_lumps.add(c.get("target"))
+        elif c.get("status") in ("accepted", "rejected"):
+            out.add(c.get("target"))
+    out -= open_lumps - human   # 사람이 고친 덩어리는 split 후보가 남아도 닫힌 채로
     out.discard(None)
     return out
+
+
+def stale_candidates(doc):
+    """오래된 제안 split 후보 {cand_id}: 같은 덩어리의 다른 split 후보가 수락돼 덩어리가 바뀌었다. 여전히 수락할 수 있고,
+    덩어리를 다시 물으면(merge_run) 새 답과 개체가 겹치는 것은 빠진다."""
+    split_lumps = {c.get("target") for c in doc["candidates"] if c.get("field") == "split" and c["status"] == "accepted"}
+    return {c["cand_id"] for c in doc["candidates"]
+            if c.get("field") == "split" and c["status"] == "proposed" and c.get("target") in split_lumps}
 
 
 def estimate_pages(pages, cap=DEFAULT_CAP, run_cap=RUN_CAP, batch=DEFAULT_BATCH, recheck=DEFAULT_RECHECK, images=None):
@@ -757,13 +812,13 @@ def run_many(pages, client, cap=DEFAULT_CAP, run_cap=RUN_CAP, on_progress=None, 
     사람이 고친 자리는 묻지 않는다. save면 도면마다 후보 문서에 합쳐 저장한다(읽은 판이 바뀌었으면 다시 읽어 합침).
     images: (이름, extraction) -> ai_images.ImageInput 또는 None. 주면 도면마다 그림 입력으로 묻는다(ai_images.image_input_for).
     → [(이름, 새 후보 수, stats)]."""
-    done, used = [], 0
+    done, used, kinds = [], 0, []
     for name, ex in pages:
         if should_stop and should_stop():
             break
         result = run(ex, client, cap=cap, budget=run_cap - used, exclude=decided_targets(name),
                      on_progress=(lambda d, t, left, n=name: on_progress(n, d, t, left)) if on_progress else None,
-                     should_stop=should_stop, images=images(name, ex) if images else None)
+                     should_stop=should_stop, images=images(name, ex) if images else None, kinds=kinds)
         used += result["stats"]["calls"]
         if save and not result["stats"]["refused"]:
             desc = client.describe() if hasattr(client, "describe") else {}
@@ -870,11 +925,22 @@ def save_doc(doc):
 
 
 def merge_run(doc, result, via=None, model=None, at=None):
-    """run 결과를 문서에 더한다. 이미 있는 후보(같은 cand_id)는 사람이 정한 상태를 지키고 덮지 않는다."""
+    """run 결과를 문서에 더한다. 이미 있는 후보(같은 cand_id)는 사람이 정한 상태를 지키고 덮지 않는다.
+    split 후보는 덩어리가 나뉘어 id가 바뀌어도 개체 집합으로 가린다. 이미 있는 split 후보와 개체가 같은 새 후보는 넣지 않고,
+    새 split 후보와 개체가 겹치는 오래된 제안 후보(stale_candidates)는 뺀다."""
     have = {c["cand_id"] for c in doc["candidates"]}
-    doc["candidates"] += [c for c in result["candidates"] if c["cand_id"] not in have]
+    known = {_objs(c) for c in doc["candidates"] if c.get("field") == "split"}
+    new = [c for c in result["candidates"]
+           if c["cand_id"] not in have and not (c.get("field") == "split" and _objs(c) in known)]
+    taken = frozenset().union(*[_objs(c) for c in new if c.get("field") == "split"])
+    stale = stale_candidates(doc)
+    doc["candidates"] = [c for c in doc["candidates"] if not (c["cand_id"] in stale and _objs(c) & taken)] + new
     doc["runs"].append(dict(result["stats"], at=at or now_utc(), via=via, model=model))
     return doc
+
+
+def _objs(c):
+    return frozenset(c.get("pdf_objects") or ())
 
 
 def merge_and_save(name, ex, result, via=None, model=None, tries=3):
@@ -890,7 +956,8 @@ def merge_and_save(name, ex, result, via=None, model=None, tries=3):
                 raise
 
 
-def _op_for(c):
+def _op_for(c, ex):
+    """후보 → (연산, 값). ex는 값을 만들 추출(나누기는 원본 PDF의 개체 모양을 붙인다). 값을 못 만들면 ValueError."""
     v = c["values"][0]
     if c["field"] == "kind":
         return "set_kind", {"kind": v, "category": rules.KIND_CATEGORY[v]}
@@ -902,13 +969,12 @@ def _op_for(c):
         return "set_endpoint", {"end": c["open_end"], "node": v}
     if c["field"] == "connection":  # 배관 관계가 없던 기호와 고른 이웃 사이 새 배관(ai_connect)
         return "add_relation", {"kind": "physical_connection", "line_type": "process", "from": c["target"], "to": v}
-    if c["field"] == "split":  # 덩어리 안 기호를 새 노드로 더한다. 덩어리 노드는 지우지 않는다
-        b = c["new_bbox"]
-        return "add_node", {"kind": v, "category": rules.KIND_CATEGORY[v], "bbox": [b[0], b[1], b[2] - b[0], b[3] - b[1]]}
+    if c["field"] == "split":  # 덩어리 안 묶음을 나누기 입력 연산으로 떼어 낸다. 다시 추출에서 배관 끝이 새 기호로 옮겨 간다
+        return "split", corrections.input_value(ex, c["pdf_objects"], kind=v)
     return None, None  # to_system: 맞는 수정 연산이 없다(후보 문서에만 남긴다)
 
 
-def _commit(doc, work, name, ops, fp, by, at):
+def _commit(doc, work, name, ops, fp, by, at, action="save"):
     """수정 기록(ops가 None이면 쓰지 않음)과 후보 문서를 함께 쓴다. 후보 문서를 못 쓰면 수정 기록을 되돌린다.
     work는 바꾼 후보 문서 사본. 성공하면 doc을 work로 바꾼다."""
     new_fp = None
@@ -916,25 +982,61 @@ def _commit(doc, work, name, ops, fp, by, at):
         raise store_io.Conflict("읽은 뒤 AI 후보 파일이 바뀜: %s" % store_path(doc["extraction_name"]))
     if ops is not None:
         rec_before = (corrections.load_fp(name)[0] or {}).get("ops") or []
-        _, new_fp = corrections.save_fp(name, ops, by, drawing_number=doc.get("drawing_number"), at=at, expect=fp)
+        _, new_fp = corrections.save_fp(name, ops, by, drawing_number=doc.get("drawing_number"), at=at, expect=fp,
+                                        action=action)
     try:
         save_doc(work)
     except Exception:
         if ops is not None:
-            corrections.save_fp(name, rec_before, by, drawing_number=doc.get("drawing_number"), at=at, expect=new_fp)
+            corrections.save_fp(name, rec_before, by, drawing_number=doc.get("drawing_number"), at=at, expect=new_fp,
+                                action=action)
         raise
     doc.clear()
     doc.update(work)
 
 
+RESTORE_KEYS = ("op", "target", "base", "refs", "value", "via")
+
+
+def _restorable(rec, cand_id, new):
+    """되돌린 그 후보의 연산이 지금 만든 연산과 같으면 그 op_id로 되살린 연산. 다시 수락이 같은 op_id를 되살려 나눈 기호·새 기기 id가
+    바뀌지 않는다(검토구간이 잃은 구성요소를 되찾음). 누가·언제는 지금 수락(new)의 값이다(앞 이력은 기록 log에 남는다).
+    없으면 None."""
+    for entry in reversed((rec or {}).get("log") or []):
+        for o in entry.get("removed_ops") or []:
+            if o.get("ai_candidate") == cand_id and all(o.get(k) == new.get(k) for k in RESTORE_KEYS):
+                return dict(o, **{k: new[k] for k in corrections.PROVENANCE if k in new})
+    return None
+
+
+def _claimed(ops, doc):
+    """이미 나눈 pdf 개체 {개체: op_id}: split 연산의 개체와, 옛 판에서 split 후보를 add_node로 수락한 연산의 그 후보 개체."""
+    split_cands = {c["cand_id"]: c for c in doc["candidates"] if c.get("field") == "split"}
+    out = {}
+    for o in ops:
+        if o.get("op") == "split":
+            objs = (o.get("value") or {}).get("objects") or ()
+        elif o.get("op") == "add_node" and o.get("ai_candidate") in split_cands:
+            objs = split_cands[o["ai_candidate"]].get("pdf_objects") or ()
+        else:
+            continue
+        out.update((p, o["op_id"]) for p in objs)
+    return out
+
+
 def accept(doc, cand_ids, original_ex, name, by, at=None):
     """후보를 수락한다. 사람 수정 기록에 연산(origin ai, 수락한 사람·시각)을 더하고 후보에 op_id를 적는다.
-    사람이 고친 자리(human_targets)는 덮지 않는다. 연산이 없는 필드(to_system)는 상태만 바꾼다.
+    연산은 기준 추출(corrections.resolve의 base, 없으면 원본)에 대고 만든다. split 후보는 나누기 입력 연산이고 대상은 덩어리다
+    (원본에 있는 덩어리면 원본에 댄다. 나뉜 뒤 기준 추출에서는 덩어리 번호가 바뀐다). 이미 나눈 개체와 겹치면 받지 않는다.
+    되돌렸던 후보를 다시 수락하면 지운 연산을 그대로 되살린다(_restorable).
+    사람이 고친 자리(human_targets)는 덮지 않는다(사람의 나누기는 다른 묶음이라 막지 않는다). 연산이 없는 필드(to_system)는 상태만 바꾼다.
     → 적용하지 못한 후보 [(cand_id, 사유)]. 후보 문서나 수정 기록이 읽은 뒤 바뀌었으면 store_io.Conflict(아무것도 쓰지 않음)."""
     at = at or now_utc()
     rec, fp = corrections.load_fp(name)
     ops = list((rec or {}).get("ops") or [])
-    human = {o.get("target") for o in ops if o.get("origin") != "ai"}
+    base = corrections.resolve(name, original_ex, ops)["base"] if any(corrections.is_input(o) for o in ops) else original_ex
+    in_original = {n["source_object_id"] for n in original_ex.get("nodes") or []}
+    human = {o.get("target") for o in ops if o.get("origin") != "ai" and o.get("op") != "split"}
     have = {o.get("op_id") for o in ops}
     work = copy.deepcopy(doc)
     failed, wrote = [], False
@@ -944,23 +1046,32 @@ def accept(doc, cand_ids, original_ex, name, by, at=None):
         if c["target"] in human:
             failed.append((c["cand_id"], "사람이 고친 자리라 AI 후보로 덮지 않음"))
             continue
-        op, value = _op_for(c)
-        if op:
-            if c.get("op_id") in have:  # 이미 들어간 연산(앞 저장 경합의 흔적)은 다시 만들지 않는다
-                failed.append((c["cand_id"], "이미 수정 기록에 있음"))
-                continue
-            try:
+        if c.get("op_id") in have:  # 이미 들어간 연산(앞 저장 경합의 흔적)은 다시 만들지 않는다
+            failed.append((c["cand_id"], "이미 수정 기록에 있음"))
+            continue
+        try:
+            ex = original_ex if c["field"] == "split" and c["target"] in in_original else base
+            op, value = _op_for(c, ex)
+            if op == "split":
+                claimed = _claimed(ops, work)
+                hit = sorted({claimed[p] for p in value["objects"] if p in claimed})
+                if hit:
+                    raise ValueError("이미 나눈 부분과 겹침(%s)" % ", ".join(hit))
+            if op:
                 target = None if op in ("add_node", "add_relation") else c["target"]
-                new = corrections.make_op(original_ex, op, target, value, by, at=at, existing_ops=ops, name=name)
-            except ValueError as exc:
-                failed.append((c["cand_id"], str(exc)))
-                continue
+                new = corrections.make_op(ex, op, target, value, by, at=at, existing_ops=ops, name=name)
+        except ValueError as exc:
+            failed.append((c["cand_id"], str(exc)))
+            continue
+        if op:
             new.update(origin="ai", ai_candidate=c["cand_id"], accepted_by=by, accepted_at=at)
+            new = _restorable(rec, c["cand_id"], new) or new
             ops.append(new)
+            have.add(new["op_id"])
             c["op_id"] = new["op_id"]
             wrote = True
         c.update(status="accepted", decided_at=at, decided_by=by)
-    _commit(doc, work, name, ops if wrote else None, fp, by, at)
+    _commit(doc, work, name, ops if wrote else None, fp, by, at, action="ai_accept")
     return failed
 
 
@@ -1003,16 +1114,54 @@ def reconcile(name, at=None):
     return changed
 
 
-def revert(doc, cand_ids, name, by, at=None):
-    """수락·거절을 되돌린다. 수락으로 넣은 연산은 사람 수정 기록에서 지운다(후보 문서와 함께)."""
+def _revert_plan(doc, cand_ids, ops):
+    """(되돌릴 후보의 수락 연산 op_id, 그 연산에 기댄 연산 op_id(corrections.dependents, 이어서)). 둘 다 기록 차례."""
+    own = {c["op_id"] for c in doc["candidates"]
+           if c["cand_id"] in cand_ids and c["status"] == "accepted" and c.get("op_id")}
+    deps = set()
+    for oid in own:
+        deps.update(corrections.dependents(ops, oid))
+    deps -= own
+    order = [o["op_id"] for o in ops]
+    return [i for i in order if i in own], [i for i in order if i in deps]
+
+
+def revert_preview(doc, cand_ids, name):
+    """되돌리기 전에 화면이 알릴 값: {"ops": [빠질 수락 연산 op_id], "dependents": [{"op_id", "op", "target", "candidate"}]}.
+    dependents는 그 수락이 만든 기호·기기에 기대 함께 빠지는 고침이다(candidate는 그것이 AI 후보 수락이면 그 cand_id, 아니면 None)."""
+    ops = (corrections.load(name) or {}).get("ops") or []
+    own, deps = _revert_plan(doc, cand_ids, ops)
+    by_id = {o["op_id"]: o for o in ops}
+    return {"ops": own, "dependents": [{"op_id": i, "op": by_id[i]["op"], "target": by_id[i].get("target"),
+                                        "candidate": by_id[i].get("ai_candidate")} for i in deps]}
+
+
+class RevertNeedsConfirm(ValueError):
+    """되돌리면 기댄 사람 고침도 함께 빠지는데 그 목록을 확인받지 않은 호출. dependents는 확인받아야 할 사람 고침 op_id."""
+
+    def __init__(self, dependents):
+        super().__init__("이 수락에 기대 사람이 한 고침 %d건이 함께 빠집니다. 미리 알린 뒤 다시 되돌리세요." % len(dependents))
+        self.dependents = dependents
+
+
+def revert(doc, cand_ids, name, by, at=None, confirm=None):
+    """수락·거절을 되돌린다. 수락으로 넣은 연산과 그 연산에 기댄 고침(revert_preview의 dependents)을 사람 수정 기록에서
+    한 번에 지우고(후보 문서와 함께), 기댄 고침이 AI 후보 수락이면 그 후보도 제안으로 돌린다. → 지운 op_id 목록(기록 차례).
+    기댄 고침 가운데 사람이 한 것이 있으면 confirm(revert_preview의 dependents op_id 목록)이 그것을 모두 담아야 한다.
+    아니면 아무것도 지우지 않고 RevertNeedsConfirm(부르는 쪽이 미리 알림을 빠뜨려도 사람 고침이 조용히 지워지지 않게)."""
     at = at or now_utc()
     rec, fp = corrections.load_fp(name)
     ops = list((rec or {}).get("ops") or [])
+    own, deps = _revert_plan(doc, cand_ids, ops)
+    by_id = {o["op_id"]: o for o in ops}
+    human = [i for i in deps if by_id[i].get("origin") != "ai"]
+    if human and not set(human) <= set(confirm or ()):
+        raise RevertNeedsConfirm(human)
+    drop = set(own) | set(deps)
     work = copy.deepcopy(doc)
-    drop = set()
     for c in work["candidates"]:
-        if c["cand_id"] in cand_ids and c["status"] in ("accepted", "rejected"):
-            if c.get("op_id"):
-                drop.add(c["op_id"])
+        if (c["cand_id"] in cand_ids and c["status"] in ("accepted", "rejected")) or (
+                c["status"] == "accepted" and c.get("op_id") in drop):
             c.update(status="proposed", op_id=None, decided_at=at, decided_by=by)
-    _commit(doc, work, name, [o for o in ops if o["op_id"] not in drop] if drop else None, fp, by, at)
+    _commit(doc, work, name, [o for o in ops if o["op_id"] not in drop] if drop else None, fp, by, at, action="ai_revert")
+    return [o["op_id"] for o in ops if o["op_id"] in drop]

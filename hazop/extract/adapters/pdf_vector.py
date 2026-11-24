@@ -27,6 +27,7 @@
 import collections
 import hashlib
 import io
+import json
 import math
 import os
 import re
@@ -38,6 +39,7 @@ from hazop.kg.docextract import TAG_RE
 from .. import drawio, rules, symbols
 
 # 나눈 모듈(F1-0). 옮긴 이름을 예전 경로(pdf_vector.이름)로도 쓸 수 있게 모두 다시 내보낸다
+from .pdf_vector_common import Stopped, _checkpoint, stoppable  # noqa: F401  (멈춤 장치, corrections가 씀)
 from .pdf_vector_common import (
     _num, _bbox_pts, _union, _expand, _inside, _pt_box_dist, _box_gap, _depth, _w, _h, _seg_dist, _segs, _poly_dist,
     _seg_cross, _poly_box_dist, _uf_groups, _center, _is_circle, _is_tombstone, _is_chevron, _is_triangle, _is_half_disc, _issue,
@@ -440,22 +442,28 @@ def load_page(path, page=0):
 _CACHE_MAX = 8
 _cache = collections.OrderedDict()
 _cache_lock = threading.Lock()
+_shapes_cache = collections.OrderedDict()   # (sha256, 쪽, 읽기 판) -> object_shapes 값
 
 
 def analyze_bytes(data, page=0, params=None, splits=None):
     """PDF 바이트 한 쪽 → (sha256, page_count, width, height, analysis). (해시, 쪽, 문턱, 나눔)이 같으면 다시 분석하지 않는다.
     analysis는 호출끼리 함께 쓰므로 고치지 않는다(build_extraction은 읽기만 한다). splits는 analyze와 같다."""
     sha = hashlib.sha256(data).hexdigest()
-    key = (sha, page, tuple(sorted((params or {}).items())))
+    # 문턱은 기본값과 합친 꼴로 열쇠에 넣는다. 기준 추출(corrections.build_base)은 원본 추출의 설정 전체를 넘기고 AI 실행·미리보기는
+    # None을 넘기는데, 값이 같으면 같은 분석이다(analyze가 같은 합치기를 한다)
+    key = (sha, page, tuple(sorted(dict(PARAMS, **(params or {})).items())))
     if splits:
-        key += (tuple((tuple(sp["node"]), tuple(tuple(g) for g in sp["groups"])) for sp in splits),)
+        key += (json.dumps(splits, sort_keys=True),)
     with _cache_lock:
         hit = _cache.get(key)
         if hit is not None:
             _cache.move_to_end(key)
             return (sha,) + hit
+    _checkpoint()
     page_count, width, height, words, prims = load_page(io.BytesIO(data), page)
-    hit = (page_count, width, height, analyze(width, height, words, prims, params, splits))
+    _remember_shapes(sha, page, prims)
+    analysis = analyze(width, height, words, prims, params, splits)
+    hit = (page_count, width, height, analysis)
     with _cache_lock:
         _cache[key] = hit
         while len(_cache) > _CACHE_MAX:
@@ -1213,6 +1221,7 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     pieces = [{"pts": list(p["pts"]), "id": p["id"], "width": p.get("width"), "dash": bool(p.get("dash")),
                "hop": bool(p.get("curved")) and _poly_length(p) <= prm["hop_arc_max"]} for p in polys]
     pieces, att = _cut_through_bodies(pieces, syms, prm)
+    _checkpoint()
     ends = []  # (piece index, k, point)
     for i, pc in enumerate(pieces):
         ends += [(i, k, pt) for k, pt in ((0, pc["pts"][0]), (1, pc["pts"][-1])) if (i, k) not in att]
@@ -1290,10 +1299,12 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
             free.append((i, k, pt))
     # 엇갈림 끊김(도면 관례: 한쪽 선을 다른 선 앞뒤에서 끊어 그림)은 분기가 아니라 그 선을 건너 이어지는 배관이다
     over = _crossing_strokes(pieces, att, prm)
+    _checkpoint()
     for ik in over:
         del att[ik]
     free += [(i, k, pt) for (i, k), (_, pt) in over.items()]
     crossed, gap_bridges = _crossing_gaps(pieces, free, prm)
+    _checkpoint()
     crossed |= set(over)
     gap_bridges += [(pt, over[mate][1]) for ik, (mate, pt) in over.items() if ik < mate]
     bridges = list(bridges) + gap_bridges
@@ -1318,6 +1329,7 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
     # 선 끝이 다른 선 중간에 닿으면 그 선을 나눈다(분기)
     splits = {}
     for i, k, pt in free:
+        _checkpoint()
         if (i, k) in crossed or at_hop(i, pt):
             continue
         for j, pc in enumerate(pieces):
@@ -1369,6 +1381,7 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
                         or same_marker(pend[a][2], pend[b][2]) or bridged(pend[a][2], pend[b][2]))
     vertex = {}
     tees = []
+    _checkpoint()
     for g in groups:
         members = [pend[a] for a in g]
         cx = sum(m[2][0] for m in members) / len(members)
@@ -1400,8 +1413,10 @@ def _build_solid(syms, polys, markers, prm, bridges=(), mouths=()):
             incident.setdefault(v, []).append((i, k))
     used = set()
     chains = []
+    _checkpoint()
     order = sorted(range(len(pieces)), key=lambda i: pieces[i]["id"])
     for start in order:
+        _checkpoint()
         if start in used:
             continue
         # 사슬의 한쪽 끝을 찾을 때까지 거슬러 간다
@@ -3399,18 +3414,25 @@ def analyze(width, height, words, prims, params=None, splits=None):
     주면 기호 묶기 뒤에 그 노드를 묶음마다 새 기호로 나누고(_carve_splits) 배관 사슬을 다시 만든다. 없으면 결과가 그대로다."""
     prm = dict(PARAMS)
     prm.update(params or {})
+    _checkpoint()
     cls = _classify_primitives(width, height, prims, prm)
+    _checkpoint()
     _promote_black_symbols(cls, prm)
     _mark_actuator_bodies(cls, prm)
+    _checkpoint()
     blocks = _text_blocks(words, prm)
     for p in cls["panels"]:  # 범례 1.7-1 2/4: 코일 판은 HC(가열)·CC(냉각) 글자를 단다. 글자 없는 무늬 판은 여과 판
         p["coil"] = any(_inside(_center(b["bbox"]), p["rect"]["bbox"]) and PANEL_COIL_WORDS & set(b["text"].upper().split())
                         for b in blocks)
     _mark_class_boundaries(cls, blocks, prm)
     _boundary_marks(cls, prm)
+    _checkpoint()
     ticks, marked = _line_ticks(cls["polys"], prm, cls["bodies"])
+    _checkpoint()
     syms, polys, markers, dashes = _group_symbols(cls, prm)
+    _checkpoint()
     syms, polys = _sparger_rows(syms, polys, prm)
+    _checkpoint()
     if splits:
         syms, polys, markers, dashes = _carve_splits(syms, polys, markers, dashes, splits)
     # 빗금은 기호 묶기가 끝난 뒤에 남은 선에서만 뺀다. 기호 장식선으로 흡수된 빗금은 그대로 두어 기호 모양과 번호가
@@ -3419,12 +3441,15 @@ def analyze(width, height, words, prims, params=None, splits=None):
     cls["ticks"] = [p for p in polys if p["id"] in ticks]
     polys = [p for p in polys if p["id"] not in ticks]
     tees, chains = _build_solid(syms, polys, markers, prm, cls["bridges"], cls["mouths"])
+    _checkpoint()
     pipe_dashes = _pipe_dash_paths(cls["dash_paths"], dashes, polys, chains, prm)
+    _checkpoint()
     if pipe_dashes:
         drawn = {p["id"] for p in pipe_dashes}
         dashes = [d for d in dashes if d.get("src") not in drawn]
         tees, chains = _build_solid(syms, polys + pipe_dashes, markers, prm,
                                     cls["bridges"] + _dash_gap_bridges(pipe_dashes, prm), cls["mouths"])
+        _checkpoint()
         for ch in chains:
             ch["pipe_dash_objects"] = [e for e in ch["evidence"] if e in drawn]
             if ch["pipe_dash_objects"] and len(ch["pipe_dash_objects"]) == len(ch["evidence"]):
@@ -3437,6 +3462,7 @@ def analyze(width, height, words, prims, params=None, splits=None):
                 for a, b in _segs(ch["pts"])):
             ch["pneumatic"] = True
     chains += _contact_chains(syms, prm) + _housing_chains(syms, cls["cells"], prm)
+    _checkpoint()
     dots = _line_dots(dashes, polys, prm)  # 실선 위 점(매설 배관 무늬)은 점선 조각이 아니다
     cls["dots"] = [d for d in dashes if d["id"] in dots]
     # 점선도 검정 견본으로 올린 몸통(seed) 밑을 끊기지 않고 지나갈 수 있다. 몸통 안의 조각을 빼면 사슬이 거기서 끊겨
@@ -3445,11 +3471,13 @@ def analyze(width, height, words, prims, params=None, splits=None):
     chains += _build_dashed(syms, [d for d in dashes if d["id"] not in dots
                                    and not any(_inside(_center(d["bbox"]), c) for c in cores)], markers, prm)
     chains = _dashed_continuations(chains, prm)
+    _checkpoint()
     vents, chains = _vent_ends(chains, markers, polys, prm)
     syms += vents
     stubs, chains, tees = _stub_ends(tees, chains)
     syms += stubs
     syms = _merge_appendages(syms, chains, prm)
+    _checkpoint()
     for ch in chains:  # 흐름 방향: 사슬 위·끝에 남은 화살촉(pdf_vector_flow)
         if not ch.get("dashed") or ch.get("continues_pipe"):
             ch["flow"] = _chain_flow(ch, markers, prm)
@@ -3462,18 +3490,31 @@ SPLIT_ROLES = ("bodies", "strokes", "markers", "dashes")
 
 
 def _carve_splits(syms, polys, markers, dashes, splits):
-    """AI 나눔을 기호 묶음에 넣는다. 나눔마다 그 노드의 pdf 개체를 가진 기호(source)에서 묶음(groups)마다 그 개체를 떼어 새 기호를
-    만든다. 몸체나 선이 하나도 없는 묶음은 기호가 될 수 없어 건너뛴다. 개체를 떼인 기호는 몸체만 남기고, 그 노드에 들던 선·화살촉·
-    점선 조각은 놓아 준다(배관 사슬로 다시 읽혀 새 기호끼리 이어진다). 몸체가 남지 않은 기호는 없앤다.
+    """AI 나눔이나 사람의 나누기 연산을 기호 묶음에 넣는다. 나눔마다 그 노드의 pdf 개체를 가진 기호(source)에서 묶음(groups)마다
+    그 개체를 떼어 새 기호를 만든다. 몸체나 선이 하나도 없는 묶음은 기호가 될 수 없어 건너뛴다. 개체를 떼인 기호는 몸체만 남기고,
+    그 노드에 들던 선·화살촉·점선 조각은 놓아 준다(배관 사슬로 다시 읽혀 새 기호끼리 이어진다). 몸체가 남지 않은 기호는 없앤다.
+    splits: [{"node": [노드의 pdf 개체 id] 또는 None, "groups": [[id, ...] 또는 {"name", "objects": [id, ...]}]}].
+    node가 None이면 묶음마다 그 개체를 가장 많이 가진 기호(같으면 앞 기호)를 골라 그 기호들의 개체 전체가 노드다(사람 연산은
+    다시 추출한 쪽의 덩어리를 모른다). 고른 기호 밖의 개체는 떼지 않는다.
+    이름 있는 묶음의 새 기호는 그 이름을 id로 받는다(build_extraction). 개체를 떼인 기호(몸체)에는 떼기 전 개체를 carved_from으로
+    남긴다(_sym_numbers가 몸체에 덩어리 번호를 잇게).
     → (기호, 선, 화살촉, 점선 조각). 새 기호는 끝에 붙는다."""
     syms = [s for s in syms if s.alive]
     polys, markers, dashes = list(polys), list(markers), list(dashes)
     made = []
     for sp in splits:
-        node = set(sp["node"])
+        groups = [(g.get("name"), list(g["objects"])) if isinstance(g, dict) else (None, list(g)) for g in sp["groups"]]
+        if sp.get("node") is None:
+            node = set()
+            for _, g in groups:
+                hold = [s for s in syms if s.alive and set(g) & set(s.evidence())]
+                best = max(hold, key=lambda s: len(set(g) & set(s.evidence())), default=None)
+                node |= set(best.evidence()) if best is not None else set()
+        else:
+            node = set(sp["node"])
         sources = [s for s in syms if s.alive and node & set(s.evidence())]
         touched = set()
-        for group in sp["groups"]:
+        for name, group in groups:
             ids = set(group) & node
             taken = {role: [m for s in sources for m in getattr(s, role) if m["id"] in ids] for role in SPLIT_ROLES}
             if not (taken["bodies"] or taken["strokes"]):
@@ -3481,12 +3522,16 @@ def _carve_splits(syms, polys, markers, dashes, splits):
             for s in sources:
                 if any(m["id"] in ids for role in SPLIT_ROLES for m in getattr(s, role)):
                     touched.add(id(s))
+                    if not hasattr(s, "carved_from"):
+                        s.carved_from = tuple(s.evidence())
                     for role in SPLIT_ROLES:
                         setattr(s, role, [m for m in getattr(s, role) if m["id"] not in ids])
             new = _Sym(taken["bodies"] + taken["strokes"], stroke_only=not taken["bodies"])
             for role in ("markers", "dashes"):
                 if taken[role]:
                     new.add(taken[role], role)
+            if name:
+                new.name = name
             made.append(new)
         for s in sources:
             if id(s) not in touched:
@@ -3504,6 +3549,86 @@ def _carve_splits(syms, polys, markers, dashes, splits):
     return [s for s in syms if s.alive] + made, polys, markers, dashes
 
 
+def _sym_numbers(syms, numbering):
+    """기호마다 sym 번호. numbering(번호 = 자리 + 1인 기호 pdf 개체 목록, 비운 자리는 None)이 없으면 목록 순번이다.
+    있으면(나눔으로 다시 추출) pdf 개체가 똑같은 기호가 그 번호를 받고, 조각을 떼인 덩어리의 몸체(carved_from)는 떼기 전 개체와
+    지금 개체가 모두 그 덩어리 하나에 들 때 덩어리 번호를 잇는다. 나머지(풀려난 선을 받은 기호, 새 사슬의 배출구·끝막음)는
+    목록 끝 뒤 번호를 받는다. 옛 번호는 같은 개체이거나 그 개체에서 떼고 남은 몸체에만 가므로 같은 id가 다른 기호를 가리키지
+    않는다. 이름 있는 기호(사람의 나누기)는 번호를 쓰지 않는다."""
+    if not numbering:
+        return list(range(1, len(syms) + 1))
+    exact, owner = {}, {}
+    for i, ev in enumerate(numbering, 1):
+        if ev is not None:
+            exact.setdefault(tuple(ev), i)
+            owner.update((o, i) for o in ev)
+    out, used = [None] * len(syms), set()
+    plain = [(k, s) for k, s in enumerate(syms) if not getattr(s, "name", None)]
+    for k, s in plain:
+        i = exact.get(tuple(s.evidence()))
+        if i is not None and i not in used:
+            out[k] = i
+            used.add(i)
+    for k, s in plain:
+        if out[k] is not None or not hasattr(s, "carved_from"):
+            continue
+        held = {owner.get(o) for o in set(s.carved_from) | set(s.evidence())}
+        i = held.pop() if len(held) == 1 else None
+        if i is not None and i not in used:
+            out[k] = i
+            used.add(i)
+    nxt = len(numbering)
+    for k, s in plain:
+        if out[k] is None:
+            nxt += 1
+            out[k] = nxt
+    return [x if x is not None else 0 for x in out]
+
+
+def reader_version():
+    """원시 요소를 읽는 pdfplumber 판. 같은 바이트도 판이 바뀌면 pdf-path 순번이 바뀔 수 있어 연산에 적는다."""
+    import pdfplumber
+    return "pdfplumber-%s" % pdfplumber.__version__
+
+
+def _shapes_of(prims):
+    out = {}
+    for i, pr in enumerate(prims):
+        for k, (pts, closed, ext, curved) in enumerate(pr["subpaths"]):
+            if len(pts) < 1:
+                continue
+            b = _bbox_pts(ext)
+            shut = bool(closed and len(pts) >= 3) or (len(pts) > 4 and tuple(pts[0]) == tuple(pts[-1]))
+            out["pdf-path-%04d" % i + ("" if k == 0 else "-%d" % k)] = [round(v, 1) for v in b] + [len(pts), shut]
+    return out
+
+
+def _remember_shapes(sha, page, prims):
+    key, shapes = (sha, page, reader_version()), _shapes_of(prims)
+    with _cache_lock:
+        _shapes_cache[key] = shapes
+        _shapes_cache.move_to_end(key)
+        while len(_shapes_cache) > _CACHE_MAX:
+            _shapes_cache.popitem(last=False)
+
+
+def object_shapes(path, page=0):
+    """쪽의 pdf 개체 전부(기호·틀·표 칸·점선 경로 포함) {id: [x0, y0, x1, y1, 점 수, 닫힘]}. 좌표는 0.1pt 반올림.
+    닫힘은 닫힌 경로이거나 첫 점과 끝 점이 같은 4점 넘는 꼴이다. 사람 연산이 가리킨 개체를 다시 찾을 때 쓴다.
+    (파일 sha256, 쪽, 읽기 판) 열쇠로 프로세스 안에 둔다(분석이 쪽을 읽을 때도 채운다). 돌려준 값은 함께 쓰므로 고치지 않는다."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    key = (hashlib.sha256(data).hexdigest(), page, reader_version())
+    with _cache_lock:
+        hit = _shapes_cache.get(key)
+        if hit is not None:
+            _shapes_cache.move_to_end(key)
+            return hit
+    _remember_shapes(key[0], page, load_page(io.BytesIO(data), page)[4])
+    with _cache_lock:
+        return _shapes_cache[key]
+
+
 def member_shapes(path, page=0, params=None):
     """쪽 분석의 기호 개체 {pdf 개체 id: (bbox, 몫)}. 몫은 SPLIT_ROLES 가운데 하나.
     노드의 evidence.pdf_objects를 쪽 좌표로 펼 때 쓴다(hazop.extract.ai_split). 같은 쪽을 막 추출했으면 다시 분석하지 않는다."""
@@ -3517,10 +3642,11 @@ def member_shapes(path, page=0, params=None):
     return out
 
 
-def build_extraction(analysis, width, height, page_count, page, file_label, sha):
-    """중간 결과 → extraction dict(drawio.extract와 같은 최상위·노드·관계 키)."""
+def build_extraction(analysis, width, height, page_count, page, file_label, sha, numbering=None):
+    """중간 결과 → extraction dict(drawio.extract와 같은 최상위·노드·관계 키). numbering은 _sym_numbers의 번호 기준."""
     prm = analysis["params"]
     syms, tees, chains, blocks = analysis["symbols"], analysis["tees"], analysis["chains"], list(analysis["blocks"])
+    _checkpoint()
     cls = analysis["classified"]
     blockers, unknowns = [], []
     if not words_or_paths(analysis):
@@ -3786,9 +3912,15 @@ def build_extraction(analysis, width, height, page_count, page, file_label, sha)
          and not (si in hits and hits[si].outcome == "matched")
          and is_wave_mark(s.bodies + s.strokes + s.markers + s.dashes)], blocks, prm["label_gap_max"])
     class_marks = {}
+    numbers = _sym_numbers(syms, numbering)
+    _checkpoint()
     for n, s in enumerate(syms, 1):
         local_id = "local-node-%03d" % n
-        sid = "pdf-p%d-sym-%04d" % (page, n)
+        name = getattr(s, "name", None)
+        if name:  # 사람의 나누기 연산이 만든 기호: 연산에 묶인 id라 다른 나누기가 더해지거나 빠져도 그대로다
+            sid = "pdf-p%d-%s" % (page, name)
+        else:
+            sid = "pdf-p%d-sym-%04d" % (page, numbers[n - 1])
         local_of[id(s)] = (local_id, sid)
         if id(s) in noise:
             dropped.append({"source_object_id": sid, "label_text": "", "bbox": _box_out(s.bbox), "reason": noise[id(s)]})
@@ -4211,6 +4343,21 @@ def words_or_paths(analysis):
     return bool(analysis["blocks"] or cls["bodies"] or cls["polys"] or cls["dashes"])
 
 
+REGISTRATION_BLOCKERS = ("registration_not_completed", "registration_hash_mismatch", "registration_page_mismatch")
+REGISTRATION_UNKNOWN = "registration_unknown"
+UNREGISTERED_UNKNOWNS = ("not_registered", "missing_drawing_number")  # 등록 경로에서는 남기지 않는 미확인
+
+
+def carry_registration(validation, registered):
+    """같은 쪽을 등록정보 없이 다시 추출한 validation에 원본(registered, 등록 경로의 추출)의 ① 등록정보 검사 결과를 옮긴
+    새 validation. apply_registration과 같은 규칙이고, 나누기 같은 입력 연산으로 다시 추출할 때 쓴다(등록정보 원문은 추출
+    결과에 남지 않으므로 원본이 그 검사로 남긴 줄을 그대로 옮긴다)."""
+    blockers = list(validation["blockers"]) + [b for b in registered["blockers"] if b["check"] in REGISTRATION_BLOCKERS]
+    unknowns = [u for u in validation["unknowns"] if u["check"] not in UNREGISTERED_UNKNOWNS]
+    unknowns += [u for u in registered["unknowns"] if u["check"] == REGISTRATION_UNKNOWN]
+    return {"status": "blocked" if blockers else "passed", "blockers": blockers, "unknowns": unknowns}
+
+
 def apply_registration(result, registration):
     """① 등록정보를 추출 결과에 반영한다(drawio.extract의 registration 경로와 같은 규칙).
     식별 값은 ①에서 사람이 확정한 값만 쓰고 표제란 값은 title_block_candidates로만 남긴다."""
@@ -4218,7 +4365,7 @@ def apply_registration(result, registration):
     val = result["validation"]
     # 등록 경로의 식별 값은 등록정보가 정한다(drawio 등록 경로와 같이 표제란 누락은 미확인으로 남기지 않음)
     blockers = val["blockers"]
-    unknowns = [u for u in val["unknowns"] if u["check"] not in ("not_registered", "missing_drawing_number")]
+    unknowns = [u for u in val["unknowns"] if u["check"] not in UNREGISTERED_UNKNOWNS]
     drawing = result["drawing"]
     drawing["identification_basis"] = "registration_confirmed"
     drawing["title_block_candidates"] = {f: drawing.get(f) for f in ("drawing_number", "revision", "title")}
@@ -4227,17 +4374,17 @@ def apply_registration(result, registration):
         drawing[field] = reg.get(reg_field)
     reg_val = reg.get("validation") or {}
     if reg.get("status") != "registered" or reg_val.get("status") != "passed" or reg_val.get("blockers"):
-        _issue(blockers, "registration_not_completed", "등록 완료(registered·passed)가 아닌 등록정보: status=%r"
+        _issue(blockers, REGISTRATION_BLOCKERS[0], "등록 완료(registered·passed)가 아닌 등록정보: status=%r"
                % reg.get("status"), field="status")
     if reg.get("sha256") != result["source"]["sha256"]:
-        _issue(blockers, "registration_hash_mismatch", "입력 파일 해시가 등록정보의 sha256과 다름", field="sha256")
+        _issue(blockers, REGISTRATION_BLOCKERS[1], "입력 파일 해시가 등록정보의 sha256과 다름", field="sha256")
     page_id = result["source_context"]["page_id"]
     registered_pages = [pid for d in reg.get("documents") or [] for pid in d.get("page_ids") or []]
     if page_id not in registered_pages:
-        _issue(blockers, "registration_page_mismatch", "추출한 페이지 %r 가 등록정보 page_ids %r 에 없음"
+        _issue(blockers, REGISTRATION_BLOCKERS[2], "추출한 페이지 %r 가 등록정보 page_ids %r 에 없음"
                % (page_id, registered_pages), field="page_id")
     for u in reg_val.get("unknowns", []):
-        _issue(unknowns, "registration_unknown", "등록 단계 미확인: %s" % u["reason"], field=u["field"])
+        _issue(unknowns, REGISTRATION_UNKNOWN, "등록 단계 미확인: %s" % u["reason"], field=u["field"])
     val["unknowns"] = unknowns
     val["status"] = "blocked" if blockers else "passed"
     result["project_id"] = reg.get("project_id")
@@ -4252,12 +4399,19 @@ def apply_registration(result, registration):
     return result
 
 
-def extract(path, page=0, repo_root=None, params=None, registration=None, splits=None):
+def symbol_objects(path, page=0, params=None):
+    """나눔 없는 분석의 기호마다 pdf 개체(정렬한 튜플), 기호 순서대로. 자리 + 1이 그 분석의 sym 번호다."""
+    with open(path, "rb") as fh:
+        return [tuple(s.evidence()) for s in analyze_bytes(fh.read(), page, params)[4]["symbols"]]
+
+
+def extract(path, page=0, repo_root=None, params=None, registration=None, splits=None, numbering=None):
     """벡터 PDF 한 쪽 → extraction dict. pdfplumber가 없으면 ImportError.
     registration: ① 등록정보(dict). 주면 apply_registration으로 식별 정보를 채우고 검사한다.
-    splits: AI 나눔(analyze). 읽기 품질 검사의 '스크립트 + AI 후보' 값을 잴 때만 준다."""
+    splits: 나눔(analyze). 기준 추출(hazop.extract.corrections.build_base)만 준다. numbering: 나눔이 다른 기호의 번호를 밀지
+    않게 넘기는 번호 기준(_sym_numbers, build_base가 원본 추출에 맞춰 짓는다). 없으면 목록 순번이다."""
     with open(path, "rb") as fh:
         sha, page_count, width, height, analysis = analyze_bytes(fh.read(), page, params, splits)
     label = paths.rel_or_abs(path, repo_root) if repo_root else path
-    result = build_extraction(analysis, width, height, page_count, page, label, sha)
+    result = build_extraction(analysis, width, height, page_count, page, label, sha, numbering)
     return apply_registration(result, registration) if registration is not None else result

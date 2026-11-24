@@ -900,7 +900,7 @@ def _confirmed_graph(cf, name, disk_graph):
     디스크의 graph.json은 AI 후보 수락처럼 그래프를 다시 만들지 않는 저장 뒤에 낡을 수 있어 내용으로 쓰지 않는다.
     반환 (상태, 남은 미확인 수, 그래프 또는 None, 원본 추출 결과, 지문, 사유, 디스크 graph.json과 달라 다시 만들었는가).
     그래프를 만들 수 없으면 상태 'graph_error'."""
-    from hazop.graph import build
+    from hazop.graph import build, project, sources
     try:
         st, original, corrected = cf.load_sheet(name)
     except (OSError, ValueError):
@@ -909,7 +909,8 @@ def _confirmed_graph(cf, name, disk_graph):
     if st["state"] != "confirmed":
         return st["state"], left, None, None, None, None, False
     try:
-        graph = build.build_graph(corrected, extraction_file=paths.rel_or_abs(cf.extraction_path(name), paths.work_root()))
+        graph = build.build_graph(corrected, extraction_file=paths.rel_or_abs(cf.extraction_path(name), paths.work_root()),
+                                  graph_id=sources.sheet_name(project.project_id_of(corrected), corrected))  # 디스크 그래프와 같은 시트 이름
     except Exception as exc:  # noqa: BLE001 - 어떤 이유로든 다시 만들 수 없으면 그 쪽만 내보내지 않고 사유를 적는다
         return "graph_error", left, None, None, st["fingerprint"], "확정한 자료로 그래프를 다시 만들 수 없음(%s)" % exc, False
     rebuilt = disk_graph is None or disk_graph.get("graph_version") != graph.get("graph_version")

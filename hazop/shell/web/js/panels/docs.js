@@ -39,11 +39,11 @@ function Items({ detail }) {
 function Ask({ d }) {
   const busy = D.useDocs((s) => s.busy);
   const [old, setOld] = useState(d.ask_revision[0].material_id);
-  return html`<div class="docs-ask"><span>같은 문서의 새 판인가요?</span>
-    ${d.ask_revision.length > 1 ? html`<select aria-label="옛 판 고르기" value=${old} onChange=${(e) => setOld(e.target.value)}>
+  return html`<div class="docs-ask"><span>같은 문서의 새 개정인가요?</span>
+    ${d.ask_revision.length > 1 ? html`<select aria-label="이전 개정 고르기" value=${old} onChange=${(e) => setOld(e.target.value)}>
       ${d.ask_revision.map((c) => html`<option key=${c.material_id} value=${c.material_id}>${c.title}</option>`)}</select>`
-      : html`<span class="muted">옛 판: ${d.ask_revision[0].title}</span>`}
-    <${Btn} sm=${true} kind="primary" label="새 판으로 지정" disabled=${busy} onClick=${() => D.answerRevision(d.material_id, "replace", old)}>새 판으로<//>
+      : html`<span class="muted">이전 개정: ${d.ask_revision[0].title}</span>`}
+    <${Btn} sm=${true} kind="primary" label="새 개정으로 지정" disabled=${busy} onClick=${() => D.answerRevision(d.material_id, "replace", old)}>새 개정으로<//>
     <${Btn} sm=${true} label="다른 문서로 두기" disabled=${busy} onClick=${() => D.answerRevision(d.material_id, "separate")}>다른 문서<//></div>`;
 }
 
@@ -57,7 +57,7 @@ function DocRow({ d }) {
   return html`<div class=${"docs-doc" + (d.replaced_by ? " old" : "")} key=${d.material_id}>
     <div class="docs-top"><b class="docs-name">${d.title}</b>
       ${st ? html`<${Chip} kind=${st[1]}>${st[0]}<//>` : null}
-      ${d.replaced_by ? html`<${Chip} title=${d.replaced_by.reason || ""}>옛 판<//>` : d.state === "ok" && !d.in_kg ? html`<${Chip} kind="warn" title="지금 지식그래프에 이 판의 지식이 들어 있지 않습니다">지식그래프 반영 전<//>` : null}
+      ${d.replaced_by ? html`<${Chip} title=${d.replaced_by.reason || ""}>이전 개정<//>` : d.state === "ok" && !d.in_kg ? html`<${Chip} kind="warn" title="지금 지식그래프에 이 문서의 지식이 들어 있지 않습니다">지식그래프 반영 전<//>` : null}
       <span class="docs-acts">
         ${d.state === "ok" ? html`<${Btn} sm=${true} kind="ghost" label=${(open ? "항목 접기 " : "뽑힌 항목 보기 ") + d.title} onClick=${() => D.toggleItems(d.material_id)}>${open ? "접기" : "항목"}<//>` : null}
         ${d.state !== "failed" ? html`<${Btn} sm=${true} kind="ghost" icon="refresh" label=${"추출 다시 하기 " + d.title} title="추출 다시 하기" disabled=${busy} onClick=${() => D.extractAgain(d.material_id)} />` : null}</span></div>
@@ -70,7 +70,7 @@ function DocRow({ d }) {
 
 function KgBand({ kg }) {
   const out = [];
-  if (kg.build_error) out.push(html`<${Notice} kind="err" icon="alert-triangle" key="b">지식그래프를 다시 만들지 못했습니다: ${kg.build_error}. 문서의 '추출 다시 하기'로 다시 만드세요.<//>`);
+  if (kg.build_error) out.push(html`<${Notice} kind="err" icon="alert-triangle" key="b">지식그래프에 반영하지 못했습니다: ${kg.build_error}. 문서의 '추출 다시 하기'로 다시 해 보세요.<//>`);
   if (kg.state === "unreadable" || kg.state === "blocked") out.push(html`<${Notice} kind="warn" icon="alert-triangle" key="s">${kg.text}<//>`);
   (kg.recheck || []).forEach((t, i) => out.push(html`<${Notice} kind="warn" icon="alert-triangle" key=${"r" + i}>${t}<//>`));
   return out;

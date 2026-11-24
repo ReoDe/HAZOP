@@ -97,7 +97,7 @@ def _kg_details(engine):
                  "after": "%s(%s)" % (expect.STATES.get(to, to), expect.ACTION_LABELS[a["judgement"]])},
                 {"label": "사유(AI가 씀)", "after": show_value(a.get("reason"))},
                 {"label": "근거(AI가 씀)", "after": show_value(a.get("evidence"))},
-                {"label": "항목 지문", "after": "%s · 판 %s" % (str(found["digest"])[:12], str(ctx["ver"]).split("|")[-1][:12])}]
+                {"label": "대조 기준", "after": "%s · %s" % (str(found["digest"])[:12], str(ctx["ver"]).split("|")[-1][:12]), "hidden": True}]
     return details
 
 
@@ -107,7 +107,7 @@ def _kg_execute(engine):
         from hazop.kg import expect
         basis = call.basis or {}
         if not basis.get("digest"):
-            return _refused("확인 상자에서 본 항목 지문이 없어 저장하지 않았습니다.", "stale", args.get("id", ""))
+            return _refused("확인 상자를 연 뒤 내용이 바뀌어 저장하지 않았습니다. 다시 요청해 주세요.", "stale", args.get("id", ""))
         out = api_kg.judge(engine, args["id"], args["judgement"], basis["digest"], basis["state"], args.get("reason") or "",
                            args.get("evidence") or "", ver=basis["ver"], by=call.confirmed_by)
         return _ok("잠재 후보 %s을(를) '%s'(으)로 판단했습니다(지금 상태: %s)."
@@ -206,7 +206,7 @@ def _aireview_details(engine):
                 after = "%s · %s 끝(%s에 붙은 배관)을 %s에 잇기" % (after, c["open_end"], c.get("attached_local") or "-", c.get("partner_local") or "-")
             out.append({"label": "%s %s · %s" % (r["field_label"], cid, r.get("local_id") or ""), "before": r["current"] or "(비어 있음)",
                         "after": "%s · 확신도 %.2f · AI 근거: %s" % (after, r["confidence"], r["reason"] or "없음")})
-        out.append({"label": "후보 판", "after": str(ver)})
+        out.append({"label": "대조 기준", "after": str(ver), "hidden": True})
         return out
     return details
 
@@ -257,7 +257,7 @@ def _aireview_execute(engine, action):
         if out.get("notes"):
             text += " " + " ".join(out["notes"][:2])
         if out.get("graph_stale") and not out.get("notes"):     # 저장은 됐다(ok). 그래프만 고치기 전 상태
-            text += " 저장했지만 그래프를 다시 만들지 못해 도면·그래프는 아직 고치기 전 상태입니다."
+            text += " 저장했지만 도면 반영은 끝내지 못해 도면 연결 정보는 아직 고치기 전 상태입니다."
         if out.get("recheck"):
             text += " " + " ".join(str(r) for r in out["recheck"][:3])
         return _ok(text, topics=[])
@@ -295,8 +295,20 @@ def _sources_details(engine):
         return [{"label": "도면 번호", "after": a["drawing_number"]},
                 {"label": "쓸 원본 형식", "before": "%s%s" % (found.get("in_use_format") or "(없음)", " · 사람이 고름" if found.get("chosen") else ""),
                  "after": a["format"]},
-                {"label": "있는 형식", "after": ", ".join(found["formats"])}]
+                {"label": "있는 형식", "after": ", ".join(found["formats"])}] + _impact_rows(engine, found, a["format"])
     return details
+
+
+def _impact_rows(engine, found, fmt):
+    """웹 카드의 갈아타기 미리 알림과 같은 수(검토 ⑥ 가): 다시 확인할 구간·확정이 풀릴 구간. 구간 파일을 읽지 못하면 그렇다고 밝힌다."""
+    from hazop.shell import api_drawings
+    imp = api_drawings.choose_impact(engine, found, fmt=fmt)
+    if imp["recheck"] is None or imp["released"] is None:
+        return [{"label": "영향", "after": "구간 파일을 읽지 못해 다시 확인할 구간 수를 알 수 없습니다. 구간 패널을 먼저 열어 확인하세요."}]
+    if not imp["recheck"]:
+        return [{"label": "영향", "after": "이 도면에는 바뀌는 구간이 없습니다."}]
+    return [{"label": "다시 확인할 구간", "after": "%d개" % imp["recheck"]},
+            {"label": "확정이 풀릴 구간", "after": "%d개" % imp["released"]}]
 
 
 def _sources_execute(engine):
@@ -411,7 +423,7 @@ def _ie_check(engine):
         keys = _ie_keys(item, base, b)
         absent = [k for k in keys if k not in fps]
         if absent:
-            return "지금 ⑥ 문서에 없는 항목: %s" % ", ".join(k.split(":", 1)[1] for k in absent[:5])
+            return "지금 초기사건 문서에 없는 항목: %s" % ", ".join(k.split(":", 1)[1] for k in absent[:5])
         item.targets = [k.split(":", 1)[1] for k in keys]
         item.basis = {"ver": api_ie._ver(ctx[4]), "rver": api_ie._rver(ctx), "seen": {k: fps[k] for k in keys},
                       "confirm_groups": _ie_lost(engine, item, ctx, base)}
@@ -463,8 +475,8 @@ def _ie_details(engine):
         lost = _ie_lost(engine, item, ctx, base)
         if lost:
             rows.append({"label": "확정이 풀리는 그룹", "after": ", ".join(_group_label(base, g) for g in lost) + ". 바꾼 뒤 다시 확정해야 합니다."})
-        rows.append({"label": "항목 지문", "after": " · ".join("%s %s" % (k.split(":", 1)[1], str(v)[-8:])
-                                                           for k, v in sorted({k: fps.get(k) for k in _ie_keys(item, base, b)}.items()))})
+        rows.append({"label": "대조 기준", "after": " · ".join("%s %s" % (k.split(":", 1)[1], str(v)[-8:])
+                                                          for k, v in sorted({k: fps.get(k) for k in _ie_keys(item, base, b)}.items())), "hidden": True})
         return rows
     return details
 
@@ -474,7 +486,7 @@ def _ie_execute(engine, action):
         from hazop.shell import api, api_ie
         basis = call.basis or {}
         if not basis.get("seen"):
-            return _refused("확인 상자에서 본 항목 지문이 없어 저장하지 않았습니다.", "stale")
+            return _refused("확인 상자를 연 뒤 내용이 바뀌어 저장하지 않았습니다. 다시 요청해 주세요.", "stale")
         a = dict(args, ver=basis["ver"], rver=basis["rver"], seen=basis["seen"])
         if basis.get("confirm_groups"):          # 확인 상자에 보인 '확정이 풀리는 그룹' 그대로. 엔진이 지금 목록과 다르면 stale로 거절한다
             a.update(confirmed=True, confirm_groups=list(basis["confirm_groups"]))
@@ -488,7 +500,7 @@ def _ie_execute(engine, action):
             out = getattr(api_ie, IE_HANDLER[action])(engine, a)
         except api.CommandError as exc:
             if exc.code == "confirm":
-                return _refused("%s 이 변경은 ⑥ 초기사건 패널에서 직접 하세요." % exc.message, "confirm")
+                return _refused("%s 이 변경은 초기사건 패널에서 직접 하세요." % exc.message, "confirm")
             raise
         if out.get("ask"):                       # 확인 상자에 없던 '확정 풀림'이 생겼다: 저장하지 않았다
             return _refused("확인한 뒤 확정이 풀릴 그룹이 생겨 저장하지 않았습니다(%s). 다시 요청해 확인 상자를 보세요."
@@ -498,7 +510,7 @@ def _ie_execute(engine, action):
         extra = ""
         if out.get("groups"):
             extra = " 새 그룹: %s." % ", ".join(str(g) for g in out["groups"] if g)
-        return _ok("⑥ 초기사건을 고쳤습니다(%s).%s" % (TITLES_IE.get(action, action), extra), topics=["ie"])
+        return _ok("초기사건을 고쳤습니다(%s).%s" % (TITLES_IE.get(action, action), extra), topics=["ie"])
     return run
 
 

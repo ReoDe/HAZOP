@@ -21,7 +21,7 @@ from hazop import paths, store_io
 from hazop.graph.project import LEGACY_PROJECT_DIR, UNREGISTERED_PROJECT
 from hazop.graph.project import _norm as drawing_key  # 프로젝트 그래프가 같은 도면으로 보는 규칙(공백 무시·대문자)
 from hazop.store_io import ANY, Conflict, fingerprint, now_utc  # noqa: F401  이 모듈 이름으로도 쓴다
-from hazop.study import segment
+from hazop.study import idmap, segment
 
 SCHEMA_VERSION = "0.3"
 PRE_TOMB_SCHEMA_VERSION = "0.2"  # 판 이전 묘비(tombstones·nodes[].lost) 전. 읽을 때 0.3으로 바꾼다(hazop.study.migrate)
@@ -289,6 +289,7 @@ def _record_batch(before, after, op, origin, at, request=None, tool=None, model=
     for n in after["nodes"]:
         if any(o["node_id"] == n["node_id"] and o["after"] is not None for o in ops):
             n["batch_id"] = bid
+    _keep_discarded(after, ops, bid, at)
     digests = after.get("member_digest") or {}
     for o in ops:  # 구성요소가 바뀐 구간의 내용 지문은 옛 것이라 지운다(확정할 때 다시 셈)
         if o["after"] is None or (o["before"] or {}).get("members") != o["after"].get("members"):
@@ -304,6 +305,24 @@ def _record_batch(before, after, op, origin, at, request=None, tool=None, model=
             "batch_id": old["batch_id"], "origin": old["origin"], "kind": old.get("kind"), "at": old["at"],
             "node_ids": sorted({o["node_id"] for o in old["ops"]}, key=lambda x: (len(x), x))}}, at))
     return after
+
+
+def _keep_discarded(after, ops, bid, at):
+    """사라진 구간(remove op)의 버린 묘비 가운데 남은 구간 어디에도 없는 것을 집합 수준 discarded로 옮기고 이력
+    discarded_kept {node_id, batch_id, tombs}를 남긴다(after를 고침). 구간과 함께 사라지면 그 묘비가 다시 되찾기 대상이
+    되기 때문이다."""
+    held = {t for n in after["nodes"] for k in ("lost", "discarded") for t in n.get(k) or []}
+    kept = set(after.get("discarded") or [])
+    for o in ops:
+        if o["after"] is not None or not (o["before"] or {}).get("discarded"):
+            continue
+        tombs = sorted(set(o["before"]["discarded"]) - held - kept)
+        if tombs:
+            kept.update(tombs)
+            after["history"].append(store_io.history_row("discarded_kept", {"detail": {
+                "node_id": o["node_id"], "batch_id": bid, "tombs": tombs}}, at))
+    if kept:
+        after["discarded"] = sorted(kept)
 
 
 def _find(node_set, node_id):
@@ -398,9 +417,7 @@ def merge(node_set, node_ids, at=None):
         for key in ("absorbed", "parts"):
             if any(key in n for n in picked):
                 keep[key] = [p for n in picked for p in n.get(key, [])]
-    lost = sorted({t for n in picked for t in n.get("lost") or []})  # 판 이전에서 잃은 구성요소의 묘비도 함께 둔다
-    if lost:
-        keep["lost"] = lost
+    carry_tombs(keep, picked)
     keep.update({
         "name": "%s 외 %d" % (keep["name"], len(picked) - 1),
         "name_by": "user",
@@ -614,8 +631,74 @@ def _screen_note(node):
 
 
 def _lost_note(node):
-    """없애는 구간이 판 이전에서 잃은 구성요소의 묘비 id({"lost": [...]}, 없으면 빈 dict). 묘비 기록(tombstones)은 집합에 남는다."""
-    return {"lost": list(node["lost"])} if node.get("lost") else {}
+    """없애는 구간이 판 이전에서 잃은 구성요소의 묘비 id와 사람이 버린 묘비 id({"lost": [...], "discarded": [...]}, 없는 것은
+    뺌). 묘비 기록(tombstones)은 집합에 남는다."""
+    return {k: list(node[k]) for k in ("lost", "discarded") if node.get(k)}
+
+
+def carry_tombs(keep, picked):
+    """병합으로 남는 구간 keep에 picked 구간들의 lost·discarded 묘비를 모은다(keep를 고침). 한쪽에서 버리고 다른 쪽에 열린
+    같은 묘비는 열린 쪽(lost)으로 둔다."""
+    lost = sorted({t for n in picked for t in n.get("lost") or []})
+    gone = sorted({t for n in picked for t in n.get("discarded") or []} - set(lost))
+    for key, v in (("lost", lost), ("discarded", gone)):
+        if v:
+            keep[key] = v
+        else:
+            keep.pop(key, None)
+
+
+def lost_items(node_set, node_id):
+    """구간의 찾지 못한 구성요소(열린 lost 묘비) [{"key", "name", "ref", "lost_from", "lost_at"}]. key는 묘비 id의 해시라
+    화면이 묘비 id를 보지 않고 discard_lost 명령(node_commands "discard_lost"의 keys)에 넘긴다."""
+    node = _find(node_set, node_id)
+    tombs = node_set.get("tombstones") or {}
+    out = []
+    for t in node.get("lost") or []:
+        rec = tombs.get(t) if isinstance(tombs.get(t), dict) else {}
+        out.append({"key": idmap.tomb_handle(t), "name": idmap.tomb_name(rec), "ref": rec.get("ref"),
+                    "lost_from": rec.get("lost_from"), "lost_at": rec.get("lost_at")})
+    return out
+
+
+def discard_lost(node_set, node_id, tombs=None, by=None, at=None):
+    """구간 하나의 찾지 못한 구성요소(lost 묘비)를 사람이 확인하고 버린다(규격 §2.6). tombs는 묘비 id 목록, None이면 남은 것
+    전부. 버린 묘비는 lost에서 discarded로 옮기고 묘비 기록(tombstones)은 그대로 둔다. 분석 입력이 아니라 rev는 그대로이고,
+    묶음(batches) 하나로 남아 되돌릴 수 있다. 이력에 discard_lost {node_id, by, tombs[{tomb, entity_id, ref, name}], left}.
+    확정·잠금 구간, 없는 구간, 이 구간의 lost에도 discarded에도 없는 묘비, 빈 목록, 빈 이름은 ValueError. 버릴 것이 남지
+    않았으면(이미 버린 것만 고름, 전부를 골랐는데 남은 것이 없음) 받은 집합 그대로."""
+    by = (by or "").strip()
+    if not by:
+        raise ValueError("버리는 사람 이름 필요")
+    node = _find(node_set, node_id)
+    have, done = list(node.get("lost") or []), set(node.get("discarded") or [])
+    if tombs is None:
+        picked = have
+    else:
+        picked = list(dict.fromkeys(tombs))
+        if not picked:
+            raise ValueError("버릴 찾지 못한 구성요소를 고르지 않음")
+        bad = [t for t in picked if t not in have and t not in done]
+        if bad:
+            other = sorted({n["node_id"] for n in node_set["nodes"] for t in bad if t in (n.get("lost") or [])})
+            where = "다른 구간(%s)의 찾지 못한 구성요소" % ", ".join(other) if other else "없는 찾지 못한 구성요소"
+            raise ValueError("%s 구간에 없는 찾지 못한 구성요소 %d개: %s" % (node_id, len(bad), where))
+        picked = [t for t in picked if t in have]
+    if not picked:
+        return node_set
+    out = _begin(node_set, [node_id])
+    n = _find(out, node_id)
+    left = [t for t in have if t not in picked]
+    n["discarded"] = sorted(done | set(picked))
+    if left:
+        n["lost"] = left
+    else:
+        n.pop("lost", None)
+    recs = out.get("tombstones") or {}
+    detail = {"node_id": node_id, "by": by, "left": len(left),
+              "tombs": [{"tomb": t, "entity_id": (recs.get(t) or {}).get("entity_id"), "ref": (recs.get(t) or {}).get("ref"),
+                         "name": idmap.tomb_name(recs.get(t))} for t in picked]}
+    return _log(out, "discard_lost", detail, at, before=node_set)
 
 
 def remove_empty(node_set, node_id, at=None):
@@ -640,7 +723,7 @@ def confirm_nodes(node_set, graph, node_ids, reviewer, at=None):
     if not reviewer:
         raise ValueError("검토자 이름 필요")
     if is_stale(node_set, graph):
-        raise ValueError("그래프 판이 바뀜(%s -> %s): 검토구간을 다시 확인해야 함"
+        raise ValueError("도면이 다시 읽혀 바뀌었습니다(%s → %s). 검토구간을 다시 확인해야 합니다"
                          % (node_set.get("graph_version"), graph.get("graph_version")))
     wanted = list(dict.fromkeys(node_ids))
     if not wanted:
@@ -883,7 +966,7 @@ def load_view(graph):
             r_doc = None
         doc = convert.convert(doc, r_doc if r_doc and r_doc.get("schema_version", "0.1") == "0.1" else None,
                               res.load_deviations())[0]
-        reason = "옛 판(0.1) 검토구간 파일: 열면 0.2로 바꿈(원본은 .v0.1.bak.json으로 보관)"
+        reason = "이전 형식의 검토구간 파일입니다. 열면 새 형식으로 바꾸고 원본은 따로 보관합니다"
         return dict(doc, read_only=reason), dict(info, needs_open=True, reason=reason)
     if version not in (SCHEMA_VERSION, PRE_TOMB_SCHEMA_VERSION):
         raise ValueError("이 앱보다 새 검토구간 파일(%s)이라 읽지 않음: %s" % (version, path))
@@ -936,20 +1019,26 @@ def _ids_map_ok(v, value_ok):
 
 
 def _snapshot_ok(doc):
-    """판 사진·묘비의 모양. 표시는 idmap.valid_mark, 끝으로 잇는 구성요소는 idmap.valid_ends, 묘비 id는 'lost:'로 시작하는
-    문자열, 묘비 일련번호는 0 이상 정수, lost_members(0.2 B꼴)는 목록."""
+    """판 사진·묘비의 모양. 표시는 idmap.valid_mark, 끝으로 잇는 구성요소는 idmap.valid_ends, source 구성요소의 겉모습은
+    idmap.valid_look, 시트별 자료(graph_member_sheets)는 글자, 묘비 id는 'lost:'로 시작하는 문자열, 묘비 일련번호는 0 이상 정수, lost_members(0.2 B꼴)는 목록."""
     from hazop.extract import ids
     from hazop.study import idmap
-    tomb_ok = lambda r: isinstance(r, dict) and (r.get("mark") is None or idmap.valid_mark(r["mark"]))  # noqa: E731
+    tomb_ok = lambda r: (isinstance(r, dict) and (r.get("mark") is None or idmap.valid_mark(r["mark"]))  # noqa: E731
+                         and (r.get("look") is None or idmap.valid_look(r["look"])))
     tombs = doc.get("tombstones")
-    return (_ids_map_ok(doc.get("graph_member_refs"), lambda x: x is None or isinstance(x, str))
+    return (_ids_ok(doc.get("discarded", [])) and all(idmap.is_tomb(t) for t in doc.get("discarded", []))
+            and _ids_map_ok(doc.get("graph_member_refs"), lambda x: x is None or isinstance(x, str))
             and _ids_map_ok(doc.get("graph_member_marks"), idmap.valid_mark)
             and _ids_map_ok(doc.get("graph_member_basis"), lambda x: x in ids.BASES)
             and _ids_map_ok(doc.get("graph_member_ends"), idmap.valid_ends)
+            and _ids_map_ok(doc.get("graph_member_looks"), idmap.valid_look)
+            and _ids_map_ok(doc.get("graph_member_sheets"), lambda x: isinstance(x, str))
+            and _ids_map_ok(doc.get("graph_member_bases"), lambda x: isinstance(x, str))
             and (doc.get("tomb_seq") is None or (type(doc["tomb_seq"]) is int and doc["tomb_seq"] >= 0))
             and (tombs is None or (isinstance(tombs, dict)
                                    and all(idmap.is_tomb(k) and tomb_ok(r) for k, r in tombs.items())))
             and all(_ids_ok(n.get("lost", [])) and all(idmap.is_tomb(t) for t in n.get("lost", []))
+                    and _ids_ok(n.get("discarded", [])) and all(idmap.is_tomb(t) for t in n.get("discarded", []))
                     and isinstance(n.get("lost_members", []), list) for n in doc["nodes"]))
 
 

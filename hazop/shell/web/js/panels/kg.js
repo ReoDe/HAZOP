@@ -90,7 +90,7 @@ function GraphCanvas() {
       const g = ForceGraph()(host.current)
         .backgroundColor(C.bg).nodeId("id").linkSource("source").linkTarget("target")
         .nodeRelSize(4).cooldownTicks(160).d3VelocityDecay(0.35)
-        .nodeLabel((n) => esc(n.layer === "group" ? n.label + " · 노드 " + n.count + " (눌러 펼치기)" : (n.label || TYPE_NAMES[n.type] || n.type)))   // 라이브러리가 innerHTML로 넣으므로 글자로 거른다
+        .nodeLabel((n) => esc(n.layer === "group" ? n.label + " · 항목 " + n.count + "개 (눌러 펼치기)" : (n.label || TYPE_NAMES[n.type] || n.type)))   // 라이브러리가 innerHTML로 넣으므로 글자로 거른다
         .linkColor((l) => (l.id === K.kg.get().linkId ? C.sel : near.current.size && (near.current.has(idOf(l.source)) && near.current.has(idOf(l.target))) ? C.linkHi
           : l.st === "recheck" ? C.gap : l.st === "excluded" ? C.quiet : l.st === "study" ? C.studyLink : C.link))
         .linkWidth((l) => (l.id === K.kg.get().linkId ? 2.4 : l.kind === "group" ? Math.min(4, 1 + Math.log2(l.n || 1)) : (near.current.size && near.current.has(idOf(l.source)) && near.current.has(idOf(l.target)) ? 1.6 : 0.8)))
@@ -179,7 +179,7 @@ function GraphCanvas() {
     go();
   }
 
-  return html`<div class="kg-canvas" ref=${host} role="img" aria-label="지식그래프 그림. 노드를 누르면 오른쪽에 상세가 나옵니다. 키보드로는 찾기 칸을 쓰세요.">
+  return html`<div class="kg-canvas" ref=${host} role="img" aria-label="지식그래프 그림. 항목을 누르면 오른쪽에 상세가 나옵니다. 키보드로는 찾기 칸을 쓰세요.">
     ${failed ? html`<div class="center-empty"><p>${failed}</p></div>` : null}</div>`;
 }
 
@@ -273,14 +273,14 @@ function Head({ s }) {
   return html`<div class="kg-head">
     <div class="kg-search"><${Icon} name="search" size=${16} />
       <input type="text" value=${q} maxlength="100" placeholder="태그·이름·규칙 찾기 (Enter로 첫 결과)" aria-label="지식그래프에서 찾기" onInput=${onInput} onKeyDown=${onKey} />
-      ${hits.length ? html`<div class="kg-hits" role="listbox" aria-label="찾은 노드">${hits.map((h) => html`<button type="button" role="option" class="kg-hit" key=${h.id} onClick=${() => K.focus(h.id, h.group)}>
+      ${hits.length ? html`<div class="kg-hits" role="listbox" aria-label="찾은 항목">${hits.map((h) => html`<button type="button" role="option" class="kg-hit" key=${h.id} onClick=${() => K.focus(h.id, h.group)}>
         <b>${h.label}</b><span class="muted small">${TYPE_NAMES[h.type] || h.type} · ${h.drawing}</span></button>`)}</div>` : null}</div>
     <div class="acts-row kg-chips">
-      <span class="muted small">도면 ${s.sheets} · 노드 ${s.total.toLocaleString()}</span>
+      <span class="muted small">도면 ${s.sheets} · 항목 ${s.total.toLocaleString()}</span>
       ${gaps ? html`<${Chip} kind="warn" title="규칙상 있어야 하는데 확인하지 못했거나 없다고 확정한 잠재 후보(기대됨 + 부재 확정)">잠재 후보 공백 ${gaps}<//>` : null}
-      ${s.expect.recheck ? html`<${Chip} kind="warn" title="규칙 판이나 대상 내용이 바뀌어 이전 판단을 다시 봐야 합니다">재확인 ${s.expect.recheck}<//>` : null}
+      ${s.expect.recheck ? html`<${Chip} kind="warn" title="판단 규칙이나 대상 내용이 바뀌어 이전 판단을 다시 봐야 합니다">재확인 ${s.expect.recheck}<//>` : null}
       <span class="kg-tools">
-        <select class="kg-explore-pick" aria-label="살펴보기" title="엔진 알고리즘으로 셀 것을 골라 강조합니다" value=${(ex && ex.what) || ""}
+        <select class="kg-explore-pick" aria-label="살펴보기" title="이어진 범위·이어지지 않은 지식·근거가 빈 곳을 세어 강조합니다" value=${(ex && ex.what) || ""}
           onChange=${(e) => K.explore(e.target.value)}>
           <option value="">살펴보기…</option>${K.EXPLORES.map(([v, label, why]) => html`<option key=${v} value=${v} title=${why}>${label}</option>`)}</select>
         <button type="button" class=${"btn sm " + (study ? "primary" : "ghost")} aria-pressed=${study ? "true" : "false"}
@@ -292,7 +292,7 @@ function Head({ s }) {
       : html`<b>${ex.label}</b><span class="small">${ex.reason}</span>`}
       <${Btn} sm=${true} kind="ghost" icon="x" label="살펴보기 지우기" title="강조 지우기" onClick=${K.clearExplore} /></div>` : null}
     ${study && s.study ? html`<div class="muted small kg-study-line">검토 결과: 시나리오 ${s.study.scenarios}${s.study.ie_candidates ? " · 초기사건 후보 " + s.study.ie_candidates : ""}${s.study.missing ? " · 대상 없는 참조 " + s.study.missing : ""}${s.study.note ? " · " + s.study.note : ""} (보기만 합니다. 고치기는 분석 결과·초기사건 패널에서)</div>` : null}
-    ${s.mode === "overview" ? html`<div class="muted small">노드가 ${s.total.toLocaleString()}개라 도면별 묶음으로 그렸습니다(한 번에 ${s.cap.toLocaleString()}개까지). 묶음을 누르면 그 도면을 펼치고, 찾기로 바로 갈 수 있습니다.</div>` : null}</div>`;
+    ${s.mode === "overview" ? html`<div class="muted small">항목이 ${s.total.toLocaleString()}개라 도면별 묶음으로 그렸습니다(한 번에 ${s.cap.toLocaleString()}개까지). 묶음을 누르면 그 도면을 펼치고, 찾기로 바로 갈 수 있습니다.</div>` : null}</div>`;
 }
 
 // ---------------------------------------------------------------- 오른쪽 상세
@@ -349,13 +349,13 @@ function Detail() {
   const linkId = K.useKg((s) => s.linkId);
   const link = K.useKg((s) => s.link);
   if (linkId) return html`<${LinkDetail} l=${link} />`;
-  if (!sel) return html`<aside class="kg-side"><div class="muted kg-empty"><b>고른 노드 없음</b><p>그래프에서 노드나 선을 누르거나 찾기로 고르면 무엇인지와 근거, 이어진 것이 여기에 나옵니다. 그림의 자리는 근거가 아닙니다.</p></div></aside>`;
+  if (!sel) return html`<aside class="kg-side"><div class="muted kg-empty"><b>고른 항목 없음</b><p>그래프에서 항목이나 선을 누르거나 찾기로 고르면 무엇인지와 근거, 이어진 것이 여기에 나옵니다. 그림의 자리는 근거가 아닙니다.</p></div></aside>`;
   if (!d) return html`<aside class="kg-side"><div class="muted">불러오는 중…</div></aside>`;
   const x = d.expectation;
   return html`<aside class="kg-side" aria-label=${(d.label || d.id) + " 상세"}>
     <div class="kg-dh"><b>${d.label || TYPE_NAMES[d.type] || d.type}</b>
       <${Chip}>${TYPE_NAMES[d.type] || d.type}<//>${d.layer === "kn" && d.ks !== "confirmed" ? html`<${Chip} kind="warn">확인 전<//>` : null}${d.ai || d.draft ? html`<${Chip} kind="ai" icon="sparkles">AI 초안<//>` : null}${d.pending && !d.draft ? html`<${Chip} kind="warn">승인 전<//>` : null}${d.read_only ? html`<${Chip} title="분석 결과·초기사건 파일에서 읽은 것입니다. 고치기는 그 패널에서 합니다">읽기 전용<//>` : null}${x ? html`<${Chip} kind=${STATE_KIND[x.state]}>${x.state_label}<//>` : null}
-      ${x && x.recheck ? html`<${Chip} kind="warn" title="규칙 판이나 대상·후보 내용이 바뀌었습니다">재확인 필요<//>` : null}</div>
+      ${x && x.recheck ? html`<${Chip} kind="warn" title="판단 규칙이나 대상·후보 내용이 바뀌었습니다">재확인 필요<//>` : null}</div>
     <div class="muted small">${d.drawing}</div>
     ${d.at ? html`<div><${Btn} sm=${true} icon="map-pin" label="도면에서 보기" onClick=${() => K.showOnSheet(d.at)}>도면에서 보기<//></div>` : null}
     ${x ? html`<${Notice} kind="info" icon="info-circle">${x.caution}<//>` : null}
@@ -365,7 +365,7 @@ function Detail() {
         <span class="muted"> · 자동 판정 ${x.auto_state_label}</span></div>
       ${x.found.length ? html`<div class="small"><span class="muted">찾은 후보</span> ${x.found.map((f) => html`<${Chip} key=${f.ref}>${f.label}<//>`)}</div>` : null}
       ${x.note ? html`<div class="small muted">${x.note}</div>` : null}
-      ${x.recheck ? html`<${Notice} kind="warn" icon="alert-triangle">이전 판단 '${x.previous_label}'은(는) 규칙 판이나 대상·후보 내용이 바뀌어 다시 봐야 합니다.<//>` : null}` : null}
+      ${x.recheck ? html`<${Notice} kind="warn" icon="alert-triangle">이전 판단 '${x.previous_label}'은(는) 판단 규칙이나 대상·후보 내용이 바뀌어 다시 봐야 합니다.<//>` : null}` : null}
     <h4>근거</h4>${kv(d.evidence)}
     ${x && x.judgement ? html`<h4>판단 기록</h4>${kv(judgementRows(x.judgement))}` : null}
     ${x ? html`<h4>판단</h4><${Judge} d=${d} />` : null}

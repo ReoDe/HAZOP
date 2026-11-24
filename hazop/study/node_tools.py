@@ -406,7 +406,7 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
     if origin not in ("ai", "user"):
         raise Refused([("origin", "ai 또는 user")])
     if set_rev != node_set.get("set_rev"):
-        raise Refused([("set_rev", "구간이 그 사이 바뀜(읽은 판 %s, 지금 %s)" % (set_rev, node_set.get("set_rev")))])
+        raise Refused([("set_rev", "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 해 주세요.")])
     if not ops:
         raise Refused([("ops", "할 일이 없음")])
     at = at or nodes.now_utc()
@@ -434,6 +434,9 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
             return None
         if ai and n.get("origin") != "ai" and not confirmed_by:
             why.append((label, "AI가 사람·옛 규칙 구간을 %s하려면 사람이 확인해야 함(채팅 규격 §4.3)" % kind))
+            return None
+        if ai and n.get("discarded") and kind in ("병합", "분할", "삭제") and not confirmed_by:
+            why.append((label, "사람이 버린 찾지 못한 구성요소가 있는 구간을 AI가 %s하려면 사람이 확인해야 함" % kind))
             return None
         return n
 
@@ -522,9 +525,7 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
                 continue
             keep = picked[0]
             keep["members"] = sorted({m for n in picked for m in n["members"]})
-            lost = sorted({t for n in picked for t in n.get("lost") or []})  # 판 이전에서 잃은 구성요소의 묘비도 함께 둔다
-            if lost:
-                keep["lost"] = lost
+            nodes.carry_tombs(keep, picked)  # 판 이전에서 잃은 구성요소의 묘비와 사람이 버린 묘비도 함께 둔다
             keep["name_by"] = keep.get("name_by") or origin
             for n in picked[1:]:
                 if out_res is not None:
@@ -661,7 +662,7 @@ def undo_batch(node_set, results, batch_id, set_rev, by, requested_by, at=None):
     if requested_by not in ("ai", "user"):
         raise Refused([("requested_by", "ai 또는 user")])
     if set_rev != node_set.get("set_rev"):
-        raise Refused([("set_rev", "구간이 그 사이 바뀜(읽은 판 %s, 지금 %s)" % (set_rev, node_set.get("set_rev")))])
+        raise Refused([("set_rev", "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 해 주세요.")])
     why = undo_problems(node_set, results, batch_id, requested_by)
     if why:
         raise Refused(why)

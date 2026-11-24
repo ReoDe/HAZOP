@@ -1,0 +1,244 @@
+"""판 이전을 빠르게 한 두 가지가 결과를 바꾸지 않는지 본다(2026-11-24 성능 단위).
+
+- 표시 색인(idmap._MarkIndex): 같은 표시(_same_mark) 찾기를 격자 칸으로 좁혔다. 전수 비교(이 파일의 LinearIndex, 고치기 전
+  compute의 by_look·mark_hits 그대로)와 찾은 것과 차례가 같아야 하고, compute가 만든 표가 바이트 하나 다르지 않아야 한다.
+  경계: 허용치와 정확히 같은 거리, 음수 좌표, 다른 도면, 상자 없음, 격자로 나눌 수 없는 좌표(무한·NaN·아주 큰 정수).
+- 기록: 판 이전 줄의 kept_eids·kept_refs는 목록으로 적는다. 구간 꼴(idmap.pack_ids)로 적으면 77345243 앱이 읽을 때 partial이
+  되어 늦게 따라오는 문서의 참조가 기록 없는 묘비로 바뀐다(내려 깔기 손실, 판 이전 설계 §21). 새 앱은 구간 꼴도 읽으므로
+  목록 줄과 구간 줄을 from_record로 읽으면 같은 표이고, 늦게 따라오는 ⑤ 결과도 같은 바이트로 옮겨진다.
+"""
+
+import copy
+import json
+import random
+import unittest
+from unittest import mock
+
+from hazop.study import idmap, migrate
+
+
+class LinearIndex:
+    """고치기 전 compute의 표시 찾기: 겉모습(앞 넷)의 json으로 묶고 그 안을 전수 비교."""
+
+    def __init__(self, rows):
+        self.by_look = {}
+        for m, e in rows:
+            self.by_look.setdefault(json.dumps(m[:4]), []).append((m, e))
+
+    def hits(self, mark):
+        return [e for m, e in self.by_look.get(json.dumps(mark[:4]), ()) if idmap._same_mark(mark, m)]
+
+
+def dumps(x):
+    return json.dumps(x, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+ODD = [float("inf"), float("-inf"), float("nan"), 10 ** 400, -(10 ** 400), 2 ** 60, 2 ** 60 + 1]
+STEPS = [0, 0.5, -0.5, 1.0, -1.0, 0.95, -0.95, 1.05, -1.05, 2.0, -2.0, 3.0]
+
+
+def random_marks(rnd, n):
+    out = []
+    for _ in range(n):
+        x, y = rnd.choice([-3.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 99.5, 100.0]) + rnd.choice(STEPS), rnd.choice([-2.0, 0.0, 1.0, 50.0])
+        w, h = rnd.choice([0, 1.0, 2.0, 20.0]), rnd.choice([0, 1.0, 10.0])
+        m = [rnd.choice(["drawing_object", None]), rnd.choice(["s1", "s2", None]), rnd.choice(["valve", None]),
+             rnd.choice([None, "V-1"]), x, y, x + w, y + h]
+        if rnd.random() < 0.1:
+            m[4], m[5] = int(m[4]), int(m[5])
+        if rnd.random() < 0.05:
+            m[4 + rnd.randrange(4)] = rnd.choice(ODD)
+        out.append(m)
+    return out
+
+
+def answer(index, q):
+    """찾은 것, 또는 비교가 던진 오류의 이름(아주 큰 정수와 float의 뺄셈은 전수 비교에서도 OverflowError)."""
+    try:
+        return index.hits(q)
+    except OverflowError as exc:
+        return type(exc).__name__
+
+
+class MarkIndexTest(unittest.TestCase):
+    def check(self, rows, queries):
+        fast, slow = idmap._MarkIndex(rows), LinearIndex(rows)
+        for q in queries:
+            self.assertEqual(answer(fast, q), answer(slow, q), q)
+
+    def test_boundaries(self):
+        base = ["drawing_object", "s1", "valve", None]
+        rows = [(base + [0.0, 0.0, 10.0, 10.0], "a"), (base + [1.0, 1.0, 11.0, 11.0], "b"), (base + [-1.0, -1.0, 9.0, 9.0], "c"),
+                (base + [2.0, 0.0, 12.0, 10.0], "d"), (base[:1] + ["s2"] + base[2:] + [0.0, 0.0, 10.0, 10.0], "e"),
+                (base + [float("inf"), 0.0, 10.0, 10.0], "f"), (base + [10 ** 400, 0.0, 10.0, 10.0], "g"), (base + [2 ** 60, 0.0, 10.0, 10.0], "i"),
+                (base + [-0.05, -0.95, 9.95, 9.05], "h")]
+        queries = [m for m, _ in rows] + [base + [0.0, 0.0, 10.0, 10.0], base + [-1.0, 0.0, 9.0, 10.0],
+                                         base + [1.0, -1.0, 11.0, 9.0], base + [float("nan"), 0, 10, 10], base + [2 ** 60 + 1, 0.0, 10.0, 10.0]]
+        self.check(rows, queries)
+        tame = [r for r in rows if r[1] != "g"]
+        self.assertEqual(idmap._MarkIndex(tame).hits(base + [0.0, 0.0, 10.0, 10.0]), ["a", "b", "c", "h"],
+                         "허용치와 정확히 같은 거리(1.0)는 같은 자리, 음수 좌표도 찾는다")
+        self.assertEqual(answer(idmap._MarkIndex(rows), base + [0.0, 0.0, 10.0, 10.0]), "OverflowError", "전수 비교처럼 던진다")
+        big = [(base + [2 ** 60 + 128, 0.0, 10.0, 10.0], "j")]
+        self.assertEqual(idmap._MarkIndex(big).hits(base + [2 ** 60 + 129, 0.0, 10.0, 10.0]), ["j"],
+                         "float로 나누면 반올림이 갈라 놓는 큰 정수도 1 차이면 같은 자리")
+        self.assertEqual(idmap._MarkIndex(tame).hits(base + [2 ** 60 + 1, 0, 10, 10]), ["i"], "격자로 못 나누는 좌표도 전수 비교처럼")
+
+    def test_random_marks_find_the_same_hits_in_the_same_order(self):
+        for seed in range(60):
+            rnd = random.Random(seed)
+            marks = random_marks(rnd, 120)
+            rows = [(m, "e%d" % i) for i, m in enumerate(marks)]
+            queries = marks + random_marks(rnd, 60) + [m[:4] + [v + rnd.choice(STEPS) for v in m[4:]] for m in marks
+                                                       if all(isinstance(v, float) and v == v and abs(v) < 1e9 for v in m[4:])]
+            self.check(rows, queries)
+
+
+def world(rnd, version, n, prev=None):
+    """도면 하나(시트 둘)의 그래프. prev가 있으면 그 기호를 흔들어(자리 0~3pt, 순번 다시 매김, 지우기·더하기) 다음 판을 만든다."""
+    if prev is None:
+        syms = [{"kind": rnd.choice(["valve", "pump", None]), "tag": rnd.choice([None, "V-1", "P-2"]), "sheet": rnd.choice(["s1", "s2"]),
+                 "box": [rnd.choice([-20.0, -1.0, 0.0, 1.0, 40.0]) + rnd.choice(STEPS), rnd.choice([-5.0, 0.0, 30.0]), 20.0, 10.0]}
+                for _ in range(n)]
+    else:
+        syms = []
+        for s in prev:
+            if rnd.random() < 0.1:
+                continue
+            b = list(s["box"])
+            b[0] += rnd.choice(STEPS)
+            b[1] += rnd.choice([0.0, 0.0, 1.0, -1.0, 1.05])
+            syms.append(dict(s, box=b))
+        syms += world(rnd, version, rnd.randrange(4))["syms"]
+        rnd.shuffle(syms)
+    nodes = []
+    for i, s in enumerate(syms):
+        nodes.append({"entity_id": "graph-T/entity-node-%03d" % (i + 1), "source_object_id": "pdf-p0-sym-%04d" % (i + 1),
+                      "node_type": "drawing_object", "kind": s["kind"], "tag": s["tag"], "sheet": s["sheet"],
+                      "bbox": None if rnd.random() < 0.05 else s["box"], "id_basis": "sequence"})
+    return {"graph_id": "graph-T", "graph_version": version, "nodes": nodes, "edges": [], "syms": syms}
+
+
+def chain(seed):
+    """옛 판 사진(묘비 포함)과 새 그래프. 첫 판 이전의 묘비를 둘째 판 이전이 되찾을 수 있게 세 판을 잇는다."""
+    rnd = random.Random(seed)
+    g0 = world(rnd, "v-0", rnd.randrange(10, 60))
+    g1 = world(rnd, "v-1", 0, g0["syms"])
+    g2 = world(rnd, "v-2", 0, g1["syms"] + (g0["syms"][:3] if rnd.random() < 0.5 else []))
+    ns0 = dict(idmap.snapshot(g0), graph_id="graph-T", graph_version="v-0", nodes=[])
+    t1 = idmap.compute(ns0, g1, at="2026-11-24T00:00:00Z")
+    ns1 = dict(idmap.snapshot(g1), graph_id="graph-T", graph_version="v-1", nodes=[], tombstones=t1["new_tombs"])
+    return ns0, g1, ns1, g2
+
+
+class SameTableTest(unittest.TestCase):
+    """색인을 바꿔 끼워도 compute 표가 바이트로 같다(고치기 전 찾기 = LinearIndex)."""
+
+    def test_compute_table_is_byte_identical_with_the_linear_search(self):
+        found = linked = 0
+        for seed in range(150):
+            ns0, g1, ns1, g2 = chain(seed)
+            for ns, g in ((ns0, g1), (ns1, g2)):
+                fast = idmap.compute(ns, g, at="x")
+                with mock.patch.object(idmap, "_MarkIndex", LinearIndex):
+                    slow = idmap.compute(ns, g, at="x")
+                self.assertEqual(dumps(fast), dumps(slow), "seed %d" % seed)
+                found += len(fast["found"])
+                linked += sum(1 for v in fast["eid"].values() if not idmap.is_tomb(v))
+        self.assertGreater(found, 20, "묘비 되찾기 길도 실제로 돈다")
+        self.assertGreater(linked, 1000, "표시로 잇기가 실제로 돈다")
+
+
+PACK_CASES = [
+    [],
+    ["a"],
+    ["g/entity-node-001", "g/entity-node-002", "g/entity-node-003", "g/entity-node-005"],
+    ["x9", "x10", "x09", "x010", "x8", "x0", "x00", "x"],
+    ["p#pdf-p0-sym-0001", "p#pdf-p0-sym-0002", "p#pdf-p12-sym-0001", "q#manual-ab12", "xlink-0f3a-a", "xlink-0f3a-b"],
+    ["n١", "n1", "n٢", "n2", "", "007", "7", "8"],
+    ["s/entity-%d" % i for i in range(1, 2000) if i % 97] + ["s/entity-x"],
+    ["g#abc1\n", "g#abc1", "g#a\n7", "g#abc2\n"],
+]
+
+
+class PackTest(unittest.TestCase):
+    def test_unpack_gives_back_the_sorted_list(self):
+        for ids in PACK_CASES:
+            want = sorted(set(ids))
+            packed = idmap.pack_ids(want)
+            self.assertEqual(idmap.unpack_ids(json.loads(json.dumps(packed))), want, ids[:8])
+
+    def test_long_runs_are_small(self):
+        ids = sorted("graph-material-0123456789ab-p%d/entity-node-%05d" % (p, i) for p in range(143) for i in range(1, 300))
+        self.assertLess(len(json.dumps(idmap.pack_ids(ids))) * 50, len(json.dumps(ids)))
+
+
+def packed_line(detail):
+    """kept_eids·kept_refs를 구간 꼴로 줄인 줄(6bfe9c3e가 잠시 적던 꼴)."""
+    d = dict(detail)
+    for k in ("kept_eids", "kept_refs"):
+        d[k] = idmap.pack_ids(d[k])
+    return d
+
+
+def read_by_77345243(detail):
+    """77345243 앱의 from_record가 줄을 온전한 표로 보는 조건과 그때 채우는 그대로 이어진 id·참조. 온전하지 않으면 None."""
+    if not (isinstance(detail.get("kept_eids"), list) and isinstance(detail.get("kept_refs"), list)):
+        return None
+    return sorted(detail["kept_eids"]), sorted(detail["kept_refs"])
+
+
+class RecordRoundTripTest(unittest.TestCase):
+    def tables(self):
+        for seed in range(60):
+            ns0, g1, ns1, g2 = chain(seed)
+            yield idmap.compute(ns0, g1, at="x"), ns0
+            yield idmap.compute(ns1, g2, at="x"), ns1
+
+    def test_the_77345243_app_reads_a_new_line_as_a_whole_table(self):
+        for table, _ns in self.tables():
+            line = json.loads(json.dumps(idmap.record(table)))
+            kept = (sorted(a for a, b in table["eid"].items() if a == b), sorted(a for a, b in table["ref"].items() if a == b))
+            self.assertEqual(read_by_77345243(line), kept, "옛 앱이 partial로 읽으면 늦게 따라오는 참조를 잃는다")
+
+    def test_listed_and_packed_lines_read_back_to_the_same_table(self):
+        for table, _ns in self.tables():
+            new = json.loads(json.dumps(idmap.record(table)))
+            new.update({"from": table["from"], "to": table["to"]})
+            packed = json.loads(json.dumps(packed_line(new)))
+            a, b = idmap.from_record(new, "graph-T"), idmap.from_record(packed, "graph-T")
+            self.assertEqual(dumps(a), dumps(b))
+            self.assertFalse(a["partial"])
+            self.assertEqual({k: v for k, v in a["eid"].items() if k == v}, {k: v for k, v in table["eid"].items() if k == v})
+
+    def test_unreadable_packed_line_is_a_partial_table(self):
+        good = idmap.pack_ids(["g/entity-1"])
+        for bad in ({"runs": [["g/entity-", 1, [[1, "x"]]]], "other": []}, {"runs": []}, {"runs": [], "other": [3]},
+                    {"runs": [[None, 1, [[1, 1]]]], "other": []}):
+            t = idmap.from_record({"from": "v-0", "to": "v-1", "kept_eids": bad, "kept_refs": good}, "graph-T")
+            self.assertTrue(t["partial"], bad)
+            self.assertEqual(t["eid"], {}, "증명하지 못한 줄은 그대로 이어진 것을 믿지 않는다")
+
+    def test_late_results_move_the_same_through_old_and_new_lines(self):
+        moved = 0
+        for seed in range(40):
+            ns0, g1, _ns1, _g2 = chain(seed)
+            ns0["nodes"] = [{"node_id": "S1", "members": sorted(ns0["graph_member_refs"])[:5], "state": "applied"}]
+            ns0["history"], ns0["project_id"], ns0["schema_version"] = [], "P", "0.3"
+            after, _p = migrate.migrate_set(ns0, g1, at="2026-11-24T00:00:00Z")
+            refs = sorted(r for r in ns0["graph_member_refs"].values() if r)
+            res = {"schema_version": "0.3", "graph_id": "graph-T", "graph_version": "v-0",
+                   "cells": [{"entries": [{"cause_refs": [{"ref": r} for r in refs[:8]]}]}]}
+            line = after["history"][-1]["detail"]
+            self.assertIsInstance(line["kept_eids"], list, "새 줄은 옛 앱도 읽는 목록으로 적는다")
+            packed = copy.deepcopy(after)
+            packed["history"][-1]["detail"] = packed_line(line)
+            a, _ = migrate.migrate_results(res, after, at="t")
+            b, _ = migrate.migrate_results(res, packed, at="t")
+            self.assertEqual(dumps(a), dumps(b), "seed %d" % seed)
+            moved += a is not res
+        self.assertEqual(moved, 40)
+
+
+if __name__ == "__main__":
+    unittest.main()

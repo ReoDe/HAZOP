@@ -32,7 +32,7 @@ NOT_YET = {
     "extract.suggest": "AI 후보는 AI 검토 패널의 'AI 검토 실행'으로 만든다(만든 후보의 수락·거절은 채팅으로 할 수 있다)",
     "kg.algorithm": "지식그래프 패널에 알고리즘 실행이 생기면 잇는다",
     "kg.rebuild": "지식그래프 패널에 다시 만들기가 생기면 잇는다",
-    "ie.reset": "⑥ 초기사건 패널에서 사람이 한다(읽지 못한 파일을 백업하고 새로 시작)",
+    "ie.reset": "초기사건 패널에서 사람이 한다(읽지 못한 파일을 백업하고 새로 시작)",
 }
 PANELS = {"titleblock": "표제란", "drawings": "도면", "nodes": "구간", "results": "분석 결과", "ie": "초기사건", "settings": "설정", "kg": "지식그래프",
           "aireview": "AI 검토", "actionlog": "AI 실행 기록", "docs": "설계 문서"}
@@ -124,7 +124,7 @@ class ChatActions:
         """확인 상자를 띄우기 전에 거절할 것(이 화면의 실행 함수가 못 하는 것)."""
         def analysis(item, snap):
             if len(item.args.get("node_ids") or []) != 1:
-                return "한 번에 한 구간씩 분석합니다. 여러 구간은 ⑤ 분석 결과의 '전체 분석'으로 하세요."
+                return "한 번에 한 구간씩 분석합니다. 여러 구간은 분석 결과의 '전체 분석'으로 하세요."
             if len(item.args.get("cell_ids") or []) > 1:
                 return "칸은 한 번에 하나만 다시 분석합니다."
             if self._engine is not None:
@@ -495,7 +495,7 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "ie.move": "초기사건 후보 옮기기", "ie.split": "초기사건 그룹 나누기", "ie.edit_group": "초기사건 그룹 고치기",
           "ie.accept_members": "초기사건 소속 확인", "ie.confirm_group": "초기사건 그룹 확정", "ie.reopen_group": "초기사건 그룹 확정 풀기",
           "ie.set_coverage": "완전성 대조 판정", "ie.export": "초기사건 인계 묶음 내보내기", "docs.extract": "설계 문서 지식 추출",
-          "docs.add": "설계 문서 등록", "docs.revision": "설계 문서 판 대응",
+          "docs.add": "설계 문서 등록", "docs.revision": "설계 문서 개정 대응",
           "titleblock.unconfirm": "표제란 확정 취소", "drawing.undo": "도면 고침 되돌리기", "drawing.redo": "도면 고침 다시 하기",
           "ie.fmea_status": "FMEA 행 판정", "ie.fmea_mark": "전기·제어 구간 표시", "ie.mld_link": "MLD 가지 잇기",
           "links.pair": "도면 연결 짝 지정", "links.unlink": "도면 연결 끊기", "links.clear": "도면 연결 지정 빼기",
@@ -847,7 +847,7 @@ class RunExecutors:
         from hazop.shell import api_results
         ids = list(args.get("node_ids") or [])
         if len(ids) != 1:
-            return _refused("한 번에 한 구간씩 분석합니다. 여러 구간은 ⑤ 분석 결과의 '전체 분석'으로 하세요.")
+            return _refused("한 번에 한 구간씩 분석합니다. 여러 구간은 분석 결과의 '전체 분석'으로 하세요.")
         a = run_args(args)
         basis = call.basis or {}
         if basis.get("conn_ver"):            # 확인 상자에서 본 연결 그대로일 때만 돈다(다르면 엔진이 conn_changed로 거절)
@@ -863,7 +863,7 @@ class RunExecutors:
                 t = threading.Thread(target=self.watch_job, args=(job, call, ids), daemon=True)
                 self.watchers.append(t)
                 t.start()
-        return _ok("구간 %s의 AI 분석을 시작했습니다(호출 %d회). 진행은 ⑤ 분석 결과에 보입니다." % (ids[0], out.get("calls") or 0),
+        return _ok("구간 %s의 AI 분석을 시작했습니다(호출 %d회). 진행은 분석 결과에 보입니다." % (ids[0], out.get("calls") or 0),
                    topics=["results.run"])
 
     def follow(self, job, call, targets, on_end=None):
@@ -958,7 +958,7 @@ class RunExecutors:
         def work(progress):
             from hazop.app import data
             try:
-                progress("추출·그래프", 1, 1)
+                progress("도면 읽는 중", 1, 1)
                 out = data.extract_and_graph(path)
                 result = {"pages": len(out.get("pages") or [out])}
             except Exception as exc:
@@ -984,7 +984,7 @@ class RunExecutors:
         gid = args.get("graph_id")
         basis = call.basis or {}
         if not basis.get("fingerprint"):
-            return _refused("확인 상자에서 본 쪽의 지문이 없어 확정하지 않았습니다.", "stale", str(gid))
+            return _refused("확인 상자를 연 뒤 내용이 바뀌어 확정하지 않았습니다. 다시 요청해 주세요.", "stale", str(gid))
         # 계획 때(사람이 확인 상자에서 본) 지문과 판을 그대로 넘긴다. 그 사이 쪽이 바뀌었으면 엔진이 stale로 거절한다
         out = api_drawings._sheet_command("confirm")(self.engine, {"graph_id": gid, "ver": basis["fingerprint"], "rev": basis.get("rev") or 0})
         name = self.engine.graph_names().get(gid) or gid

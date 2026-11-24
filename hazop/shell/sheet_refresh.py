@@ -21,11 +21,36 @@ import os
 import threading
 
 from hazop import gcpause, paths, store_io
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.sheet_refresh")
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
 _ENSURING = threading.local()
+_DEFERRED = set()            # 다시 만들기를 짓기 작업(api_inputs)에 맡긴 도면: 다음 수락·읽기가 그 자리에서 다시 만들지 않는다
+_DEFERRED_GUARD = threading.Lock()
+
+
+def defer(name):
+    """수락을 저장했고 그래프는 짓기 작업이 다시 만든다. 낡은 그래프 표시를 남겨(앱이 그새 닫혀도 다음 열기에서 다시 만듦) 두되,
+    이 프로세스 안에서는 ensure_graph·ensure_project가 그 자리에서 다시 만들지 않는다(수락마다 도면 잠금을 오래 쥐지 않게)."""
+    mark_stale(name, "수락 반영 대기")
+    with _DEFERRED_GUARD:
+        _DEFERRED.add(name)
+
+
+def undefer(name):
+    with _DEFERRED_GUARD:
+        _DEFERRED.discard(name)
+
+
+def deferred(name):
+    """짓기 작업에 맡긴 도면이고 그 차례가 아직 살아 있는가(늦은 반영 대기면 False: 그 자리에서 다시 만든다, 검토 차단 2)."""
+    with _DEFERRED_GUARD:
+        if name not in _DEFERRED:
+            return False
+    from hazop.shell import api_inputs
+    return api_inputs.is_deferred(name)
 
 
 @contextlib.contextmanager
@@ -42,10 +67,27 @@ def ver_from(files):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def base_part(name, resolved=None):
+    """판에 넣을 기준 추출 열쇠(입력 연산 U2 검토 차단 1). 기준 추출을 지으면 local-node 번호가 밀리므로 세 파일이 같아도 판이 달라야 한다.
+    입력 연산이 없으면 None(판에 넣지 않음: 예전 판과 같다). 있으면 실제로 쓴 기준 추출의 열쇠(아직 없으면 '-')."""
+    from hazop.extract import corrections
+    if resolved is None:
+        ops = (corrections.load(name) or {}).get("ops") or []
+        if not any(corrections.is_input(o) for o in ops):
+            return None
+        resolved = corrections.resolve(name)
+    st = resolved["inputs"]
+    if st.get("state") == "none":
+        return None
+    return st.get("base_key") or "-"
+
+
 def ver_of(name):
     from hazop.extract import confirmation
     files = confirmation.file_paths(name)
-    return ver_from({k: store_io.fingerprint(files[k]) for k in files})
+    fps = {k: store_io.fingerprint(files[k]) for k in files}
+    bp = base_part(name)
+    return ver_from(dict(fps, base=bp) if bp else fps)
 
 
 def stale_path(name):
@@ -84,13 +126,13 @@ def project_recheck(project_id):
         return out
     if study_nodes.is_stale(ns, pg):
         held = [n["node_id"] for n in ns["nodes"] if study_nodes.node_state(n) != "applied"]
-        out.append("④ 검토구간이 고치기 전 도면 기준입니다. 구간 패널에서 재확인하세요%s." % ("(확정·잠금 " + ", ".join(held[:8]) + ")" if held else ""))
+        out.append("검토구간이 고치기 전 도면 기준입니다. 구간 패널에서 재확인하세요%s." % ("(확정·잠금 " + ", ".join(held[:8]) + ")" if held else ""))
         try:
             doc, _fp = study_results.load_fp(ns)
         except (OSError, ValueError, KeyError):
             doc = None
         if doc and doc.get("cells"):
-            out.append("⑤ 분석 결과가 고치기 전 도면 기준입니다. 재확인이 필요합니다.")
+            out.append("분석 결과가 고치기 전 도면 기준입니다. 재확인이 필요합니다.")
     return out
 
 
@@ -102,7 +144,8 @@ def rebuild(name):
             try:
                 data.build_project_kg(graph["project_id"])
             except (OSError, ValueError, KeyError) as exc:
-                raise RuntimeError("지식그래프를 다시 만들지 못함: %s" % str(exc)[:120]) from exc
+                raise RuntimeError("지식그래프에 반영하지 못함: %s" % errtext.why(exc, 120)) from exc
+            data.notify_graph_changed(graph["project_id"])   # 그래프 판이 바뀌었으니 검토구간 판 이전을 이어서 한다(재확인 안내가 낡은 상태를 말하지 않게 그 앞에서)
         return [], project_recheck(graph.get("project_id")) if graph.get("project_id") else []
 
 
@@ -125,7 +168,7 @@ def refresh(name):
         except Exception as exc:  # noqa: BLE001 - 저장은 끝났다. 다시 만들기 실패는 표시로 남기고 다음 동작에서 다시 해 본다
             LOG.exception("그래프 다시 만들기 실패")
             mark_stale(name, exc)
-            return True, ["저장했지만 그래프·지식그래프를 다시 만들지 못했습니다(%s). 다음 동작에서 다시 만듭니다." % str(exc)[:120]], []
+            return True, ["저장했지만 도면 반영은 끝내지 못했습니다(%s). 다음 동작에서 다시 반영합니다." % errtext.why(exc, 120)], []
         finally:
             if mine:
                 busy.discard(name)
@@ -138,6 +181,8 @@ def refresh(name):
 
 def ensure_graph(name):
     if not graph_stale(name):
+        return False, [], []
+    if deferred(name):                            # 짓기 작업이 곧 다시 만든다(수락이 이어지는 동안 잠금을 오래 쥐지 않게)
         return False, [], []
     return refresh(name)
 
@@ -176,6 +221,9 @@ def ensure_project(project_id):
         left = []
         for name in stale_names(project_id):
             if name in _busy():                   # 지금 이 스레드가 다시 만드는 쪽(그 일이 끝나면 표시를 지운다)
+                continue
+            if deferred(name):                    # 짓기 작업이 맡은 쪽: 그 작업이 끝나면 프로젝트 그래프도 새로 짓는다(notify_graph_changed)
+                left.append(name)
                 continue
             stale, _notes, _recheck = refresh(name)
             if stale:

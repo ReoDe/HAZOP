@@ -18,7 +18,7 @@ import threading
 
 from hazop import paths, store_io
 from hazop.extract import ai_review
-from hazop.shell import scheme
+from hazop.shell import errtext, scheme
 
 LOG = logging.getLogger("hazop.shell.api")
 MAX_UI_STATE_CHARS = 4096
@@ -161,6 +161,115 @@ class Engine:
         self._stop = threading.Event()   # 창을 닫거나 화면을 바꾸려고 작업을 멈추라고 할 때
         self._threads = []
         self._analysis = None
+        from hazop.shell import ai_gate
+        self.ai_gate = ai_gate.Gate()    # 일괄 AI 작업(AI 검토·추출 뒤 자동 검토·AI 분석)의 구독 호출 차례
+        self._reviewing = set()          # AI 검토가 돌거나 차례를 기다리는 도면(추출 이름)
+        self._catching = set()           # 검토구간 판 이전을 기다리는 프로젝트
+        self._settle_gate = threading.Lock()   # 열 때 정착과 도면 등록·추출 작업을 가른다(정착이 다시 짓는 폴더와 추출이 쓰는 폴더가 겹치지 않게)
+        # 판 이전과 ⑤ AI 분석 시작을 가른다(분석이 도는 동안 판 이전을 하지 않고, 판 이전 중에는 분석을 시작하지 않는다). 같은 스레드가 다시 잡을 수 있다:
+        # 분석 시작 검사가 이 잠금 안에서 프로젝트 그래프를 지으면 낡은 도면을 다시 만들고 그 끝의 알림이 같은 스레드에서 판 이전을 한다(그러면 검사가 판이
+        # 바뀐 것을 보고 시작하지 않는다)
+        self._study_lock = threading.RLock()
+        from hazop.app import data
+        data.set_graph_listener(self._on_graph_changed)   # 그래프 판이 바뀐 길(다시 추출·다시 짓기)이 끝나면 판 이전을 이어서 한다
+
+    # ------------------------------------------------------------ 다시 추출 뒤 판 이전(INTENT §3.8: 엔진 사정을 사용자에게 시키지 않는다)
+    def _on_graph_changed(self, project_id):
+        if project_id == self.project_id():
+            self.auto_catch_up(project_id)
+
+    def _ai_busy(self):
+        """일괄 AI 작업이 차례를 잡았거나 기다리거나 AI 분석이 도는 중인가(그 사이에 구간 집합·결과 판을 옮기지 않는다)."""
+        return bool(self.ai_gate.waiting()) or bool(self.analysis.running)
+
+    def auto_catch_up(self, project_id):
+        """그래프 판이 바뀐 뒤 검토구간 판 이전을 이어서 한다. AI 작업이 도는 중이면 끝날 때까지 다른 스레드에서 기다린다(시간 제한으로 밀고
+        들어가지 않는다: 옛 집합을 쥔 분석이 저장하면 옮긴 참조가 덮인다). 기다리는 사이 프로젝트가 바뀌거나 창을 닫으면 그만둔다(다시 열 때 맞춘다).
+        → 지금 끝냈으면 True."""
+        if not self._ai_busy():
+            done = self._catch_up_now(project_id)
+            if done is not None:
+                return done
+        with self._lock:
+            if project_id in self._catching:
+                return False
+            self._catching.add(project_id)
+
+        def later():
+            import time
+            try:
+                while not self.stop_requested() and self.project_id() == project_id:
+                    if not self._ai_busy() and self._catch_up_now(project_id) is not None:
+                        return
+                    time.sleep(0.3)
+            finally:
+                with self._lock:
+                    self._catching.discard(project_id)
+        t = threading.Thread(target=later, name="auto-catch-up", daemon=True)
+        with self._lock:
+            self._threads.append(t)          # 창을 닫을 때 wait_jobs가 이 판 이전도 기다린다(집합만 쓰고 결과는 아직인 채 닫지 않게)
+        t.start()
+        return False
+
+    def _catch_up_now(self, project_id):
+        """판 이전 한 번. → True(옮겼음) · False(할 것이 없거나 실패: 막음과 '도면 변경 반영하기' 단추가 안전망) · None(분석이 돌아 지금은 못 함)."""
+        from hazop.app import data
+        with self._study_lock:
+            if self.analysis.running:
+                return None
+            res = data.catch_up_study(project_id)
+        if not res or res.get("error") or not res.get("changed"):
+            return False
+        for topic in ("nodes", "results", "ie", "kg"):
+            self.changed(topic)
+        # 잃은 것이나 확정을 푼 구간이 조용히 지나가지 않게 알린다. 지금 보는 프로젝트의 것만(그 자리로 단추가 다른 프로젝트로 가지 않게)
+        if (res.get("new_lost") or res.get("demoted")) and project_id == self.project_id():
+            self.emit("study.lost", {"project_id": project_id, "graph_version": res.get("graph_version"),
+                                     "sections": len(res["lost_members"]) if res.get("new_lost") else 0,
+                                     "members": sum(res["lost_members"].values()) if res.get("new_lost") else 0,
+                                     "first_node": res.get("first_node"), "demoted": res.get("demoted") or []})
+        return True
+
+    def catch_up_on_open(self):
+        """앱을 열었을 때(프로젝트를 정했을 때) 시트 자리를 한 번 정착하고(settle_on_open), 이미 낡은 프로젝트를 같은 길로 맞춘다. → 판 이전을 했으면 True.
+        짓지 않은 입력 연산(나누기·배관 지정 수락)이 남은 도면은 찾아 '다음에 할 일'에 올린다(api_inputs.scan_on_open, 저절로 짓지 않음)."""
+        self.settle_on_open()
+        try:
+            from hazop.shell import api_inputs
+            api_inputs.scan_on_open(self)
+        except Exception:  # noqa: BLE001 - 안내 한 줄을 위한 찾기: 실패해도 열기를 막지 않는다
+            LOG.warning("짓지 않은 입력 연산 찾기 실패", exc_info=True)
+        return self.auto_catch_up(self.project_id())
+
+    def settle_on_open(self):
+        """시트 정체 정착(hazop.app.data.settle_sheets)을 프로젝트를 열 때 한 번 한다. 정착 전 프로젝트는 이 단위 전 이름 규칙에 가려진 도면(첫 PDF,
+        여러 쪽의 앞쪽)이 다음 추출 때까지 보이지 않았다. 읽는 길은 그대로 쓰지 않는다: 이 명시적인 '열 때 한 번'만 판 이전과 같은 잠금 안에서 쓴다.
+        정착은 멱등이라 이미 했으면 아무것도 쓰지 않는다. 추출·AI 작업·분석이 도는 중이면 하지 않는다(추출 맨 앞이 정착한다).
+        → 정착 결과(changed·state·renamed·skipped) 또는 None(하지 않음·실패, 실패는 기록만 하고 옛 파일 그대로)."""
+        from hazop.app import data
+        pid = self.project_id()
+        if not self._settle_gate.acquire(blocking=False):
+            return None
+        try:
+            # 문을 잡은 뒤에 본다: 그 사이 시작한 등록 작업은 문 앞에서 기다리므로 정착과 겹치지 않는다(검토 확인 항목)
+            if self.running_jobs() or self._ai_busy():
+                return None
+            with self._study_lock:
+                if self.analysis.running:
+                    return None
+                try:
+                    res = data.settle_sheets(pid)
+                except Exception as exc:  # noqa: BLE001 - 열 때 한 번의 덤: 실패해도 앱은 열리고 다음 추출이 다시 한다
+                    LOG.exception("열 때 시트 정착 실패: %s", pid)
+                    self.emit("app.notice", {"text": "도면 목록을 새 이름 규칙으로 정리하지 못했습니다(%s). 파일은 그대로이고, 다음에 도면을 읽을 때 다시 합니다."
+                                             % errtext.why(exc, 80)})
+                    return None
+        finally:
+            self._settle_gate.release()
+        if res and res.get("changed"):
+            for topic in ("drawings", "sources", "aireview", "nodes", "kg"):
+                self.changed(topic)
+        return res
 
     # ------------------------------------------------------------ 보내기
     def emit(self, name, data=None):
@@ -168,6 +277,8 @@ class Engine:
 
     def changed(self, topic, rev=None):
         self._emit({"t": "changed", "topic": topic, "rev": rev})
+        if topic in NEXT_SOURCES:            # 영역이 바뀌면 '다음에 할 일'도 다시 읽게 한다(api_next)
+            self._emit({"t": "changed", "topic": "next", "rev": None})
 
     # ------------------------------------------------------------ 설정·상태
     def save_settings(self):
@@ -213,8 +324,9 @@ class Engine:
 
     def ui_state(self):
         try:
-            with open(self.ui_state_path(), encoding="utf-8") as fh:
-                state = json.load(fh)
+            with open(self.ui_state_path(), "rb") as fh:          # 한 번에 읽고 닫은 뒤 푼다(쥔 채 풀면 다른 스레드의 저장 교체가 Windows에서 접근 거부로 막힌다, e6080f4와 같은 꼴)
+                raw = fh.read()
+            state = json.loads(raw.decode("utf-8"))
             return state if isinstance(state, dict) else {}
         except (OSError, ValueError):
             return {}
@@ -274,6 +386,14 @@ class Engine:
         return self._analysis
 
     # ------------------------------------------------------------ 진행 중인 작업(창 닫기·화면 바꾸기 전에 묻는다)
+    def spawn(self, target, name):
+        """뒤 스레드 하나를 띄우고 창을 닫을 때 wait_jobs가 기다리게 한다(열 때 정착·판 이전이 쓰는 도중 닫히지 않게)."""
+        t = threading.Thread(target=target, name=name, daemon=True)
+        with self._lock:
+            self._threads.append(t)
+        t.start()
+        return t
+
     def running_jobs(self):
         """아직 도는 작업의 ID 목록."""
         with self._lock:
@@ -284,10 +404,24 @@ class Engine:
         with self._lock:
             return [v.get("kind") or "register" for v in self._jobs.values() if v["state"] == "running"]
 
+    def job_progress(self):
+        """도는 작업마다 {kind, label, text, done, total}(마지막 진행 알림). '다음에 할 일' 줄이 읽는다."""
+        with self._lock:
+            return [{"kind": v.get("kind") or "register", "label": v.get("label"), "text": v.get("text"), "done": v.get("done"), "total": v.get("total")}
+                    for v in self._jobs.values() if v["state"] == "running"]
+
+    def catching(self, project_id):
+        """그 프로젝트의 자동 판 이전이 AI 작업이 끝나기를 기다리는 중인가(그동안의 낡은 구간은 실패가 아니다)."""
+        with self._lock:
+            return project_id in self._catching
+
     def stop_jobs(self):
         """돌고 있는 작업에 멈추라고 알린다. 작업은 진행을 알리는 자리(등록 -> 추출 -> AI 검토 사이, AI 검토는 도면마다)에서 멈춘다.
         단계 한가운데(추출 호출 하나)는 끊지 않는다: 반쯤 쓰인 자료를 남기지 않으려는 것이다."""
         self._stop.set()
+        builds = getattr(self, "_input_builds", None)
+        if builds is not None:                 # 수락 뒤 짓기 차례(api_inputs): 타이머를 끄고 맡은 도면의 '반영 대기'를 푼다
+            builds.stop()
 
     def stop_requested(self):
         return self._stop.is_set()
@@ -300,6 +434,26 @@ class Engine:
             t.join(max(0.0, end - time.monotonic()))
         self._threads = [t for t in self._threads if t.is_alive()]
         return not self.running_jobs()
+
+    def ai_turn(self, label, progress, should_stop=None):
+        """일괄 AI 작업이 구독 호출 차례를 잡는다(with 문). 앞 작업이 있으면 기다리며 progress로 '앞 작업을 기다리는 중'을 알린다.
+        기다리는 동안 멈추라고 하면(should_stop, 없으면 엔진 멈춤) JobStopped."""
+        return self.ai_gate.turn(label, should_stop or self.stop_requested, lambda: JobStopped("중지했습니다"),
+                                 on_wait=lambda ahead: progress("앞 작업(%s)을 기다리는 중" % ahead, 0, None))
+
+    def reserve_review(self, names, partial=False):
+        """AI 검토를 돌릴 도면을 잡는다 -> 잡은 이름 목록. 이미 AI 검토가 돌거나 기다리는 도면이 있으면 partial이 아니면 하나도 잡지 않고
+        [], partial이면 빈 도면만 잡는다. 끝나면 release_review로 놓는다."""
+        with self._lock:
+            free = [n for n in dict.fromkeys(names) if n not in self._reviewing]
+            if len(free) < len(set(names)) and not partial:
+                return []
+            self._reviewing.update(free)
+            return free
+
+    def release_review(self, names):
+        with self._lock:
+            self._reviewing.difference_update(names)
 
     def _job_ended(self):
         if not self.running_jobs():
@@ -317,10 +471,15 @@ class Engine:
             self._jobs[job_id] = {"label": label, "state": "running", "kind": kind}
 
         def run():
+            if kind == "register":                 # 열 때 정착이 도는 중이면 끝날 때까지 기다린다(정착은 한 번뿐)
+                with self._settle_gate:
+                    pass
             self.emit("job.progress", {"id": job_id, "label": label, "state": "running"})
             def progress(text, done=None, total=None):
                 if self._stop.is_set():
                     raise JobStopped("중지했습니다")
+                with self._lock:
+                    self._jobs[job_id].update(text=text, done=done, total=total)
                 self.emit("job.progress", {"id": job_id, "label": label, "state": "running", "text": text, "done": done, "total": total})
             try:
                 result = fn(progress)
@@ -346,8 +505,7 @@ class JobStopped(Exception):
 
 
 def _one_line(exc):
-    text = " ".join(str(exc).split())
-    return text[:200] or type(exc).__name__
+    return errtext.why(exc, 200)      # 작업 실패 글: 영문 예외는 사람 말로(원래 글은 앱 기록에)
 
 
 # ---------------------------------------------------------------- 명령 표
@@ -388,10 +546,17 @@ def _h_set_project(engine, a):
     if engine.chat is not None:
         engine.chat.check_project()      # 프로젝트가 바뀌면 대화를 끝낸다
     engine.current_sheet = None
+    engine.spawn(engine.catch_up_on_open, "catch-up-on-open")      # 닫을 때 기다림. 이미 낡은 프로젝트면 한 번 맞춘다(읽기를 붙잡지 않게 뒤에서)
     engine.emit("project.changed", {"project_id": pid})      # 웹이 구간·결과·초기사건 상태를 모두 비우고 다시 읽는다
     for topic in ("drawings", "state") + tuple(TOPIC_OWNER):      # 등록된 영역 모두(구간·결과·초기사건 …)
         engine.changed(topic)
     return {"project_id": pid}
+
+
+def _h_open_check(engine, a):
+    """앱을 켠 뒤 웹이 한 번 부른다: 지금 프로젝트가 이미 낡았으면(앱을 끈 사이 도면이 다시 읽힘) 같은 길로 맞춘다. 읽기를 붙잡지 않게 뒤에서."""
+    engine.spawn(engine.catch_up_on_open, "catch-up-on-open")
+    return {"started": True}
 
 
 def _h_set_default_shell(engine, a):
@@ -507,6 +672,7 @@ COMMANDS = {
     "ui.save": Command({"state": (v_json_text(MAX_UI_STATE_CHARS), True)}, _h_ui_save, "웹의 보기 상태(마지막 도면·채팅 접힘 등)를 맡긴다"),
     "sheet.open": Command({"graph_id": (v_str(1, 200), True)}, _h_open_sheet, "보는 도면이 바뀌었음을 알린다(채팅의 지금 화면 문맥)"),
     "project.set": Command({"project_id": (v_str(1, 60), True)}, _h_set_project, "프로젝트를 정하거나 바꾼다(끌어 놓아 등록할 때 쓰는 프로젝트 ID)"),
+    "project.open_check": Command({}, _h_open_check, "앱을 켠 뒤 지금 프로젝트의 검토구간을 도면 변경에 맞춘다(뒤에서)"),
     "settings.set_default_shell": Command({"enabled": (v_bool(), True)}, _h_set_default_shell, "시작할 때 새 화면을 쓸지(설정 ui_shell)"),
     "settings.set_reviewer": Command({"name": (v_str(1, 60), True)}, _h_set_reviewer, "검토자 이름"),
     "conn.check": Command({}, _h_conn_check, "AI 연결을 다시 확인한다"),
@@ -532,7 +698,8 @@ CORE_TOPICS = ("state", "drawings", "connection", "chat", "icons", "examples", "
 PROJECT_BOUND_CORE = ("chat.action.", "sheet.")
 
 # 영역별 모듈(등록 규약은 hazop/shell/README.md). 새 영역은 이 튜플에 모듈 이름 하나를 더하는 것이 전부다.
-MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "api_kg", "api_actionlog", "api_aireview", "api_docs", "api_titleblock", "api_settings", "api_corrections", "clean_items")
+MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "api_kg", "api_actionlog", "api_aireview", "api_docs", "api_titleblock", "api_settings", "api_corrections", "clean_items",
+           "api_next", "api_queue", "api_inputs")
 
 TOPIC_OWNER = {}          # 토픽 -> 읽기 모듈
 LOADED = {}               # 모듈 이름 -> 모듈 (읽지 못한 것은 없다)
@@ -579,6 +746,7 @@ def _load_modules():
 
 
 PROJECT_BOUND = _load_modules()
+NEXT_SOURCES = frozenset(getattr(LOADED.get("api_next"), "SOURCES", ()))      # 바뀌면 next도 알리는 영역 토픽
 
 
 # ---------------------------------------------------------------- 읽기 API
@@ -700,13 +868,19 @@ class ReadApi:
     def drawings(self):
         from hazop.app import data
         e = self.engine
+        from hazop.shell import api_drawings
         names = e.graph_names()
+        lb = api_drawings.labels(e)          # 쪽마다 한 줄: 사람용 이름(display)·번호 상태·알림·고를 것(시트 정체 U4)
         rows = []
-        for graph_id, name in sorted(names.items(), key=lambda kv: kv[1]):
+        for graph_id, name in names.items():
             brief = data.extraction_brief(data.extraction_path(name)) or {}
-            rows.append({"graph_id": graph_id, "name": name, "drawing_number": brief.get("drawing_number"), "title": brief.get("title"),
+            sr = lb.get(graph_id) or {}
+            rows.append({"graph_id": graph_id, "name": name, "display": api_drawings.display(e, graph_id, lb),
+                         "drawing_number": sr.get("drawing_number") if sr else brief.get("drawing_number"), "title": brief.get("title"),
                          "nodes": brief.get("nodes"), "relations": brief.get("relations"), "unknowns": brief.get("unknowns"),
-                         "origin": brief.get("origin")})
+                         "origin": brief.get("origin"), "number_state": sr.get("number_state"), "notice": sr.get("notice"),
+                         "conflict": sr.get("conflict"), "page_index": sr.get("page_index"), "material_id": sr.get("material_id")})
+        rows.sort(key=lambda r: (r["display"], r["page_index"] or 0, r["graph_id"]))
         data.save_briefs()      # 새로 읽은 쪽 요약을 캐시 파일에 남긴다(다음 실행부터 143쪽 추출 JSON을 다시 읽지 않는다)
         docs = []
         for r in data.list_registrations():
@@ -764,8 +938,9 @@ class ReadApi:
             return None
         try:
             svg_path = viewer_build._svg_path(al["svg_file"], [paths.work_root(), paths.store_root()])
-            with open(svg_path, encoding="utf-8") as fh:
-                text = viewer_build.prepare_svg(fh.read())
+            with open(svg_path, "rb") as fh:          # 한 번에 읽고 닫은 뒤 푼다(쥔 채 풀면 다른 스레드의 저장 교체가 Windows에서 접근 거부로 막힌다, e6080f4와 같은 꼴)
+                raw = fh.read()
+            text = viewer_build.prepare_svg(raw.decode("utf-8"))
         except (OSError, ValueError):
             return None
         return scheme.Response(200, "image/svg+xml", text.encode("utf-8"))

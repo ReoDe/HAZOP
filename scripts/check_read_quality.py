@@ -728,27 +728,30 @@ def _evidence(obj):
 
 
 def apply_with_splits(ex, cands, pdf, work):
-    """apply_candidates에 split 후보(hazop.extract.ai_split)를 더한다. split 후보가 있으면 그 묶음을 나눔 입력으로 쪽을 다시
-    추출하고(배관 사슬도 다시 만듦), 다른 후보의 노드·배관을 다시 뽑은 추출에서 pdf 개체가 같은 것으로 옮겨 적용한다(못 찾으면 버림).
-    split 후보는 새 추출에서 그 묶음의 개체를 절반 넘게 가진 노드에 종류 후보로 들어간다."""
-    from hazop.extract import ai_split
-    from hazop.extract.adapters import pdf_vector
-    splits = ai_split.split_inputs(ex, (cands or {}).get("candidates", []))
+    """apply_candidates에 split 후보(hazop.extract.ai_split)를 더한다. split 후보가 있으면 사람이 모두 수락했을 때와 같은 길로
+    잰다: 후보마다 나누기 입력 연산을 만들어 기준 추출을 짓고(corrections.build_base, 배관 사슬도 다시 만듦), 다른 후보의 노드·배관은
+    다시 뽑은 추출에서 pdf 개체가 같은 것으로 옮겨 적용한다(못 찾으면 버림). split 후보의 종류는 그 나누기가 만든 기호에 종류 후보로
+    들어가고, 기호가 되지 못한 나누기(적용 불가)는 버린다. split 후보가 없으면 apply_candidates와 같다."""
+    from hazop.extract import corrections
+    nodes = {n["local_id"]: n for n in ex.get("nodes") or []}
+    splits = [c for c in (cands or {}).get("candidates", [])
+              if c.get("field") == "split" and c.get("pdf_objects") and c.get("node_local_id") in nodes]
     if not splits:
         return apply_candidates(ex, cands)
-    new = pdf_vector.extract(pdf, page=0, repo_root=work, splits=splits)
+    ops = [{"op_id": "c-%04d" % k, "op": "split", "target": nodes[c["node_local_id"]]["source_object_id"],
+            "value": corrections.input_value(ex, c["pdf_objects"])} for k, c in enumerate(splits, 1)]
+    new, status = corrections.build_base(ex, ops)
+    made = {"pdf-p%d-split-%s" % (o["value"]["pdf"]["page"], o["op_id"]): c for o, c in zip(ops, splits)
+            if o["op_id"] in status["applied"]}
     moved = {}
     for key in ("nodes", "relations"):
         by_ev = {_evidence(o): o["local_id"] for o in new.get(key) or [] if _evidence(o)}
         moved.update({o["local_id"]: by_ev.get(_evidence(o)) for o in ex.get(key) or [] if _evidence(o)})
-    out = []
+    out = [{"node_local_id": n["local_id"], "field": "kind", "values": made[n["source_object_id"]]["values"],
+           "match": made[n["source_object_id"]].get("match")} for n in new["nodes"] if n["source_object_id"] in made]
     for c in cands.get("candidates", []):
         c = dict(c)
         if c.get("field") == "split":
-            want = set(c["pdf_objects"])
-            hit = max(new["nodes"], key=lambda n: (len(want & set(_evidence(n))), n["local_id"]))
-            if 2 * len(want & set(_evidence(hit))) > len(want):
-                out.append({"node_local_id": hit["local_id"], "field": "kind", "values": c["values"], "match": c.get("match")})
             continue
         if c.get("field") == "connection":
             c["a"], c["b"] = moved.get(c.get("a")), moved.get(c.get("b"))

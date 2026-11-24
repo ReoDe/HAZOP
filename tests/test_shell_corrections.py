@@ -115,6 +115,40 @@ class Base(unittest.TestCase):
                     and all(ep.get("node_local_id") for ep in r["endpoints"]))
 
 
+
+class BaseExtractionTest(Base):
+    """입력 연산 U2 §11.3 4·5: 고치기는 기준 추출(나누기를 넣어 다시 읽은 것, corrections.resolve의 base) 위에서 한다.
+    나뉜 기호(원본에 없는 번호)를 고치면 그 번호로 연산을 만들 수 있어야 한다(예전에는 원본에서 찾아 '도면에 없는 항목')."""
+
+    def split_base(self):
+        import copy
+        src = self.tagged()
+        extra = copy.deepcopy(src)
+        extra.update(local_id="local-split-0001", source_object_id="split-c-0001-0", tag=None)
+        base = copy.deepcopy(self.ex)
+        base["nodes"].append(extra)
+        for loc in list(base.get("source_locations") or []):
+            if loc.get("local_id") == src["local_id"]:
+                base["source_locations"].append(dict(loc, local_id="local-split-0001", source_object_id="split-c-0001-0"))
+        real = corrections.resolve
+
+        def resolve(name, original=None, ops=None, *, allow_extract=False):
+            r = real(name, original, ops, allow_extract=allow_extract)
+            if name == self.name:
+                r = dict(r, base=base, corrected=corrections.apply(base, r["ops"]))
+            return r
+        p_ = mock.patch.object(corrections, "resolve", resolve)
+        p_.start()
+        self.addCleanup(p_.stop)
+        return extra
+
+    def test_a_split_symbol_can_be_tagged(self):
+        extra = self.split_base()
+        out = self.edit("set_tag", extra["local_id"], {"tag": "V777"})
+        self.assertTrue(out["ok"], out)
+        op = corrections.load(self.name)["ops"][-1]
+        self.assertEqual((op["op"], op["target"], op["value"]["tag"]), ("set_tag", "split-c-0001-0", "V777"))
+
 class TagKindFlowTest(Base):
     def test_tag_is_saved_reread_shown_in_the_graph_and_undone_and_redone(self):
         n = self.tagged()
@@ -191,7 +225,7 @@ class TagKindFlowTest(Base):
         self.engine.start_job = lambda label, fn, kind="register": started.append((label, kind)) or "j-held"      # 작업이 아직 안 끝난 때
         r = self.edit("set_tag", n["local_id"], {"tag": "FAST-1"})
         self.assertTrue(r["ok"] and r["data"]["refreshing"] and r["data"]["graph_stale"], r)
-        self.assertEqual(started, [("그래프 다시 만들기", "graph_refresh")])
+        self.assertEqual(started, [("도면 반영", "graph_refresh")])
         self.assertTrue(sheet_refresh.graph_stale(self.name))                              # 표시가 서 있다: 읽는 쪽이 낡은 그래프임을 안다
         self.assertEqual(len(corrections.load(self.name)["ops"]), 1)
         self.engine.start_job = real
@@ -315,7 +349,7 @@ class ReachTest(Base):
         self.assertEqual([x["reason"] for x in out["not_applicable"]], ["대상 없음"])
         v = AC.view(self.engine, self.gid)
         self.assertEqual([o["status"] for o in v["ops"]], ["applied", "not_applicable"])
-        self.assertEqual(v["ops"][1]["reason"], "대상 없음")
+        self.assertEqual(v["ops"][1]["reason"], "대상을 찾지 못했습니다")
         self.assertEqual(next(x for x in corrections.apply_saved(fresh, self.name)["nodes"] if x["local_id"] == n["local_id"])["tag"], "RE-1")
 
     def test_a_confirmed_sheet_is_reported_as_released_by_an_edit(self):
@@ -331,7 +365,7 @@ class ReachTest(Base):
         stale = {"schema_version": study_nodes.SCHEMA_VERSION, "graph_version": "old", "project_id": self.engine.project_id(), "graph_id": "pg", "nodes": [{"node_id": "S1", "members": [], "confirmed": {"by": "a"}}]}
         with mock.patch.object(study_nodes, "read_as_is", lambda pg: stale):
             notes = sheet_refresh.project_recheck(self.engine.project_id())
-        self.assertTrue(notes and notes[0].startswith("④ 검토구간이 고치기 전 도면 기준입니다"), notes)
+        self.assertTrue(notes and notes[0].startswith("검토구간이 고치기 전 도면 기준입니다"), notes)
 
     def test_web_never_sends_or_receives_paths(self):
         n = self.tagged()
@@ -497,7 +531,7 @@ class RegisteredPathTest(unittest.TestCase):
         folder = [p for p in glob.glob(paths.folder("references", "pid-samples", "*")) if "SNP-M-101" in p][0]
         src = shutil.copy(glob.glob(os.path.join(folder, "*.drawio"))[0], self.tmp)        # 등록은 원본을 저장소에 복사한다(원본 폴더는 건드리지 않음)
         register_flow.register_and_extract(self.engine, src, lambda *a, **k: None)
-        self.gid = next(g for g in self.engine.graph_names() if "101" in g)
+        self.gid = next(iter(self.engine.graph_names()))   # 등록한 도면 하나(번호 확정 전이라 graph-<자료>-p0)
         self.name = self.engine.graph_names()[self.gid]
 
     def call_nodes(self, name, args):
@@ -544,7 +578,11 @@ class RegisteredPathTest(unittest.TestCase):
             r = AC.apply_edit(self.engine, self.gid, "set_tag", node_lid, {"tag": "REG-TAG-1"}, AC.view(self.engine, self.gid)["ver"])      # 채팅 길: 같은 스레드에서 끝까지
         self.assertTrue(r["ok"], r)
         self.assertTrue(kg.called, "등록된 도면이면 지식그래프를 다시 만든다")
-        self.assertTrue(any(t.startswith("④ 검토구간이 고치기 전 도면 기준입니다") and "S1" in t for t in r["recheck"]), r["recheck"])
+        # 그래프 판이 바뀌면 앱이 검토구간 판 이전을 이어서 한다: 같은 구성요소(태그만 바뀜)는 따라가고 확정은 그대로라 재확인 안내가 없다
+        self.assertEqual(r["recheck"], [])
+        from hazop.shell import api_nodes
+        row = api_nodes.summary(self.engine)["nodes"][0]
+        self.assertEqual((row["state"], row["lost"], api_nodes.summary(self.engine)["stale"]), ("confirmed", 0, False))
         d = self.edit("delete_node", node_lid)                                            # 기기와 함께 지워지는 배관이 확정 구간 S1에 든다
         self.assertEqual(d["error"]["code"], "needs_confirm")
         self.assertIn("S1", d["error"]["message"])
@@ -565,7 +603,8 @@ class RegisteredPathTest(unittest.TestCase):
         self.assertTrue(u["ok"], u)
         from hazop.shell import api_nodes
         row = api_nodes.summary(self.engine)["nodes"][0]
-        self.assertEqual(row["broken"], 1)                                                # 구간 화면에 '끊긴 구성원'으로 보인다
+        # 앱이 판 이전을 이어서 해 지운 노드는 '끊긴 구성원'이 아니라 '찾지 못한 구성요소'(묘비)로 구간 화면에 보인다
+        self.assertEqual((row["broken"], row["lost"]), (0, 1))
 
 
 if __name__ == "__main__":

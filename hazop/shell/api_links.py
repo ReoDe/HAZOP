@@ -22,6 +22,7 @@ import uuid
 from hazop import store_io
 from hazop.graph import project
 from hazop.shell import sheet_refresh
+from hazop.shell import errtext
 
 LOG = logging.getLogger("hazop.shell.api_links")
 CANDIDATE_LIMIT = 60
@@ -43,7 +44,7 @@ def _pg(engine):
     try:
         return pid, project_ctx.project_graph(pid)
     except ValueError as exc:
-        raise Refused("not_found", "프로젝트 그래프가 없습니다(%s)." % str(exc)[:120])
+        raise Refused("not_found", "도면을 먼저 읽어야 합니다(%s)." % errtext.why(exc, 120))
 
 
 def _manual(pid):
@@ -204,7 +205,7 @@ def view(engine, graph_id, local_id, q=None):
     except Refused as exc:
         return {"ok": False, "code": exc.code, "message": exc.message}
     except (OSError, ValueError) as exc:
-        return {"ok": False, "code": "failed", "message": "도면 연결 지정을 읽지 못했습니다(%s)." % str(exc)[:160]}
+        return {"ok": False, "code": "failed", "message": "도면 연결 지정을 읽지 못했습니다(%s)." % errtext.why(exc, 160)}
     cands, total = _candidates(pg, n, by_id, q)
     point = _point(pg, n, by_id, ops)
     return {"ok": True, "graph_id": graph_id, "ver": _ver(fp, pg), "point": point, "candidates": cands, "more": max(0, total - len(cands)),
@@ -261,7 +262,7 @@ def _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done, dry=Fa
     dry=True: 같은 검사를 하고 저장하지 않는다 → {ok, dry, confirm(물을 확인 글 또는 None), notes(저장하면 낼 알림)}(채팅 확인 상자가 미리 보인다)."""
     who = _who(engine, by)
     if not ver or not base:          # 채팅 길도 같다: 먼저 view로 읽고 그 판·지문을 함께 보낸다
-        raise Refused("bad_args", "읽은 판(ver)과 연결점 지문(base)을 함께 보내야 합니다. 먼저 연결점을 읽으세요.")
+        raise Refused("bad_args", "화면에서 본 연결점 내용을 함께 보내야 합니다. 먼저 연결점을 읽으세요.")
     pid = engine.project_id()
     with sheet_refresh.lock("drawing-links:" + str(pid)):
         pid, pg = _pg(engine)
@@ -286,6 +287,8 @@ def _save(engine, graph_id, local_id, ver, base, confirm, by, plan, done, dry=Fa
             project.save_manual(pid, new_ops, who, at, expect=fp, note=note)
         except store_io.Conflict:
             raise Refused("stale", "다른 곳에서 도면 연결 지정이 바뀌었습니다. 카드를 다시 열었으니 확인하고 다시 하세요.")
+    from hazop.app import data
+    data.notify_graph_changed(pid)       # 도면 연결은 프로젝트 그래프 판에 든다: 검토구간을 이어서 맞춘다
     for topic in ("links", "nodes", "drawings"):
         engine.changed(topic, None)
     recheck = sheet_refresh.project_recheck(pid)
@@ -306,7 +309,7 @@ def _guard(fn):
         return out
     except (OSError, ValueError) as exc:
         LOG.exception("도면 연결 지정 실패")
-        return {"ok": False, "code": "failed", "message": "도면 연결 지정을 저장하지 못했습니다(%s)." % str(exc)[:160]}
+        return {"ok": False, "code": "failed", "message": "도면 연결 지정을 저장하지 못했습니다(%s)." % errtext.why(exc, 160)}
 
 
 def pair(engine, graph_id, local_id, peer_graph_id, peer_local_id, ver, reason="", base=None, confirm=None, by=None, dry=False):

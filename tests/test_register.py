@@ -75,6 +75,8 @@ class RegisterBase(unittest.TestCase):
         return path
 
     def reg(self, path, **kw):
+        """등록 엔진의 판·이력 규칙을 본다. 번호를 바꾸는 다시 등록의 보류(가드)는 tests.test_sheet_guard가 본다."""
+        kw.setdefault("number_checked", True)
         kw.setdefault("store_root", self.store)
         kw.setdefault("actor", "tester")
         kw.setdefault("now", NOW)

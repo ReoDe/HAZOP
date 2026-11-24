@@ -52,13 +52,32 @@ function RunState({ run }) {
   const resume = rest && !l.test ? html` <${Btn} sm=${true} kind="primary" label=${"남은 " + rest + "칸 이어서 실행"} onClick=${() => R.planRun("resume")}>남은 ${rest}칸 이어서<//>
     ${l.method === "subscription" ? html`<${Btn} sm=${true} label="API 키로 이어서 실행(요금 확인)" onClick=${() => R.planRun("resume", "api")}>API 키로 이어서…<//>` : null}` : null;
   const test = l.test ? " 시험용 고정 응답 결과라 시험 파일에만 저장했습니다(실제 결과에 섞지 않음)." : "";
+  if (l.reason === "stale" && !l.calls) {     // 차례를 기다리는 사이 구간이 바뀜: 한 번도 부르지 않았다
+    return html`<${Notice} kind="warn" icon="alert-triangle">분석 차례를 기다리는 사이 검토구간이 바뀌어 AI를 부르지 않고 멈췄습니다. 다시 실행하면 바뀐 구간으로 계획합니다.${resume}<//>`;
+  }
+  if (l.reason === "stale") {          // 분석 중에 도면 변경이 검토구간에 반영됨: 옛 판으로 만든 답은 결과에 합치지 않고 따로 남겼다
+    return html`<${Notice} kind="warn" icon="alert-triangle">분석하는 사이 도면이 바뀌어 AI 분석을 멈췄습니다. 마지막으로 받은 답 ${(l.unsaved || []).length}건은 바뀐 도면과 맞지 않아 결과에 넣지 않고 따로 보관했습니다.${resume}<//>`;
+  }
+  const at = l.limit && l.limit.resets_at;
+  const when = typeof at === "number" ? new Date(at * 1000).toLocaleString() : at ? String(at).replace("T", " ").replace(/:\d\dZ?$/, "") : "";
+  const reset = when ? " 한도는 " + when + "에 풀립니다." : "";
+  if (l.reason === "save_failed") {    // 받은 답을 결과에 저장하지 못함: 그 답은 따로 보관했다(어디에 두었는지 사람 말로)
+    const kept = (l.unsaved || []).length;
+    const place = (l.unsaved_where || []).includes("settings") ? "결과 폴더에 쓸 수 없어 HAZOP 설정 폴더에" : "결과 폴더 옆에";
+    const again = l.test ? "" : " 그 칸은 이어서 실행할 수 있지만, 같은 칸을 다시 물어 호출을 한 번 더 씁니다.";
+    const limitNote = l.halted ? " 이 호출에서 사용 한도에도 닿아 남은 호출을 멈췄습니다(" + (l.error || l.error_kind) + ")." + reset : "";
+    return html`<${Notice} kind="warn" icon="alert-triangle">분석 결과를 저장하지 못해 AI 분석을 멈췄습니다. 마지막으로 받은 답 ${kept}건은 결과에 넣지 못해 ${place} 따로 보관했습니다.${limitNote}${again}${test}${resume}<//>`;
+  }
   if (l.reason === "halted") {
-    const at = l.limit && l.limit.resets_at;
-    const when = typeof at === "number" ? new Date(at * 1000).toLocaleString() : at ? String(at).replace("T", " ").replace(/:\d\dZ?$/, "") : "";
-    const reset = when ? " 한도는 " + when + "에 풀립니다." : "";
     return html`<${Notice} kind="warn" icon="alert-triangle">AI 분석이 ${l.calls}번째 호출에서 멈췄습니다(${l.error || l.error_kind}).${reset} 받은 칸은 저장했습니다.${test}${resume}<//>`;
   }
   return html`<${Notice} kind=${l.reason === "stopped" ? "info" : "ok"} icon="circle-check">AI 분석${l.reason === "stopped" ? "을 멈췄습니다" : "이 끝났습니다"}${l.method_name ? "(" + l.method_name + (l.this_run ? ", 이번 실행만" : "") + ")" : ""}: 호출 ${l.calls}회, ${l.cells}칸 반영${l.failed_calls ? ", 실패 " + l.failed_calls + "회" : ""}.${test}${resume}<//>`;
+}
+
+/** 빠지는 구간 가운데 도면이 바뀌어 찾지 못한 구성요소가 남은 것(판 이전이 확정을 푼 구간): 그냥 초안과 갈라 말한다. */
+function leftLost(left) {
+  const n = left.filter((x) => x.lost > 0).length;
+  return n ? ". 그 가운데 " + n + "개는 도면이 바뀌어 찾지 못한 구성요소가 있어 확정이 풀렸습니다(구간에서 다시 확인한 뒤 확정하세요)" : "";
 }
 
 function PlanCard() {
@@ -69,7 +88,9 @@ function PlanCard() {
     <h3>AI 분석 실행</h3>
     ${p.empty_text ? html`<p>${p.empty_text}</p>` : html`<p>${p.cells}칸을 ${p.calls}번 호출해 분석합니다(약 ${Math.max(1, Math.round(p.seconds / 60))}분).</p>
       ${p.conn ? html`<div class=${"small" + (p.conn.paid ? " conn-paid" : "")} aria-label="쓸 연결">${p.conn.method_name} · ${p.conn.model_name} · ${p.conn.cost_text}</div>` : null}
-      <div class="muted small">사람이 쓴 항목은 바꾸지 않고, 잠긴 구간과 적용됨 구간은 건너뜁니다. 연결: ${p.state || "확인 안 함"}</div>`}
+      <div class="muted small">사람이 쓴 항목은 바꾸지 않습니다.${p.locked_out ? " 분석을 마치고 잠근 구간 " + p.locked_out + "개는 다시 분석하지 않습니다." : ""} 연결: ${p.state || "확인 안 함"}</div>`}
+    ${p.left_out && p.left_out.length ? html`<${Notice} kind="warn" icon="alert-triangle">확정하지 않은 구간 ${p.left_out.length}개는 빠집니다: ${p.left_out.slice(0, 5).map((n) => n.node_id).join(", ")}${p.left_out.length > 5 ? " 외 " + (p.left_out.length - 5) + "개" : ""}${leftLost(p.left_out)}
+      <div class="acts-row"><${Btn} sm=${true} label="빠지는 구간 보기" onClick=${() => { R.closePlan(); store.set({ panel: "nodes" }); import("./nodes_state.js").then((N) => { if (N.nodes.get().focus !== p.left_out[0].node_id) N.focusNode(p.left_out[0].node_id); }); }}>구간 보기<//></div><//>` : null}
     ${!p.can_start && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.guide || "AI 연결을 쓸 수 없습니다."}<//>` : null}
     ${p.needs_terms && p.can_start ? html`<${Notice} kind="info">처음 실행입니다. 구독 사용 안내를 확인한 것으로 기록합니다.<//>` : null}
     ${paid && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.conn.confirm_text}
@@ -113,13 +134,16 @@ function Header({ s }) {
   const [exp, setExp] = useState(false);
   const exporting = R.useResults((x) => x.exporting);
   const view = R.useResults((x) => x.view);
+  const active = R.useResults((x) => x.active);
+  // 고를 것이 없으면(행렬에서 고른 칸이 없고 실패 칸도 없음) 범위 메뉴를 건너뛰고 '모든 구간' 확인 창으로 바로 간다(실제 창 4차: 4클릭 → 3클릭)
+  const direct = !active && !(s.kpi && s.kpi.failed_cells);
   return html`<div class="acts-row res-head">
     <${Kpi} kpi=${s.kpi} />
     <span class="acts">
       <${Btn} sm=${true} label=${view === "recs" ? "행렬 보기" : "권고 " + (s.kpi ? s.kpi.recs : 0) + " 보기"}
         onClick=${() => R.setView(view === "recs" ? "matrix" : "recs")}>${view === "recs" ? "행렬" : "권고 " + (s.kpi ? s.kpi.recs : 0)}<//>
-      <${Btn} sm=${true} icon="cpu" label="분석 실행" disabled=${!!(s.run && s.run.running)} onClick=${() => setMenu(!menu)}>분석 실행<//>
-      <${Btn} sm=${true} icon="file-export" label="Excel 내보내기 범위 고르기" disabled=${exporting} onClick=${() => setExp(!exp)}>Excel<//>
+      <${Btn} sm=${true} icon="cpu" label="분석 실행" title=${s.stale ? "도면 변경을 반영한 뒤 분석합니다(검토구간 패널)" : null} disabled=${!!(s.run && s.run.running) || !!s.stale} onClick=${() => { if (direct) { setMenu(false); R.planRun("all"); } else setMenu(!menu); }}>분석 실행<//>
+      <${Btn} sm=${true} icon="file-export" label="Excel 내보내기 범위 고르기" title=${s.stale ? "도면 변경을 반영한 뒤 내보냅니다(검토구간 패널)" : null} disabled=${exporting || !!s.stale} onClick=${() => setExp(!exp)}>Excel<//>
       <${Btn} sm=${true} icon="file-export" label="초기사건 인계 묶음 내보내기" disabled=${exporting} onClick=${R.exportIe}>초기사건 인계<//></span></div>
     ${exp ? html`<${ExportCard} s=${s} onDone=${() => setExp(false)} />` : null}
     ${menu ? html`<div class="acts-row runmenu" role="menu">
@@ -279,6 +303,8 @@ export function ResultsPanel({ onClose }) {
         <${Btn} kind="primary" label="구간 만들기" onClick=${() => store.set({ panel: "nodes" })}>구간 패널 열기<//></div>` : html`
         <${Header} s=${s} />
         ${s.read_only ? html`<${Notice} kind="warn" icon="alert-triangle">${s.read_only}<//>` : null}
+        ${s.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면이 다시 읽혀 바뀌었습니다. 그 변경을 반영할 때까지 분석 실행과 Excel 내보내기는 막히고, 분석 결과가 가리키는 위치는 아직 확인하지 않았습니다.
+          <div class="acts-row"><${Btn} sm=${true} kind="primary" label="검토구간 패널 열기" onClick=${() => store.set({ panel: "nodes" })}>검토구간 패널에서 도면 변경 반영하기<//></div><//>` : null}
         ${s.check && s.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(s.check)}<//>` : null}
         <${RunState} run=${s.run} /><${PlanCard} />
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${R.dismissError}>닫기<//><//>` : null}

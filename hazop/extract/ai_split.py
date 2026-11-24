@@ -9,9 +9,10 @@
 개체 하나가 두 상자에 들면 개체 가운데가 든 상자 하나에 준다. 가운데가 든 상자도 둘 이상이거나 하나도 없으면 어느 쪽에도
 넣지 않는다(덩어리에 남는다). 몸체나 선이 하나도 없는 묶음, 덩어리의 몸체·선을 모두 가져가는 묶음(나누지 못함)은 버린다.
 
-후보는 ai_review 후보 꼴(task 'split', field 'split', values [종류], match, pdf_objects, new_bbox)이다. 큰 노드 자체는 지우지
-않는다. 수락하면 새 노드를 사람 수정 기록에 add_node로 더하고 큰 노드는 그대로 둔다(틀처럼 남는다). 읽기 품질 검사는
-후보의 묶음을 추출의 나눔 입력(pdf_vector.extract(splits=...))으로 다시 추출해 연결까지 다시 잰다(split_inputs).
+후보는 ai_review 후보 꼴(task 'split', field 'split', values [종류], match, pdf_objects, new_bbox)이다. 수락하면 사람 수정
+기록에 나누기 입력 연산(split, 대상 = 큰 노드)으로 들어가고, 기준 추출을 다시 지을 때 그 묶음이 새 기호
+pdf-p<쪽>-split-<op_id>가 되어 배관 끝이 옮겨 간다(hazop.extract.corrections.resolve). 옛 판에서 add_node로 수락한 것은
+manual- 노드로 그대로 읽힌다. 읽기 품질 검사는 후보의 묶음을 같은 나누기 입력으로 다시 추출해 연결까지 다시 잰다.
 """
 
 import hashlib

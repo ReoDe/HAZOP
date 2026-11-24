@@ -18,6 +18,7 @@ import os
 import threading
 
 from hazop import store_io
+from hazop.study import idmap
 from hazop.study import node_tools as nt
 from hazop.study import nodes
 from hazop.study import results as res
@@ -25,9 +26,11 @@ from hazop.study import results as res
 AUTHORS = ("user", "ai")
 PENDING_KIND = "hazop_results_pending"
 STATE_COMMANDS = ("confirm", "unconfirm", "lock", "unlock")
+# 사람만 하는 명령. 묘비 버리기는 '사람이 확인함'을 남기는 일이라 AI 동작(채팅)으로 열지 않는다
+HUMAN_COMMANDS = STATE_COMMANDS + ("discard_lost",)
 # 거절 사유 코드: 부르는 쪽(채팅 동작 층·웹 화면)이 문구 대신 이 값으로 갈래를 나눈다. confirm은 '사람에게 물을 글(needs_confirm)을 보이고
 # 그 글을 confirm 인자로 다시 보내라'는 뜻이다
-CODES = ("unknown_command", "bad_actor", "stale", "conflict", "unreadable", "read_only", "rule", "confirm")
+CODES = ("unknown_command", "bad_actor", "bad_args", "stale", "conflict", "unreadable", "read_only", "rule", "confirm")
 
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
@@ -90,7 +93,34 @@ COMMANDS = {
     "lock": _each(lambda ns, doc, pg, nid, a, by: nodes.lock_node(ns, nid, by, doc)),
     "unlock": _each(lambda ns, doc, pg, nid, a, by: nodes.unlock_node(ns, nid, by, a.get("reason"))),
     "undo": _undo,
+    "discard_lost": lambda ns, doc, pg, a, ctx: _discard_lost(ns, doc, a, ctx["by"]),
 }
+
+
+def _discard_lost(ns, doc, a, by):
+    """keys(nodes.lost_items의 key 목록, 없으면 남은 것 전부)를 묘비 id로 바꿔 nodes.discard_lost를 부른다."""
+    nid = a.get("node_id")
+    tombs = None
+    keys = a.get("keys")
+    if keys is not None and not (isinstance(keys, list) and all(isinstance(k, str) for k in keys)):
+        raise _BadArgs([("keys", "keys는 lost_items가 준 key 글자의 목록이어야 함")])
+    if keys is not None:
+        node = nodes._find(ns, nid)
+        by_key = {idmap.tomb_handle(t): t for t in list(node.get("lost") or []) + list(node.get("discarded") or [])}
+        bad = [k for k in a["keys"] if k not in by_key]
+        if bad:
+            raise ValueError("%s 구간에 없는 찾지 못한 구성요소 %d개" % (nid, len(bad)))
+        tombs = [by_key[k] for k in a["keys"]]
+    out = nodes.discard_lost(ns, nid, tombs, by=by)
+    return out, doc, out["batches"][-1]["batch_id"] if out is not ns else None
+
+
+class _BadArgs(ValueError):
+    """인자 꼴이 틀림(거절 코드 bad_args)."""
+
+    def __init__(self, reasons):
+        super().__init__("; ".join("%s: %s" % r for r in reasons))
+        self.reasons = reasons
 
 
 def _refused(name, reasons, set_rev=None, code="rule"):
@@ -143,10 +173,10 @@ def execute(pg, name, args, *, author, confirmed_by=None, set_rev=None, request=
     confirmed_by = (confirmed_by or "").strip() or None
     if author not in AUTHORS:
         return _refused(name, [("author", "누가 썼는지(author: user 또는 ai)를 넘겨야 함")], code="bad_actor")
-    if (author == "user" or name in STATE_COMMANDS) and not confirmed_by:
-        return _refused(name, [("confirmed_by", "사람이 한 일·확정·잠금에는 누른 사람 이름이 있어야 함")], code="bad_actor")
-    if name in STATE_COMMANDS and author != "user":
-        return _refused(name, [("author", "확정·확정 해제·잠금·풀기는 사람만 함(채팅 규격 §4.2)")], code="bad_actor")
+    if (author == "user" or name in HUMAN_COMMANDS) and not confirmed_by:
+        return _refused(name, [("confirmed_by", "사람이 한 일·확정·잠금·찾지 못한 구성요소 버리기에는 누른 사람 이름이 있어야 함")], code="bad_actor")
+    if name in HUMAN_COMMANDS and author != "user":
+        return _refused(name, [("author", "확정·확정 해제·잠금·풀기·찾지 못한 구성요소 버리기는 사람만 함(채팅 규격 §4.2)")], code="bad_actor")
     if author == "ai" and set_rev is None:
         return _refused(name, [("set_rev", "AI 동작은 읽은 구간 판(set_rev)을 함께 보내야 함")], code="bad_actor")
     with project_lock(pg.get("project_id")):
@@ -164,7 +194,7 @@ def _execute_locked(pg, name, args, fn, author, confirmed_by, set_rev, request):
     if ns.get("read_only"):
         return _refused(name, [("node_set", "읽기 전용: %s" % ns["read_only"])], ns.get("set_rev"), "read_only")
     if set_rev is not None and set_rev != ns.get("set_rev"):
-        return _refused(name, [("set_rev", "구간이 그 사이 바뀜(읽은 판 %s, 지금 %s)" % (set_rev, ns.get("set_rev")))],
+        return _refused(name, [("set_rev", "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 해 주세요.")],
                         ns.get("set_rev"), "stale")
     try:
         doc, rfp = res.load_fp(ns)
@@ -176,6 +206,8 @@ def _execute_locked(pg, name, args, fn, author, confirmed_by, set_rev, request):
     ctx = {"author": author, "by": confirmed_by or "AI", "request": req}
     try:
         new, new_doc, bid = fn(ns, base, pg, dict(args or {}), ctx)
+    except _BadArgs as exc:
+        return _refused(name, exc.reasons, ns.get("set_rev"), "bad_args")
     except nt.Refused as exc:
         return _refused(name, exc.reasons, ns.get("set_rev"))
     except ValueError as exc:

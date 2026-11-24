@@ -287,14 +287,28 @@ def _end_states(doc, groups, approved, facts, scope):
     return out
 
 
-def _basic_events(doc, approved, iecs, scope, fmea_live=frozenset()):
+def be_target(b, idx):
+    """(태그, 참조 글). 대상이 묘비(다시 추출 뒤 찾지 못함)이거나 지금 도면에 없으면 태그 사본을 '확인 필요'로 덮어 다른 기호의
+    태그로 읽히지 않게 하고, 참조는 날것 대신 '대상 없음' 글로 낸다."""
+    gone = idmap.is_tomb(b["ref"]) or bool(idx) and b["ref"] not in idx
+    if not gone:
+        return b["tag"], b["ref"]
+    old = b["tag"] if b["tag"] and b["tag"] != CHECK_TAG else None
+    return (CHECK_TAG + (" (이전 태그 %s)" % old if old else "")), refs.label(b["ref"], idx)
+
+
+CHECK_TAG = "확인 필요"
+
+
+def _basic_events(doc, approved, iecs, scope, fmea_live=frozenset(), idx=None):
     from hazop.ie import fmea as fm
     out = []
     for bid, b in sorted(doc["basic_events"].items()):
         if bid not in scope["basic_events"]:
             continue
         live_src = [s for s in b["sources"] if s["key"] in approved or s["key"] in fmea_live]
-        out.append({"be_id": bid, "name": b["name"], "tag": b["tag"], "ref": idmap.label(b["ref"]),
+        tag, ref = be_target(b, idx or {})
+        out.append({"be_id": bid, "name": b["name"], "tag": tag, "ref": ref,
                     "equipment_kind": b["equipment_kind"], "system": b["system"],
                     "failure_mode": b["failure_mode"], "failure_text": b["failure_text"],
                     "normal_position": "", "failed_position": "",
@@ -445,6 +459,11 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=
     ie_doc이 hazop.ie.store.sync_all(또는 fmea.sync_basic_events)을 거쳐야 한다."""
     from hazop.ie import fmea as fm
     from hazop.ie import mld as ml
+    from hazop.study import follow
+    if pg and (node_set.get("graph_version") != pg.get("graph_version")
+               or any(((d or {}).get("ref_versions") or {}).get(pg.get("graph_id"), {}).get("graph_version")
+                      not in (None, pg.get("graph_version")) for d in (ie_doc, fmea))):
+        raise follow.Stale(follow.STALE)  # 옛 판 참조를 새 판 그래프 색인으로 읽지 않는다(다시 추출 뒤 검토구간을 열기 전)
     if fmea is not None and not fmea.get("rows") and not fmea.get("node_marks"):
         fmea = None          # 빈 FMEA 문서(파일 없음)는 '가져오지 않음'과 같다
     fmea_live = fm.live_sources(fmea) if fmea else frozenset()
@@ -523,7 +542,7 @@ def build_bundle(results, node_set, pg, ie_doc, now, table=None, fmea=None, mld=
         "groups": groups,
         "top_events": _top_events(ie_doc, groups, approved, idx, scope),
         "end_states": _end_states(ie_doc, groups, approved, facts, scope),
-        "basic_events": _basic_events(ie_doc, approved, iecs, scope, fmea_live),
+        "basic_events": _basic_events(ie_doc, approved, iecs, scope, fmea_live, idx),
         "retired": [{"id": gid, "status": g["status"], "split_into": list(g["split_into"])}
                     for gid, g in sorted(ie_doc["groups"].items()) if g["status"] in model.RETIRED],
         "trace": trace,

@@ -231,15 +231,15 @@ class ReviewRunTest(unittest.TestCase):
 
 
 class ReviewFlowTest(unittest.TestCase):
-    def test_check_form_and_accept_op_keep_the_lump_and_add_a_node(self):
+    def test_check_form_and_accept_op_is_a_split_input_on_vector_pdf_only(self):
         c = ai_review.make_candidate("split:big:0", "split", {"target": "s-big", "local_id": "big", "bbox": [110, 52, 120, 70]},
                                      "split", ["manual_valve"], 0.9, "", {"match": "legend", "pdf_objects": ["pdf-path-0001"],
                                                                           "new_bbox": [110, 52, 120, 70]})
         self.assertEqual(ai_review.to_check_candidates({"candidates": [c]})["candidates"],
                          [{"node_local_id": "big", "field": "split", "values": ["manual_valve"], "match": "legend",
                            "pdf_objects": ["pdf-path-0001"], "bbox": [110, 52, 120, 70]}])
-        op, value = ai_review._op_for(c)
-        self.assertEqual((op, value["kind"], value["bbox"]), ("add_node", "manual_valve", [110, 52, 10, 18]))
+        with self.assertRaisesRegex(ValueError, "벡터 PDF 도면만"):  # 수락은 나누기 입력 연산(tests.test_ai_split_accept)
+            ai_review._op_for(c, {"source": {"format": "drawio"}})
         self.assertIsNotNone(ai_review.bulk_block(dict(c, confidence=1.0)))
         self.assertIn("split", ai_review.TASK_ORDER)
         self.assertIn("split", ai_review.TASK_LABELS)

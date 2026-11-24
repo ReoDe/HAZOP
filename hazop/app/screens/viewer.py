@@ -1155,7 +1155,8 @@ class ViewerScreen(QWidget):
         if node_tag and not self._tag_ok(req["value"]["tag"], self.selected if req["op"] == "set_tag" else None):
             return False
         try:
-            op = corrections.make_op(self.info["original"], req["op"], req["target"], req["value"], self._by(),
+            base = corrections.resolve(self.name, self.info["original"], self.session.ops)["base"]      # 나뉜 기호도 대상(입력 연산 U2)
+            op = corrections.make_op(base, req["op"], req["target"], req["value"], self._by(),
                                      existing_ops=self.session.ops, used_ids=self.session.issued_ids(), name=self.name)
         except (OSError, ValueError) as exc:
             notify(self, "수정할 수 없음", str(exc), warn=True)

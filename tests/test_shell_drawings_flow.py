@@ -58,11 +58,11 @@ class SheetConfirmFlowTest(W.ShellBase):
         gid = gid or self.gid
         self.js(win, "window.__hz.store.set({sheet: %s, panel: null})" % json.dumps(gid))
         win.engine.dispatch("sheet.open", {"graph_id": gid})
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.confbar .chip') !== null") is True, 20), "쪽 확정 칩이 없음")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.confbar .chip:not(.review)') !== null") is True, 20), "쪽 확정 칩이 없음")
         pump(0.8)
 
     def chip(self, win):
-        return self.js(win, "document.querySelector('.confbar .chip').textContent.trim()")
+        return self.js(win, "document.querySelector('.confbar .chip:not(.review)').textContent.trim()")
 
     def make_clean(self, path, leftovers=()):
         with open(path, encoding="utf-8") as fh:
@@ -81,9 +81,9 @@ class SheetConfirmFlowTest(W.ShellBase):
         return self.js(win, "(() => { const b = %s; return !!b && !b.disabled; })()" % self.btn(label))
 
     def open_compare(self, win):
-        self.assertTrue(self.click(win, ".confbar .chip"))
-        self.assertTrue(wait_for(lambda: self.enabled(win, "견주기 화면 열기") is True, 10), self.text(win)[-300:])
-        self.assertTrue(self.click(win, "button[aria-label='견주기 화면 열기']"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
+        self.assertTrue(wait_for(lambda: self.enabled(win, "원본과 견주고 확정") is True, 10), self.text(win)[-300:])
+        self.assertTrue(self.click(win, "button[aria-label='원본과 견주고 확정']"))
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard') !== null") is True, 10), "견주기 화면이 열리지 않음")
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard .cmp-step, .cmpcard [role=status]') !== null") is True, 15), self.text(win)[-300:])      # 남은 것 넘기기 또는 '남은 것이 없습니다' 줄
 
@@ -92,13 +92,13 @@ class SheetConfirmFlowTest(W.ShellBase):
         self.locate(win)
         self.open_sheet(win)
         self.assertTrue(wait_for(lambda: "확정 조건" in self.chip(win), 10), self.chip(win))
-        self.assertTrue(self.click(win, ".confbar .chip"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.confcard').length") or 0) == 1, 10))
         text = self.text(win)
         self.assertIn("미확인", text)
         self.assertIn("원본에 남은 것", text)
-        for label in ("견주기 화면 열기", "이 쪽 확정"):
-            self.assertEqual(self.js(win, "%s.disabled" % self.btn(label)), True, label)
+        self.assertEqual(self.js(win, "%s.disabled" % self.btn("원본과 견주고 확정")), True)
+        self.assertEqual(self.js(win, "%s === null" % self.btn("이 쪽 확정")), True, "견주기 전에는 확정 단추 대신 '견주고 확정' 하나")
         self.assertIn("남은 조건을 모두 채워야 합니다", text)
         self.assertEqual(self.js(win, "document.querySelector('.confcard input[type=checkbox]') === null"), True, "체크는 견주기 화면에만 있다")
         self.assertFalse(os.path.exists(cf.store_path(self.name)), "누르기만으로는 아무것도 쓰지 않는다")
@@ -112,21 +112,58 @@ class SheetConfirmFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmp-pane svg image') !== null") is True, 15), "왼쪽 칸에 원본 그림이 있어야 한다")
         self.assertIsNone(cf.sheet_confirmation(self.name)["compared"], "화면을 열기만 해서는 견줌이 기록되지 않는다")
         self.assertTrue(wait_for(lambda: self.js(win, "!document.querySelector('.cmpcard input[type=checkbox]').disabled") is True, 15), "남은 것이 없으면 체크를 켤 수 있다")
-        self.assertEqual(self.js(win, "%s.disabled" % self.btn("견줌 완료")), True, "체크 전에는 막힘")
+        self.assertEqual(self.js(win, "%s.disabled" % self.btn("견줌만 기록")), True, "체크 전에는 막힘")
         self.assertTrue(self.click(win, ".cmpcard input[type=checkbox]"))
         pump(0.3)
-        self.assertTrue(self.click(win, "button[aria-label='견줌 완료']"))
+        self.assertTrue(self.click(win, "button[aria-label='견줌만 기록']"))
         self.assertTrue(wait_for(lambda: "확정만 남음" in self.chip(win), 10), self.chip(win))
         self.assertEqual(cf.sheet_confirmation(self.name)["compared"]["mode"], "side_by_side", "사람이 본 방식 한 가지만 적는다")
         self.assertEqual(self.js(win, "document.querySelector('.cmpcard') === null"), True, "견줌을 마치면 견주기 화면이 닫힌다")
-        self.assertTrue(self.click(win, ".confbar .chip"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
         self.assertTrue(wait_for(lambda: self.enabled(win, "이 쪽 확정") is True, 10))
         self.assertTrue(self.click(win, "button[aria-label='이 쪽 확정']"))
         self.assertTrue(wait_for(lambda: "쪽 확정됨" in self.chip(win), 10), self.chip(win))
         self.assertEqual(cf.sheet_confirmation(self.name)["confirmed"]["by"], "검토자A", "확정자는 설정의 검토자 이름")
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.confcard').length") or 0) == 0, 10), "확정하면 카드가 저절로 닫힌다(U8)")
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='확정 취소']\") !== null") is True, 10))
         self.assertTrue(self.click(win, "button[aria-label='확정 취소']"))
         self.assertTrue(wait_for(lambda: "쪽 확정됨" not in self.chip(win), 10), self.chip(win))
         self.assertIsNone(cf.sheet_confirmation(self.name)["confirmed"])
+
+    def test_compare_and_confirm_is_one_flow_and_closes_itself(self):
+        """U8(쪽 확정 8 → 3클릭): '다음에 할 일'의 쪽 확정 단추(openNext)가 조건이 찬 쪽에서는 견주기 화면을 바로 열고, 체크 하나와
+        '견줌 기록하고 확정' 한 번으로 견줌 기록·확정을 함께 남긴 뒤 견주기 화면과 카드가 저절로 닫힌다. 견줌을 건너뛰는 길은 없다."""
+        win = self.window()
+        path = self.locate(win)
+        self.make_clean(path)
+        self.open_sheet(win)
+        self.js(win, "window.__hz.next.set({ running: null, open: false, items: [{ kind: 'sheet_confirm', count: 1, text: '원본과 견주어 확정할 쪽이 1장 있습니다', detail: null,"
+                     " action: { label: '쪽 확정', go: 'panel:drawings#sheetconf', target: %s }, tone: '' }] })" % json.dumps(self.gid))
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.topbar .next .line .btn')"), 10))
+        self.assertTrue(self.click(win, ".topbar .next .line .btn"))                              # 클릭 1: 다음에 할 일의 '쪽 확정'
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard') !== null") is True, 15), "조건이 찬 쪽은 견주기 화면이 바로 열린다")
+        self.assertTrue(wait_for(lambda: self.js(win, "!document.querySelector('.cmpcard input[type=checkbox]').disabled") is True, 15))
+        self.assertEqual(self.js(win, "%s.disabled" % self.btn("견줌 기록하고 이 쪽 확정")), True, "체크 전에는 막힘(견줌을 건너뛰지 않는다)")
+        self.assertTrue(self.click(win, ".cmpcard input[type=checkbox]"))                       # 클릭 2
+        pump(0.3)
+        self.assertTrue(self.click(win, "button[aria-label='견줌 기록하고 이 쪽 확정']"))         # 클릭 3
+        self.assertTrue(wait_for(lambda: "쪽 확정됨" in self.chip(win), 15), self.chip(win))
+        rec = cf.sheet_confirmation(self.name)
+        self.assertEqual((rec["compared"]["mode"], rec["confirmed"]["by"]), ("side_by_side", "검토자A"), "견줌과 확정이 모두 기록됨")
+        self.assertEqual(self.js(win, "document.querySelector('.cmpcard') === null && document.querySelectorAll('.confcard').length === 0"), True,
+                         "끝나면 견주기 화면과 쪽 확정 카드가 저절로 닫힌다")
+
+    def test_the_card_shows_a_button_that_fixes_each_remaining_reason(self):
+        """U8 막다른 칩: '확정 조건 n개 남음' 카드가 남은 까닭마다 푸는 단추(표제란 확정 등)를 보이고, 누르면 그 자리로 간다."""
+        win = self.window()
+        self.locate(win)
+        self.open_sheet(win)
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.confcard').length") or 0) == 1, 10))
+        labels = self.js(win, "JSON.stringify([...document.querySelectorAll('.confcard .conf-list button')].map((b) => b.getAttribute('aria-label')))")
+        self.assertTrue(labels and json.loads(labels), "남은 조건을 푸는 단추가 없음: %s" % self.text(win)[-300:])
+        self.assertNotIn("registration_unknown", self.text(win))
 
     def test_the_compare_screen_needs_every_leftover_stepped_through_and_records_the_mode_in_use(self):
         win = self.window()
@@ -145,7 +182,7 @@ class SheetConfirmFlowTest(W.ShellBase):
         pump(0.3)
         self.assertEqual(self.js(win, "document.querySelector('.cmp-pane') === null"), True, "겹쳐 보기에는 왼쪽 칸이 없다")
         self.assertTrue(self.click(win, ".cmpcard input[type=checkbox]"))
-        self.assertTrue(self.click(win, "button[aria-label='견줌 완료']"))
+        self.assertTrue(self.click(win, "button[aria-label='견줌만 기록']"))
         self.assertTrue(wait_for(lambda: cf.sheet_confirmation(self.name)["compared"] is not None, 10))
         self.assertEqual(cf.sheet_confirmation(self.name)["compared"]["mode"], "overlay")
 
@@ -168,9 +205,9 @@ class SheetConfirmFlowTest(W.ShellBase):
         pump(0.8)
         self.assertIsNone(cf.sheet_confirmation(name_b)["compared"], "A에서 켠 체크가 B에 견줌을 남기지 않는다")
         self.assertIsNone(cf.sheet_confirmation(name_a)["compared"])
-        self.assertTrue(self.click(win, ".confbar .chip"))
-        self.assertTrue(wait_for(lambda: self.enabled(win, "견주기 화면 열기") is True, 10), self.text(win)[-300:])
-        self.assertTrue(self.click(win, "button[aria-label='견주기 화면 열기']"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
+        self.assertTrue(wait_for(lambda: self.enabled(win, "원본과 견주고 확정") is True, 10), self.text(win)[-300:])
+        self.assertTrue(self.click(win, "button[aria-label='원본과 견주고 확정']"))
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard input[type=checkbox]') !== null") is True, 10))
         self.assertEqual(self.js(win, "document.querySelector('.cmpcard input[type=checkbox]').checked"), False, "B의 견주기 화면은 체크가 꺼진 채 시작한다")
 
@@ -184,10 +221,9 @@ class SheetConfirmFlowTest(W.ShellBase):
             fh.write("{깨진 json")
         self.open_sheet(win)
         self.assertTrue(wait_for(lambda: "확정 기록 깨짐" in self.chip(win), 10), self.chip(win))
-        self.assertTrue(self.click(win, ".confbar .chip"))
+        self.assertTrue(self.click(win, ".confbar .chip:not(.review)"))
         self.assertTrue(wait_for(lambda: "확정 기록을 읽을 수 없습니다" in self.text(win), 10), self.text(win)[-300:])
-        self.assertEqual(self.js(win, "%s.disabled" % self.btn("견주기 화면 열기")), True)
-        self.assertEqual(self.js(win, "%s.disabled" % self.btn("이 쪽 확정")), True)
+        self.assertEqual(self.js(win, "%s.disabled" % self.btn("원본과 견주고 확정")), True)
         self.assertTrue(self.click(win, "button[aria-label='확정 해제']"))
         self.assertTrue(wait_for(lambda: "확정 기록 깨짐" not in self.chip(win), 10), self.chip(win))
         self.assertFalse(cf.sheet_confirmation(self.name).get("record_error"))
@@ -238,7 +274,7 @@ class AiEstimateFlowTest(W.ShellBase):
         self.assertTrue(win.engine.dispatch("extract.set_ai_review", {"enabled": True, "cap": 20}, project=win.engine.project_id(), via_web=True)["ok"])
         self.js(win, "window.__hz.store.set((s) => ({app: Object.assign({}, s.app, {ai_review: true, ai_review_cap: 20})}))")
         self.assertTrue(wait_for(lambda: "예상 호출" in self.text(win), 15), self.text(win)[-300:])
-        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.row .chip.ai').length") or 0) >= 1, 10), "도면 행마다 호출 수 칩")
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.row .chip.review').length") or 0) >= 1, 10), "도면 행마다 AI 검토 칩(예상 호출 수는 그 칩의 확인 창에)")
         win.engine.dispatch("extract.set_ai_review", {"enabled": False}, project=win.engine.project_id(), via_web=True)
 
 

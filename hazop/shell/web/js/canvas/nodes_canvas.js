@@ -2,7 +2,7 @@
 // SheetHost가 `useNodeCanvas(sheet, {onEsc})`의 props를 <Sheet>에 펼치고 `<NodeOverlay />`를 도면 자리 안에 그린다.
 // 도면·모델에서 온 글(태그, 이름)은 htm이 이스케이프하는 텍스트로만 넣는다.
 import { html } from "../ui/html.js";
-import { useEffect, useMemo } from "../../vendor/hooks.module.js";
+import { useEffect, useLayoutEffect, useMemo } from "../../vendor/hooks.module.js";
 import { store as shell } from "../store.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
@@ -23,17 +23,19 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
   const links = useMemo(() => (sheetView && sheetView.graph_id === sheet && Array.isArray(sheetView.links) ? sheetView.links : []), [sheetView, sheet]);
   const outside = useMemo(() => (showOutside && sheetView && sheetView.graph_id === sheet && sheetView.segments.length ? sheetView.outside_ids : []), [sheetView, showOutside, sheet]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {          // 그린 바로 뒤에 키를 잇는다(끌기 → Enter가 바로 먹게)
     function key(e) {
       const t = e.target, tag = (t && t.tagName) || "";
       const typing = tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || (t && t.isContentEditable);
       const s = N.nodes.get();
-      const act = keyAction(e, { selection: s.selection, typing, panelWide: false });
+      if (t && t.closest && t.closest(".newnode")) return;          // 카드 안의 키는 카드가 처리한다
+      const act = keyAction(e, { selection: s.selection, typing, panelWide: false, card: !!s.card });
       if (!act) return;
       e.preventDefault();
       if (act === "pan" || act === "pick") N.setMode(act);
       else if (act === "fit") N.zoomToIds(s.selection);
       else if (act === "card") N.openCard();
+      else if (act === "submit") N.submitCard();
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -88,16 +90,32 @@ function SelectionBar() {
     <${Btn} kind="ghost" sm=${true} icon="x" label="고른 것 비우기" title="비우기 (Esc)" onClick=${() => N.clearSelection()} /></div>`;
 }
 
+function PickHint() {
+  const mode = N.useNodes((s) => s.mode);
+  const selection = N.useNodes((s) => s.selection);
+  const card = N.useNodes((s) => s.card);
+  if (mode !== "pick" || selection.length || card) return null;
+  return html`<div class="float selbar pickhint" role="status"><${Icon} name="select" size=${15} />
+    <span>구간에 넣을 구성요소를 도면에서 네모로 끌어 고르세요. 고른 뒤 Enter를 누르면 바로 만들고, 이름은 만든 뒤 고칠 수 있습니다.</span>
+    <${Btn} kind="ghost" sm=${true} label="고르기 그만두기" title="그만두기 (Esc)" onClick=${() => N.setMode("pan")}>그만두기<//></div>`;
+}
+
 function NewNodeCard() {
   const card = N.useNodes((s) => s.card);
   const list = N.useNodes((s) => s.list.nodes);
+  const opened = !!card;
+  useEffect(() => { if (opened) { const el = document.getElementById("nn-name"); if (el) el.focus(); } }, [opened]);
   if (!card) return null;
   const sg = card.suggest;
-  const nextNo = "S" + (Math.max(0, ...list.map((n) => parseInt(String(n.node_id).slice(1), 10) || 0)) + 1);
+  const nextNo = card.made || "S" + (Math.max(0, ...list.map((n) => parseInt(String(n.node_id).slice(1), 10) || 0)) + 1);
   const submit = (e) => { e.preventDefault(); N.submitCard(); };
-  return html`<form class="float newnode" role="dialog" aria-label="새 구간" onSubmit=${submit}
+  if (!card.made) {          // 만드는 중(제안 이름을 받아 바로 만든다)
+    return html`<div class="float newnode" role="status" aria-label="새 구간"><div class="nn-h"><b>구간 만드는 중…</b></div>
+      ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//><div class="acts-row"><${Btn} label="닫기" onClick=${N.closeCard}>닫기<//></div>` : null}</div>`;
+  }
+  return html`<form class="float newnode" role="dialog" aria-label=${"새 구간 " + nextNo} onSubmit=${submit}
     onKeyDown=${(e) => { if (e.key === "Escape") { e.stopPropagation(); N.closeCard(); } else if (e.key === "Enter" && (e.ctrlKey || e.target.tagName !== "TEXTAREA")) { e.preventDefault(); N.submitCard(); } }}>
-    <div class="nn-h"><span class="seg-dot" style=${"background:" + colorOf(list.concat([{ node_id: nextNo }]), nextNo)}></span><b>새 구간 ${nextNo}</b>
+    <div class="nn-h"><span class="seg-dot" style=${"background:" + colorOf(list.concat([{ node_id: nextNo }]), nextNo)}></span><b>구간 ${nextNo}을 만들었습니다</b>
       ${sg ? html`<${Chip}>구성요소 ${sg.count}<//>` : null}<${Btn} kind="ghost" sm=${true} icon="x" label="카드 닫기" title="닫기 (Esc)" onClick=${N.closeCard} /></div>
     <div class="field"><label for="nn-name">이름</label>
       <input id="nn-name" class="textbox" autofocus value=${card.name} maxlength="120" onInput=${(e) => N.editCard({ name: e.target.value })} /></div>
@@ -107,8 +125,10 @@ function NewNodeCard() {
     ${sg && sg.overlaps.length ? html`<${Notice} kind="info">${sg.overlaps.map((o) => o.node_id + " 구간과 " + o.shared + "개가 겹칩니다").join(" · ")}. 겹쳐도 만들 수 있습니다.<//>` : null}
     ${sg && sg.asked > sg.count ? html`<${Notice} kind="warn" icon="alert-triangle">고른 ${sg.asked}개 가운데 ${sg.asked - sg.count}개는 구간에 넣을 수 없는 선(신호선·계측선)이라 뺐습니다.<//>` : null}
     ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//>` : null}
-    <div class="acts-row"><${Btn} kind="primary" icon="check" label="만들기" disabled=${card.busy || !card.name.trim()} onClick=${submit}>만들기 <kbd>Enter</kbd><//>
-      <${Btn} label="취소" onClick=${N.closeCard}>취소<//></div></form>`;
+    <div class="muted small">이름과 설계 의도는 여기서 고칠 수 있습니다. 그대로 두려면 Esc나 다음 구간 고르기로 닫으세요.</div>
+    <div class="acts-row"><${Btn} kind="primary" icon="check" label="이름·설계 의도 저장" disabled=${card.busy || !card.name.trim()} onClick=${submit}>저장 <kbd>Enter</kbd><//>
+      <${Btn} label="이 구간 만들기 되돌리기" disabled=${card.busy} onClick=${N.undoMade}>되돌리기<//>
+      <${Btn} kind="ghost" label="카드 닫기" onClick=${N.closeCard}>닫기<//></div></form>`;
 }
 
 function OutsideChip() {
@@ -123,5 +143,5 @@ function OutsideChip() {
 
 export function NodeOverlay() {
   N.wire();
-  return html`<${OutsideChip} /><${SelectionBar} /><${NewNodeCard} /><${Toolbar} /><${EditOverlay} />`;
+  return html`<${OutsideChip} /><${SelectionBar} /><${PickHint} /><${NewNodeCard} /><${Toolbar} /><${EditOverlay} />`;
 }

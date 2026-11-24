@@ -1,6 +1,6 @@
 ---
 doc_id: HZ-PLN-22
-rev: 2
+rev: 3
 status: review
 author: D-node 세션(2026-11-13)
 reviewed: —
@@ -227,6 +227,18 @@ rev 0의 `read_method`라는 이름은 쓰지 않습니다. 등록의 `pdf`와 �
 5. 지금 프로젝트 그래프(`hazop/graph/project.py`)가 같은 도면 번호의 그래프 둘을 어떻게 다루는지는 확인하지 않았습니다. X1이 먼저 확인하고, 둘 다 넣고 있으면 '쓰는 원본'만 넣도록 고칩니다.
 
 PDF끼리의 개정판에도 같은 문제가 있습니다. 그 규칙은 이 문서의 범위가 아니어서 §10에 넘깁니다.
+
+### 4.3 시트 이름과 자리(2026-11-23, 시트 정체 1단계)
+
+(나)의 '쓰는 원본'은 같은 도면 번호뿐 아니라 같은 시트 이름(graph_id)을 원하는 모든 그래프에 씁니다. 설계와 근거는 [시트 정체 설계](../units/2026-11-13-drawing-knowledge/evidence/sheet-identity-design.md)입니다.
+
+- **시트 이름**(`hazop/graph/sheets.py`): 사람이 확정한 번호가 있고 자료가 한 쪽이면 `graph-<번호>`, 등록 경로인데 번호가 없거나 여러 쪽 자료면 `graph-<material_id>-p<쪽, 0부터>`, 등록을 거치지 않은 추출은 `graph-<쪽 이름|drawing>`. 여러 쪽 자료의 자료 단위 번호는 이름에 쓰지 않습니다(사유 코드 `multi_page_number`). `material-<12자>-p<n>` 꼴은 번호로 받지 않습니다(`reserved_number`).
+- **graph.json 머리 `source`의 새 칸**: `material_id`, `registration_version`, `page_index`, `page_count`, `page_name`, `file`(원본 파일 이름), `format`, `number`(추출 결과의 번호 그대로). `drawing_number`는 시트 이름에 쓴 번호만 둡니다. 모두 `graph_version` 입력이 아닙니다.
+- **자리 표**: `data/drawing-sources/<프로젝트>.json`에 `seats{graph_id: {material_id, page, why: legacy|in_use|chosen, name, by, at}}`와 `seats_settled{at, rule}`를 더합니다(`schema_version` 0.2, 0.1 파일은 그대로 읽힘). 정착(`sources.settle`)이 이 규칙 전에 쓰던 이름을 지금 보이는 시트에 붙박습니다. 정착은 추출·그래프 짓기 같은 명시적인 차례에서만, 작업 루트에서만 돌고 읽는 길에서는 돌지 않습니다. 정착 전 프로젝트는 이 규칙 전 이름·고르기 그대로입니다.
+- **고르기 차례**: (자료, 쪽)마다 가장 새 등록 판 → 사람이 고른 파일 → 사람이 고른 형식 → 자리 주인 → 먼저 등록한 자료. 그래프 수정 시각은 쓰지 않습니다.
+- **고르기 줄**(`sources.conflicts`)에 `kind`(`format`·`file`)와 `reason`(`same_number_other_format`·`same_number_other_file`·`same_name_before_settle`)을 더했습니다. 같은 형식의 다른 파일은 형식이 아니라 자료(`material_id`)로 고릅니다(`sources.choose(..., material_id=)`).
+- **번호 가드(2단계, 2026-11-23)**: 표제란 확정·취소의 가드는 사람 기록의 지금 값만(되돌리기 묶음·이력은 빼고) 앞 이름의 지금 주인일 때만 세고, FMEA·도면 연결 지정의 끝·구간 제외 표시·지식그래프 판단 CSV도 셉니다. 다른 파일이 쓰는 번호를 받으면 그 파일을 주인으로 붙박습니다(자리 `in_use`). dry 검사는 정착하지 않습니다(정착은 앱을 열 때·추출·사람이 승인한 확정에서만). 거절 줄에 `reason_code`가 있습니다. 옛 등록 화면·명령줄은 이미 등록한 원본의 번호를 바꾸지 못하고 보류됩니다(`confirm_title_block_first`). 여러 쪽 자료의 번호(`multi_page_number`)와 임시 이름 꼴 번호(`reserved_number`)는 등록·표제란 모두 받지 않습니다. 근거는 설계 §11입니다.
+- **판 이전**: 시트의 자료가 바뀌면(다른 파일로 갈아탐) source 구성요소를 파일 id 같음으로 잇거나 되찾지 않습니다([검토구간 규격](study-node-segmentation.md) §2.6의 묘비 규칙, `graph_member_sheets`).
 
 ## 5. 가져오기 규칙
 

@@ -68,7 +68,7 @@ class CleanFlowTest(W.ShellBase):
         self.assertEqual(self.world(win), t0)
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "콘솔 오류 없음")
 
-    def test_the_choice_is_kept_per_sheet_until_the_app_closes_and_buttons_switch(self):
+    def test_the_choice_is_kept_per_sheet_and_new_sheets_follow_the_last_choice(self):
         win = self.window()
         g1 = self.open_sheet(win)
         self.assertTrue(self.click(win, ".clean-toggle button", 0))
@@ -76,7 +76,11 @@ class CleanFlowTest(W.ShellBase):
         self.assertEqual(self.pressed(win, "원본"), "true")
         g2 = sorted(win.engine.graph_names())[1]
         self.open_sheet(win, g2)
-        self.assertEqual(self.pressed(win, "정리"), "true", "다른 도면은 자기 기본 보기")
+        # 실제 창 3차 결함 7(총괄 결정): 아직 고르지 않은 같은 형식의 도면은 프로젝트 안에서 마지막 보기를 따른다
+        self.assertEqual(self.pressed(win, "원본"), "true", "다른 도면도 마지막에 고른 보기")
+        self.assertTrue(self.click(win, ".clean-toggle button", 1))
+        pump(0.5)
+        self.assertEqual(self.pressed(win, "정리"), "true")
         self.js(win, "window.__hz.store.set({sheet: %s})" % json.dumps(g1))
         pump(1.0)
         self.assertEqual(self.pressed(win, "원본"), "true", "앞 도면의 고른 보기는 기억한다")

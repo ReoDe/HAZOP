@@ -13,7 +13,42 @@ import { resetAreas } from "./areas.js";
 import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
-import { checkText } from "./panels/nodes_logic.js";
+import { Notices, addNotice, demotedNotice, lostNotice, refreshLostNotice } from "./notices.js";
+import { NextLine, next as nextStore, setGo } from "./next/next.js";
+import { closeQueue, openQueue, q as queueStore, useQueue, wire as wireQueue } from "./queue/queue.js";
+import { QueueCard, QueueLine } from "./queue/card.js";
+import { ReviewConfirm, setOpeners as setReviewOpeners, startReview, wire as wireReview } from "./review/review.js";
+import { ConfirmAllModal } from "./panels/nodes_confirm.js";
+import { RevertGuard } from "./review/revert_guard.js";
+
+// '다음에 할 일' 단추가 가는 자리(엔진 next의 go). 도면 위 자리로 갈 때는 열린 패널을 닫는다(가리지 않게). 패널 모듈은 누를 때 읽는다
+setGo("panel:drawings#titleblock", async (t) => { const m = await import("./panels/titleblock.js"); if (t) m.focusMaterial(t); else store.set({ panel: "titleblock" }); });
+setGo("panel:drawings#sheetconf", async (t) => {
+  store.set({ panel: null });
+  if (t && store.get().sheet !== t) openSheet(t);
+  const c = await import("./sheet_confirm.js");
+  c.openNext(t || store.get().sheet);      // 조건이 다 찼으면 견주기 화면을 바로(견줌 기록하고 확정까지 한 흐름, U8)
+});
+setGo("panel:drawings#sources", () => {      // 같은 번호 자리의 파일·형식 고르기 카드로(도면 패널 안)
+  store.set({ panel: "drawings" });
+  [80, 400, 1200].forEach((ms) => setTimeout(() => { const el = document.querySelector(".src-card"); if (el) el.scrollIntoView({ block: "start" }); }, ms));
+});
+// 확정 안 한 구간 목록을 보인 확인 카드(한 번에 확정). 구간 패널은 열지 않는다: 카드는 도면 위 창으로(실제 창 3차, 클릭 줄이기)
+setGo("confirm:nodes.confirm", async () => { const N = await import("./panels/nodes_state.js"); await N.refresh(); N.askConfirmAll(); });
+setGo("panel:nodes#pick", async () => { store.set({ panel: null }); const N = await import("./panels/nodes_state.js"); N.setMode("pick"); });      // 도면 위 안내 줄이 할 일을 보인다(nodes_canvas PickHint)
+setGo("confirm:inputs.build", (t) => cmd("inputs.build", t ? { graph_id: t } : {}).catch((e) => toast((e && e.message) || "다시 읽지 못했습니다.", "err")));      // 반영 전 수락이 남은 도면 다시 읽기(작업 줄에 진행)
+setGo("confirm:ie.suggest", async () => {      // 초기사건 규칙 초안 만들기(확정하지 않음, 두 번 해도 더하는 것이 없다): 패널을 열고 만든다
+  store.set({ panel: "ie" });
+  const I = await import("./panels/ie_state.js");
+  await I.loadSummary();
+  await I.suggest();
+});
+setGo("queue:lost", () => openQueue("lost"));
+setGo("queue:ai", (t) => openQueue("ai", t));
+setGo("confirm:aireview.run", (t) => startReview(t || store.get().sheet));
+setGo("confirm:nodes.catch_up", async () => { store.set({ panel: "nodes" }); const N = await import("./panels/nodes_state.js"); N.catchUp(); });
+setGo("panel:results#run", async () => { store.set({ panel: "results" }); const R = await import("./panels/results_state.js"); R.planRun("all"); });
+setGo("confirm:results.export_excel", async () => { const R = await import("./panels/results_state.js"); R.exportExcel("all"); });
 
 const toast = (text, kind) => store.set({ toast: { text, kind } });
 
@@ -99,6 +134,7 @@ function wireEvents() {
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));
   on("app.notice", (d) => toast(d.text));
+  on("study.lost", (d) => { for (const n of [lostNotice(d), demotedNotice(d)]) if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
   const job = (state) => (d) => store.set((s) => ({ jobs: Object.assign({}, s.jobs, { [d.id]: Object.assign({}, s.jobs[d.id], d, { state }) }) }));
   on("job.progress", job("running"));
   on("job.done", (d) => {
@@ -106,10 +142,14 @@ function wireEvents() {
     const dup = d.result && d.result.conflicts;
     if (dup && dup.length) toast("같은 도면 번호 " + dup.join(", ") + "의 원본이 다른 형식으로 이미 있습니다. 도면 패널에서 쓸 쪽을 고르세요(고르기 전에는 먼저 있던 쪽을 씁니다).");
     loadDrawings().then((x) => { if (!store.get().sheet && x.drawings.length === 1) openSheet(x.drawings[0].graph_id); }); });
-  on("job.failed", (d) => { job("failed")(d); toast(d.label + ": " + d.message, "err"); });
+  on("job.failed", (d) => {       // 사람이 한 멈춤·취소(stopped)는 실패가 아니다: 빨간 표시를 하지 않고 조용히 알린다(실제 창 3차 결함 3)
+    if (d.stopped) { job("stopped")(d); toast(d.label + ": 멈췄습니다."); return; }
+    job("failed")(d); toast(d.label + ": " + d.message, "err");
+  });
   onChanged((topic) => {
     if (topic === "drawings") loadDrawings().catch(() => {});
     if (topic === "state") loadState().catch(() => {});
+    if (topic === "nodes") refreshLostNotice();       // 확인을 마쳐 없어졌으면 알림도 사라진다
   });
 }
 
@@ -172,11 +212,12 @@ function TopBar() {
   const sheet = useStore((s) => s.sheet);
   const d = useStore((s) => s.drawings);
   const backTo = useStore((s) => s.backTo);
+  const queueOpen = useQueue((s) => s.open);
   const row = d.drawings.find((x) => x.graph_id === sheet);
   return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
-    <button type="button" class="sheet" aria-label="도면 바꾸기" onClick=${() => togglePanel("drawings")}>${row ? (row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
-    ${row && row.title ? html`<span class="title">${row.title}</span>` : null}
-    ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div></header>`;
+    <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => togglePanel("drawings")}>${row ? (row.display || row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
+    ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div>
+    ${queueOpen ? html`<${QueueLine} />` : html`<${NextLine} />`}</header>`;     // 도면 제목은 도면 번호에 마우스를 올리면 보인다(1366 폭에서 다음에 할 일 줄이 잘리지 않게, HZ-DSN-06 §3.1)
 }
 
 function Toast() {
@@ -188,6 +229,7 @@ function Toast() {
 function App() {
   const panel = useStore((s) => s.panel);
   const collapsed = useStore((s) => s.chatCollapsed);
+  const queueOpen = useQueue((s) => s.open);
   useStore((s) => s.iconsReady);
   useEffect(() => {
     function key(e) {
@@ -196,6 +238,7 @@ function App() {
       if (e.ctrlKey && e.altKey && (e.key === "k" || e.key === "K")) { e.preventDefault(); toggleChat(); }
       else if (e.ctrlKey && !e.altKey && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
+        if (queueStore.get().open) closeQueue();      // 대기열 카드 자리에서 채팅으로(이미 한 판정은 저장돼 있다)
         if (store.get().chatCollapsed) toggleChat();
         setTimeout(() => { const el = document.querySelector(".chat-input"); if (el) el.focus(); }, 0);
       } else if (e.ctrlKey && PANELS.some((p) => p.key === e.key)) { e.preventDefault(); togglePanel(PANELS.find((p) => p.key === e.key).name); }
@@ -204,28 +247,26 @@ function App() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
-  return html`<div class=${"app" + (collapsed ? " chat-collapsed" : "")}>
+  return html`<div class=${"app" + (collapsed && !queueOpen ? " chat-collapsed" : "") + (queueOpen ? " queue-open" : "")}>
     <${Rail} />
-    <main class="center"><${TopBar} /><${SheetHost} />
+    <main class="center"><${TopBar} /><${Notices} /><${SheetHost} />
       ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
-      <${Toast} /></main>
-    <${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />
-  </div>`;
+      <${Toast} /><${ReviewConfirm} /><${ConfirmAllModal} /><${RevertGuard} /></main>
+    ${queueOpen ? html`<${QueueCard} onChat=${() => { closeQueue(); if (store.get().chatCollapsed) toggleChat(); }} />`
+      : html`<${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />`}
+  </div>`;      // 오른쪽 칸은 채팅 또는 대기열 카드 하나(HZ-DSN-06 §3.5)
 }
 
 /** 프로젝트를 연 뒤 검토구간에 찾지 못한 구성요소(묘비)·확인할 참조가 있으면 토스트 한 줄. 읽기 실패는 조용히 넘어간다. */
-async function checkLost() {
-  try {
-    const l = await read("nodes");
-    const text = l && l.check && l.check.needs_check ? checkText(l.check) : "";
-    if (text) toast(text);
-  } catch (e) { /* 알림은 덤이다 */ }
-}
+const checkLost = refreshLostNotice;      // 닫을 수 있는 알림 줄(notices.js): 처리돼 없어지면 사라진다
 
 async function boot() {
   holdReads();      // 도면 목록이 뜰 때까지 큰 프로젝트에서 오래 걸리는 읽기(구간·결과·지식그래프 등)는 미룬다(bridge.js)
   connect();
   wireEvents();
+  wireQueue();
+  setReviewOpeners(openQueue, openSheet, (gid) => queueStore.get().open && queueStore.get().kind === "ai" && queueStore.get().gid === gid);
+  wireReview();
   render(html`<${App} />`, document.getElementById("app"));
   loadPanelCss();
   await loadIcons();
@@ -237,7 +278,8 @@ async function boot() {
   else if (d.drawings.length === 1) openSheet(d.drawings[0].graph_id);
   else store.set({ panel: "drawings" });   // 열 도면이 없거나 여럿이면 도면 패널을 먼저 보인다
   if (!s.reviewer) { store.set({ panel: "settings" }); toast("검토자 이름을 입력하세요. 승인·확정 기록에 남습니다."); }   // 처음 실행할 때 묻는 것은 그대로
-  if (s.debug) window.__hz = { store, cmd, read, ui, clean };
+  if (s.debug) window.__hz = { store, cmd, read, ui, clean, next: nextStore, queue: queueStore };
+  cmd("project.open_check").catch(() => {});      // 앱을 끈 사이 도면이 다시 읽혔으면 검토구간을 뒤에서 맞춘다(잃은 것이 있으면 알림이 온다)
   checkLost();        // 다시 추출 뒤 찾지 못한 구성요소가 있으면 한 줄로 알린다(읽기는 뒤에서, 화면을 붙잡지 않는다)
   await loadChat();   // 채팅 예시 질문은 프로젝트 그래프를 읽어 큰 프로젝트에서 수 초 걸린다. 도면 목록이 먼저 보이게 맨 끝에서 읽는다
 }

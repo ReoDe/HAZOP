@@ -13,6 +13,10 @@
   (기획서/지식그래프-스키마.md §3). 둘 다 추출 결과(graph_version 입력)에서 정해지므로 BUILDER_VERSION은 올리지 않는다.
   올리면 수정이 없는 도면까지 판이 바뀌어 구간 JSON·mentions 기록이 모두 재확인으로 간다.
 - 계기 노드의 isa(태그에서 읽은 ISA-5.1 식 문자, hazop.extract.isa)도 태그에서만 정해지므로 같은 이유로 올리지 않는다.
+- graph_id는 시트 정체 규칙(hazop.graph.sheets)이 정한다. 부르는 쪽이 프로젝트 자리 표를 본 이름(hazop.graph.sources.sheet_name)을
+  graph_id로 넘기고, 넘기지 않으면 자리 표를 보지 않은 자연 이름이다. 머리 source에 시트 정체 (material_id, page_index)와 쪽 수·원본 파일
+  이름·쪽 이름·형식을 적는다. source.drawing_number는 시트 이름에 쓴 번호다(여러 쪽 자료의 자료 단위 번호는 source.number에만 남음).
+  모두 추출 결과에서 정해지고 graph_version 입력이 아니므로 판은 그대로다.
 - 노드의 id_basis(source_object_id가 다시 추출하면 바뀔 수 있는 순번인지: sequence|source, hazop.extract.ids)도
   추출 결과(source.format·source_object_id, DEXPI는 가져오기가 지은 id의 표시)에서만 정해지므로 같은 이유로 올리지 않는다.
   그래프 머리 source 틀은 그대로 둔다.
@@ -24,6 +28,7 @@ import json
 import math
 
 from hazop.extract import ids, isa
+from hazop.graph import sheets
 
 SCHEMA_VERSION = "0.1"
 BUILDER = "hazop.graph.build"
@@ -81,8 +86,31 @@ def _graph_version(extraction):
     return "v-" + hashlib.sha256((BUILDER_VERSION + "|" + canon).encode("utf-8")).hexdigest()[:12]
 
 
-def build_graph(extraction, extraction_file=None):
-    """extraction dict -> graph dict."""
+def base_version(extraction):
+    """순번 id를 매긴 입력(기준 추출, hazop.extract.corrections.resolve의 base)의 판. 같으면 덧바르는 사람 고침만 달라 같은 순번 id가 같은 기호다."""
+    return "b-" + _graph_version(extraction)[2:]
+
+
+def numbering(resolved, base_ver=None):
+    """벡터 PDF 시트의 sym 번호가 기댄 원본 추출 {"base": 원본의 기준 판, "upto": 원본 sym 끝 번호} 또는 None.
+    resolved는 corrections.resolve 값, base_ver는 이미 셈한 그 기준 추출의 판이다. 기준 추출이 원본 그대로이거나 원본과 같은 뜻의
+    번호로 지은 나눔 기준 추출(inputs.numbering)일 때만 준다. 이 값이 같은 두 판에서 sym-n(n <= upto)은 원본 sym-n이거나 거기서
+    조각을 떼고 남은 몸체다(hazop.study.idmap이 기준 판이 달라도 참조로 잇는 근거). graph_version 입력이 아니다."""
+    original = resolved["original"]
+    if (original.get("source") or {}).get("format") != "pdf_vector":
+        return None
+    nums = [ids.sym_number(n.get("source_object_id")) for n in original.get("nodes") or ()]
+    nums = [k for k in nums if k is not None]
+    if not nums:
+        return None
+    own = base_version(original)
+    if not own or not (resolved["inputs"].get("numbering") or (base_ver or base_version(resolved["base"])) == own):
+        return None
+    return {"base": own, "upto": max(nums)}
+
+
+def build_graph(extraction, extraction_file=None, graph_id=None):
+    """extraction dict -> graph dict. graph_id: 시트 이름(없으면 sheets.natural)."""
     import networkx as nx
     locs = {l["local_id"]: l for l in extraction["source_locations"]}
     dwg = extraction["drawing"].get("drawing_number")
@@ -218,15 +246,20 @@ def build_graph(extraction, extraction_file=None):
                    "reason": "양 끝이 확정되지 않아 정상 연결로 넣지 않음"}
                   for r in extraction["unresolved_connectors"]]
 
+    f = sheets.facts(extraction)
+    gid = graph_id or sheets.natural(f)
+    src = extraction.get("source") or {}
     graph = {
         "schema_version": SCHEMA_VERSION,
         "project_id": extraction.get("project_id"),
-        "graph_id": "graph-%s" % (dwg or extraction["source_context"].get("page_name") or "drawing"),
+        "graph_id": gid,
         "graph_version": _graph_version(extraction),
         "input_runs": [run_id],
         "builder": {"name": BUILDER, "version": BUILDER_VERSION, "networkx": nx.__version__},
-        "source": {"extraction_file": extraction_file, "drawing_number": dwg,
-                   "extraction_run_id": run_id},
+        "source": {"extraction_file": extraction_file, "drawing_number": dwg if dwg and gid == sheets.PREFIX + dwg else None,
+                   "extraction_run_id": run_id, "number": dwg, "material_id": f["material_id"],
+                   "registration_version": src.get("registration_version"), "page_index": f["page_index"],
+                   "page_count": f["page_count"], "page_name": f["page_name"], "file": f["file"], "format": src.get("format")},
         "coordinate_system": {"coordinate_space": extraction["coordinate_system"]["coordinate_space"],
                               "unit": extraction["coordinate_system"]["unit"],
                               "note": "position·bbox는 drawio 도면 좌표. 구간 노드 position은 커넥터 경로 길이의 중점"},

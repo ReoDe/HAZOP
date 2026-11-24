@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>쉬운 흐름 시안</title>
+<style>
+/*@@BASE_CSS@@*/
+/* ── 이 시안에서 더한 것(HZ-DSN-05 §12) ───────────────────────────── */
+@media (max-width: 1400px) { .search { width: 168px; } .crumb .title { display: none; } }
+.topbar { gap: var(--sp-2); }
+.crumb .title { display: none; }   /* 도면 제목은 도면 번호에 마우스를 올리면 보인다. 그 자리를 '다음에 할 일'에 준다 */
+.search { width: 240px; }
+/* 다음에 할 일 한 줄 */
+.next { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; }
+.next .line { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 32px; padding: 0 4px 0 10px; border-radius: var(--r-pill); background: var(--surface-2); border: 1px solid var(--line); position: relative; }
+.next .line.warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn); }
+.next .line.info { background: var(--accent-weak); border-color: #c9dbf3; color: var(--accent-ink); }
+.next .line.calm { background: transparent; border-color: transparent; color: var(--muted); }
+.next .line .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.next .line.warn .txt { color: var(--warn); font-weight: 700; }
+.next .line.info .txt { color: var(--accent-ink); }
+.next .line.calm .txt { color: var(--muted); }
+.next .line .btn { height: 26px; padding: 0 10px; font-size: var(--fs-sm); border-radius: var(--r-pill); }
+.next .more { all: unset; display: inline-flex; align-items: center; gap: 2px; height: 26px; padding: 0 6px 0 8px; border-radius: var(--r-pill); font-size: var(--fs-sm); color: var(--muted); cursor: pointer; white-space: nowrap; }
+.next .more:hover { background: rgba(15,20,25,.06); color: var(--ink); }
+.next .bar { width: 72px; height: 6px; border-radius: 3px; background: rgba(10,95,194,.18); overflow: hidden; flex: none; }
+.next .bar i { display: block; height: 100%; background: var(--accent); }
+.drop-list { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: 440px; max-width: 92vw; padding: 6px; z-index: 9; color: var(--ink); }
+.drop-list .h { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px 6px; font-size: var(--fs-xs); color: var(--muted); }
+.drop-list button.item { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--r-sm); cursor: pointer; }
+.drop-list button.item:hover, .drop-list button.item.top { background: var(--surface-2); }
+.drop-list .item .n { width: 18px; color: var(--faint); font-size: var(--fs-xs); text-align: right; flex: none; }
+.drop-list .item .t { flex: 1; min-width: 0; }
+.drop-list .item .t span { display: block; font-size: var(--fs-xs); color: var(--muted); }
+.drop-list .item .go { color: var(--accent-ink); font-size: var(--fs-sm); white-space: nowrap; }
+.drop-list .item.warn .ic { color: var(--warn); }
+/* 도면 위 표시 */
+.ov-focus { fill: rgba(10,95,194,.10); stroke: var(--accent); stroke-width: 3; }
+.ov-old { fill: rgba(217,162,58,.12); stroke: var(--warn-line); stroke-width: 3; stroke-dasharray: 8 5; }
+.ov-cand { fill: rgba(10,95,194,.08); stroke: var(--accent); stroke-width: 2.5; }
+.ov-lbl rect { fill: var(--accent); rx: 5; }
+.ov-lbl.warn rect { fill: var(--warn); }
+.ov-lbl text { fill: #fff; font: 700 13px var(--font); dominant-baseline: central; }
+.ov-done { fill: none; stroke: var(--ok); stroke-width: 2; opacity: .7; }
+.ov-dim { fill: rgba(246,247,249,.55); pointer-events: none; }
+svg.sheet { transition: none; }
+/* 알림 띠(도면 위) */
+.banner { left: 50%; top: var(--sp-3); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; max-width: calc(100% - 32px); border-color: var(--warn-line); background: var(--warn-bg); z-index: 6; }
+.banner .t { color: var(--warn); }
+.banner .t b { display: block; }
+.banner .t span { font-size: var(--fs-sm); }
+.banner .ic { color: var(--warn); }
+.toast .ic { color: #86efac; }
+/* 오른쪽 칸: 검토 대기열 */
+.side-h { height: var(--top-h); display: flex; align-items: center; gap: 6px; padding: 0 var(--sp-2) 0 var(--sp-4); border-bottom: 1px solid var(--line); flex: none; }
+.side-h b { font-size: var(--fs-lg); }
+.side-h .acts { margin-left: auto; display: flex; gap: 2px; }
+.q-body { flex: 1; overflow: auto; padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+.prog { display: flex; flex-direction: column; gap: 6px; }
+.prog .row1 { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--fs-sm); color: var(--muted); }
+.prog .row1 b { color: var(--ink); font-size: var(--fs-md); }
+.prog .track { height: 6px; border-radius: 3px; background: var(--surface-3); display: flex; overflow: hidden; }
+.prog .track i { display: block; height: 100%; }
+.prog .track .a { background: var(--ok); } .prog .track .r { background: var(--err-line); } .prog .track .s { background: var(--line-strong); } .prog .track .cur { background: var(--accent); }
+.item-h { display: flex; flex-direction: column; gap: 4px; }
+.item-h .k { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.item-h h3 { margin: 0; font-size: var(--fs-lg); display: flex; align-items: center; gap: 8px; }
+.cmpv { display: grid; grid-template-columns: 68px 1fr; gap: 6px 10px; font-size: var(--fs-sm); align-items: center; }
+.cmpv dt { color: var(--muted); }
+.cmpv dd { margin: 0; }
+.cmpv .from { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.cmpv .to { font-weight: 700; }
+.conf { display: flex; align-items: center; gap: 8px; }
+.conf .m { width: 90px; height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.conf .m i { display: block; height: 100%; background: var(--ink-2); }
+.conf.hi .m i { background: var(--ok); }
+.why { font-size: var(--fs-sm); color: var(--ink-2); background: repeating-linear-gradient(135deg, var(--ai-a) 0 5px, var(--ai-b) 5px 10px); border: 1px dashed var(--ai-line); border-radius: var(--r-sm); padding: 6px 8px; }
+.why b { font-size: var(--fs-xs); color: var(--muted); display: block; }
+.cands { display: flex; flex-direction: column; gap: 4px; }
+.cands button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); font-size: var(--fs-sm); cursor: pointer; }
+.cands button.on { border-color: var(--accent); background: var(--accent-weak); }
+.cands button kbd { flex: none; }
+.cands button .mono { white-space: nowrap; }
+.cands button .d { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cands button .d { margin-left: auto; color: var(--muted); font-size: var(--fs-xs); }
+.acts3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.acts3 .btn { height: 44px; flex-direction: column; gap: 0; padding: 0 4px; line-height: 1.2; }
+.acts3 .btn kbd { font-size: 10px; margin-top: 2px; }
+.acts3 .btn.primary kbd { background: rgba(255,255,255,.15); color: #fff; border-color: rgba(255,255,255,.4); }
+.acts3 .btn.rej:hover { border-color: var(--err); color: var(--err); }
+.acts2 { display: flex; gap: 6px; }
+.acts2 .btn { flex: 1; }
+.bulk { border: 1px solid var(--line); border-radius: var(--r-md); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
+.bulk .h { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.bulk .ids { display: flex; flex-wrap: wrap; gap: 4px; }
+.keys { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-xs); color: var(--muted); border-top: 1px solid var(--line); padding: 8px var(--sp-4); flex: none; }
+.done { align-items: center; text-align: center; padding-top: var(--sp-5); }
+.done .big { width: 52px; height: 52px; border-radius: 50%; background: var(--ok-bg); color: var(--ok); display: grid; place-items: center; }
+.done .big .ic { width: 28px; height: 28px; }
+.done h3 { margin: 4px 0 0; font-size: var(--fs-lg); }
+.tally { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: 100%; }
+.tally div { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px; }
+.tally b { display: block; font-size: var(--fs-xl); }
+.tally span { font-size: var(--fs-xs); color: var(--muted); }
+.undo-t { left: 50%; bottom: 68px; top: auto; }
+/* 시안 조작(캡처에서는 숨김) */
+.mock { position: fixed; left: calc(var(--rail-w) + 12px); bottom: 12px; z-index: 20; width: 290px; padding: 10px; font-size: var(--fs-sm); border: 1px dashed var(--ai-line); background: #fffef6; }
+.mock h5 { margin: 0 0 6px; font-size: var(--fs-sm); display: flex; justify-content: space-between; align-items: center; }
+.mock .g { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.mock .g button { all: unset; padding: 2px 8px; border: 1px solid var(--line-strong); border-radius: var(--r-pill); cursor: pointer; background: #fff; font-size: var(--fs-xs); }
+.mock .g button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.mock label { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); padding: 1px 0; }
+.mock label .p { color: var(--faint); width: 14px; text-align: right; }
+.mock.min > :not(h5) { display: none; }
+body.cap .mock { display: none; }
+/* 도면별 AI 검토(규격 §3.7): 도면 위 칩 줄, 도면 목록, 확인 창, 끝 알림 */
+#floats.hc .banner, #floats.hc .toast { top: 56px; }
+.chipbar .btn.sm { height: 24px; padding: 0 9px; }
+.chipbar .sep { width: 1px; height: 18px; background: var(--line); margin: 0 2px; }
+.chip.run .ic { animation: spin 1.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+body.cap .chip.run .ic { animation: none; }
+.sheetlist { left: var(--sp-4); top: 56px; width: 420px; padding: 10px 12px; z-index: 5; }
+.sheetlist .h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.sheetlist .h span { font-size: var(--fs-xs); color: var(--muted); }
+.sheetlist .r { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); }
+.sheetlist .r .no { font-family: var(--mono); font-size: 12.5px; width: 84px; flex: none; }
+.sheetlist .r .chip { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sheetlist .r.cur .no { font-weight: 700; color: var(--accent-ink); }
+.banner.info { border-color: var(--accent); background: var(--accent-weak); }
+.banner.info .t, .banner.info .ic { color: var(--accent-ink); }
+.modal-bg { position: fixed; inset: 0; background: rgba(20, 28, 40, .32); z-index: 30; display: flex; align-items: center; justify-content: center; }
+.modal { width: 460px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow: auto; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--sh-3); padding: 16px 18px; }
+.modal h3 { margin: 0 0 4px; font-size: var(--fs-lg, 16px); display: flex; align-items: center; gap: 8px; }
+.modal .sub { color: var(--muted); font-size: var(--fs-sm); margin-bottom: 10px; }
+.modal .kv .k span { display: block; }
+.modal .notice { margin-top: 10px; }
+.modal .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.modal input[type=number] { width: 72px; height: 28px; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <nav class="rail" aria-label="메뉴" id="rail"></nav>
+  <main class="center">
+    <header class="topbar">
+      <div class="crumb"><span class="proj">SNP 표본</span><span class="muted">›</span><button class="sheet" aria-label="도면 바꾸기" title="원자로냉각재계통 주배관">SNP-M-101 @@chevron-down@@</button><span class="title">원자로냉각재계통 주배관</span></div>
+      <div class="next" id="next"></div>
+      <div class="search">@@search@@<span>찾기</span><kbd>Ctrl P</kbd></div>
+    </header>
+    <section class="canvas" id="canvas">
+      <svg class="sheet" id="sheet" viewBox="0 0 1617 1132" preserveAspectRatio="xMidYMid meet" role="img" aria-label="도면 SNP-M-101">
+        <image class="sheet-img" href="@@SHEET_DATA@@" x="0" y="0" width="1617" height="1132"/>
+        <g id="ov"></g>
+      </svg>
+      <div id="floats"></div>
+      <div class="float toolbar" aria-label="도면 도구">
+        <button class="on" aria-label="이동 (V)">@@pointer@@</button><button aria-label="네모로 고르기 (S)">@@select@@</button><span class="sep"></span>
+        <button aria-label="축소">@@zoom-out@@</button><span class="zoom" id="zoom">100%</span><button aria-label="확대">@@zoom-in@@</button><button aria-label="맞춤 (0)">@@arrows-maximize@@</button>
+      </div>
+    </section>
+  </main>
+  <aside class="chat" id="side"></aside>
+</div>
+
+<div class="float mock" id="mock">
+  <h5>시안 조작 <button class="btn ghost sm" id="mockMin" aria-label="접기">접기</button></h5>
+  <div class="g" id="scenes"></div>
+  <div id="stateBox"><div class="muted" style="font-size:11px;margin-bottom:2px">남은 일(앞 숫자 = 우선순위)</div><div id="states"></div></div>
+</div>
+
+<script>
+const IC = /*@@ICONS_JSON@@*/;
+const ic = (n, cls) => IC[n].replace('<svg class="ic"', '<svg class="ic' + (cls ? ' ' + cls : '') + '"');
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* 구성요소 자리: SNP-M-101 추출 결과의 drawio 좌표 - 19 = SVG 좌표 (app-shell-web/build.py의 N과 같은 값) */
+const N0 = {"RC-RV01":[260,430,110,280],"RC-SG01":[760,120,150,340],"RC-PP01":[820,640,110,135],"RC-V020":[745,910,30,50],"RC-V010":[475,880,50,50],
+  "RC-TE101":[460,400,40,40],"RC-PT101":[670,400,40,40],"RC-FT101":[1020,780,40,40],"RC-TE102":[850,880,40,40],"RC-V001":[300,360,30,50],
+  "CONT-018":[440,990,120,34],"RC-L001-T4":[479,499,2,2],"RC-L001-T5":[579,499,2,2],"RC-L001-T6":[689,499,2,2]};
+const N = Object.fromEntries(Object.entries(N0).map(([k, b]) => [k, [b[0]-19, b[1]-19, Math.max(b[2], 24), Math.max(b[3], 24)]]));
+
+/* ── 다음에 할 일: 엔진이 내주는 상태 목록(우선순위 차례). 규격 §12.2 ── */
+const KINDS = [
+  { id: "running",   p: 0, tone: "info", icon: "loader-2", text: "SNP-M-102를 읽고 있습니다 · 3장 중 2장", btn: null, side: "멈추기", hint: "읽는 중에는 할 일 대신 진행을 보입니다" },
+  { id: "no_sheets", p: 1, tone: "",     icon: "upload",   text: "등록한 도면이 없습니다. 도면 파일을 끌어 놓아 시작하세요", btn: "도면 올리기", go: "도면 패널" },
+  { id: "recheck",   p: 2, tone: "warn", icon: "alert-triangle", text: "도면이 바뀌어 3곳을 다시 확인해야 합니다", btn: "확인하기", go: "다시 확인 대기열", hint: "검토구간 S3·S5와 분석 결과 2건에 걸려 있음" },
+  { id: "titleblock",p: 3, tone: "",     icon: "file-text", text: "표제란을 확정하지 않은 도면이 2장 있습니다", btn: "표제란 확정", go: "도면 패널 › 표제란" },
+  { id: "ai_start",  p: 4, tone: "",     icon: "sparkles", text: "AI 검토를 하지 않은 도면이 2장 있습니다", btn: "AI 검토 시작", go: "그 도면의 확인 창", hint: "도면마다 시작합니다. 시작 전에 호출 수와 보내는 것을 확인합니다" },
+  { id: "ai",        p: 5, tone: "",     icon: "sparkles", text: "SNP-M-101의 AI 후보 12건을 확인해 주세요", btn: "검토하기", go: "그 도면의 AI 후보 대기열", hint: "대기열은 도면별입니다" },
+  { id: "node_draft",p: 6, tone: "",     icon: "route",    text: "확정하지 않은 검토구간이 3개 있습니다", btn: "구간 보기", go: "구간 패널(확정 안 한 것만)" },
+  { id: "node_run",  p: 7, tone: "",     icon: "player-skip-forward", text: "분석하지 않은 검토구간이 4개 있습니다", btn: "분석 실행", go: "실행 확인 카드" },
+  { id: "judge",     p: 8, tone: "",     icon: "table",    text: "판정하지 않은 분석 결과가 18건 있습니다", btn: "판정하기", go: "분석 결과 › 첫 미판정 칸" },
+  { id: "ie",        p: 9, tone: "",     icon: "alert-octagon", text: "초기사건 초안 2그룹을 확인해 주세요", btn: "초안 보기", go: "초기사건 패널 › 초안" },
+];
+const RUN_TEXT = "SNP-M-102를 읽고 있습니다 · 3장 중 2장";
+
+/* ── 도면별 AI 검토 상태: 엔진이 aireview 목록 행마다 내주는 review 값(규격 §3.7). 수·연결은 예시 값 ── */
+const SH = [{ no: "SNP-M-101", st: "candidates", items: 14, calls: 12 /* 도면당 상한 20(ai_review.DEFAULT_CAP) 안의 예시 */, done: 0, cand: 12, ahead: 0 },
+            { no: "SNP-M-102", st: "not_run", items: 9, calls: 8, done: 0, cand: 0, ahead: 0 }];
+const eun = (no) => no + ("013678".includes(no.slice(-1)) ? "은" : "는");
+const eul = (no) => no + ("013678".includes(no.slice(-1)) ? "을" : "를");
+/* [칩 색, 아이콘, 칩 글자, 단추 글자, 단추 동작] */
+function aiChip(i) {
+  const s = SH[i];
+  return ({
+    not_run:    ["", "sparkles", "AI 검토 전", "AI 검토 시작", `openConfirm(${i})`],
+    nothing:    ["", "circle-check", "AI에 물을 곳 없음", null],
+    waiting:    ["accent", "hourglass", `AI 검토 기다리는 중 · 앞에 ${s.ahead}장`, "취소", `cancelAi(${i})`],
+    running:    ["accent run", "loader-2", `AI 검토 중 · 호출 ${s.done}/${s.calls}회`, "멈추기", `cancelAi(${i})`],
+    candidates: ["ai", "sparkles", `AI 후보 ${s.cand}건 남음`, "검토하기", `startQueue('ai')`],
+    partial:    ["", "sparkles", `AI 검토 일부만 함 · 남은 곳 ${s.left || 0}`, "이어서 검토", `openConfirm(${i})`],
+    failed:     ["warn", "alert-triangle", "AI 검토를 마치지 못했습니다", "다시 시도", `openConfirm(${i})`],
+    done:       ["ok", "circle-check", "AI 검토 끝", null],
+  })[s.st];
+}
+function chipHtml(i, small) {
+  const [cls, icon, text, btn, on] = aiChip(i);
+  return `<span class="chip ${cls}" title="${esc(text)}">${ic(icon, "sm")}${esc(text)}</span>` + (btn ? `<button class="btn ${btn === "AI 검토 시작" || btn === "검토하기" ? "primary" : ""} sm" onclick="${on}">${esc(btn)}</button>` : "");
+}
+/* 엔진의 next가 하는 일을 시안에서 흉내: 도면 상태에서 ai_start·ai·running 줄을 만든다 */
+function syncAi() {
+  const nr = SH.filter(s => ["not_run", "partial", "failed"].includes(s.st));
+  const ks = (id) => KINDS.find(k => k.id === id);
+  nr.length ? S.pending.add("ai_start") : S.pending.delete("ai_start");
+  ks("ai_start").text = nr.length === 1 ? `${eun(nr[0].no)} 아직 AI 검토를 하지 않았습니다` : `AI 검토를 하지 않은 도면이 ${nr.length}장 있습니다`;
+  const c = SH.find(s => s.st === "candidates");
+  c ? S.pending.add("ai") : S.pending.delete("ai");
+  if (c) ks("ai").text = `${c.no}의 AI 후보 ${c.cand}건을 확인해 주세요`;
+  const r = SH.find(s => s.st === "running"), w = SH.filter(s => s.st === "waiting").length;
+  if (r) { S.pending.add("running"); ks("running").text = `${r.no} AI 검토 중 · 호출 ${r.done}/${r.calls}회`; ks("running").hint = w ? `기다리는 도면 ${w}장` : ""; ks("running").icon = "sparkles"; }
+  else if (S.aiRunShown) { S.pending.delete("running"); ks("running").text = RUN_TEXT; ks("running").icon = "loader-2"; }
+  S.aiRunShown = !!r;
+}
+function openConfirm(i) { S.modal = i; S.open = false; render(); }
+function startAi() {
+  const i = S.modal, busy = SH.some(s => s.st === "running");
+  SH[i].st = busy ? "waiting" : "running"; SH[i].ahead = busy ? 1 : 0; SH[i].done = busy ? 0 : 1;
+  S.modal = null; syncAi(); render();
+}
+function cancelAi(i) { SH[i].st = "not_run"; syncAi(); render(); }
+const NONE = { id: "none", tone: "calm", icon: "circle-check", text: "지금 할 일이 없습니다", btn: "Excel로 내보내기", ghost: true };
+
+/* ── 대기열 항목: 엔진이 내주는 꼴. 규격 §12.3 ── */
+const AI_ITEMS = [
+  { ref: "RC-V010", task: "종류", now: "밸브(종류 모름)", to: "체크 밸브", conf: .96, why: "기호 안의 삼각형과 막대가 체크 밸브 모양과 같습니다. 흐름 방향 화살표도 맞습니다." },
+  { ref: "RC-TE101", task: "태그", now: "RC-TE1O1", to: "RC-TE101", conf: .94, why: "글자 'O'를 숫자 '0'으로 읽어야 이웃 계기(RC-TE102)와 번호가 이어집니다." },
+  { ref: "RC-PT101", task: "종류", now: "계기(종류 모름)", to: "압력 전송기", conf: .93, why: "원 안 글자가 PT이고 주배관에 꼭지로 붙어 있습니다." },
+  { ref: "RC-FT101", task: "연결", now: "이어진 곳 없음", to: "RC-L003과 이어짐", conf: .71, why: "점선 끝이 배관과 3 단위 떨어져 있습니다. 그린 사람이 덜 붙였을 수 있습니다." },
+  { ref: "RC-TE102", task: "태그", now: "읽지 못함", to: "RC-TE102", conf: .91, why: "원 아래 글자가 흐리지만 RC-TE101 다음 번호로 읽힙니다." },
+  { ref: "RC-V020", task: "종류", now: "밸브(종류 모름)", to: "게이트 밸브", conf: .88, why: "나비 모양 두 삼각형이 맞닿아 있고 가운데 원이 없습니다." },
+  { ref: "RC-V001", task: "종류", now: "밸브(종류 모름)", to: "안전밸브", conf: .97, why: "용기 위에 붙고 위쪽 배출구가 있습니다." },
+  { ref: "CONT-018", task: "연결", now: "다른 도면으로 이어짐(짝 모름)", to: "SNP-M-102 CONT-018", conf: .90, why: "두 도면에 같은 연결 표시 번호가 있습니다." },
+  { ref: "RC-PP01", task: "종류", now: "펌프", to: "원자로냉각재펌프", conf: .62, why: "표제 글자 REACTOR COOLANT PUMP를 따랐습니다. 펌프 종류 목록에 없는 이름입니다." },
+  { ref: "RC-L001-T4", task: "연결", now: "갈라짐 2갈래", to: "갈라짐 3갈래", conf: .55, why: "위쪽으로 짧은 선이 보이지만 다른 선과 겹쳐 있을 수 있습니다." },
+  { ref: "RC-L001-T5", task: "연결", now: "갈라짐 2갈래", to: "그대로", conf: .80, why: "위쪽 선이 계기 꼭지로 보입니다." },
+  { ref: "RC-L001-T6", task: "연결", now: "갈라짐 2갈래", to: "그대로", conf: .82, why: "위쪽 선이 계기 꼭지로 보입니다." },
+];
+const LOST_ITEMS = [
+  { ref: "RC-TE102", name: "온도 전송기", where: "검토구간 S3 · 분석 결과 1건(원인)", cands: [["RC-TE102A", "같은 자리에서 8 단위 옆, 종류 같음", 30, -8], ["RC-TE103", "같은 배관, 종류 같음", 150, 20]] },
+  { ref: "RC-V020", name: "게이트 밸브", where: "검토구간 S5", cands: [["RC-V020", "같은 자리, 태그만 다시 읽음", 6, 0], ["RC-V021", "같은 배관 아래쪽", 0, 60]] },
+  { ref: "RC-FT101", name: "유량 전송기", where: "검토구간 S3 · 분석 결과 1건(보호수단)", cands: [] },
+];
+const BULK_MIN = .85;   /* ai_review.DEFAULT_THRESHOLD */
+const canBulk = (x) => x.conf >= BULK_MIN && x.task === "태그";   /* 엔진 bulk_block: 종류·연결 후보는 확신이 높아도 하나씩 본다 */
+
+/* ── 시안 상태 ── */
+const S = { scene: "home", pending: new Set(["recheck", "titleblock", "ai", "node_run", "judge"]), open: false,
+            kind: "ai", i: 0, marks: [], cand: 0, banner: true, toast: null, bulkAsk: false };
+
+function topKinds() { return KINDS.filter(k => S.pending.has(k.id)).sort((a, b) => a.p - b.p); }
+
+function renderRail() {
+  const it = [["files", "도면 (1)", S.pending.has("titleblock") ? 2 : 0], ["route", "구간 (2)", S.pending.has("recheck") ? 3 : 0], ["table", "분석 결과 (3)", 0],
+              ["alert-octagon", "초기사건 (4)", 0], ["topology-star-3", "지식그래프 (5)", 0]];
+  $("rail").innerHTML = '<div class="logo">HZ</div>' + it.map(([n, l, b]) => `<button aria-label="${l}" title="${l}">${ic(n)}${b ? `<span class="badge">${b}</span>` : ""}</button>`).join("")
+    + '<div class="spacer"></div><button aria-label="AI 연결" title="AI 연결">' + ic("plug-connected") + '<span class="conn"></span></button><button aria-label="설정" title="설정">' + ic("settings") + "</button>";
+}
+
+function renderNext() {
+  const el = $("next");
+  if (S.scene === "queue" || S.scene === "done") {
+    const tot = items().length, n = Math.min(S.i + 1, tot);
+    const label = S.kind === "ai" ? `${SH[0].no} AI 후보 검토` : "다시 확인";
+    el.innerHTML = `<div class="line info">${ic(S.kind === "ai" ? "sparkles" : "alert-triangle", "sm")}<span class="txt">${label} · ${S.scene === "done" ? "끝" : `${tot}건 중 ${n}번째`}</span>
+      <span class="bar"><i style="width:${Math.round(100 * S.marks.length / tot)}%"></i></span><button class="btn sm" onclick="endQueue()">끝내기 <kbd>Esc</kbd></button></div>`;
+    return;
+  }
+  const ks = topKinds();
+  const top = ks[0] || NONE;
+  const rest = ks.slice(1).filter(k => k.id !== "running");
+  const restN = ks.length - 1;
+  let h = `<div class="line ${top.tone}">${ic(top.icon, "sm")}<span class="txt" title="${esc(top.hint || "")}">${esc(top.text)}</span>`;
+  if (top.id === "running") h += `<span class="bar"><i style="width:60%"></i></span><button class="btn ghost sm">${top.side}</button>`;
+  else if (top.btn) h += `<button class="btn ${top.ghost ? "" : "primary"} sm" onclick="act('${top.id}')" aria-keyshortcuts="Control+J">${esc(top.btn)}</button>`;
+  if (restN > 0) h += `<button class="more" onclick="toggleList(event)" aria-expanded="${S.open}">그 밖에 ${restN}건 ${ic("chevron-down", "sm")}</button>`;
+  h += "</div>";
+  if (S.open && ks.length) {
+    h += `<div class="float drop-list" role="menu"><div class="h"><span>남은 일 · 앞에 있는 것부터</span><span>Ctrl J = 맨 위 것 하기</span></div>`
+      + ks.map((k, j) => `<button class="item ${j === 0 ? "top" : ""} ${k.tone}" role="menuitem" onclick="act('${k.id}')"><span class="n">${j + 1}</span>${ic(k.icon, "sm")}<span class="t">${esc(k.text)}${k.hint ? `<span>${esc(k.hint)}</span>` : ""}</span><span class="go">${k.btn ? esc(k.btn) + " ›" : ""}</span></button>`).join("")
+      + `</div>`;
+  }
+  el.innerHTML = h;
+  el.querySelector(".line").style.position = "relative";
+}
+
+function toggleList(e) { e.stopPropagation(); S.open = !S.open; render(); }
+document.addEventListener("click", (e) => { if (S.open && !e.target.closest(".drop-list")) { S.open = false; render(); } });
+
+function act(id) {
+  S.open = false;
+  if (id === "ai") return startQueue("ai");
+  if (id === "recheck") return startQueue("lost");
+  if (id === "ai_start") { if (S.scene === "done") endQueue(); return openConfirm(SH.findIndex(s => ["not_run", "partial", "failed"].includes(s.st))); }
+  S.toast = { text: `‘${(KINDS.find(k => k.id === id) || NONE).btn}’을 누르면 ${(KINDS.find(k => k.id === id) || {}).go || "내보내기 대화상자"}로 갑니다(시안에서는 여기까지)`, ok: false };
+  render();
+}
+
+function items() { return S.kind === "ai" ? AI_ITEMS : LOST_ITEMS; }
+function startQueue(kind) { S.scene = "queue"; S.kind = kind; S.i = 0; S.marks = []; S.cand = 0; S.banner = false; S.toast = null; render(); }
+function endQueue() {
+  S.scene = "home";
+  if (S.marks.length >= items().length) { S.pending.delete(S.kind === "ai" ? "ai" : "recheck"); if (S.kind === "ai" && SH[0].st === "candidates") { SH[0].st = "done"; syncAi(); } }
+  S.aiNotice = false;
+  S.toast = S.marks.length ? { text: `${S.marks.length}건을 반영했습니다`, ok: true, undo: true } : null;
+  render();
+}
+function mark(what) {
+  const list = items();
+  if (S.i >= list.length) return;
+  S.marks.push({ i: S.i, what });
+  S.i = nextOpen(S.i + 1);
+  S.cand = 0;
+  S.toast = null;
+  if (S.i >= list.length) S.scene = "done";
+  render();
+}
+function nextOpen(from) { const l = items(); for (let j = from; j < l.length; j++) if (!S.marks.some(m => m.i === j)) return j; return l.length; }
+function undo() {
+  const m = S.marks.pop(); if (!m) return;
+  S.i = m.i; S.scene = "queue"; S.toast = { text: `${items()[m.i].ref} 판정을 되돌렸습니다`, ok: false }; render();
+}
+function bulkAccept() {
+  const ids = AI_ITEMS.map((x, j) => [x, j]).filter(([x, j]) => canBulk(x) && !S.marks.some(m => m.i === j));
+  ids.forEach(([, j]) => S.marks.push({ i: j, what: "a" }));
+  S.bulkAsk = false;
+  S.i = nextOpen(0);
+  S.toast = { text: `확신 높은 ${ids.length}건을 수락했습니다`, ok: true, undo: true };
+  if (S.i >= AI_ITEMS.length) S.scene = "done";
+  render();
+}
+
+/* ── 도면 확대와 표시 ── */
+function zoomTo(b, pad) {
+  const svg = $("sheet"), W = svg.clientWidth || 900, H = svg.clientHeight || 600;
+  let w = Math.max(b[2] + pad * 2, 760), h = Math.max(b[3] + pad * 2, 480);
+  if (w / h < W / H) w = h * W / H; else h = w * H / W;
+  const cx = b[0] + b[2] / 2, cy = b[1] + b[3] / 2;
+  svg.setAttribute("viewBox", `${cx - w / 2} ${cy - h / 2} ${w} ${h}`);
+  S.k = w / W;                                   /* 도면 단위 / 화면 픽셀: 꼬리표를 화면 크기로 그린다 */
+  $("zoom").textContent = Math.round(100 * 1617 / w) + "%";
+}
+function fitAll() { $("sheet").setAttribute("viewBox", "0 0 1617 1132"); S.k = 1; $("zoom").textContent = "100%"; }
+function lbl(x, y, t, warn) { const k = S.k || 1, w = (t.length * 8 + 16) * k;
+  return `<g class="ov-lbl ${warn ? "warn" : ""}"><rect x="${x}" y="${y - 26 * k}" width="${w}" height="${22 * k}" rx="${5 * k}"/><text x="${x + 8 * k}" y="${y - 15 * k}" style="font-size:${13 * k}px">${esc(t)}</text></g>`; }
+
+function renderSheet() {
+  let o = "";
+  if (S.scene === "queue" || S.scene === "done") {
+    const l = items();
+    S.marks.forEach(m => { const b = N[l[m.i].ref]; o += `<rect class="ov-done" x="${b[0] - 4}" y="${b[1] - 4}" width="${b[2] + 8}" height="${b[3] + 8}" rx="6"/>`; });
+    if (S.scene === "queue") {
+      const it = l[S.i], b = N[it.ref];
+      zoomTo(b, S.kind === "ai" ? 160 : 200);
+      if (S.kind === "ai") {
+        o += `<path class="ov-dim" fill-rule="evenodd" d="M-2000 -2000H4000V4000H-2000Z M${b[0] - 10} ${b[1] - 10}h${b[2] + 20}v${b[3] + 20}h-${b[2] + 20}Z"/>`;
+        o += `<rect class="ov-focus" x="${b[0] - 10}" y="${b[1] - 10}" width="${b[2] + 20}" height="${b[3] + 20}" rx="8"/>` + lbl(b[0] - 10, b[1] - 14, `${S.i + 1}. ${it.ref}`);
+      } else {
+        o += `<rect class="ov-old" x="${b[0] - 8}" y="${b[1] - 8}" width="${b[2] + 16}" height="${b[3] + 16}" rx="8"/>` + lbl(b[0] - 8, b[1] - 12, `전에 있던 자리 · ${it.ref}`, true);
+        it.cands.forEach((c, j) => { const x = b[0] + c[2], y = b[1] + c[3];
+          o += `<rect class="ov-cand" x="${x - 4}" y="${y - 4}" width="${b[2] + 8}" height="${b[3] + 8}" rx="6" ${j === S.cand ? 'style="stroke-width:4"' : 'style="stroke-dasharray:4 3"'}/>`
+            + `<g class="ov-lbl"><rect x="${x + b[2] + 6}" y="${y + b[3] / 2 - 11 * S.k}" width="${22 * S.k}" height="${22 * S.k}" rx="${5 * S.k}"/><text x="${x + b[2] + 6 + 7 * S.k}" y="${y + b[3] / 2}" style="font-size:${13 * S.k}px">${j + 1}</text></g>`; });
+      }
+    } else fitAll();
+  } else fitAll();
+  $("ov").innerHTML = o;
+}
+
+/* ── 오른쪽 칸 ── */
+function renderSide() {
+  const side = $("side");
+  if (S.scene === "queue") return side.innerHTML = S.kind === "ai" ? aiCard() : lostCard();
+  if (S.scene === "done") return side.innerHTML = doneCard();
+  side.innerHTML = `<div class="chat-h"><b>채팅</b><div class="acts"><button class="btn ghost icon sm" aria-label="새 대화">${ic("message-circle", "sm")}</button><button class="btn ghost icon sm" aria-label="채팅 접기">${ic("layout-sidebar-right-collapse", "sm")}</button></div></div>
+    <div class="msgs"><div class="ans"><p class="muted">도면이나 검토구간에 대해 물어보세요. 위 줄의 단추는 지금 먼저 할 일 하나만 보여 줍니다.</p></div></div>
+    <div class="composer"><div class="examples"><span class="chip">RC-PP01에서 RC-RV01까지 경로</span><span class="chip">이 도면의 보호수단</span></div>
+    <div class="box"><span class="ph">질문을 쓰세요 (Ctrl K)</span><span class="send">${ic("chevron-right", "sm")}</span></div>
+    <div class="foot"><span class="dot"></span>구독 연결 · 빠른 모델</div></div>`;
+}
+function progress() {
+  const l = items(), tot = l.length, a = S.marks.filter(m => m.what === "a").length, r = S.marks.filter(m => m.what === "r").length, s = S.marks.filter(m => m.what === "s").length;
+  const w = (n) => (100 * n / tot).toFixed(1) + "%";
+  return `<div class="prog"><div class="row1"><span><b>${tot}건 중 ${Math.min(S.i + 1, tot)}번째</b></span><span>수락 ${a} · 거절 ${r} · 건너뜀 ${s}</span></div>
+    <div class="track"><i class="a" style="width:${w(a)}"></i><i class="r" style="width:${w(r)}"></i><i class="s" style="width:${w(s)}"></i><i class="cur" style="width:${w(1)}"></i></div></div>`;
+}
+function head(title, back) {
+  return `<div class="side-h"><b>${title}</b><div class="acts"><button class="btn ghost icon sm" onclick="undo()" aria-label="되돌리기 (Z)" title="되돌리기 (Z)">${ic("arrow-back-up", "sm")}</button>
+    <button class="btn ghost icon sm" aria-label="채팅으로 (Ctrl K)" title="채팅으로 (Ctrl K)">${ic("message-circle", "sm")}</button><button class="btn ghost icon sm" onclick="endQueue()" aria-label="끝내기 (Esc)" title="끝내기 (Esc)">${ic("x", "sm")}</button></div></div>`;
+}
+function keys(extra) { return `<div class="keys"><span><kbd>A</kbd> 수락</span><span><kbd>R</kbd> 거절</span><span><kbd>Space</kbd> 건너뛰기</span><span><kbd>Z</kbd> 되돌리기</span>${extra}<span><kbd>Esc</kbd> 끝내기</span></div>`; }
+function aiCard() {
+  const it = AI_ITEMS[S.i], hi = it.conf >= BULK_MIN;
+  const bulk = AI_ITEMS.filter((x, j) => canBulk(x) && !S.marks.some(m => m.i === j));
+  return head(`${SH[0].no} AI 후보 검토`) + `<div class="q-body">${progress()}
+    <div class="item-h"><div class="k"><span class="chip ai">${ic("sparkles")}AI 후보</span><span class="chip">${it.task}</span></div><h3><span class="mono" style="font-size:15px">${it.ref}</span></h3></div>
+    <dl class="cmpv"><dt>지금 값</dt><dd class="from">${esc(it.now)}</dd><dt>AI 제안</dt><dd class="to">${esc(it.to)}</dd>
+      <dt>확신</dt><dd><span class="conf ${hi ? "hi" : ""}"><span class="m"><i style="width:${it.conf * 100}%"></i></span>${hi ? "높음" : it.conf >= .7 ? "보통" : "낮음"} · ${Math.round(it.conf * 100)}%</span></dd></dl>
+    <div class="why"><b>AI가 본 것</b>${esc(it.why)}</div>
+    <div class="acts3"><button class="btn primary" onclick="mark('a')">수락<kbd>A</kbd></button><button class="btn rej" onclick="mark('r')">거절<kbd>R</kbd></button><button class="btn" onclick="mark('s')">건너뛰기<kbd>Space</kbd></button></div>
+    <div class="acts2"><button class="btn sm">${ic("pencil", "sm")}값 고쳐서 수락 <kbd>E</kbd></button></div>
+    ${bulk.length > 1 ? `<div class="bulk"><div class="h">${ic("checks", "sm")}확신 높은 ${bulk.length}건 한 번에</div>
+      ${S.bulkAsk ? `<div class="ids">${bulk.map(x => `<span class="chip id">${x.ref}</span>`).join("")}</div><div class="acts2"><button class="btn primary sm" onclick="bulkAccept()">${bulk.length}건 수락</button><button class="btn sm" onclick="S.bulkAsk=false;render()">취소</button></div>`
+        : `<span class="muted">확신 85% 이상인 태그 후보만 묶습니다(종류·연결은 하나씩). 수락 전에 목록을 보여 줍니다.</span><div><button class="btn sm" onclick="S.bulkAsk=true;render()">목록 보고 수락 <kbd>Shift A</kbd></button></div>`}</div>` : ""}
+    </div>` + keys('<span><kbd>E</kbd> 고쳐서 수락</span>');
+}
+function lostCard() {
+  const it = LOST_ITEMS[S.i];
+  const c = it.cands;
+  return head("다시 확인") + `<div class="q-body">${progress()}
+    <div class="item-h"><div class="k"><span class="chip warn">${ic("alert-triangle")}찾지 못한 구성요소</span></div><h3><span class="mono" style="font-size:15px">${it.ref}</span><span class="muted" style="font-size:13px;font-weight:400">${it.name}</span></h3></div>
+    <dl class="cmpv"><dt>걸린 곳</dt><dd>${esc(it.where)}</dd><dt>까닭</dt><dd>다시 읽은 도면의 같은 자리에 이 구성요소가 없습니다</dd></dl>
+    ${c.length ? `<div class="field"><label>같은 것으로 보이는 새 구성요소</label><div class="cands">${c.map((x, j) => `<button class="${j === S.cand ? "on" : ""}" onclick="S.cand=${j};render()"><kbd>${j + 1}</kbd><span class="mono">${x[0]}</span><span class="d">${x[1]}</span></button>`).join("")}</div></div>
+      <div class="acts3"><button class="btn primary" onclick="mark('a')">${c[S.cand][0]}로 잇기<kbd>A</kbd></button><button class="btn rej" onclick="mark('r')">지워진 것<kbd>R</kbd></button><button class="btn" onclick="mark('s')">건너뛰기<kbd>Space</kbd></button></div>`
+      : `<div class="notice warn">${ic("info-circle", "sm")}<span>가까이에 같은 종류가 없습니다. 도면에서 직접 누르거나, 지워진 것으로 두세요.</span></div>
+      <div class="acts3"><button class="btn primary">도면에서 고르기<kbd>A</kbd></button><button class="btn rej" onclick="mark('r')">지워진 것<kbd>R</kbd></button><button class="btn" onclick="mark('s')">건너뛰기<kbd>Space</kbd></button></div>`}
+    <span class="muted" style="font-size:12px">‘지워진 것’으로 두면 검토구간에서 빠지고, 분석 결과의 그 칸에는 ‘도면에서 지워짐’이 붙어 다시 판정할 칸으로 돌아갑니다.</span>
+    </div>` + keys('<span><kbd>1</kbd>~<kbd>3</kbd> 후보 고르기</span>');
+}
+function doneCard() {
+  const a = S.marks.filter(m => m.what === "a").length, r = S.marks.filter(m => m.what === "r").length, s = S.marks.filter(m => m.what === "s");
+  const ks = topKinds().filter(k => k.id !== (S.kind === "ai" ? "ai" : "recheck"));
+  const nx = ks[0];
+  return head(S.kind === "ai" ? "AI 후보 검토" : "다시 확인") + `<div class="q-body done"><div class="big">${ic("circle-check")}</div>
+    <h3>${items().length}건을 모두 봤습니다</h3>
+    <div class="tally"><div><b>${a}</b><span>수락</span></div><div><b>${r}</b><span>거절</span></div><div><b>${s.length}</b><span>건너뜀</span></div></div>
+    ${s.length ? `<button class="btn" onclick="S.i=${s[0] ? s[0].i : 0};S.marks=S.marks.filter(m=>m.what!=='s');S.scene='queue';render()">건너뛴 ${s.length}건 다시 보기</button>` : ""}
+    ${nx ? `<div class="card" style="width:100%;text-align:left"><h3 style="margin-bottom:4px">다음에 할 일</h3><div class="muted" style="font-size:12px;margin-bottom:8px">${esc(nx.text)}</div><button class="btn primary sm" onclick="S.pending.delete('${S.kind === "ai" ? "ai" : "recheck"}');act('${nx.id}')">${esc(nx.btn || "보기")}</button></div>` : ""}
+    <button class="btn ghost" onclick="endQueue()">끝내기 <kbd>Esc</kbd></button></div>`;
+}
+
+/* ── 알림(다시 추출 뒤) ── */
+function renderFloats() {
+  let h = "";
+  const inQ = S.scene === "queue" || S.scene === "done";
+  /* 도면 위 칩 줄: 맨 앞이 이 도면의 AI 검토 칩(규격 §3.7, R14) */
+  if (!inQ) h += `<div class="float chipbar" aria-label="이 도면 상태">${chipHtml(0)}<span class="sep"></span><span class="chip warn">${ic("alert-triangle", "sm")}미확인 3곳</span>
+    <button class="btn ghost sm" onclick="S.list=!S.list;render()" aria-expanded="${!!S.list}">${ic("files", "sm")}도면 ${SH.length}장</button></div>`;
+  if (!inQ && S.list) {
+    const n = (st) => SH.filter(s => s.st === st).length;
+    const sum = [["not_run", "AI 검토 전"], ["running", "검토 중"], ["waiting", "기다리는 중"], ["candidates", "후보 남음"], ["done", "끝"]].filter(([st]) => n(st)).map(([st, l]) => `${l} ${n(st)}장`).join(" · ");
+    h += `<div class="float sheetlist" aria-label="도면 목록"><div class="h"><b>도면</b><span>${sum}</span></div>`
+      + SH.map((s, i) => `<div class="r ${i === 0 ? "cur" : ""}"><span class="no">${s.no}</span>${chipHtml(i)}</div>`).join("") + `</div>`;
+  }
+  if (!inQ && S.aiNotice) h += `<div class="float banner info" role="status">${ic("sparkles")}<div class="t"><b>${SH[0].no} AI 검토가 끝났습니다 · 후보 ${SH[0].cand}건</b><span>확신 높은 태그 후보는 묶어서, 나머지는 한 건씩 확정합니다.</span></div>
+      <button class="btn primary sm" onclick="startQueue('ai')">검토하기</button><button class="btn ghost icon sm" onclick="S.aiNotice=false;render()" aria-label="알림 닫기(칩과 위 줄에 남음)" title="닫아도 도면 칩과 위 줄에 남습니다">${ic("x", "sm")}</button></div>`;
+  if (S.modal != null) {
+    const s = SH[S.modal], busy = SH.some(x => x.st === "running");
+    h += `<div class="modal-bg" onclick="if(event.target===this){S.modal=null;render()}"><div class="modal" role="dialog" aria-modal="true" aria-label="${s.no} AI 검토">
+      <h3>${ic("sparkles")}${s.no} AI 검토</h3><div class="sub">스크립트가 정하지 못한 곳을 AI가 보고 후보를 냅니다. 후보는 사람이 확정합니다.</div>
+      <div class="kv"><div class="k"><b>물을 곳</b><span>종류를 정하지 못했거나 다시 볼 곳 ${s.items}곳</span></div></div>
+      <div class="kv"><div class="k"><b>예상</b><span>AI 호출 약 ${s.calls}회 · 약 ${Math.max(1, Math.round(s.calls * 30 / 60))}분</span></div></div>
+      <div class="kv"><div class="k"><b>도면당 상한</b><span>이보다 많으면 일부만 묻고 ‘일부만 함’으로 남깁니다</span></div><input type="number" value="20" min="1" max="200" aria-label="도면당 호출 상한"></div>
+      <div class="kv"><div class="k"><b>연결</b><span>구독 · 빠른 모델 · 구독 사용량 안에서 씁니다</span></div><span class="chip ok">${ic("plug-connected", "sm")}준비됨</span></div>
+      <div class="notice info">${ic("info-circle", "sm")}<span>종류를 정하지 못한 기호 둘레의 도면 조각 그림과 범례판을 AI에 보냅니다. 구독 연결로만 보냅니다.</span></div>
+      ${busy ? `<div class="notice warn">${ic("hourglass", "sm")}<span>앞선 도면 1장이 끝난 뒤 시작합니다.</span></div>` : ""}
+      <div class="foot"><button class="btn" onclick="S.modal=null;render()">취소 <kbd>Esc</kbd></button><button class="btn primary" onclick="startAi()">검토 시작 <kbd>Enter</kbd></button></div></div></div>`;
+  }
+  $("floats").className = inQ ? "" : "hc";
+  if (S.scene === "reextract_ok") h += `<div class="toast" role="status">${ic("circle-check", "sm")}SNP-M-101을 다시 읽었습니다. 검토구간 4개와 분석 결과를 그대로 옮겼습니다</div>`;
+  if (S.scene === "reextract_lost" && S.banner) h += `<div class="float banner" role="alert">${ic("alert-triangle")}<div class="t"><b>도면이 바뀌어 3곳을 다시 확인해야 합니다</b><span>SNP-M-101을 다시 읽었습니다. 구성요소 41개는 그대로 옮겼고, 3개는 새 도면에서 찾지 못했습니다(검토구간 S3·S5).</span></div>
+      <button class="btn primary sm" onclick="startQueue('lost')">확인하기</button><button class="btn ghost icon sm" onclick="S.banner=false;render()" aria-label="알림 닫기(위 줄에 남음)" title="닫아도 위 줄과 구간 배지에 남습니다">${ic("x", "sm")}</button></div>`;
+  if (S.toast) h += `<div class="toast undo-t" role="status">${S.toast.ok ? ic("circle-check", "sm") : ic("info-circle", "sm")}${esc(S.toast.text)}${S.toast.undo ? `<a href="#" onclick="undo();return false">되돌리기</a>` : ""}<button class="btn ghost icon sm" style="color:#fff" onclick="S.toast=null;render()" aria-label="닫기">${ic("x", "sm")}</button></div>`;
+  $("floats").innerHTML = h;
+}
+
+/* ── 시안 조작 ── */
+const SCENES = [["home", "기본 화면"], ["list", "남은 일 펼침"], ["none", "할 일 없음"], ["queue_ai", "대기열: AI 후보"], ["queue_lost", "대기열: 찾지 못한 것"],
+                ["done", "대기열 끝"], ["reextract_ok", "다시 추출: 잃은 것 없음"], ["reextract_lost", "다시 추출: 다시 볼 곳"],
+                ["ai_before", "AI 검토 전"], ["ai_confirm", "AI 검토 확인 창"], ["ai_running", "AI 검토 중·기다림"], ["ai_ready", "AI 검토 끝: 후보 남음"]];
+const AI_SCENES = { /* [SNP-M-101 상태, SNP-M-102 상태] */
+  ai_before: ["not_run", "not_run"], ai_confirm: ["not_run", "not_run"], ai_running: ["running", "waiting"], ai_ready: ["candidates", "not_run"] };
+function setScene(id) {
+  S.toast = null; S.open = false; S.bulkAsk = false; S.modal = null; S.list = false; S.aiNotice = false;
+  const st = AI_SCENES[id] || (id === "none" ? ["done", "done"] : ["candidates", "not_run"]);
+  SH.forEach((s, i) => { s.st = st[i]; s.ahead = s.st === "waiting" ? 1 : 0; s.done = s.st === "running" ? 5 : 0; s.cand = s.st === "candidates" ? 12 : 0; });
+  if (AI_SCENES[id]) { S.scene = "home"; ["titleblock", "recheck", "node_run"].forEach(k => S.pending.delete(k)); S.pending.add("judge"); S.pending.add("node_run"); }
+  if (id === "ai_confirm") S.modal = 0;
+  if (id === "ai_running") S.list = true;
+  if (id === "ai_ready") S.aiNotice = true;
+  if (!AI_SCENES[id] && id !== "none") { ["recheck", "titleblock", "node_run", "judge"].forEach(k => S.pending.add(k)); }
+  syncAi();
+  if (id === "none") { S.pending.clear(); }
+  if (id === "home") { S.scene = "home"; }
+  if (id === "list") { S.scene = "home"; S.open = true; }
+  if (id === "none") { S.scene = "home"; S.pending.clear(); }
+  if (id === "queue_ai") { if (!S.pending.size) S.pending.add("ai"); startQueue("ai"); S.i = 2; S.marks = [{ i: 0, what: "a" }, { i: 1, what: "a" }]; }
+  if (id === "queue_lost") startQueue("lost");
+  if (id === "done") { startQueue("ai"); S.marks = AI_ITEMS.map((x, j) => ({ i: j, what: j === 3 || j === 9 ? "s" : j === 8 ? "r" : "a" })); S.i = AI_ITEMS.length; S.scene = "done"; }
+  if (id === "reextract_ok") { S.scene = "reextract_ok"; S.pending.delete("recheck"); }
+  if (id === "reextract_lost") { S.scene = "reextract_lost"; S.banner = true; S.pending.add("recheck"); }
+  S.sceneId = id; render();
+}
+function renderMock() {
+  $("scenes").innerHTML = SCENES.map(([id, l]) => `<button class="${S.sceneId === id ? "on" : ""}" onclick="setScene('${id}')">${l}</button>`).join("");
+  $("states").innerHTML = KINDS.map(k => `<label><span class="p">${k.p}</span><input type="checkbox" ${S.pending.has(k.id) ? "checked" : ""} onchange="this.checked?S.pending.add('${k.id}'):S.pending.delete('${k.id}');render()">${esc(k.text)}</label>`).join("");
+}
+$("mockMin").onclick = () => $("mock").classList.toggle("min");
+
+/* ── 키 ── */
+document.addEventListener("keydown", (e) => {
+  if (S.modal != null) { if (e.key === "Enter") { e.preventDefault(); startAi(); } else if (e.key === "Escape") { S.modal = null; render(); } return; }
+  if (e.target.closest("input,textarea")) return;
+  if (e.ctrlKey && e.key.toLowerCase() === "j") { e.preventDefault(); const t = topKinds()[0]; if (t) act(t.id); return; }
+  if (S.scene !== "queue" && S.scene !== "done") return;
+  const k = e.key;
+  if (k === "Escape") return endQueue();
+  if (k === "z" || k === "Z" || (e.ctrlKey && k === "z")) return undo();
+  if (S.scene !== "queue") return;
+  if (k === "a" && !e.shiftKey) mark("a");
+  else if (k === "A" && e.shiftKey && S.kind === "ai") { S.bulkAsk = true; render(); }
+  else if (k === "r") mark("r");
+  else if (k === " ") { e.preventDefault(); mark("s"); }
+  else if (/^[1-3]$/.test(k) && S.kind === "lost") { const n = +k - 1; if (LOST_ITEMS[S.i].cands[n]) { S.cand = n; render(); } }
+});
+
+function render() { renderRail(); renderNext(); renderSheet(); renderSide(); renderFloats(); renderMock(); checkFit(); }
+
+/* 넘침 검사: 캡처할 때 body[data-overflow]에 넘친 요소를 적는다 */
+function checkFit() {
+  const bad = [];
+  if (document.documentElement.scrollWidth > innerWidth + 1) bad.push("page-x");
+  document.querySelectorAll(".q-body, .next .line, .banner, .side-h, .topbar, .keys, .acts3 .btn, .chipbar, .sheetlist .r, .modal").forEach(el => {
+    const cs = getComputedStyle(el);
+    if (el.scrollHeight > el.clientHeight + 1 && cs.overflowY !== "visible") bad.push((el.className || el.tagName) + ":y");
+    if (el.scrollWidth > el.clientWidth + 1) bad.push((el.className || el.tagName) + ":x");
+  });
+  const t = document.querySelector(".next .txt");
+  if (t && t.scrollWidth > t.clientWidth + 1) bad.push("next-text-cut");
+  document.body.dataset.overflow = bad.join(",") || "none";
+}
+
+const qs = new URLSearchParams(location.hash.slice(1));
+if (qs.get("cap")) document.body.classList.add("cap");
+setScene(qs.get("scene") || "home");
+addEventListener("resize", render);
+</script>
+</body>
+</html>

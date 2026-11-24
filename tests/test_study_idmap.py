@@ -315,5 +315,167 @@ class EditsKeepTombsTest(StoreCase):
         self.assertEqual(out["history"][-1]["detail"]["with_lost"], {"S1": 1})
 
 
+def source_drawing(version, gone=(), kinds=None):
+    """drawio처럼 source_object_id가 파일 id인 도면. kinds {이름: 종류}로 같은 id의 종류를 바꾼다."""
+    g = drawing(version, gone=gone)
+    for n in g["nodes"]:
+        n["source_object_id"] = "cell-" + n["_name"]
+        n["id_basis"] = "source"
+        n["kind"] = (kinds or {}).get(n["_name"], n["kind"])
+    return g
+
+
+class SourceTombTest(StoreCase):
+    """source 구성요소의 묘비는 같은 참조가 같은 종류(기록에 태그가 있으면 같은 태그)로 돌아오면 되찾는다."""
+
+    def lost_v1(self):
+        g1 = source_drawing("v-1")
+        ns = sn.propose(g1, at=AT)
+        ns["nodes"] = [dict({"node_id": "S1", "name": "a", "basis": "b", "members": [eid(g1, "TK"), eid(g1, "V1")]},
+                            **sn._v2_fields("script"))]
+        ns2, _ = migrate.migrate_set(ns, source_drawing("v-2", gone=("V1",)), at=AT)
+        self.assertEqual(len(ns2["nodes"][0]["lost"]), 1)
+        return ns2
+
+    def back(self, ns, **kw):
+        g3 = source_drawing("v-3", **kw)
+        out, _ = migrate.migrate_set(ns, g3, at=AT)
+        return out, g3
+
+    def test_same_ref_and_kind_brings_the_member_back(self):
+        out, g3 = self.back(self.lost_v1())
+        self.assertEqual(sorted(out["nodes"][0]["members"]), sorted([eid(g3, "TK"), eid(g3, "V1")]))
+        self.assertFalse(out["nodes"][0].get("lost"))
+
+    def test_same_ref_with_other_kind_stays_a_tomb(self):
+        ns = self.lost_v1()
+        out, _ = self.back(ns, kinds={"V1": "check_valve"})
+        self.assertEqual(out["nodes"][0]["lost"], ns["nodes"][0]["lost"], "같은 id의 다른 종류는 다른 기호")
+
+    def test_edited_look_in_the_record_does_not_open_the_tomb(self):
+        ns = self.lost_v1()
+        t = ns["nodes"][0]["lost"][0]
+        ns["tombstones"][t]["look"][2] = "check_valve"
+        out, _ = self.back(ns, kinds={"V1": "check_valve"})
+        self.assertEqual(out["nodes"][0]["lost"], [t], "지문이 묘비 id와 맞지 않으면 되찾지 않음")
+
+    def test_tomb_without_a_recorded_look_is_not_refound_by_ref(self):
+        ns = self.lost_v1()
+        t = ns["nodes"][0]["lost"][0]
+        rec = ns["tombstones"].pop(t)
+        old = idmap.tomb_id("graph-T", rec["lost_at"], idmap.tomb_key("graph-T", rec["lost_from"], rec["lost_at"],
+                                                                     rec["entity_id"], rec["ref"], rec["mark"]))
+        ns["tombstones"][old] = {k: v for k, v in rec.items() if k != "look"}  # 이 고침 전에 지은 묘비
+        ns["nodes"][0]["lost"] = [old]
+        out, _ = self.back(ns)
+        self.assertEqual(out["nodes"][0]["lost"], [old], "기록에 겉모습이 없으면 같은 기호인지 몰라 묘비로 둠")
+
+    def test_discarded_source_tomb_is_not_refound(self):
+        ns = sn.discard_lost(self.lost_v1(), "S1", None, by="김검토", at=AT)
+        out, _ = self.back(ns)
+        self.assertNotIn(eid(source_drawing("v-3"), "V1"), out["nodes"][0]["members"])
+        t = out["nodes"][0]["discarded"][0]
+        self.assertIsNone(out["tombstones"][t]["found"], "버린 묘비는 같은 기호가 돌아와도 닫힌 채")
+
+
+MAT_A, MAT_B = "material-aaaaaaaaaaaa", "material-bbbbbbbbbbbb"
+TEMP_A = "graph-%s-p0" % MAT_A
+
+
+def sheet_graph(version, sheet="graph-A", mid=MAT_A, page=0, basis="source", local="entity-node-004", sid=None,
+                kind="pump", tag="P-1", box=(80, 0, 10, 10)):
+    """프로젝트 그래프처럼 시트 하나(자료 mid, 쪽 page)에 기호 하나. sid를 주지 않으면 drawio 꼴 cell-PP, sequence면 PDF 꼴 순번."""
+    sid = sid or ("pdf-p%d-sym-0004" % page if basis == "sequence" else "cell-PP")
+    return {"project_id": "P1", "graph_id": "project-P1", "graph_version": version,
+            "sheets": [{"graph_id": sheet, "material_id": mid, "page_index": page}], "edges": [],
+            "nodes": [{"entity_id": sheet + "/" + local, "sheet": sheet, "node_type": "drawing_object", "kind": kind,
+                       "tag": tag, "bbox": list(box), "source_object_id": sid, "id_basis": basis}]}
+
+
+EMPTY = {"project_id": "P1", "graph_id": "project-P1", "graph_version": "v-gone", "sheets": [], "nodes": [], "edges": []}
+
+
+class TwinTombTest(StoreCase):
+    """E6: 한 기호를 두 이름 이상에서 잃은 묘비들이 한 구성요소를 다투면, 자료·쪽·파일 id가 같고 옛 entity_id나 표시도 같을 때만 모두 되찾는다.
+    서로 다른 기호의 묘비가 다투면 전처럼 모두 묘비다."""
+
+    def lost(self, *olds):
+        """olds의 각 그래프에서 구간에 든 기호를 (같은 빈 판으로 가며) 잃게 하고, 그 묘비들을 한 구간의 lost에 모은 집합."""
+        ns = None
+        for g in olds:
+            one = sn.propose(g, at=AT)
+            one["nodes"] = [dict({"node_id": "S1", "name": "a", "basis": "b", "members": [n["entity_id"] for n in g["nodes"]]},
+                                 **sn._v2_fields("script"))]
+            one, _ = migrate.migrate_set(one, EMPTY, at=AT)
+            self.assertEqual(len(one["nodes"][0]["lost"]), 1, "시험 전제: 기호 하나를 잃음")
+            if ns is None:
+                ns = one
+            else:
+                ns["tombstones"].update(one["tombstones"])
+                ns["nodes"][0]["lost"] = sorted(ns["nodes"][0]["lost"] + one["nodes"][0]["lost"])
+        return ns
+
+    def back(self, ns, g):
+        out, _ = migrate.migrate_set(ns, g, at=AT)
+        return out["nodes"][0], out["tombstones"]
+
+    def assert_found(self, ns, g):
+        node, tombs = self.back(ns, g)
+        self.assertEqual((node["members"], node.get("lost")), ([g["nodes"][0]["entity_id"]], None))
+        self.assertEqual({t: tombs[t]["found"]["entity_id"] for t in ns["nodes"][0]["lost"]},
+                         {t: g["nodes"][0]["entity_id"] for t in ns["nodes"][0]["lost"]}, "묘비 기록이 모두 닫혀야 함")
+
+    def assert_lost(self, ns, g):
+        node, tombs = self.back(ns, g)
+        self.assertEqual((node["members"], node.get("lost")), ([], ns["nodes"][0]["lost"]), "다른 기호의 묘비가 다투면 모두 묘비")
+        self.assertEqual([tombs[t]["found"] for t in ns["nodes"][0]["lost"]], [None] * len(ns["nodes"][0]["lost"]))
+
+    def test_one_drawio_symbol_lost_under_its_number_and_its_temporary_name_comes_back_once(self):
+        ns = self.lost(sheet_graph("v-1"), sheet_graph("v-2", sheet=TEMP_A))
+        self.assert_found(ns, sheet_graph("v-3"))
+
+    def test_one_pdf_symbol_lost_under_two_numbers_comes_back_once(self):
+        ns = self.lost(sheet_graph("v-1", basis="sequence"), sheet_graph("v-2", sheet="graph-B", basis="sequence"))
+        self.assert_found(ns, sheet_graph("v-3", basis="sequence"))
+
+    def test_three_tombs_of_one_symbol_all_come_back(self):
+        ns = self.lost(sheet_graph("v-1"), sheet_graph("v-2", sheet=TEMP_A), sheet_graph("v-4", sheet="graph-B"))
+        self.assertEqual(len(ns["nodes"][0]["lost"]), 3)
+        self.assert_found(ns, sheet_graph("v-3"))
+
+    def test_same_file_id_with_other_entity_id_but_same_look_comes_back(self):
+        ns = self.lost(sheet_graph("v-1"), sheet_graph("v-2", sheet=TEMP_A, local="entity-node-009"))
+        self.assert_found(ns, sheet_graph("v-3"))
+
+    def test_symbols_of_two_files_on_one_name_stay_tombs(self):
+        ns = self.lost(sheet_graph("v-1", basis="sequence"), sheet_graph("v-2", mid=MAT_B, basis="sequence"))
+        self.assert_lost(ns, sheet_graph("v-3", basis="sequence"))
+
+    def test_symbols_of_two_pages_stay_tombs(self):
+        ns = self.lost(sheet_graph("v-1", basis="sequence"), sheet_graph("v-2", basis="sequence", sid="pdf-p1-sym-0004"))
+        self.assert_lost(ns, sheet_graph("v-3", basis="sequence"))
+
+    def test_symbols_with_two_file_ids_stay_tombs(self):
+        ns = self.lost(sheet_graph("v-1", basis="sequence"), sheet_graph("v-2", basis="sequence", sid="pdf-p0-sym-0005"))
+        self.assert_lost(ns, sheet_graph("v-3", basis="sequence"))
+
+    def test_same_file_id_with_other_entity_id_and_other_look_stays_tombs(self):
+        ns = self.lost(sheet_graph("v-1", tag=None), sheet_graph("v-2", sheet=TEMP_A, local="entity-node-009"))
+        self.assert_lost(ns, sheet_graph("v-3"))
+
+    def test_pdf_symbols_with_other_entity_id_and_a_box_apart_stay_tombs(self):
+        ns = self.lost(sheet_graph("v-1", basis="sequence", box=(79.4, 0, 10, 10)),
+                       sheet_graph("v-2", sheet="graph-B", basis="sequence", local="entity-node-009", box=(80.6, 0, 10, 10)))
+        self.assert_lost(ns, sheet_graph("v-3", basis="sequence"))
+
+    def test_only_the_tomb_that_passes_its_own_proof_comes_back(self):
+        ns = self.lost(sheet_graph("v-1"), sheet_graph("v-2", sheet=TEMP_A, kind="check_valve"))
+        g = sheet_graph("v-3")
+        node, tombs = self.back(ns, g)
+        keep = [t for t in ns["nodes"][0]["lost"] if tombs[t]["look"][2] == "check_valve"]
+        self.assertEqual((node["members"], node.get("lost")), ([g["nodes"][0]["entity_id"]], keep))
+        self.assertIsNone(tombs[keep[0]]["found"], "같은 id의 다른 종류는 다른 기호라 묘비로 남음")
+
+
 if __name__ == "__main__":
     unittest.main()

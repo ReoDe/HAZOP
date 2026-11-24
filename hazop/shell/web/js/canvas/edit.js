@@ -63,16 +63,21 @@ export async function loadHead(gid) {
   let h = null;
   try { h = await read("edit/" + encodeURIComponent(gid)); } catch (e) { h = null; }
   if (mine !== seq || shell.get().sheet !== gid) return null;
-  edit.set({ head: h, gid });
+  // 뒤에서 하던 다시 만들기가 끝났으면 '다시 만드는 중' 안내를 지운다(실제 창 확인: 20초 뒤에도 남아 있었다)
+  const notes = h && !h.graph_stale ? edit.get().notes.filter((t) => !REBUILDING.test(t)) : edit.get().notes;
+  edit.set({ head: h, gid, notes });
   return h;
 }
 
-export async function loadItem(gid, id) {
+const REBUILDING = /갱신하는 중|다시 만드는 중/;
+
+/** quiet: 바뀜 알림으로 다시 읽을 때. 그새 지워진 항목이면 오류 없이 카드를 닫는다. */
+export async function loadItem(gid, id, quiet = false) {
   if (!gid || !id) { edit.set({ item: null }); return null; }
   let it = null;
   try { it = await read("edit/" + encodeURIComponent(gid) + "/item/" + encodeURIComponent(id)); } catch (e) { it = null; }
   if (shell.get().sheet !== gid) return null;
-  edit.set({ item: it, error: it ? null : "이 항목은 고칠 수 없습니다(도면에 없음)." });
+  edit.set(it || !quiet ? { item: it, error: it ? null : "이 항목은 고칠 수 없습니다(도면에 없음)." } : { item: null });
   return it;
 }
 
@@ -102,12 +107,13 @@ export function wire() {
   }
   onChanged((topic, rev) => {
     if (topic === "sheet" && rev) edit.set((st) => ({ revs: Object.assign({}, st.revs, { [rev]: (st.revs[rev] || 0) + 1 }) }));
-    if (topic !== "edit" && topic !== "aireview") return;
+    if (topic !== "edit" && topic !== "aireview" && topic !== "sheet") return;
     const g = shell.get().sheet;
-    if (!g || (topic === "edit" && rev && rev !== g)) return;
+    if (!g || ((topic === "edit" || topic === "sheet") && rev && rev !== g)) return;
+    if (topic === "sheet" && !edit.get().on) return;
     loadHead(g);
     const it = edit.get().item;
-    if (it) loadItem(g, it.local_id);
+    if (it) loadItem(g, it.local_id, true);
   });
   let last = null;
   shell.subscribe((s) => {
@@ -279,7 +285,7 @@ function Strip() {
         title="고친 것 목록">${h.ops.length}${bad ? html` <span class="warn">· 못 얹음 ${bad}</span>` : null}</button>` : null}
       <${Btn} sm=${true} kind="ghost" icon="x" label="고치기 끝내기" title="고치기 끝내기" onClick=${() => setOn(false)} /></div>
     ${tip ? html`<div class="ep-hint">${tip}${s.tool === "path" ? " · 점 " + s.points.length + "개" : ""}</div>` : null}
-    ${h && h.graph_stale ? html`<div class="ep-hint warn">저장했습니다. 그래프를 다시 만드는 중이거나 다시 만들지 못했습니다(못 만들면 다음 동작에서 다시 만듭니다).</div>` : null}
+    ${h && h.graph_stale ? html`<div class="ep-hint warn">저장했습니다. 도면 연결 정보를 갱신하는 중이거나 갱신하지 못했습니다(못 했으면 다음 동작 때 다시 합니다).</div>` : null}
     ${s.notes.length ? html`<div class=${"ep-hint" + (s.notes.some((t) => t.includes("재확인") || t.includes("풀렸")) ? " warn" : "")}>${s.notes.map((t) => html`<div>${t}</div>`)}</div>` : null}
     ${s.error && !s.item && !s.addAt ? html`<div class="ep-hint err" role="alert">${s.error}</div>` : null}
     ${open && h && h.ops.length ? html`<ol class="ep-log">${h.ops.slice().reverse().slice(0, 30).map((o) => html`<li key=${o.op_id}><b>${o.label}</b> ${o.local_id || ""}
@@ -314,7 +320,7 @@ function ItemCard() {
   const im = it.impact || {};
   const held = (im.nodes || []).filter((n) => n.state !== "applied");
   return html`<div class="float edit-card" role="dialog" aria-label=${(node ? "기기 " : "연결 ") + (it.tag || it.local_id) + " 고치기"}>
-    <div class="ec-h"><b>${it.tag || it.local_id}</b> <span>${it.kind_label || ""}</span> <span class="muted small">${it.kind || ""}</span>
+    <div class="ec-h"><b>${it.tag || it.kind_label || "이름 없는 기호"}</b> <span>${it.tag ? it.kind_label || "" : ""}</span>
       <${Btn} sm=${true} kind="ghost" icon="x" label="고치기 카드 닫기" onClick=${() => { setTag(null); closeItem(); }} /></div>
     ${it.kind === "continuation" ? html`<${LinkSection} gid=${shell.get().sheet} item=${it} />` : null}
     ${im.sheet === "confirmed" || im.sheet === "compared" ? html`<${Notice} kind="warn" icon="alert-triangle">이 쪽은 ${im.sheet === "confirmed" ? "확정" : "견줌"} 상태입니다. 고치면 풀립니다.<//>` : null}
@@ -325,8 +331,8 @@ function ItemCard() {
       <${Btn} sm=${true} label="태그 저장" disabled=${s.busy || !tagValue.trim() || tagValue.trim() === (it.tag || "")} onClick=${() => { apply("set_tag", it.local_id, { tag: tagValue.trim() }); setTag(null); }}>저장<//></div></div>
     ${node ? html`<div class="field"><label for="ec-kind">종류</label>
       <select id="ec-kind" value=${it.kind || ""} disabled=${s.busy} onChange=${(e) => apply("set_kind", it.local_id, { kind: e.target.value })}>
-        ${it.kind && !(head && head.kinds.some((k) => k.kind === it.kind)) ? html`<option value=${it.kind}>${it.kind}</option>` : null}
-        ${(head ? head.kinds : []).map((k) => html`<option value=${k.kind}>${k.label} (${k.kind})</option>`)}</select></div>
+        ${it.kind && !(head && head.kinds.some((k) => k.kind === it.kind)) ? html`<option value=${it.kind}>${it.kind_label || "목록에 없는 종류"}</option>` : null}
+        ${(head ? head.kinds : []).map((k) => html`<option value=${k.kind}>${k.label}</option>`)}</select></div>
       <div class="acts-row"><${Btn} sm=${true} icon="link" label="이 기기에서 연결 추가" title="이 기기에서 시작해 다른 기기를 누르면 공정 배관으로 잇습니다" disabled=${s.busy}
         onClick=${() => startConnect(it.local_id)}>연결 추가<//></div>
       ${(it.positions || []).map((p) => html`<div class="field"><label>${p.label}</label>
@@ -337,7 +343,7 @@ function ItemCard() {
         <${Btn} sm=${true} icon="arrow-back-up" label="흐름 방향 뒤집기" disabled=${s.busy || !it.flow_allowed} title=${it.flow_allowed ? (it.flow ? "흐름 방향 뒤집기" : "끝(target) → 끝(source)로 정하기") : "물리 배관에만 흐름 방향을 정합니다"}
           onClick=${() => apply("set_flow", it.local_id, { flip: true })}>${it.flow ? "뒤집기" : "방향 정하기"}<//></div></div>
       <div class="field"><label>끝</label>${["source", "target"].map((end) => html`<div class="acts-row">
-        <span class="muted small">${end === "source" ? "시작" : "끝"}: ${it.ends[end].node || "열린 끝"}</span>
+        <span class="muted small">${end === "source" ? "시작" : "끝"}: ${it.ends[end].node || "이어지지 않음"}</span>
         <${Btn} sm=${true} label=${end + " 끝 잇기"} disabled=${s.busy} onClick=${() => { setField({ end }); setTool("endpoint"); }}>잇기<//>
         ${it.ends[end].node ? html`<${Btn} sm=${true} label=${end + " 끝 끊기"} disabled=${s.busy} onClick=${() => apply("clear_endpoint", it.local_id, { end })}>끊기<//>` : null}</div>`)}</div>
       <div class="acts-row"><${Btn} sm=${true} icon="route" label="경로 다시 그리기" disabled=${s.busy} onClick=${() => setTool("path")}>경로 다시 그리기<//></div>` : null}

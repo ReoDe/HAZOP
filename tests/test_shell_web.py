@@ -301,7 +301,7 @@ class ShellWindowTest(ShellBase):
 
     def test_open_a_drawing_from_the_list(self):
         win = self.window()
-        self.assertTrue(self.click(win, ".panel .row button", 1))
+        self.assertTrue(self.click(win, ".panel .row button[aria-label$=' 열기']"))
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().sheet") is not None, 10))
         pump(0.5)
         self.assertTrue(self.js(win, "window.__hz.store.get().panel === null"))
@@ -521,7 +521,7 @@ class WebUnitTest(ShellBase):
         p2 = LogPage(win.view.profile)   # 틀 창의 전용 프로필(처리기가 붙어 있다)
         out = []
         p2.load(QUrl("hazop-app://shell/test/run.html"))
-        end = time.monotonic() + 30
+        end = time.monotonic() + 60     # 숨은 페이지는 타이머가 느려 시험이 늘면 30초를 넘는다(2026-11-24)
         while time.monotonic() < end:
             res = []
             p2.runJavaScript("JSON.stringify(window.__results || null)", 0, res.append)   # 배열은 문자열로 받는다

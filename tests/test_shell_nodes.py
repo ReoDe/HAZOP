@@ -206,6 +206,8 @@ class CommandTest(Env):
         self.assertEqual(s["nodes"][1]["overlaps"], [{"node_id": "S1", "shared": 2}])
         d = api_nodes.detail(self.engine, "S1")
         self.assertEqual(sum(1 for m in d["members"] if m["shared"] == ["S2"]), 2)
+        # 실제 창 3차 D: 칩의 마우스 올림·접근성 이름에 쓸 한글 종류 이름(영문 종류 코드 대신)
+        self.assertTrue(all(m.get("kind_label") and "_" not in m["kind_label"] for m in d["members"]), [m.get("kind_label") for m in d["members"]][:5])
 
     def test_chat_made_nodes_show_with_origin_batch_and_user_can_undo(self):
         pg = self.pg
@@ -371,14 +373,14 @@ class CommandTableTest(unittest.TestCase):
             names = sorted(k for k in api.COMMANDS if k.startswith("nodes."))
             self.assertEqual(names, ["nodes." + x for x in sorted(
                 ["create", "add_members", "remove_members", "rename", "set_intent", "merge", "split", "remove", "confirm", "unconfirm",
-                 "lock", "unlock", "undo", "suggest", "migrate", "exclude_drawing"])])
+                 "lock", "unlock", "undo", "suggest", "migrate", "catch_up", "exclude_drawing", "discard_lost"])])
             for k in names:
                 spec = api.COMMANDS[k].spec
                 self.assertFalse({"by", "at", "author", "origin", "confirmed_by", "request"} & set(spec), k)
                 self.assertTrue(spec["project_id"][1], k)
                 if k == "nodes.exclude_drawing":   # 구간 집합이 아니라 도면 빼기 표시 파일을 쓴다: 그 파일의 판(ver)을 대조한다
                     self.assertTrue(spec["ver"][1], k)
-                elif k not in ("nodes.suggest", "nodes.migrate"):
+                elif k not in ("nodes.suggest", "nodes.migrate", "nodes.catch_up"):
                     self.assertTrue(spec["set_rev"][1], k)
                     # 구간을 건드리는 명령은 대상의 판(targets)이 필수다(규격 §5.3). 만들기·묶음 되돌리기는 대상 구간이 없다
                     self.assertEqual(spec["targets"][1], k not in ("nodes.create", "nodes.undo"), k)
@@ -537,7 +539,7 @@ class ReviewFixTest(Env):
         self.assertEqual(s["nodes"], [])
         r = self.create()
         self.assertEqual(r["error"]["code"], "failed")        # 변환 전에는 쓰지 않는다
-        self.assertIn("새 판", r["error"]["message"])
+        self.assertIn("새 형식", r["error"]["message"])
         self.assertEqual(_rb(path), before[1])
         m = self.engine.dispatch("nodes.migrate", {"project_id": self.engine.project_id()})
         self.assertTrue(m["ok"], m)

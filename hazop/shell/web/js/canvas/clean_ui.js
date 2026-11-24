@@ -1,6 +1,7 @@
 // 정리된 보기의 화면 쪽(규격 §10.4·§10.5): 원본|정리 단추(키 O), '미확인 n곳' 칩(키 N·Shift+N), 못 읽은 곳의 원본 조각 말풍선, 기본 보기 규칙.
 // 보기 선택은 앱을 닫을 때까지만 기억한다(프로젝트 파일에 저장하지 않음). SheetHost가 `useCleanCanvas(sheet)`의 props를 <Sheet>에 펼치고
 // `<CleanOverlay />`를 도면 자리 안에 그린다. 도면·모델에서 온 글(태그)은 htm이 이스케이프하는 텍스트로만 넣는다.
+import { fixFor, noFragmentText } from "../fix_actions.js";      // 미확인 곳을 푸는 단추(U8)
 import { html } from "../ui/html.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { createStore, store as shell, useStore } from "../store.js";
@@ -17,6 +18,7 @@ if (typeof document !== "undefined" && !document.querySelector("link[data-clean-
 
 export const clean = createStore({
   choice: {},        // graph_id → "orig" | "clean": 사람이 바꾼 보기(앱을 닫을 때까지)
+  lastByFormat: {},  // 읽은 방법 → 사람이 마지막에 고른 보기: 아직 고르지 않은 같은 형식의 쪽도 이것으로 연다(PDF 쪽마다 '정리'를 다시 누르지 않게)
   data: {},          // graph_id → /api/clean 자료(없으면 null)
   built: {},         // graph_id → {ms, elements, missingKinds, placeholders}
   bubble: null,      // {id, reason, fragment}
@@ -38,7 +40,7 @@ export function useClean(selector) {
 }
 
 export const REASON_TEXT = {
-  unknown_symbol: "종류를 못 읽은 기호", open_end: "끊긴 연결(열린 끝)", missing_tag: "태그가 없음", ai_candidate: "AI 후보(수락 전)",
+  unknown_symbol: "종류를 못 읽은 기호", open_end: "끊긴 연결", missing_tag: "태그가 없음", ai_candidate: "AI 후보(수락 전)",
 };
 
 /** 지금 이 도면의 보기. 사람이 바꾼 것이 먼저, 없으면 읽은 방법에 따른 기본(drawio·dexpi는 정리, PDF는 원본). 정리 자료가 없으면 원본. */
@@ -46,12 +48,17 @@ export function viewOf(state, gid) {
   const data = state.data[gid];
   if (!data) return "orig";
   if (data.source_format === "dexpi") return "clean";        // 원본 그림이 없다
-  return state.choice[gid] || defaultView(data.source_format, !!(data.confirmed && data.confirmed.state === "confirmed"));
+  return state.choice[gid] || (state.lastByFormat || {})[data.source_format] || defaultView(data.source_format, !!(data.confirmed && data.confirmed.state === "confirmed"));
 }
 
 export function toggleOverlay(name) { clean.set((s) => ({ overlay: Object.assign({}, s.overlay, { [name]: !s.overlay[name] }) })); }
 
-export function setView(gid, view) { clean.set((s) => ({ choice: Object.assign({}, s.choice, { [gid]: view }) })); }
+export function setView(gid, view) {
+  clean.set((s) => {
+    const fmt = s.data[gid] && s.data[gid].source_format;
+    return { choice: Object.assign({}, s.choice, { [gid]: view }), lastByFormat: fmt ? Object.assign({}, s.lastByFormat, { [fmt]: view }) : s.lastByFormat };
+  });
+}
 
 export function toggleView(gid) {
   const s = clean.get();
@@ -134,10 +141,10 @@ function ViewSwitch({ gid }) {
     ${open && data ? html`<div class="float viewmenu" role="menu" aria-label="보기 설정">
       <div class=${"vm-info" + (fmt === "unknown" ? " warn" : "")} title="읽은 방법">${FORMAT_LABEL[fmt] || fmt}</div>
       ${unplaced ? html`<div class="vm-info warn" title="좌표가 없어 도면에 그리지 못한 것. 확정 전에 위치를 주거나 도면에 없음으로 정해야 합니다">위치 없음 ${unplaced}</div>` : null}
-      ${count ? check(ov.unconfirmed, "속성 미확인 보기", "호박색 점선 네모: 읽지 못한 것이 아니라 속성만 확인되지 않은 곳(포트·흐름 방향·고장 위치 등)을 도면에 보입니다. 읽지 못한 기호·열린 끝은 늘 보입니다",
+      ${count ? check(ov.unconfirmed, "속성 미확인 보기", "호박색 점선 네모: 읽지 못한 것이 아니라 속성만 확인되지 않은 곳(포트·흐름 방향·고장 위치 등)을 도면에 보입니다. 읽지 못한 기호·끊긴 연결은 늘 보입니다",
         () => toggleOverlay("unconfirmed")) : null}
       ${lo && lo.counted ? check(ov.leftovers, "원본에 남은 것 " + lo.n, "원본에서 어느 구성요소에도 쓰이지 않은 것을 겹쳐 봅니다 (L)", () => toggleOverlay("leftovers"))
-        : (lo ? html`<div class="vm-info warn" title="이 읽은 방법에서는 엔진이 원본에 남은 선·글자를 세지 못합니다. 쪽을 확정하기 전에 원본과 견주어야 합니다">원본에 남은 것: 엔진이 세지 않음</div>` : null)}
+        : (lo ? html`<div class="vm-info warn" title="이 방법으로 읽은 도면은 원본에 남은 선·글자를 셀 수 없습니다. 쪽을 확정하기 전에 원본과 견주어야 합니다">원본에 남은 것: 셀 수 없음</div>` : null)}
       ${!dexpi ? check(ov.original, "원본 겹쳐 보기", "원본 도면을 옅게(30%) 겹쳐 어긋난 곳을 찾습니다", () => toggleOverlay("original")) : null}</div>` : null}</div>`;
 }
 
@@ -151,7 +158,8 @@ function Bubble({ gid }) {
     <div class="cp-h"><b>${REASON_TEXT[b.reason] || "못 읽은 곳"}</b>${total && cursor >= 0 ? html`<${Chip}>${cursor + 1} / ${total}<//>` : null}
       <button type="button" class="btn ghost sm icon" aria-label="닫기" title="닫기 (Esc)" onClick=${closeBubble}><${Icon} name="x" size=${15} /></button></div>
     ${f ? html`<div class="cp-frag" aria-label="원본의 그 자리"><svg viewBox=${f.box.x + " " + f.box.y + " " + f.box.w + " " + f.box.h} width="100%" preserveAspectRatio="xMidYMid meet">
-      <image href=${f.href} x="0" y="0" width=${f.size[0]} height=${f.size[1]} /></svg><div class="muted small">원본에서 그 자리 둘레(사방 24 단위)</div></div>` : html`<div class="muted small">원본 조각이 없습니다.</div>`}
+      <image href=${f.href} x="0" y="0" width=${f.size[0]} height=${f.size[1]} /></svg><div class="muted small">원본에서 그 자리 둘레(사방 24 단위)</div></div>` : html`<div class="muted small">${noFragmentText(b.reason)}</div>`}
+    ${fixFor(b.reason) ? html`<div class="acts-row"><button type="button" class="btn sm primary" aria-label=${fixFor(b.reason).label} onClick=${() => { closeBubble(); fixFor(b.reason).run(gid); }}>${fixFor(b.reason).label}</button></div>` : null}
     <div class="acts-row"><button type="button" class="btn sm" aria-label="앞 미확인" onClick=${() => stepUnconfirmed(gid, -1)}>앞 <kbd>Shift+N</kbd></button>
       <button type="button" class="btn sm" aria-label="다음 미확인" onClick=${() => stepUnconfirmed(gid, 1)}>다음 <kbd>N</kbd></button></div></div>`;
 }
