@@ -138,6 +138,11 @@ class TombByNumberingTest(unittest.TestCase):
         rec = dict(self.rec, numbering={"base": "b-orig1", "upto": 0})
         self.assertEqual(self.found(graph("v-3", "b-orig1", [("e1", "pdf-p0-sym-0001", LUMP)], {"base": "b-orig1", "upto": 0}), rec), {})
 
+    def test_tomb_whose_number_is_gone_is_still_taken_back_by_mark(self):
+        later = graph("v-3", "b-split3", [("e2", "pdf-p0-sym-0002", FAR), ("e9", "pdf-p0-sym-0004", BODY)], N1)
+        self.assertEqual(self.found(later), {self.tomb: "e9"},
+                         "번호 기준이 같아도 그 번호가 없으면 끝 번호 뒤 번호로 다시 나온 같은 표시로 되찾는다(§18 잇기와 같다)")
+
     def test_old_tomb_record_without_numbering_needs_the_same_mark(self):
         rec = {k: v for k, v in self.rec.items() if k != "numbering"}
         self.assertEqual(self.found(graph("v-3", "b-orig1", [("e1", "pdf-p0-sym-0001", LUMP)], N1), rec), {})

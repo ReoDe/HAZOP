@@ -3,8 +3,9 @@
 - 표시 색인(idmap._MarkIndex): 같은 표시(_same_mark) 찾기를 격자 칸으로 좁혔다. 전수 비교(이 파일의 LinearIndex, 고치기 전
   compute의 by_look·mark_hits 그대로)와 찾은 것과 차례가 같아야 하고, compute가 만든 표가 바이트 하나 다르지 않아야 한다.
   경계: 허용치와 정확히 같은 거리, 음수 좌표, 다른 도면, 상자 없음, 격자로 나눌 수 없는 좌표(무한·NaN·아주 큰 정수).
-- 기록 압축(idmap.pack_ids): 판 이전 줄의 kept_eids·kept_refs를 번호 구간으로 줄여 적는다. 옛 줄(목록)과 새 줄(구간)을
-  from_record로 읽으면 같은 표이고, 늦게 따라오는 ⑤ 결과도 같은 바이트로 옮겨진다.
+- 기록: 판 이전 줄의 kept_eids·kept_refs는 목록으로 적는다. 구간 꼴(idmap.pack_ids)로 적으면 77345243 앱이 읽을 때 partial이
+  되어 늦게 따라오는 문서의 참조가 기록 없는 묘비로 바뀐다(내려 깔기 손실, 판 이전 설계 §21). 새 앱은 구간 꼴도 읽으므로
+  목록 줄과 구간 줄을 from_record로 읽으면 같은 표이고, 늦게 따라오는 ⑤ 결과도 같은 바이트로 옮겨진다.
 """
 
 import copy
@@ -156,6 +157,7 @@ PACK_CASES = [
     ["p#pdf-p0-sym-0001", "p#pdf-p0-sym-0002", "p#pdf-p12-sym-0001", "q#manual-ab12", "xlink-0f3a-a", "xlink-0f3a-b"],
     ["n١", "n1", "n٢", "n2", "", "007", "7", "8"],
     ["s/entity-%d" % i for i in range(1, 2000) if i % 97] + ["s/entity-x"],
+    ["g#abc1\n", "g#abc1", "g#a\n7", "g#abc2\n"],
 ]
 
 
@@ -171,12 +173,19 @@ class PackTest(unittest.TestCase):
         self.assertLess(len(json.dumps(idmap.pack_ids(ids))) * 50, len(json.dumps(ids)))
 
 
-def old_line(detail):
-    """새 줄을 고치기 전 꼴(kept_eids·kept_refs를 목록으로)로."""
+def packed_line(detail):
+    """kept_eids·kept_refs를 구간 꼴로 줄인 줄(6bfe9c3e가 잠시 적던 꼴)."""
     d = dict(detail)
     for k in ("kept_eids", "kept_refs"):
-        d[k] = idmap.unpack_ids(d[k])
+        d[k] = idmap.pack_ids(d[k])
     return d
+
+
+def read_by_77345243(detail):
+    """77345243 앱의 from_record가 줄을 온전한 표로 보는 조건과 그때 채우는 그대로 이어진 id·참조. 온전하지 않으면 None."""
+    if not (isinstance(detail.get("kept_eids"), list) and isinstance(detail.get("kept_refs"), list)):
+        return None
+    return sorted(detail["kept_eids"]), sorted(detail["kept_refs"])
 
 
 class RecordRoundTripTest(unittest.TestCase):
@@ -186,14 +195,18 @@ class RecordRoundTripTest(unittest.TestCase):
             yield idmap.compute(ns0, g1, at="x"), ns0
             yield idmap.compute(ns1, g2, at="x"), ns1
 
-    def test_new_and_old_lines_read_back_to_the_same_table(self):
+    def test_the_77345243_app_reads_a_new_line_as_a_whole_table(self):
+        for table, _ns in self.tables():
+            line = json.loads(json.dumps(idmap.record(table)))
+            kept = (sorted(a for a, b in table["eid"].items() if a == b), sorted(a for a, b in table["ref"].items() if a == b))
+            self.assertEqual(read_by_77345243(line), kept, "옛 앱이 partial로 읽으면 늦게 따라오는 참조를 잃는다")
+
+    def test_listed_and_packed_lines_read_back_to_the_same_table(self):
         for table, _ns in self.tables():
             new = json.loads(json.dumps(idmap.record(table)))
             new.update({"from": table["from"], "to": table["to"]})
-            old = old_line(new)
-            self.assertIsInstance(old["kept_eids"], list)
-            self.assertEqual(old["kept_eids"], sorted(a for a, b in table["eid"].items() if a == b), "옛 꼴은 그대로 이어진 id의 목록")
-            a, b = idmap.from_record(new, "graph-T"), idmap.from_record(old, "graph-T")
+            packed = json.loads(json.dumps(packed_line(new)))
+            a, b = idmap.from_record(new, "graph-T"), idmap.from_record(packed, "graph-T")
             self.assertEqual(dumps(a), dumps(b))
             self.assertFalse(a["partial"])
             self.assertEqual({k: v for k, v in a["eid"].items() if k == v}, {k: v for k, v in table["eid"].items() if k == v})
@@ -217,11 +230,11 @@ class RecordRoundTripTest(unittest.TestCase):
             res = {"schema_version": "0.3", "graph_id": "graph-T", "graph_version": "v-0",
                    "cells": [{"entries": [{"cause_refs": [{"ref": r} for r in refs[:8]]}]}]}
             line = after["history"][-1]["detail"]
-            self.assertIsInstance(line["kept_eids"], dict, "새 줄은 구간으로 줄여 적는다")
-            old = copy.deepcopy(after)
-            old["history"][-1]["detail"] = old_line(line)
+            self.assertIsInstance(line["kept_eids"], list, "새 줄은 옛 앱도 읽는 목록으로 적는다")
+            packed = copy.deepcopy(after)
+            packed["history"][-1]["detail"] = packed_line(line)
             a, _ = migrate.migrate_results(res, after, at="t")
-            b, _ = migrate.migrate_results(res, old, at="t")
+            b, _ = migrate.migrate_results(res, packed, at="t")
             self.assertEqual(dumps(a), dumps(b), "seed %d" % seed)
             moved += a is not res
         self.assertEqual(moved, 40)
