@@ -742,9 +742,50 @@ def _link_by_ends(every, graph, new_basis, by_id, link, contested, old_basis_of,
         link.update(found)
 
 
+_TRAILING_NUMBER = re.compile(r"(?s)^(.*?)([0-9]+)$")
+
+
+def pack_ids(ids):
+    """id 목록 → {"runs": [[앞, 자릿수, [[처음, 끝], …]], …], "other": [끝 숫자가 없는 id]}. 끝 숫자(0~9)가 같은 앞·같은 자릿수로
+    이어지는 id를 구간 하나로 적는다(판 이전 줄의 그대로 이어진 id는 구성요소 수만큼이라 목록이면 저장마다 수 MB). unpack_ids가
+    정렬된 목록으로 되돌린다."""
+    groups, other = {}, []
+    for x in ids:
+        m = _TRAILING_NUMBER.match(x)
+        if m:
+            groups.setdefault((m.group(1), len(m.group(2))), []).append(int(m.group(2)))
+        else:
+            other.append(x)
+    runs = []
+    for (head, width), nums in sorted(groups.items()):
+        spans = []
+        for n in sorted(set(nums)):
+            if spans and spans[-1][1] == n - 1:
+                spans[-1][1] = n
+            else:
+                spans.append([n, n])
+        runs.append([head, width, spans])
+    return {"runs": runs, "other": sorted(set(other))}
+
+
+def unpack_ids(v):
+    """판 이전 줄의 kept_eids·kept_refs → 정렬된 id 목록. 옛 줄(목록)은 그대로. 읽을 수 없는 꼴이면 None."""
+    if isinstance(v, list):
+        return v
+    try:
+        out = list(v["other"])
+        if not all(isinstance(x, str) for x in out):
+            return None
+        for head, width, spans in v["runs"]:
+            out += [head + str(n).zfill(width) for a, b in spans for n in range(a, b + 1)]
+        return sorted(out)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def record(table):
-    """이력 detail에 남길 표(이름 renamed는 U1 R2 시험이 읽는다). 바뀐 것과 함께 그대로 이어진 것(kept_eids·kept_refs)과
-    도면(drawings)을 적어, 늦게 따라오는 문서도 from_record로 같은 표를 만든다(옛 판 사진에 없는 이 도면의 참조는 묘비).
+    """이력 detail에 남길 표(이름 renamed는 U1 R2 시험이 읽는다). 바뀐 것과 함께 그대로 이어진 것(kept_eids·kept_refs, pack_ids로
+    줄여 적음)과 도면(drawings)을 적어, 늦게 따라오는 문서도 from_record로 같은 표를 만든다(옛 판 사진에 없는 이 도면의 참조는 묘비).
     sheets {옛 시트: 새 시트}는 이름이 바뀐 시트(화면 문구용, 참조 표에 이미 들어 있어 from_record는 쓰지 않음)."""
     eid = table["eid"]
     return {"renamed": {a: b for a, b in sorted(eid.items()) if not is_tomb(b) and a != b},
@@ -752,8 +793,8 @@ def record(table):
             "ref_moved": {a: b for a, b in sorted(table["ref"].items()) if a != b},
             "found": {t: v[0] for t, v in sorted(table["found"].items())},
             "found_refs": {t: v[1] for t, v in sorted(table["found"].items())},
-            "kept_eids": sorted(a for a, b in eid.items() if a == b),
-            "kept_refs": sorted(a for a, b in table["ref"].items() if a == b),
+            "kept_eids": pack_ids(a for a, b in eid.items() if a == b),
+            "kept_refs": pack_ids(a for a, b in table["ref"].items() if a == b),
             "unnamed_refs": list(table.get("unnamed") or []),
             "drawings": list(table["drawings"]),
             "sheets": dict(table.get("sheets") or {}),
@@ -762,13 +803,15 @@ def record(table):
 
 def from_record(detail, graph_id):
     """이력 한 줄 → 표. kept_eids·kept_refs가 있는 줄은 compute가 만든 표와 같은 온전한 표이고, 없는 옛 줄(cff108c~M2)은
-    바뀐 것만 담은 partial 표다. 49033f1 판의 줄(unmapped·ref_moved의 None·`~lost` 열쇠)도 읽는다."""
+    바뀐 것만 담은 partial 표다. kept_*는 목록(2026-11-24 전 줄)이나 pack_ids 꼴이다. 49033f1 판의 줄(unmapped·ref_moved의
+    None·`~lost` 열쇠)도 읽는다."""
     to = detail.get("to")
-    whole = isinstance(detail.get("kept_eids"), list) and isinstance(detail.get("kept_refs"), list)
+    kept = [unpack_ids(detail[k]) if isinstance(detail.get(k), (list, dict)) else None for k in ("kept_eids", "kept_refs")]
+    whole = None not in kept
     t = _empty_table(graph_id, detail.get("from"), to, not whole)
     if whole:
-        t["eid"].update((a, a) for a in detail["kept_eids"])
-        t["ref"].update((a, a) for a in detail["kept_refs"])
+        t["eid"].update((a, a) for a in kept[0])
+        t["ref"].update((a, a) for a in kept[1])
         t["drawings"] = list(detail.get("drawings") or [])
     for a, b in (detail.get("renamed") or {}).items():
         if not str(a).endswith(LEGACY_LOST):  # 옛 판의 되찾기 열쇠는 따르지 않는다(못 찾은 것으로 둠)

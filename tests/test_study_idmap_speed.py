@@ -1,16 +1,19 @@
-"""판 이전을 빠르게 한 것이 결과를 바꾸지 않는지 본다(2026-11-24 성능 단위).
+"""판 이전을 빠르게 한 두 가지가 결과를 바꾸지 않는지 본다(2026-11-24 성능 단위).
 
 - 표시 색인(idmap._MarkIndex): 같은 표시(_same_mark) 찾기를 격자 칸으로 좁혔다. 전수 비교(이 파일의 LinearIndex, 고치기 전
   compute의 by_look·mark_hits 그대로)와 찾은 것과 차례가 같아야 하고, compute가 만든 표가 바이트 하나 다르지 않아야 한다.
   경계: 허용치와 정확히 같은 거리, 음수 좌표, 다른 도면, 상자 없음, 격자로 나눌 수 없는 좌표(무한·NaN·아주 큰 정수).
+- 기록 압축(idmap.pack_ids): 판 이전 줄의 kept_eids·kept_refs를 번호 구간으로 줄여 적는다. 옛 줄(목록)과 새 줄(구간)을
+  from_record로 읽으면 같은 표이고, 늦게 따라오는 ⑤ 결과도 같은 바이트로 옮겨진다.
 """
 
+import copy
 import json
 import random
 import unittest
 from unittest import mock
 
-from hazop.study import idmap
+from hazop.study import idmap, migrate
 
 
 class LinearIndex:
@@ -143,6 +146,85 @@ class SameTableTest(unittest.TestCase):
                 linked += sum(1 for v in fast["eid"].values() if not idmap.is_tomb(v))
         self.assertGreater(found, 20, "묘비 되찾기 길도 실제로 돈다")
         self.assertGreater(linked, 1000, "표시로 잇기가 실제로 돈다")
+
+
+PACK_CASES = [
+    [],
+    ["a"],
+    ["g/entity-node-001", "g/entity-node-002", "g/entity-node-003", "g/entity-node-005"],
+    ["x9", "x10", "x09", "x010", "x8", "x0", "x00", "x"],
+    ["p#pdf-p0-sym-0001", "p#pdf-p0-sym-0002", "p#pdf-p12-sym-0001", "q#manual-ab12", "xlink-0f3a-a", "xlink-0f3a-b"],
+    ["n١", "n1", "n٢", "n2", "", "007", "7", "8"],
+    ["s/entity-%d" % i for i in range(1, 2000) if i % 97] + ["s/entity-x"],
+]
+
+
+class PackTest(unittest.TestCase):
+    def test_unpack_gives_back_the_sorted_list(self):
+        for ids in PACK_CASES:
+            want = sorted(set(ids))
+            packed = idmap.pack_ids(want)
+            self.assertEqual(idmap.unpack_ids(json.loads(json.dumps(packed))), want, ids[:8])
+
+    def test_long_runs_are_small(self):
+        ids = sorted("graph-material-0123456789ab-p%d/entity-node-%05d" % (p, i) for p in range(143) for i in range(1, 300))
+        self.assertLess(len(json.dumps(idmap.pack_ids(ids))) * 50, len(json.dumps(ids)))
+
+
+def old_line(detail):
+    """새 줄을 고치기 전 꼴(kept_eids·kept_refs를 목록으로)로."""
+    d = dict(detail)
+    for k in ("kept_eids", "kept_refs"):
+        d[k] = idmap.unpack_ids(d[k])
+    return d
+
+
+class RecordRoundTripTest(unittest.TestCase):
+    def tables(self):
+        for seed in range(60):
+            ns0, g1, ns1, g2 = chain(seed)
+            yield idmap.compute(ns0, g1, at="x"), ns0
+            yield idmap.compute(ns1, g2, at="x"), ns1
+
+    def test_new_and_old_lines_read_back_to_the_same_table(self):
+        for table, _ns in self.tables():
+            new = json.loads(json.dumps(idmap.record(table)))
+            new.update({"from": table["from"], "to": table["to"]})
+            old = old_line(new)
+            self.assertIsInstance(old["kept_eids"], list)
+            self.assertEqual(old["kept_eids"], sorted(a for a, b in table["eid"].items() if a == b), "옛 꼴은 그대로 이어진 id의 목록")
+            a, b = idmap.from_record(new, "graph-T"), idmap.from_record(old, "graph-T")
+            self.assertEqual(dumps(a), dumps(b))
+            self.assertFalse(a["partial"])
+            self.assertEqual({k: v for k, v in a["eid"].items() if k == v}, {k: v for k, v in table["eid"].items() if k == v})
+
+    def test_unreadable_packed_line_is_a_partial_table(self):
+        good = idmap.pack_ids(["g/entity-1"])
+        for bad in ({"runs": [["g/entity-", 1, [[1, "x"]]]], "other": []}, {"runs": []}, {"runs": [], "other": [3]},
+                    {"runs": [[None, 1, [[1, 1]]]], "other": []}):
+            t = idmap.from_record({"from": "v-0", "to": "v-1", "kept_eids": bad, "kept_refs": good}, "graph-T")
+            self.assertTrue(t["partial"], bad)
+            self.assertEqual(t["eid"], {}, "증명하지 못한 줄은 그대로 이어진 것을 믿지 않는다")
+
+    def test_late_results_move_the_same_through_old_and_new_lines(self):
+        moved = 0
+        for seed in range(40):
+            ns0, g1, _ns1, _g2 = chain(seed)
+            ns0["nodes"] = [{"node_id": "S1", "members": sorted(ns0["graph_member_refs"])[:5], "state": "applied"}]
+            ns0["history"], ns0["project_id"], ns0["schema_version"] = [], "P", "0.3"
+            after, _p = migrate.migrate_set(ns0, g1, at="2026-11-24T00:00:00Z")
+            refs = sorted(r for r in ns0["graph_member_refs"].values() if r)
+            res = {"schema_version": "0.3", "graph_id": "graph-T", "graph_version": "v-0",
+                   "cells": [{"entries": [{"cause_refs": [{"ref": r} for r in refs[:8]]}]}]}
+            line = after["history"][-1]["detail"]
+            self.assertIsInstance(line["kept_eids"], dict, "새 줄은 구간으로 줄여 적는다")
+            old = copy.deepcopy(after)
+            old["history"][-1]["detail"] = old_line(line)
+            a, _ = migrate.migrate_results(res, after, at="t")
+            b, _ = migrate.migrate_results(res, old, at="t")
+            self.assertEqual(dumps(a), dumps(b), "seed %d" % seed)
+            moved += a is not res
+        self.assertEqual(moved, 40)
 
 
 if __name__ == "__main__":
