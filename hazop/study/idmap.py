@@ -621,7 +621,7 @@ def compute(node_set, graph, at=None):
         if not isinstance(rec, dict) or rec.get("found") is not None or t in gone or not _recorded_as(t, rec, gid):
             continue
         numbered = by_numbering(rec)
-        if numbered is not None:  # 번호 기준이 같으면 같은 번호가 그 기호나 몸체다(줄어든 몸체를 잃은 뒤 덩어리가 돌아옴)
+        if numbered is not None and numbered[2]:  # 번호 기준이 같으면 같은 번호가 그 기호나 몸체다(줄어든 몸체를 잃은 뒤 덩어리가 돌아옴). 그 번호가 없으면 §18 잇기처럼 표시로
             sheet, was, hits = numbered
         elif valid_mark(rec.get("mark")):
             was = rec["mark"][1]
@@ -742,16 +742,16 @@ def _link_by_ends(every, graph, new_basis, by_id, link, contested, old_basis_of,
         link.update(found)
 
 
-_TRAILING_NUMBER = re.compile(r"(?s)^(.*?)([0-9]+)$")
+_TRAILING_NUMBER = re.compile(r"(?s)(.*?)([0-9]+)")
 
 
 def pack_ids(ids):
     """id 목록 → {"runs": [[앞, 자릿수, [[처음, 끝], …]], …], "other": [끝 숫자가 없는 id]}. 끝 숫자(0~9)가 같은 앞·같은 자릿수로
-    이어지는 id를 구간 하나로 적는다(판 이전 줄의 그대로 이어진 id는 구성요소 수만큼이라 목록이면 저장마다 수 MB). unpack_ids가
-    정렬된 목록으로 되돌린다."""
+    이어지는 id를 구간 하나로 적는다. unpack_ids가 정렬된 목록으로 되돌린다. record는 이 꼴로 적지 않는다(옛 앱 내려 깔기 손실,
+    판 이전 설계 §21). from_record가 6bfe9c3e가 적은 줄을 읽도록 꼴의 정의로 남긴다."""
     groups, other = {}, []
     for x in ids:
-        m = _TRAILING_NUMBER.match(x)
+        m = _TRAILING_NUMBER.fullmatch(x)
         if m:
             groups.setdefault((m.group(1), len(m.group(2))), []).append(int(m.group(2)))
         else:
@@ -784,8 +784,9 @@ def unpack_ids(v):
 
 
 def record(table):
-    """이력 detail에 남길 표(이름 renamed는 U1 R2 시험이 읽는다). 바뀐 것과 함께 그대로 이어진 것(kept_eids·kept_refs, pack_ids로
-    줄여 적음)과 도면(drawings)을 적어, 늦게 따라오는 문서도 from_record로 같은 표를 만든다(옛 판 사진에 없는 이 도면의 참조는 묘비).
+    """이력 detail에 남길 표(이름 renamed는 U1 R2 시험이 읽는다). 바뀐 것과 함께 그대로 이어진 것(kept_eids·kept_refs)과
+    도면(drawings)을 적어, 늦게 따라오는 문서도 from_record로 같은 표를 만든다(옛 판 사진에 없는 이 도면의 참조는 묘비).
+    kept_*는 목록으로 적는다: pack_ids 꼴은 77345243 앱이 partial로 읽어 늦게 따라오는 참조를 잃는다(판 이전 설계 §21).
     sheets {옛 시트: 새 시트}는 이름이 바뀐 시트(화면 문구용, 참조 표에 이미 들어 있어 from_record는 쓰지 않음)."""
     eid = table["eid"]
     return {"renamed": {a: b for a, b in sorted(eid.items()) if not is_tomb(b) and a != b},
@@ -793,8 +794,8 @@ def record(table):
             "ref_moved": {a: b for a, b in sorted(table["ref"].items()) if a != b},
             "found": {t: v[0] for t, v in sorted(table["found"].items())},
             "found_refs": {t: v[1] for t, v in sorted(table["found"].items())},
-            "kept_eids": pack_ids(a for a, b in eid.items() if a == b),
-            "kept_refs": pack_ids(a for a, b in table["ref"].items() if a == b),
+            "kept_eids": sorted(a for a, b in eid.items() if a == b),
+            "kept_refs": sorted(a for a, b in table["ref"].items() if a == b),
             "unnamed_refs": list(table.get("unnamed") or []),
             "drawings": list(table["drawings"]),
             "sheets": dict(table.get("sheets") or {}),
@@ -803,7 +804,7 @@ def record(table):
 
 def from_record(detail, graph_id):
     """이력 한 줄 → 표. kept_eids·kept_refs가 있는 줄은 compute가 만든 표와 같은 온전한 표이고, 없는 옛 줄(cff108c~M2)은
-    바뀐 것만 담은 partial 표다. kept_*는 목록(2026-11-24 전 줄)이나 pack_ids 꼴이다. 49033f1 판의 줄(unmapped·ref_moved의
+    바뀐 것만 담은 partial 표다. kept_*는 목록이나 pack_ids 꼴(6bfe9c3e가 적던 줄)이다. 49033f1 판의 줄(unmapped·ref_moved의
     None·`~lost` 열쇠)도 읽는다."""
     to = detail.get("to")
     kept = [unpack_ids(detail[k]) if isinstance(detail.get(k), (list, dict)) else None for k in ("kept_eids", "kept_refs")]
