@@ -225,7 +225,6 @@ class PlaceKeyTest(unittest.TestCase):
         self.assertEqual((at["Pump1"], at["Valve1"], at["Tank1"], at["Pipe1"], at["Pipe2"]),
                          ([60, 120], [100, 120], [190, 120], [82, 120], [120, 120]))
 
-
     def test_a_file_this_app_wrote_before_it_drew_symbols_keeps_its_places(self):
         """기호 없이 낸 옛 파일(Model uri가 이 앱의 것)은 가운데 규칙이 닿지 않아 다시 읽어도 자리가 같다."""
         plain = swap(PUMP_SHAPE, '')

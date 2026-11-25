@@ -16,10 +16,6 @@ _RIGHT = {0.0: (1.0, 0.0), 90.0: (0.0, 1.0), 180.0: (-1.0, 0.0), 270.0: (0.0, -1
 THIN = 1e-9
 
 
-def is_right(rotation):
-    return rotation % 360.0 in _RIGHT
-
-
 def quarter(rotation):
     """가로와 세로가 바뀌는 회전(90·270도)인가."""
     return rotation % 360.0 in (90.0, 270.0)
