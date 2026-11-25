@@ -12,7 +12,7 @@ sys.path.insert(0, REPO_ROOT)
 
 from hazop.extract import corrections  # noqa: E402
 from hazop.extract.adapters import dexpi_origin as origin  # noqa: E402
-from hazop.graph import build, project  # noqa: E402
+from hazop.graph import build, old_names, project  # noqa: E402
 from hazop.ie import fmea  # noqa: E402
 from hazop.kg import auto, build as kg_build, link  # noqa: E402
 from hazop.study import idmap, migrate, nodes  # noqa: E402
@@ -69,6 +69,7 @@ class GraphTest(unittest.TestCase):
             fixed = corrections.apply(ex, [corrections.make_op(ex, op, sid, value, "검토자", existing_ops=[])])
             n = by_soid(build.build_graph(fixed))[sid]
             self.assertNotIn(gone, n[origin.PLAIN])
+            self.assertIsNone(old_names.old_tag(n) if gone == "tag" else None)
             self.assertIn(kept, n[origin.PLAIN])
 
 
@@ -108,6 +109,29 @@ class KnowledgeRefTest(unittest.TestCase):
         links, _notes = auto.tag_links([doc], [g])
         self.assertEqual(sorted(x["from"] for x in links), sorted([g["graph_id"] + "#Valve1", g["graph_id"] + ":PIC-101"]))
 
+    def linked(self, g, ref, soid=None):
+        link_row = {"id": "krel-1", "kind": "has_setpoint", "from": ref, "to": "dsn-1", "method": "manual", "knowledge_status": "confirmed",
+                    "link_status": "confirmed", "reviewed_by": "검토자", "source": {"document_id": "D-1"}, "mention": None}
+        kg = kg_build.build_kg({"project_id": "p", "nodes": [{"id": "dsn-1", "node_type": "setpoint", "knowledge_status": "confirmed",
+                                                              "source": {"document_id": "D-1"}}], "links": [link_row]}, [g])
+        return kg["links"][0], kg["validation"]["unknowns"]
+
+    def test_a_reference_by_an_old_name_is_kept_but_has_to_be_checked(self):
+        """표시가 원래 태그 RC-FT101을 아는 설비에 옛 글자 F101로 적은 관계. 진짜 F101은 사라진 다른 설비일 수 있다."""
+        g = named(small(), PIF1={"tag": "RC-FT101", origin.PLAIN: {"tag": "F101"}})
+        row, unknowns = self.linked(g, g["graph_id"] + ":F101")
+        self.assertEqual((row["ends"]["from"]["source_object_id"], row["recheck"]["changed"]), ("PIF1", ["old_tag"]))
+        self.assertIn(("recheck_required", "krel-1"), {(u["check"], u["target"]) for u in unknowns})
+        self.assertIn("recheck_required", row["compute_view"]["excluded_reasons"])
+        row, _u = self.linked(g, g["graph_id"] + ":RC-FT101")
+        self.assertIsNone(row["recheck"])
+
+    def test_an_old_name_recorded_for_another_object(self):
+        g = named(small(), PIF1={"tag": "RC-FT101", origin.PLAIN: {"tag": "F101"}})
+        idx, ref = kg_build._PidIndex([g]), g["graph_id"] + ":F101"
+        self.assertEqual(idx.resolve(ref, "PIF1")[0]["source_object_id"], "PIF1")
+        self.assertEqual(idx.resolve(ref, "PIF9")[1][0], "pid_ref_not_found")
+
     def test_an_unknown_name_is_still_unknown(self):
         self.assertEqual(self.resolve(graphs()[1], "ZZ-1"), (None, "pid_ref_not_found"))
 
@@ -129,10 +153,12 @@ class TombTest(unittest.TestCase):
         self.assertEqual(len(tombs), 1)
         if change:
             change(by_soid(new)[sid])
+        self.recheck = migrate.plan(ns, new)["recheck"]
         return tombs[0] in idmap.compute(ns, new)["found"]
 
     def test_a_lost_part_is_found_by_its_old_look(self):
         self.assertTrue(self.lost_and_back())
+        self.assertTrue(any("되찾음" in x for x in self.recheck.values()), self.recheck)      # 되찾은 구간은 재확인으로 간다
 
     def test_another_part_at_the_same_id_is_not_found(self):
         self.assertFalse(self.lost_and_back(lambda n: n[origin.PLAIN].update(tag="P555")))
@@ -150,9 +176,20 @@ class FmeaTest(unittest.TestCase):
 
     def test_a_row_with_the_old_name(self):
         g = named(small(), PIF1={"tag": "PIC-101", "label_text": "PIC-101", origin.PLAIN: {"tag": "P101", "label_text": "P101"}})
-        self.assertEqual(self.match(g, "p101"), ("ok", "PIF1"))
+        self.assertEqual(self.match(g, "p101"), ("old_tag", None))     # 같은 글자의 다른 설비일 수 있어 사람이 고른다
         self.assertEqual(self.match(g, "PIC-101"), ("ok", "PIF1"))
         self.assertEqual(self.match(g, "P102"), ("none", None))
+
+    def test_a_row_with_the_old_name_is_kept_and_cannot_be_approved(self):
+        g = named(small(), PIF1={"tag": "RC-FT101", "label_text": "RC-FT101", origin.PLAIN: {"tag": "F101", "label_text": "F101"}})
+        pg = project.build("p", [g])
+        doc = fmea.empty("p")
+        doc, report = fmea.import_rows(doc, [{"tag": "F101", "failure_mode": "FTO", "line": 2}], pg, self.NS, "a.xlsx", "검토자", at=AT)
+        (rid, row), = doc["rows"].items()
+        self.assertEqual((row["tag"], row["match"], row["ref"], report["unmatched"]), ("F101", "old_tag", None, [rid]))
+        self.assertEqual(fmea.problems(doc), [])
+        picked = fmea.edit_row(doc, rid, {"entity_id": project.nid(g["graph_id"], by_soid(g)["PIF1"]["entity_id"])}, pg, self.NS, at=AT)
+        self.assertEqual(picked["rows"][rid]["match"], "human")
 
     def test_old_names_that_are_shared_and_the_tag_of_another(self):
         one = {"tag": "PIC-101", "label_text": "PIC-101", origin.PLAIN: {"tag": "P101", "label_text": "P101"}}
@@ -163,7 +200,8 @@ class FmeaTest(unittest.TestCase):
         old, new = graphs()
         bad = []
         for n in by_soid(old).values():
-            if n["tag"] and self.match(old, n["tag"])[0] == "ok" and self.match(new, n["tag"]) != self.match(old, n["tag"]):
+            was = self.match(old, n["tag"]) if n["tag"] else ("none", None)
+            if was[0] == "ok" and self.match(new, n["tag"]) not in (was, ("old_tag", None)):
                 bad.append(n["tag"])
         self.assertEqual(bad, [])
 
@@ -177,6 +215,7 @@ class SheetLinkTest(unittest.TestCase):
         for g in (old, new):
             links, skipped = project.match([g], [op])
             self.assertEqual((skipped, [x["op_id"] for x in links if x["op_id"]]), ([], ["l-1"]))
+            self.assertEqual([x.get("check") for x in links if x["op_id"]], [None if g is old else "old_label"])   # 옛 글자로 붙인 것은 확인 필요로 남음
 
     def test_a_connector_whose_text_in_the_file_changed(self):
         old, new = graphs()
@@ -216,6 +255,29 @@ class SegmentTest(unittest.TestCase):
         old = small()
         new = named(old, Pump1={"kind": "compressor", origin.PLAIN: {"kind": "pump"}})
         self.assertIn("applied", self.after(old, new)[0].values())
+
+    REASON = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
+
+    def filled(self, g, soid=None):
+        seg = next(n for n in g["nodes"] if n["node_type"] == "pipe_segment" and not n["flow_direction"])
+        a, b = [e["node"] for e in g["edges"] if e.get("segment") == seg["entity_id"]]
+        seg.update(flow_direction={"from": a, "to": b, "from_end": "source", "to_end": "target", "basis": "human"})
+        seg[origin.PLAIN] = {"flow_direction": None}
+        return g
+
+    def test_the_reason_says_what_the_marks_changed(self):
+        old = small()
+        kind = {"Pump1": {"kind": "compressor", origin.PLAIN: {"kind": "pump"}}}
+        for new, what in ((named(old, **kind), "종류 바뀜"), (self.filled(named(old)), "흐름 채워짐"), (self.filled(named(old, **kind)), "종류 바뀜, 흐름 채워짐")):
+            _s, recheck, out = self.after(old, new)
+            self.assertIn(self.REASON + " (원래 값 표시: %s)" % what, set(recheck.values()))
+            self.assertIn(self.REASON + " (원래 값 표시: %s)" % what, set(out["history"][-1]["detail"]["recheck"].values()))
+
+    def test_the_reason_of_a_change_that_is_not_only_the_marks(self):
+        old = small()
+        new = named(old, Pump1={"kind": "compressor", origin.PLAIN: {"kind": "pump"}}, PIF1={"tag": "XX-1"}, Valve1={"tag": "YY-1"})
+        self.assertEqual(set(self.after(old, new)[1].values()), {self.REASON})
+        self.assertEqual(set(self.after(old, named(old, Pump1={"kind": "compressor"}))[1].values()), {self.REASON})
 
     def test_the_flow_changed(self):
         old = small()

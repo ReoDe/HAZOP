@@ -13,7 +13,7 @@ from hazop.export import dexpi_marks  # noqa: E402
 from hazop.extract import corrections, edit_link  # noqa: E402
 from hazop.extract.adapters import dexpi_origin as origin  # noqa: E402
 from hazop.graph import build  # noqa: E402
-from tests.test_dexpi_edit_link import new_file, node  # noqa: E402
+from tests.test_dexpi_edit_link import extra, new_file, node, place  # noqa: E402
 from tests.test_dexpi_origin import Sheet, read, sheet  # noqa: E402
 
 
@@ -81,7 +81,12 @@ class WholeSheetTest(unittest.TestCase):
     def test_to_a_file_whose_marks_say_something_else(self):
         s = sheet()
         oid = next(o for o, n in s.want.items() if n["kind"] == "steam_generator")
-        self.check(numbered(read(s.marked)), numbered(read(s.with_marks(lambda m: m[oid].update(Kind="condenser")))))
+        old, new = numbered(read(s.marked)), numbered(read(s.with_marks(lambda m: m[oid].update(Kind="condenser"))))
+        for op in ops_of(old):
+            if op["target"] == oid:
+                (moved,), (row,) = edit_link.move_ops([op], old, new)
+                self.assertEqual((row["outcome"], row["why"], applies(new, moved)), ("left", "kind_changed", False), op["op"])
+        self.assertEqual({o["op"] for o in ops_of(old) if o["target"] == oid}, {"set_tag", "set_kind", "delete_node", "confirm"})
 
     def test_a_file_exported_after_the_edit(self):
         """표시 있는 파일에서 고친 것이 새 파일의 표시로 들어와도 고침은 남는다."""
@@ -128,6 +133,47 @@ class NotTheSameTest(unittest.TestCase):
         with self.assertRaises(edit_link.Refused):
             edit_link.check_same_drawing(self.old, self.new)
 
+    def test_both_files_are_marked_and_the_marks_say_different_things(self):
+        for placed in (True, False):
+            for field, a, b, why in (("tag", "RC-FT101", "SI-FT101", "tag_changed"), ("kind", "switch", "recorder", "kind_changed"),
+                                     ("label_text", "FT 101", "FT 101 A", "text_changed")):
+                for op, value in (("delete_node", {}), ("set_tag", {"tag": "ZZ-9"}), ("confirm", {"items": [{"check": "unplaced", "reason": "그대로"}]})):
+                    self.setUp()
+                    mark(self.old, "PIF1", **{field: a})
+                    mark(self.new, "PIF1", **{field: b})
+                    if not placed:
+                        place(self.old, "PIF1", None)
+                    with self.subTest(op=op, field=field, placed=placed):
+                        o = corrections.make_op(self.old, op, "PIF1", value, "검토자", existing_ops=[])
+                        (moved,), (row,) = edit_link.move_ops([o], self.old, self.new)
+                        self.assertEqual((row["outcome"], row["why"], applies(self.new, moved)), ("left", why, False))
+
+    def test_a_mark_that_became_what_the_file_itself_says_is_different_too(self):
+        n = node(self.old, "PIF1")
+        mark(self.old, "PIF1", tag="RC-FT101")
+        mark(self.new, "PIF1", tag=n[origin.PLAIN]["tag"])
+        self.assertEqual(self.move()[:2], ("left", "tag_changed"))
+
+    def test_the_new_mark_is_what_the_person_made_of_it(self):
+        mark(self.old, "PIF1", kind="switch")
+        mark(self.new, "PIF1", kind="recorder")
+        ops = []
+        for op, value in (("set_kind", {"kind": "recorder", "category": "instrument"}), ("confirm", {"items": [{"check": "unplaced", "reason": "그대로"}]})):
+            ops.append(corrections.make_op(self.old, op, "PIF1", value, "검토자", existing_ops=ops))
+        moved, rows = edit_link.move_ops(ops, self.old, self.new)
+        self.assertEqual([r["outcome"] for r in rows], ["linked", "linked"])
+        self.assertEqual(corrections.apply(self.new, moved)["corrections"]["not_applicable"], [])
+
+    def test_shared_old_names_with_marks_on_both_sides(self):
+        """옛 글자가 겹쳐도 자리가 있고 표시가 같으면 잇고, 자리가 없으면 잇지 않는다."""
+        for ex in (self.old, self.new):
+            extra(ex, "PIF2", "PIF1", [10, 10, 0, 0])
+            mark(ex, "PIF1", tag="PIC-101")
+            mark(ex, "PIF2", tag="PI-101")
+        self.assertEqual(self.move(), ("same", None, True))
+        place(self.old, "PIF1", None)
+        self.assertEqual(self.move()[:2], ("left", "tag_not_unique"))
+
     def test_the_value_of_the_file_itself_changed(self):
         mark(self.new, "PIF1", tag="PIC-101")
         node(self.new, "PIF1")[origin.PLAIN]["tag"] = "T101"
@@ -146,7 +192,6 @@ class NotTheSameTest(unittest.TestCase):
 
     def test_tags_that_the_file_alone_cannot_tell_apart(self):
         """옛 글자가 겹치는 계기(T101 뭉침)는 자리가 없으면 표시된 태그가 달라도 잇지 않는다."""
-        from tests.test_dexpi_edit_link import extra, place
         for ex in (self.old, self.new):
             extra(ex, "PIF2", "PIF1", [10, 10, 0, 0])
         place(self.old, "PIF1", None)
@@ -161,7 +206,6 @@ class NotTheSameTest(unittest.TestCase):
         return row["outcome"], row["why"]
 
     def test_an_added_instrument_that_comes_back_with_its_marked_tag(self):
-        from tests.test_dexpi_edit_link import extra
         extra(self.new, "HZ_I", "PIF1", [305, 205, 0, 0], kind=None, tag="P500")
         mark(self.new, "HZ_I", tag="PIC-500", kind="controller")
         self.assertEqual(self.added("PIC-500"), ("left", "in_file"))

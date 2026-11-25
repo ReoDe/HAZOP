@@ -136,7 +136,10 @@ class RoundTripTest(unittest.TestCase):
         back = [{k: n[k] for k in NODE_KEYS} for n in origin.plain_view(ex)["nodes"]]
         self.assertEqual(back, [{k: n[k] for k in NODE_KEYS} for n in plain["nodes"]])
         for n, p in zip(ex["nodes"], plain["nodes"]):
-            self.assertEqual(origin.PLAIN in n, any(n[k] != p[k] for k in NODE_KEYS))
+            self.assertEqual(n[origin.PLAIN], {k: p[k] for k in NODE_KEYS})     # 표시를 받아들인 노드마다
+        for r, p in zip(ex["relations"], plain["relations"]):
+            filled = r["kind"] == "physical_connection" and bool(r["flow_direction"]) and not p["flow_direction"]
+            self.assertEqual(r.get(origin.PLAIN), {"flow_direction": None} if filled else None)
 
     def test_ids_and_places_are_the_same_as_without_marks(self):
         s = sheet()
@@ -298,6 +301,43 @@ class RefusedTest(unittest.TestCase):
             ex = read(sheet().with_marks(change))
             self.assertEqual({o for o, _f in sheet().differing(ex)}, {oid})
 
+    def test_an_object_whose_id_is_used_twice(self):
+        s = sheet()
+        oid = self.node("steam_generator")
+        item = re.search(rb'<Object [^>]*id="%s".*?</Object>' % oid.encode(), s.marked, re.S).group(0)
+        root = dexpi_read.parse_safely(s.marked)
+        twin = ET.SubElement(root, "Object", type="Core/EngineeringModel", id=oid)
+        self.assertTrue(item and twin is not None)
+        model = dexpi_read.read(ET.tostring(root))
+        self.assertNotIn(oid, model.origins)
+        self.assertEqual([i["target"] for i in model.issues if i["check"] == origin.CHECK], [oid])
+
+    def valve_sheet(self):
+        """구동 밸브가 있는 SNP 도면과 (구동 밸브 id, 구동계 없는 수동 밸브 id, 구동계 참조 글자)."""
+        for path in SNP:
+            s = Sheet(snp_pair(path))
+            moved = [o for o, n in s.want.items() if n["kind"] in dexpi_map.ACTUATED_KINDS and n["kind"] != "control_valve"]
+            hand = [o for o, n in s.want.items() if n["kind"] in ("manual_valve", "isolation_valve")]
+            ref = b'<References objects="#%s" property="Valve" />'
+            hand = [o for o in hand if ref % o.encode() not in s.marked]
+            if moved and hand:
+                return s, moved[0], hand[0], ref
+        raise AssertionError("구동 밸브가 있는 표본이 없음")
+
+    def test_a_hand_edited_actuator_reference(self):
+        """구동계 참조를 다른 밸브로 옮기면 두 밸브의 표시가 모두 낡은 것이 된다."""
+        s, moved, hand, ref = self.valve_sheet()
+        self.assertEqual(s.marked.count(ref % moved.encode()), 1)
+        ex = read(s.marked.replace(ref % moved.encode(), ref % hand.encode()))
+        by = {n["source_object_id"]: n for n in ex["nodes"]}
+        self.assertEqual((by[moved]["kind"], by[hand]["kind"]), ("manual_valve", None))
+        self.assertTrue({moved, hand} <= {u["source_object_id"] for u in s.mismatches(ex) if u["field"] == "kind"})
+
+    def test_a_removed_actuator(self):
+        s, moved, _hand, ref = self.valve_sheet()
+        ex = read(s.marked.replace(ref % moved.encode(), b""))
+        self.assertIn((moved, "kind"), {(u["source_object_id"], u["field"]) for u in s.mismatches(ex)})
+
     def test_two_marks_for_one_object(self):
         s = sheet()
         oid = self.node("steam_generator")
@@ -393,7 +433,7 @@ class WriteTest(unittest.TestCase):
     def test_every_exported_kind_is_allowed_on_its_own_class(self):
         for kind, (cls, _how) in dexpi_map.EXPORT_CLASS.items():
             item = {"group": dexpi_map.group_of(cls), "cls": cls, "attrs": {}, "id": "a"}
-            got = origin.claim_node({"Kind": kind, "Echo": origin.node_echo(item)}, item, {"kind": None, "tag": None, "label_text": ""}, True)
+            got = origin.claim_node({"Kind": kind, "Echo": origin.node_echo(item, "system")}, item, {"kind": None, "tag": None, "label_text": ""}, "system")
             self.assertEqual((got.values, got.problems), ({"kind": kind}, []), kind)
 
 
