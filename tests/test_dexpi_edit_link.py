@@ -720,6 +720,18 @@ class LinkTest(unittest.TestCase):
         place(self.new, "Pipe0", [82, 120, 0, 0])
         self.assertEqual(self.outcomes(), [(oid, "left", "not_alone")])
 
+    def test_a_measuring_line_that_moved_next_to_a_pipe_is_not_the_pipe(self):
+        """두 파일에 모두 있는 측정선의 중점만 배관 자리로 옮겨 왔다(배관이 측정선으로 밝혀질 수 있다는 지금 비교의 관용에 걸림)."""
+        oid = self.edit("confirm", "Pipe1", CONFIRM)
+        place(self.new, "ML1", [82, 120, 0, 0])
+        self.assertEqual(self.outcomes(), [(oid, "same", None)])
+
+    def test_a_pipe_that_may_have_become_another_measuring_line(self):
+        oid = self.edit("confirm", "Pipe1", CONFIRM)
+        place(self.new, "ML1", [82, 120, 0, 0])
+        next(r for r in self.new["relations"] if r["source_object_id"] == "ML1")["endpoints"][0]["source_object_id"] = "Valve1"
+        self.assertEqual(self.outcomes(), [(oid, "left", "not_alone")])
+
     # ----- 같은 도면의 최소
     def keep_only(self, *sids):
         for ex in (self.old, self.new):
