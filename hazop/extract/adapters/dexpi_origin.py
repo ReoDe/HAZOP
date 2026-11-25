@@ -15,9 +15,9 @@ OWN_URI = "urn:hazop:dexpi-export:"  # 이 앱이 낸 파일의 Model uri 앞부
 CLASS = "HazopOrigin"
 TYPE = "/" + CLASS
 TARGET = "Target"
-FIELDS = ("Kind", "Tag", "Text", "Flow", "Basis", "Auto", "Edited", "TagBasis", "Open", "Echo")
+FIELDS = ("Kind", "Tag", "Text", "Flow", "Basis", "Auto", "Edited", "TagBasis", "Open", "Line", "Echo")
 # 출처 등급(§6.9.3): 자동 확정이 정한 칸(Auto)과 이 파일을 낸 프로젝트에서 사람이 고친 칸(Edited)의 이름, 빈칸으로 나눔. 배관의 tag는 배관 번호다
-GRADED = ("kind", "tag", "flow", "normal_position", "fail_position", "endpoint", "path", "add_node", "add_relation")
+GRADED = ("kind", "tag", "flow", "normal_position", "fail_position", "endpoint", "path", "add_node", "add_relation", "line_no")
 EDITED_FLOW = "human_elsewhere"  # 다른 프로젝트에서 사람이 정한 흐름의 근거. 이 프로젝트의 사람이 정한 것(human)이 아니다
 ECHO_VERSION = "1"  # 지문 셈이 바뀌면 올린다(옛 표시는 지문이 달라 쓰이지 않는다)
 OTHER_END = {"source": "target", "target": "source"}
@@ -98,7 +98,7 @@ def unpack(text):
     return value if isinstance(value, str) else text
 
 
-OPEN_FIELDS = ("kind", "tag", "label_text", "flow_direction")
+OPEN_FIELDS = ("kind", "tag", "label_text", "flow_direction", "line_no")
 
 
 def open_of(mark):
@@ -136,6 +136,21 @@ def grades_of(mark):
     auto = [x for x in GRADED if x in (mark.get("Auto") or "").split()]
     edited = [x for x in GRADED if x in (mark.get("Edited") or "").split() and x not in auto]
     return {k: v for k, v in (("auto", auto), ("edited", edited)) if v}
+
+
+def line_grades(model):
+    """{배관망 계통 id: 배관 번호의 등급}. 도면 연결 기호는 배관 번호를 계통에서 읽으므로 그 배관의 등급을 따른다."""
+    out = {}
+    for conn in model.connections:
+        for key, names in grades_of(model.origins.get(conn["id"], {})).items():
+            if "tag" in names and out.get(conn["system"]) != "auto":
+                out[conn["system"]] = key
+    return out
+
+
+def why_line(mark, line_no):
+    """도면 연결 기호의 원래 배관 번호(Line)와 계통에서 읽은 번호가 다르면 그 까닭."""
+    return "적힌 배관 번호가 계통의 배관 번호와 다름" if mark.get("Line") and line_no and mark["Line"] != line_no else None
 
 
 def without(grades, names):

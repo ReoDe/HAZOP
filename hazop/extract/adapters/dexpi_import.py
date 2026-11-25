@@ -177,7 +177,9 @@ def _restore_tag(node, tag, unknowns):
     tag = tag or None
     if tag == node["tag"]:
         return False
-    node["tag"], node["label"], node["label_text"] = tag, tag or "", tag or ""
+    node["tag"], node["label"] = tag, tag or ""
+    if dexpi_origin.PLAIN not in node:  # 원본 글자를 표시에서 읽은 노드는 그 글자를 둔다
+        node["label_text"] = tag or ""
     node["attributes"].pop("tag", None)
     if tag:
         node["attributes"]["tag"] = tag
@@ -217,6 +219,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
     used = set()
     reg = registration or {}
     local_of = {}  # 항목 id -> local_id
+    line_grades = dexpi_origin.line_grades(model)
     nodes, source_locations = [], []
 
     for dup in sorted(set(model.duplicate_ids)):
@@ -317,6 +320,13 @@ def build(model, source, registration=None, page=0, repo_root=None):
                               "xml": item["xml"], "xml_cut": bool(item.get("xml_cut"))}}
         refused = {field for field, _why in claim.problems}  # 버린 값의 등급은 지금 값의 등급이 아니다
         grades = dexpi_origin.without(dexpi_origin.grades_of(model.origins.get(iid, {})), refused)
+        if group == "offpage":
+            if attrs.get("line_no") and item.get("system") in line_grades:
+                key = line_grades[item["system"]]
+                grades = dict(grades, **{key: grades.get(key, []) + ["line_no"]})
+            why = dexpi_origin.why_line(model.origins.get(iid, {}), attrs.get("line_no"))
+            if why and "line_no" not in {f for _c, _w, f in extra_unknown}:
+                extra_unknown.append((dexpi_origin.CHECK, why, "line_no"))
         if grades:  # 등급은 낮추기만 하므로 지문이 낡은 표시의 것도 본다
             evidence["dexpi_origin"] = grades
         if tag and "tag" not in refused:
@@ -752,6 +762,13 @@ def apply_sidecar(extraction, sidecar, dexpi_sha256):
         if basis and (ent.get("tag") or None) == node["tag"]:
             node.setdefault("evidence", {})["tag_basis"] = basis
         settled = {f for f in ("kind", "tag") if (ent.get(f) or None) == node[f]}  # 표시로는 받지 못한 값을 곁 파일이 되돌렸다
+        line = (ent.get("attributes") or {}).get("line_no")
+        if line and any(u["check"] == dexpi_origin.CHECK and u.get("target") == node["local_id"] and u.get("field") == "line_no" for u in unknowns):
+            node["attributes"]["line_no"] = line
+            settled.add("line_no")
+            grades = dexpi_origin.without((node.get("evidence") or {}).pop("dexpi_origin", {}), {"line_no"})
+            if grades:
+                node["evidence"]["dexpi_origin"] = grades
         unknowns[:] = [u for u in unknowns if not (u["check"] == dexpi_origin.CHECK and u.get("target") == node["local_id"] and u.get("field") in settled)]
         restored = []
         if (ent.get("attributes") or {}).get("fail_position") == "FL" and node["attributes"].get("fail_position") == "FAI":
