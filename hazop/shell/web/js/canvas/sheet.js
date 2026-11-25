@@ -18,6 +18,8 @@ export function loadSymbols(fetchImpl = fetch) {
   return symbolsPromise;
 }
 
+const cleanCache = new Map();      // graph_id → {rev, data}: 도면을 오가도 정리 자료를 다시 받지 않는다(판 rev가 바뀌면 버린다)
+
 /** 정리된 보기용 자료. 없거나 못 읽으면 null(원본 보기만 된다). */
 export async function fetchClean(graphId, fetchImpl = fetch) {
   try {
@@ -60,12 +62,15 @@ export function Sheet(props) {
   useEffect(() => {
     if (!gid) return undefined;
     let alive = true;
-    extra.current = { clean: null, symbols: extra.current.symbols };
+    const hit = cleanCache.get(gid);
+    const cached = hit && hit.rev === latest.current.dataRev && hit.data ? hit.data : null;
+    extra.current = { clean: cached, symbols: extra.current.symbols };
     fetchSheet(gid, rev, props.fetchImpl || fetch)
       .then((data) => { if (alive && core.current) { core.current.setData(data); core.current.update(Object.assign({}, latest.current, extra.current)); } })
       .catch((err) => { if (alive && latest.current.onError) latest.current.onError(err); });
     // 정리된 보기 자료는 도면이 뜬 뒤에 따로 읽는다(원본 그리기를 늦추지 않는다)
-    Promise.all([fetchClean(gid, props.fetchImpl || fetch), loadSymbols(props.fetchImpl || fetch)]).then(([clean, symbols]) => {
+    Promise.all([cached ? Promise.resolve(cached) : fetchClean(gid, props.fetchImpl || fetch), loadSymbols(props.fetchImpl || fetch)]).then(([clean, symbols]) => {
+      if (clean && !cached) cleanCache.set(gid, { rev: latest.current.dataRev, data: clean });
       if (!alive || !core.current) return;
       extra.current = { clean, symbols };
       if (latest.current.onClean) latest.current.onClean(gid, clean);

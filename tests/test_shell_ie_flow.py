@@ -73,7 +73,8 @@ class IePanelTest(W.ShellBase):
         win.engine.hooks["save_path"] = lambda kind, name: out
         self.assertTrue(self.click(win, "button[aria-label='초기사건 인계 묶음 내보내기']"))
         self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
-        self.assertTrue(wait_for(lambda: "ie-bundle.xlsx" in self.text(win), 10))
+        pump(0.5)
+        self.assertNotIn("ie-bundle.xlsx", self.text(win), "내보냈다는 확인 글은 없다(화면 단순화)")
         self.assertNotIn(os.path.dirname(out), self.text(win))
 
     def test_human_group_can_be_confirmed_from_the_panel(self):
@@ -212,8 +213,7 @@ class IePanelTest(W.ShellBase):
         self.assertTrue(self.click(win, "button[aria-label='FMEA']"))
         self.assertTrue(self.idle(win, "button[aria-label='FMEA 가져오기']"))
         self.assertTrue(self.click(win, "button[aria-label='FMEA 가져오기']"))
-        self.assertTrue(wait_for(lambda: "FMEA를 가져왔습니다" in self.text(win), 15), self.text(win)[-400:])
-        self.assertIn("대응 실패 1", self.text(win))
+        self.assertTrue(wait_for(lambda: "대응 실패 1" in self.text(win), 15), self.text(win)[-400:])
         self.assertIn("FMEA 대조 전 S2", self.text(win), "전기·제어 구간 줄이 대조 전 구간을 보인다")
         self.assertTrue(self.click(win, "button[aria-label='FM-001 SNP-M-102-E']"))
         self.assertTrue(self.idle(win, "button[aria-label='FM-001 승인']"))
@@ -254,7 +254,7 @@ class IePanelTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: hint().get("origin") == "human", 10), self.text(win)[-300:])
         h = hint()
         self.assertEqual((h["candidate"], h["category"], h["reason"]), ("yes", "LOIA", "공기 헤더 압력 저하"))
-        self.assertTrue(wait_for(lambda: "판정을 저장했습니다" in self.text(win), 10))
+        self.assertNotIn("판정을 저장했습니다", self.text(win), "저장했다는 확인 글은 없다(화면 단순화)")
         self.assertTrue(self.click(win, "button[aria-label^='구간·편차:']"))
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "results", 10), "구간·편차 마디는 그 칸을 연다")
 

@@ -51,6 +51,9 @@ export function viewOf(state, gid) {
   return state.choice[gid] || (state.lastByFormat || {})[data.source_format] || defaultView(data.source_format, !!(data.confirmed && data.confirmed.state === "confirmed"));
 }
 
+/** 정리를 골랐는데 정리 자료가 아직 안 왔다(undefined). 자료를 못 읽었으면(null) 기다리지 않는다. */
+export const waitingClean = (state, gid) => state.choice[gid] === "clean" && state.data[gid] === undefined;
+
 export function toggleOverlay(name) { clean.set((s) => ({ overlay: Object.assign({}, s.overlay, { [name]: !s.overlay[name] }) })); }
 
 export function setView(gid, view) {
@@ -123,8 +126,9 @@ function ViewSwitch({ gid }) {
   const count = data ? data.counts.total : 0, fmt = data ? data.source_format : null;
   const dexpi = fmt === "dexpi";
   const tip = built && built.missingKinds.length ? "그림이 없는 종류 " + built.missingKinds.length + "개: " + built.missingKinds.join(", ") : "";
-  const seg = (v, label) => html`<button type="button" class=${view === v ? "on" : ""} aria-pressed=${view === v ? "true" : "false"} disabled=${v === "clean" && !data}
-    title=${v === "clean" && !data ? "정리된 보기 자료를 읽지 못했습니다" : label + " 보기 (O)"} onClick=${() => setView(gid, v)}>${label}</button>`;
+  const waiting = useClean((s) => waitingClean(s, gid));
+  const seg = (v, label) => html`<button type="button" class=${view === v || (v === "clean" && waiting) ? "on" : ""} aria-pressed=${view === v || (v === "clean" && waiting) ? "true" : "false"} disabled=${v === "clean" && data === null}
+    title=${v === "clean" && data === null ? "정리된 보기 자료를 읽지 못했습니다" : label + " 보기 (O)"} onClick=${() => setView(gid, v)}>${label}${v === "clean" && waiting ? html` <${Icon} name="loader-2" cls="spin" size=${12} />` : null}</button>`;
   const lo = data && data.leftovers;
   const unplaced = data ? data.counts.unplaced : 0;
   const lit = ov.unconfirmed || ov.leftovers || ov.original;              // 켜 둔 겹쳐 보기가 있으면 '보기' 단추에 점

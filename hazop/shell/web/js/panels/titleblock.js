@@ -53,15 +53,14 @@ function wire() {
     const jobs = Object.assign({}, tb.get().jobs); delete jobs[d.id];
     const r = d.result || {};
     const carried = (r.carried || []).filter((c) => c.edits || c.ai_review).length;
-    const parts = ["확정했습니다(등록 버전 " + r.version + ")."];
-    if (r.re_extracted) parts.push("도면을 다시 읽었습니다.");
+    const parts = [];      // 확정했다는 확인 글은 없다: 이름이 바뀌거나 기록이 옮겨지거나 확정이 풀린 것만 알린다
     if ((r.renames || []).length) parts.push("도면 이름이 바뀌었습니다: " + r.renames.map((x) => x.from_label + " → " + x.to_label).join(", ") + ".");
     if ((r.carries || []).length) parts.push("구간·분석 결과 등 기록(" + r.carries.map((c) => c.place + " " + c.count + "건").join(", ") + ")을 바뀐 도면 이름으로 옮겼습니다.");
     followRenames(r.renames);
     if (carried) parts.push("사람 수정·AI 후보 기록을 새 버전으로 옮겼습니다.");
     if ((r.released || []).length) parts.push("쪽 확정이 풀렸습니다. 도면을 다시 보고 쪽 확정을 하세요.");
     if ((r.number_conflicts || []).length) parts.push("같은 도면 번호의 다른 형식 원본이 있습니다. 도면 패널에서 분석에 쓸 원본을 고르세요.");
-    tb.set({ jobs, notice: parts.join(" "), busy: null });
+    tb.set({ jobs, notice: parts.length ? parts.join(" ") : null, busy: null });
     closeAfterConfirm(parts.join(" "));
     load();
   });
@@ -96,7 +95,7 @@ function clearDraft(mid) {
  *  옮길 기록 확인 카드가 떠 있거나 오류가 있으면 닫지 않는다. */
 function closeAfterConfirm(text) {
   if (tb.get().ask || tb.get().error || store.get().panel !== "titleblock") return;
-  store.set({ panel: null, toast: { text, kind: "info" } });
+  store.set(text ? { panel: null, toast: { text, kind: "info" } } : { panel: null });
 }
 
 /** 번호 확정·취소로 도면 이름이 바뀌었으면(시트 정체 U5) 지금 열린 도면을 새 이름으로 바꾼다. 고른 구성요소·표시는 비운다(옛 이름의 것). */
@@ -137,12 +136,12 @@ async function go(name, row, args) {
     const out = await cmd(name, Object.assign({ material_id: row.material_id, ver: row.ver }, args));
     clearDraft(row.material_id);
     if (out && out.job) {
-      tb.set({ jobs: Object.assign({}, tb.get().jobs, { [out.job]: row.material_id }), notice: "저장하고 도면을 다시 읽는 중입니다…" });
+      tb.set({ jobs: Object.assign({}, tb.get().jobs, { [out.job]: row.material_id }), notice: null });
       return;
     }
-    const renamed = out && (out.renames || []).length ? " 도면 이름이 바뀌었습니다: " + out.renames.map((x) => x.from_label + " → " + x.to_label).join(", ") + "." : "";
-    tb.set({ busy: null, notice: out && out.changed === false ? "바뀐 값이 없습니다." : "확정했습니다." + renamed });
-    if (out && out.changed !== false) closeAfterConfirm("확정했습니다." + renamed);
+    const renamed = out && (out.renames || []).length ? "도면 이름이 바뀌었습니다: " + out.renames.map((x) => x.from_label + " → " + x.to_label).join(", ") + "." : "";
+    tb.set({ busy: null, notice: renamed || null });
+    if (out && out.changed !== false) closeAfterConfirm(renamed);
     if (out) followRenames(out.renames);
     load();
   } catch (e) {
@@ -173,7 +172,7 @@ export function fieldsToSend(row, drafts, asIs) {
 export function confirmRow(row, asIs) {
   const fields = fieldsToSend(row, tb.get().drafts[row.material_id], asIs);
   if (!Object.keys(fields).length) {
-    tb.set({ notice: asIs ? "확정할 후보가 없습니다." : "고친 칸이 없습니다. 후보를 그대로 확정하려면 '후보 그대로 확정'을 누르세요.", error: null });
+    tb.set({ notice: null, error: null });
     return;
   }
   const reason = (tb.get().reasons[row.material_id] || "").trim();
@@ -275,7 +274,7 @@ export function TitleblockPanel({ onClose, onOpen }) {
       ${noReviewer ? html`<${Notice} kind="warn" icon="pencil">설정에서 검토자 이름을 먼저 입력하세요. 누가 확정했는지 기록에 남습니다.<//>` : null}
       ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${() => tb.set({ error: null })}>닫기<//><//>` : null}
       ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
-      ${data.rows.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 도면 패널에서 도면 파일을 먼저 넣으세요.<//>`
+      ${data.rows.length === 0 ? html`<${Notice}>등록된 도면이 없습니다.<//>`
         : html`<div class="tb-list">${data.rows.map((r) => html`<${Row} key=${r.material_id} row=${r} onOpen=${onOpen}
             open=${isOpen(r) || (!focus && r.state !== "confirmed")} noReviewer=${noReviewer} />`)}</div>`}
     </div></section>`;

@@ -233,8 +233,8 @@ class SheetConfirmFlowTest(W.ShellBase):
         self.open_sheet(win)
         self.js(win, "window.__hz.store.set({panel: 'drawings'})")
         self.assertTrue(wait_for(lambda: "DEXPI로 내보내기" in self.text(win), 10))
-        self.assertTrue(wait_for(lambda: "확정된 쪽이 하나도 없어 내보낼 수 없습니다" in self.text(win), 10), self.text(win)[-400:])
-        self.assertEqual(self.js(win, "document.querySelector(\"button[aria-label='확정된 쪽 DEXPI로 내보내기']\") === null"), True, "단추 대신 안내")
+        self.assertEqual(self.js(win, "document.querySelector(\"button[aria-label='DEXPI로 내보내기']\").disabled"), True, "낼 수 있는 쪽이 없으면 단추가 꺼져 있다")
+        self.assertNotIn("내보낼 수 없습니다", self.text(win), "설명 줄은 없다")
         # 확정(엔진 명령으로: 견주기 화면의 방식은 위 시험이 본다)
         self.make_clean(path)
         st = cf.sheet_confirmation(self.name)
@@ -245,8 +245,8 @@ class SheetConfirmFlowTest(W.ShellBase):
         os.makedirs(out, exist_ok=True)
         asked = []
         win._save_dir = lambda kind: (asked.append(threading.current_thread()), out)[1]      # 창이 묻는 자리. 내보내기는 작업 스레드에서 도니 화면 스레드로 넘어와야 한다
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='확정된 쪽 DEXPI로 내보내기']\") !== null") is True, 15), self.text(win)[-400:])
-        self.assertTrue(self.click(win, "button[aria-label='확정된 쪽 DEXPI로 내보내기']"))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='DEXPI로 내보내기']\").disabled") is False, 15), self.text(win)[-400:])
+        self.assertTrue(self.click(win, "button[aria-label='DEXPI로 내보내기']"))
         self.assertTrue(wait_for(lambda: "쪽을 내보냈습니다" in self.text(win), 30), self.text(win)[-500:])
         self.assertEqual(asked, [threading.main_thread()], "저장 폴더는 화면 스레드에서 물었다")
         xml = os.path.join(out, self.name + ".dexpi.xml")

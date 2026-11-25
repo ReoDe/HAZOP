@@ -1,7 +1,7 @@
 // 도면 자리. 도면 구성요소(canvas/sheet.js, s-viewer가 만듦)가 있으면 그것을 쓰고, 아직 없으면 SVG 그림만 보이는 대역을 쓴다.
 // 경계는 canvas/README.md: props(sheet, mode, selection, marks, layers, command, viewport)와 이벤트 콜백.
 import { html } from "./ui/html.js";
-import { useEffect, useState } from "../vendor/hooks.module.js";
+import { useEffect, useMemo, useState } from "../vendor/hooks.module.js";
 import { store, useStore } from "./store.js";
 import { ui } from "./bridge.js";
 import { Icon } from "./ui/icon.js";
@@ -81,13 +81,14 @@ export function SheetHost() {
   const check = useExtractCheck(sheet, rev, !!sheet && panel !== "nodes", sv && sv.graph_id === sheet && Array.isArray(sv.links) ? sv.links : undefined);      // 도면 탭: 추출한 것을 네모로. 구간 색은 구간 탭에서만
   const cc = useCleanCanvas(sheet);          // 원본·정리 보기, 미확인 칩, 못 읽은 곳 말풍선(s-viewer의 clean_ui.js)
   const nc = useNodeCanvas(sheet, { onEsc: () => { if (!cc.closeIfOpen()) store.set({ marks: { rid: null, bySheet: {} } }); } });
+  const chatMarks = marks.bySheet && marks.bySheet[sheet];
+  const items = useMemo(() => (chatMarks || []).concat(check.mark ? [check.mark] : []).map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m)), [chatMarks, marks.rid, check.mark]);
   useEffect(() => { loadCanvas().then((c) => { if (c) setComp(() => c); store.set({ canvasReady: !!c }); }); }, []);
   if (!sheet) {
     return html`<div class="canvas"><div class="center-empty" style="position:absolute;inset:0;display:grid;place-items:center;color:var(--muted)">
       <div style="text-align:center"><${Icon} name="files" size=${28} /><p>왼쪽 메뉴의 도면에서 도면을 열거나<br />도면 파일을 끌어 놓으세요.</p></div></div></div>`;
   }
   if (!Comp) return html`<${Fallback} sheet=${sheet} />`;
-  const items = ((marks.bySheet && marks.bySheet[sheet]) || []).concat(check.mark ? [check.mark] : []);
-  return html`<div class=${"canvas" + (split ? " cmp-side" : "")}><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} ...${cc.props} layers=${layers} onReady=${(g) => store.set({ readySheet: g })} marks=${items.map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))}
+  return html`<div class=${"canvas" + (split ? " cmp-side" : "")}><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} ...${cc.props} layers=${layers} onReady=${(g) => store.set({ readySheet: g })} marks=${items} dataRev=${rev}
     command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, kind_label: d.kind_label, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${ExtractLegend} counts=${check.counts} /><${SheetConfirm} /><${ScanNote} sheet=${sheet} /><${ComparePane} /><${CompareCard} /><${ItemBubble} /></div>`;
 }

@@ -87,7 +87,11 @@ export const tests = [
     render(html`<${C.CleanOverlay} />`, host);
     await tick();
     const btn = (label) => [...host.querySelectorAll("button")].find((b) => b.textContent.trim() === label);
-    assert(btn("정리").disabled && !btn("원본").disabled, "자료 없음");
+    assert(!btn("정리").disabled && !btn("원본").disabled, "자료가 오기 전에도 정리를 누를 수 있다");
+    store.set({ sheet: "g1" });
+    btn("정리").click();
+    await tick();
+    assert(C.waitingClean(C.clean.get(), "g1") && host.querySelector("button .spin"), "누름을 기억하고 단추에 도는 표시");
     C.onClean("g1", data("drawio", U));
     await tick();
     assert(!btn("정리").disabled && btn("정리").getAttribute("aria-pressed") === "true", "정리가 켜짐(drawio 기본)");

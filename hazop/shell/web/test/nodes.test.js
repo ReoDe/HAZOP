@@ -289,7 +289,7 @@ export const tests = [
     const text = host.textContent;
     assert(text.includes("AI 적용됨") && text.includes("겹침 1") && text.includes("[101 → 102]") && text.includes("구간 밖 30"), text.slice(0, 300));
     assert(text.includes("<b>RC-L003</b>") && !host.querySelector(".nrow b b"), "이름의 태그가 HTML로 해석되지 않음");
-    assert(text.includes("채팅이 만든 구간 1개가 아직 확인 전"), "AI 구간 안내");
+    assert(!text.includes("아직 확인 전입니다"), "AI 구간 안내 줄은 없다(화면 단순화)");
     N.nodes.set({ scope: "all" });
     await tick();
     assert.equal(host.querySelectorAll(".nrow").length, 3);

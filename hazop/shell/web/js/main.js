@@ -51,6 +51,8 @@ setGo("panel:results#run", async () => { store.set({ panel: "results" }); const 
 setGo("confirm:results.export_excel", async () => { const R = await import("./panels/results_state.js"); R.exportExcel("all"); });
 
 const toast = (text, kind) => store.set({ toast: { text, kind } });
+/** 엔진이 app.notice로 올려도 사람이 할 일이 없는 글(화면에 띄우지 않는다). 나머지(다시 읽기 실패·나누기 반영 뒤 다시 묻기·구간 재확인·AI 연결·창 닫기 대기)는 띄운다. */
+const QUIET_NOTICES = [/새 이름 규칙으로 정리하지 못했습니다/];
 
 // ---------------------------------------------------------------- 엔진에서 읽기
 export async function loadState() {
@@ -133,14 +135,14 @@ function wireEvents() {
   on("conn.changed", (d) => store.set({ conn: d }));
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));
-  on("app.notice", (d) => toast(d.text));
+  on("app.notice", (d) => { if (!QUIET_NOTICES.some((re) => re.test(d.text || ""))) toast(d.text); });      // 할 일이 없는 엔진 알림은 거른다
   on("study.lost", (d) => { for (const n of [lostNotice(d), demotedNotice(d)]) if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
   const job = (state) => (d) => store.set((s) => ({ jobs: Object.assign({}, s.jobs, { [d.id]: Object.assign({}, s.jobs[d.id], d, { state }) }) }));
   on("job.progress", job("running"));
   on("job.done", (d) => {
     job("done")(d);
     const dup = d.result && d.result.conflicts;
-    if (dup && dup.length) toast("같은 도면 번호 " + dup.join(", ") + "의 원본이 다른 형식으로 이미 있습니다. 도면 패널에서 쓸 쪽을 고르세요(고르기 전에는 먼저 있던 쪽을 씁니다).");
+    if (dup && dup.length) toast("같은 도면 번호 " + dup.join(", ") + "의 원본이 둘입니다. 도면 패널에서 쓸 것을 고르세요.");
     loadDrawings().then((x) => { if (!store.get().sheet && x.drawings.length === 1) openSheet(x.drawings[0].graph_id); }); });
   on("job.failed", (d) => {       // 사람이 한 멈춤·취소(stopped)는 실패가 아니다: 빨간 표시를 하지 않고 조용히 알린다(실제 창 3차 결함 3)
     if (d.stopped) { job("stopped")(d); return; }

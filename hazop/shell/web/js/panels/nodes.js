@@ -152,15 +152,14 @@ export function NodesPanel({ onClose }) {
       ${list.check && list.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(list.check)}<//>` : null}
       ${list.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면이 다시 읽혀 바뀌었는데, 저장된 구간에 그 변경을 아직 반영하지 못했습니다. 반영을 마칠 때까지 초기사건은 열리지 않고, 분석 결과의 실행·Excel 내보내기는 막힙니다.
         <div class="acts-row"><${Btn} sm=${true} kind="primary" icon="refresh" label="도면 변경 반영하기" disabled=${busy || !!list.read_only} onClick=${N.catchUp}>도면 변경 반영하기<//></div><//>` : null}
-      ${!list.available ? html`<${Notice}>도면을 먼저 읽어야 합니다. 도면을 읽으면 구간을 만들 수 있습니다.<//>` : null}
-      ${list.pending_ai ? html`<${Notice} kind="info" icon="sparkles">채팅이 만든 구간 ${list.pending_ai}개가 아직 확인 전입니다. 이름과 설계 의도는 초안입니다.<//>` : null}
+      ${!list.available ? html`<${Notice}>도면을 먼저 읽어야 합니다.<//>` : null}
       <div class="acts-row"><div class="seg-toggle" role="group" aria-label="목록 범위">
         <button type="button" class=${scope === "sheet" ? "on" : ""} aria-pressed=${scope === "sheet" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "sheet" })}>이 도면</button>
         <button type="button" class=${scope === "all" ? "on" : ""} aria-pressed=${scope === "all" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "all" })}>전체</button></div>
         ${checked.length >= 2 ? html`<${Btn} sm=${true} icon="plus" label="체크한 구간 합치기" disabled=${busy} onClick=${N.mergeChecked}>${checked.length}개 합치기<//>` : null}
         ${drafts ? html`<${Btn} sm=${true} kind="primary" icon="check" label="확정하지 않은 구간 모두 확정" disabled=${busy || !!confirmAsk || !N.draftIds(scopeSheet).length} onClick=${() => N.askConfirmAll(scopeSheet)}>모두 확정 (${N.draftIds(scopeSheet).length})<//>` : null}</div>
       <${ConfirmAllCard} />
-      ${shown.length === 0 ? html`<${Notice}>${list.nodes.length ? "이 도면에는 구간이 없습니다. '전체'로 바꾸면 다른 도면의 구간이 보입니다." : "구간이 없습니다. 도면에서 구성요소를 네모로 끌어 고르고 '구간 만들기'를 누르거나, 채팅에 '대표 구간 3개 만들어 줘'라고 하세요."}<//>`
+      ${shown.length === 0 ? html`<${Notice}>${list.nodes.length ? "이 도면에는 구간이 없습니다." : "구간이 없습니다."}<//>`
         : html`<div class="list" role="list">${shown.map((n) => html`<${Row} key=${n.node_id} n=${n} list=${list.nodes} drawings=${drawings} on=${n.node_id === focus} checked=${checked.includes(n.node_id)} />`)}</div>`}
       ${focused ? html`<${Detail} n=${focused} d=${detail} list=${list.nodes} drawings=${drawings} selection=${selection} busy=${busy} needArchive=${needArchive} />` : null}
       <${BatchStrip} list=${list} busy=${busy} /></div></section>`;

@@ -12,12 +12,8 @@ import { ReviewChip } from "../review/review.js";      // 도면별 AI 검토 �
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
-const STATE_TEXT = { open: "확정 조건 남음", ready: "확정만 남음", confirmed: "확정됨", changed: "내보내는 사이 도면 자료가 바뀜", error: "쪽 확정 기록을 읽지 못함",
-  graph_error: "확정한 자료로 도면 연결 정보를 다시 만들지 못함" };      // 표에 없는 상태는 영문 코드 대신 일반 글(아래 whyNot)
-/** 내보내지 않은 쪽 한 줄: 엔진이 준 사유가 있으면 그것, 없으면 확정 상태의 한글 이름. */
-const whyNot = (x) => x.reason || (STATE_TEXT[x.state] || "내보낼 수 없는 상태") + (x.unconfirmed ? ", 남은 미확인 " + x.unconfirmed : "");
-
-/** DEXPI 내보내기(앱 틀 규격 V5, DEXPI 규격 §6.1): 확정된 쪽만 낸다. 저장 폴더는 창이 대화상자로 묻고 웹은 경로를 보내지 않는다. 확정된 쪽이 없으면 단추 대신 안내를 보인다. */
+/** DEXPI 내보내기(항목 11): 단추 하나. 내보낼 수 있는(쪽 확정을 마친) 쪽을 모두 한 번에 낸다. 저장 폴더는 창이 대화상자로 한 번 묻고 웹은 경로를 보내지 않는다.
+ *  고르는 창·설명 줄은 없다. 낼 수 있는 쪽이 없으면 단추가 꺼져 있다. 끝나면 한 줄로 몇 쪽을 어느 폴더에 냈는지와 내보내지 못한 쪽 수만 보인다. */
 function DexpiExport() {
   const [info, setInfo] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -28,32 +24,21 @@ function DexpiExport() {
   const [error, setError] = useState("");
   const reload = () => read("dexpi").then(setInfo).catch(() => setInfo({ drawings: [], any: false }));
   useEffect(() => { reload(); return onChanged((t) => { if (t === "sheetconf" || t === "drawings") reload(); }); }, []);
-  // 내보내기는 작업으로 돈다(저장 폴더·덮어쓰기는 창이 묻고, 결과는 job.done으로 온다). 내보낼 수 있는 쪽만 보낸다: 하나가 막혀도 나머지는 나간다.
   useEffect(() => {
     if (!job) return;
     if (job.state === "done") { setBusy(false); setResult(job.result); setJobId(null); reload(); }
-    else if (job.state === "failed" || job.state === "stopped") { setBusy(false); setError(job.state === "stopped" ? "내보내기를 멈췄습니다." : (job.message || "내보내지 못했습니다.")); setJobId(null); reload(); }
+    else if (job.state === "failed" || job.state === "stopped") { setBusy(false); setError(job.state === "stopped" ? "" : (job.message || "내보내지 못했습니다.")); setJobId(null); reload(); }
   }, [job && job.state]);
   async function run() {
     setBusy(true); setError(""); setResult(null);
     try { const r = await cmd("dexpi.export", { graph_ids: info.drawings.filter((d) => d.exportable).map((d) => d.graph_id) }); setJobId(r.job); }
     catch (e) { setError(e.message || "내보내지 못했습니다."); setBusy(false); reload(); }
   }
-  if (!info) return null;
-  const label = (d) => d.display || d.drawing_number || d.name;
-  return html`<div class="card dexpi-card"><h3>DEXPI로 내보내기</h3>
-    ${info.drawings.length === 0 ? html`<${Notice}>내보낼 도면이 없습니다.<//>` : html`<div class="list" role="list" aria-label="내보내기 대상">${info.drawings.map((d) => html`<div class="row" role="listitem" key=${d.graph_id}>
-      <div class="main"><b>${label(d)}</b><span>${d.exportable ? "내보낼 수 있음" : (d.why[0] || "내보낼 수 없음")}</span></div>
-      <${Chip} kind=${d.state === "confirmed" ? "ok" : "warn"}>${STATE_TEXT[d.state] || "확정 전"}<//></div>`)}</div>`}
-    ${info.any ? html`<div class="acts-row"><${Btn} kind="primary" sm=${true} icon="file-export" label="확정된 쪽 DEXPI로 내보내기" disabled=${busy} onClick=${run}>확정된 쪽 내보내기<//></div>`
-      : (info.drawings.length ? html`<${Notice} kind="warn" icon="alert-triangle">확정된 쪽이 하나도 없어 내보낼 수 없습니다. 도면에서 쪽 확정을 마친 뒤 다시 오세요.<//>` : null)}
-    ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">${error}</span><//>` : null}
-    ${result && result.cancelled ? html`<${Notice} kind="info">${result.overwrite_refused ? "덮어쓰기를 취소해 내보내지 않았습니다." : "저장 위치를 고르지 않아 내보내지 않았습니다."}<//>` : null}
-    ${result && !result.cancelled ? html`<div class="card" aria-label="내보내기 결과"><b>${result.drawings.length}쪽을 내보냈습니다</b> <span class="muted small">폴더 ${result.folder}</span>
-      <ul class="tight">${result.drawings.map((d) => html`<li key=${d.graph_id}>${d.display || d.drawing_number}: ${d.files.join(", ")}
-        ${d.stats && (d.stats.excluded_components || d.stats.excluded_connections || d.stats.excluded_attributes) ? html`<span class="muted small"> · 뺀 구성요소 ${d.stats.excluded_components || 0} · 연결 ${d.stats.excluded_connections || 0} · 속성 ${d.stats.excluded_attributes || 0}</span>` : null}
-        ${d.stats && (d.stats.cut_pipes || d.stats.cut_signal_lines) ? html`<span class="warnline small" title="빠진 구성요소에 이어져 있어 내지 못한 연결"> · 끊긴 배관 ${d.stats.cut_pipes || 0} · 신호선 ${d.stats.cut_signal_lines || 0}</span>` : null}</li>`)}</ul>
-      ${result.not_exported.length ? html`<div class="muted small">내보내지 않은 쪽: <ul class="tight" aria-label="내보내지 않은 쪽">${result.not_exported.map((x) => html`<li key=${x.graph_id || x.drawing_number}>${x.display || x.drawing_number}: ${whyNot(x)}</li>`)}</ul></div>` : null}</div>` : null}</div>`;
+  if (!info || !info.drawings.length) return null;
+  const done = result && !result.cancelled ? result : null;
+  return html`<div class="dexpi-card"><div class="acts-row"><${Btn} kind="primary" sm=${true} icon="file-export" label="DEXPI로 내보내기" disabled=${busy || !info.any} onClick=${run}>DEXPI로 내보내기<//>
+    ${done ? html`<span class="muted small">${done.drawings.length}쪽을 내보냈습니다 · 폴더 ${done.folder}${done.not_exported.length ? " · 내보내지 못한 쪽 " + done.not_exported.length : ""}</span>` : null}</div>
+    ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">${error}</span><//>` : null}</div>`;
 }
 
 /** 끝난 작업 카드를 닫는다(작업 기록은 엔진에 그대로). */
@@ -93,7 +78,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
           ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}
           <${Btn} sm=${true} kind="ghost" icon="x" label=${j.label + " 알림 닫기"} title="닫기" onClick=${() => dismissJob(id)} /></div>`)}</details>` : null}
       <div>${picked.length ? html`<${DrawingPicks} ids=${picked} onDone=${() => setPicked([])} />` : null}
-        ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 위 자리에 도면 파일을 끌어 놓으면 등록하고 읽습니다.<//>` : html`<div class="list">
+        ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다.<//>` : html`<div class="list">
           ${data.drawings.map((d) => html`<div key=${d.graph_id} class=${"row drow" + (d.graph_id === sheet ? " on" : "")} onClick=${(e) => { if (!e.target.closest("input,label,.acts-end")) onOpen(d.graph_id); }}>
             <input type="checkbox" aria-label=${d.display + " 고르기"} checked=${picked.includes(d.graph_id)} onChange=${() => toggle(d.graph_id)} />
             <button type="button" class="main drow-open" aria-label=${d.display + (d.title ? " " + d.title : "") + " 열기"}><b>${d.display}</b><span>${d.title || ""}</span></button>
