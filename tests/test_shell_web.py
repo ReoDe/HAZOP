@@ -434,6 +434,16 @@ class ShellChatTest(ShellBase):
         self.assertTrue(self.js(win, "document.querySelector('.chat-input').disabled"))
         self.assertEqual(self.sessions, [])
 
+    def test_the_chat_foot_is_a_dot_and_the_model_button_and_speaks_only_when_the_connection_is_bad(self):
+        """채팅 입력칸 아래 줄: 평상시는 점 하나와 모델 단추뿐이고, 연결이 끊겼거나 한도에 닿았을 때(경고·오류 톤)만 글자가 붙는다. 도면 메뉴 아이콘에 숫자 배지는 없다."""
+        win = self.window()
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('aside.chat .foot .dot')"), 15))
+        pump(1.0)
+        quiet = self.js(win, "(() => { const f = document.querySelector('aside.chat .foot'); return [...f.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join('') })()")
+        self.assertEqual(quiet, "", "평상시 글자 없음")
+        self.assertEqual(self.js(win, "document.querySelectorAll('aside.chat .foot button').length"), 1, "모델 단추 하나")
+        self.assertEqual(self.js(win, "document.querySelectorAll('.rail .badge').length"), 0, "도면 아이콘에 숫자 배지가 없다")
+
     def test_chat_shows_no_examples_or_guide_text(self):
         """화면 단순화(사용자 결정 2026-11-25): 추천 질문과 '물어보세요' 안내 문구가 없고, 입력 칸도 자리표 글이 없다(낭독용 이름만)."""
         win = self.window()

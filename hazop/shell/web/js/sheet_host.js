@@ -8,7 +8,7 @@ import { Icon } from "./ui/icon.js";
 import { Btn } from "./ui/parts.js";
 import * as R from "./panels/results_state.js";
 import { NodeOverlay, useNodeCanvas } from "./canvas/nodes_canvas.js";
-import { CleanOverlay, useCleanCanvas } from "./canvas/clean_ui.js";
+import { CleanOverlay, useClean, useCleanCanvas, viewOf } from "./canvas/clean_ui.js";
 import { ScanNote } from "./scan_note.js";
 import { CompareCard, ComparePane, useCmp } from "./compare.js";
 import { ExtractLegend, sheetFacts, useExtractCheck } from "./canvas/extract_check.js";
@@ -81,7 +81,8 @@ export function SheetHost() {
   const rev = useStore((s) => s.drawings.rev);
   const sv = N.useNodes((s) => s.sheetView);
   const chatMarks0 = marks.bySheet && marks.bySheet[sheet];
-  const check = useExtractCheck(sheet, rev, !!sheet && panel === "drawings" && !(chatMarks0 && chatMarks0.length), sv && sv.graph_id === sheet && Array.isArray(sv.links) ? sv.links : undefined);      // 도면 탭에서만, 추적·채팅 강조 같은 다른 표시가 있으면 끈다
+  const view = useClean((s) => (sheet ? viewOf(s, sheet) : "orig"));
+  const check = useExtractCheck(sheet, rev, !!sheet && panel === "drawings" && view === "orig" && !(chatMarks0 && chatMarks0.length), sv && sv.graph_id === sheet && Array.isArray(sv.links) ? sv.links : undefined);      // 도면 탭에서만, 추적·채팅 강조 같은 다른 표시가 있으면 끈다
   const cc = useCleanCanvas(sheet);          // 원본·정리 보기, 미확인 칩, 못 읽은 곳 말풍선(s-viewer의 clean_ui.js)
   const nc = useNodeCanvas(sheet, { onEsc: () => { if (!cc.closeIfOpen()) store.set({ marks: { rid: null, bySheet: {} } }); } });
   const chatMarks = marks.bySheet && marks.bySheet[sheet];

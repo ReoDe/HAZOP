@@ -447,7 +447,12 @@ class ItemBubbleFlowTest(W.ShellBase):
         win = self.window()
         gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
         self.js(win, "window.__hz.store.set({sheet: %s, panel: 'drawings'})" % json.dumps(gid))
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') !== null") is True, 30), "도면 탭에 추출 확인 범례")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.clean-toggle') !== null") is True, 30))
+        self.assertTrue(wait_for(lambda: self.js(win, "[...document.querySelectorAll('.clean-toggle button')].find((b) => b.textContent.startsWith('정리')).getAttribute('aria-pressed')") == "true", 15), "drawio 기본 보기는 정리(정리 자료가 오면)")
+        pump(1.5)
+        self.assertEqual(self.js(win, "document.querySelector('.extract-legend') === null"), True, "정리 보기에는 추출 네모·범례가 없다")
+        self.js(win, "[...document.querySelectorAll('.clean-toggle button')].find((b) => b.textContent.startsWith('원본')).click()")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') !== null") is True, 30), "원본 보기의 도면 탭에 추출 확인 범례")
         self.assertIn("읽음", self.js(win, "document.querySelector('.extract-legend').textContent"))
         self.assertTrue(self.js(win, "(() => { const l = document.querySelector('.extract-legend').getBoundingClientRect(), p = document.querySelector('section.panel').getBoundingClientRect(); return l.left >= p.right; })()"), "범례가 도면 패널에 가려지지 않는다")
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.hz-sheet svg *').length") or 0) > 0, 10))

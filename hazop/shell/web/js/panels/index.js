@@ -17,8 +17,7 @@ import { ActionLogPanel } from "./actionlog.js";
 import { SettingsPanel } from "./settings.js";
 
 export const PANELS = [
-  { name: "drawings", icon: "files", label: "도면", key: "1", component: DrawingsPanel, css: "drawings.css",
-    badge: (s) => s.drawings.drawings.reduce((n, d) => n + (d.unknowns || 0), 0) || null },
+  { name: "drawings", icon: "files", label: "도면", key: "1", component: DrawingsPanel, css: "drawings.css" },
   { name: "nodes", icon: "vector-triangle", label: "구간", key: "2", component: NodesPanel },
   { name: "results", icon: "table", label: "분석 결과", key: "3", component: ResultsPanel, css: "results.css" },
   { name: "ie", icon: "route", label: "초기사건", key: "4", component: IePanel, css: "ie.css" },

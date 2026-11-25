@@ -712,7 +712,8 @@ export class SheetCore {
     box.textContent = "";
     const all = this._links && this._links.length ? this._links : (this.data && Array.isArray(this.data.links) ? this.data.links : null);   // 도면 자료의 links 또는 구간 화면이 주는 links
     if (!this.data || !all) return;
-    for (const c of placeChips(all, (id) => { const rect = this.index.rectOf(id); return rect ? this._toScreenRect(rect) : null; })) {
+    const linked = all.filter((l) => l && l.status === "linked");      // 짝이 없는 '미연결' 칩은 그리지 않는다(화면 단순화): 짝 있는 이동 칩만
+    for (const c of placeChips(linked, (id) => { const rect = this.index.rectOf(id); return rect ? this._toScreenRect(rect) : null; })) {
       const b = this.doc.createElement("button");
       b.type = "button"; b.className = "hz-cv-chip" + (c.warn ? " warn" : "");
       b.textContent = c.text; b.title = c.title;
