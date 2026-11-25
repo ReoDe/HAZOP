@@ -221,7 +221,7 @@ class PersonAndAutoTest(unittest.TestCase):
         self.assertEqual((mi["Auto"], ni["tag"]), ("tag", "RC-LT777"))
         g = build.build_graph(read(x.xml))
         got = next(a for a in g["nodes"] if a["tag"] == "RC-LT777")
-        self.assertEqual((got["auto"], got["origin"]), (["tag"], "pid_extract"))
+        self.assertEqual((got["auto"], got["origin"]), (["tag"], "ai_auto"))
         (c,) = [c for c in claims.drawing_claims(g) if c["value"] == "RC-LT777"]
         self.assertEqual((c["knowledge_status"], c["origin"]), ("hypothesis", "ai_auto"))
 
@@ -358,6 +358,19 @@ class ProvenanceTest(unittest.TestCase):
                 self.assertEqual((marks[oid["RC-ZZ99"]]["Auto"], marks[oid["RC-LT777"]]["Auto"]), ("kind tag", "tag"))
                 pipe = next(m for m in marks.values() if m.get("Basis") == "ai_auto")
                 self.assertEqual(pipe["Auto"], "tag flow")
+
+    def test_an_automatic_connection_and_an_added_part_stay_automatic(self):
+        rel = next(r for r in self.pair[0]["relations"] if r["kind"] == "physical_connection" and r["flow_direction"])
+        end = next(e for e in rel["endpoints"] if e["end"] == "target")
+        for by_auto in (True, False):
+            pair = edited(self.pair, ("set_endpoint", rel["source_object_id"], {"end": "target", "node": end["source_object_id"]}, by_auto),
+                          ("add_node", None, {"kind": "pump", "category": "equipment", "tag": "RC-P99", "bbox": [5, 5, 30, 30]}, by_auto))
+            for _x, (_ex, g) in self.trips(pair):
+                pump = next(n for n in g["nodes"] if n["tag"] == "RC-P99")
+                pipes = [n for n in g["nodes"] if n["node_type"] == "pipe_segment" and "endpoint" in (n.get("auto") or n.get("edited_elsewhere") or ())]
+                key, origin_ = ("auto", "ai_auto") if by_auto else ("edited_elsewhere", "pid_extract")
+                self.assertEqual((pump[key], pump["origin"], len(pipes), pipes[0]["origin"]), (["add_node"], origin_, 1, origin_))
+                self.assertEqual({e["origin"] for e in g["edges"] if e.get("segment") == pipes[0]["entity_id"]}, {origin_})
 
     def test_what_a_person_sets_afterwards_is_not_automatic(self):
         _x, (ex, g) = next(self.trips(self.automatic()))
