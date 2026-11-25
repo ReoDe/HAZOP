@@ -406,7 +406,7 @@ class RetryTest(unittest.TestCase):
         from types import SimpleNamespace
         from hazop.shell import ai_image_flow
         client = StubClient(good_answers, errors=["timeout"] * 20)
-        engine = SimpleNamespace(settings={ai_image_flow.KEY: False})
+        engine = SimpleNamespace(settings={ai_image_flow.KEY: False}, project_id=lambda: None)
         pages = [("A", self.ex), ("B", self.ex), ("C", self.ex)]
         with mock.patch.object(ar, "decided_targets", lambda name: set()), mock.patch.object(ar, "merge_and_save", lambda *a, **k: None):
             done, _ = ai_image_flow.run_pages(engine, pages, client, 2, ar.RUN_CAP, None, None)

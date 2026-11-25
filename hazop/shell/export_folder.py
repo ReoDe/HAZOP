@@ -60,7 +60,7 @@ def _plain(folder):
 def folder(engine, kind):
     """열 폴더. 없거나 열면 안 되면 Refused."""
     if kind == "chat":
-        return _plain(os.path.join(os.path.realpath(paths.work_root()), "output", "exports"))
+        return _plain(paths.output_in(os.path.realpath(paths.work_root()), "exports"))
     for path, at in reversed(engine.hooks.picked.get((engine.project_id(), kind)) or []):
         if os.path.isfile(path) and os.path.getmtime(path) >= at - SLACK:
             return _plain(os.path.dirname(path))

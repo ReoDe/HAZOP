@@ -194,7 +194,7 @@ class PerDrawingStopTest(TA.Base):
         self.asked = []
         self.on_call = None
 
-        def fake_run(ex, client, cap=None, budget=None, exclude=None, on_progress=None, should_stop=None, images=None, kinds=None):
+        def fake_run(ex, client, cap=None, budget=None, exclude=None, on_progress=None, should_stop=None, images=None, kinds=None, project_id=None):
             stats = {"calls": 0, "left": 0, "halted": False, "refused": False, "stopped": False}
             for i in range(3):
                 if should_stop and should_stop():

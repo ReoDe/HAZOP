@@ -347,6 +347,14 @@ class GateTest(Base):
         with mock.patch.object(self.engine, "project_id", return_value=None):
             self.assertEqual(auto_flow.gate(self.engine, None), "ai_off")
 
+    def test_gate_looks_at_the_sheets_project_and_the_current_one(self):
+        self.assertTrue(self.engine.dispatch("aireview.send_policy", {"send": "deny"})["ok"])
+        for project in (None, PROJECT, "OTHER"):
+            self.assertEqual(auto_flow.gate(self.engine, project), "ai_off", project)
+        self.engine.settings["project_id"] = "OTHER"
+        self.assertEqual(auto_flow.gate(self.engine, PROJECT), "ai_off")
+        self.assertIsNone(auto_flow.gate(self.engine, "OTHER"))
+
     def test_deny_during_a_call_stops_every_sheet(self):
         self.client.answer = lambda q: self.engine.dispatch("aireview.send_policy", {"send": "deny"}) and NONE
         self.upload((1, big(1)), (2, big(2)))
@@ -1114,12 +1122,16 @@ class NextVersionTest(unittest.TestCase):
 
     def test_classic_extraction_then_the_person_restarts(self):
         from hazop.app import data
+        ex = data.read_json(data.extraction_path(self.name))
+        mine = co.make_op(ex, "set_tag", ex["nodes"][0]["source_object_id"], {"tag": "HUMAN-9"}, "검토자", name=self.name)
+        co.save(self.name, ((co.load(self.name) or {}).get("ops") or []) + [mine], "검토자")
         data.extract_and_graph(self.classic_register()["registration_file"])
         (gid, new), = self.e.graph_names().items()
         auto_flow.restart(self.e, [gid], "검토자")
         st = cf.sheet_confirmation(new)
         self.assertEqual((st["auto_accepted"], ar.calls_of(new) <= 20), (0, True), "사람이 물린 자리는 다시 받지 않고 호출도 이어서 센다")
         self.assertEqual(ar.calls_of(new), len(self.client.requests))
+        self.assertIn("HUMAN-9", [(o.get("value") or {}).get("tag") for o in co.load(new)["ops"]], "사람 고침도 앞 판에서 따라온다")
 
     def test_a_failed_extraction_leaves_no_copy(self):
         from hazop.app import data
@@ -1175,7 +1187,7 @@ class OpenFolderTest(unittest.TestCase):
 
     def test_chat_exports_folder(self):
         self.assertFalse(self.open("chat")["ok"])
-        d = os.path.join(os.environ["HAZOP_WORK_ROOT"], "output", "exports")
+        d = paths.output_root("exports")
         os.makedirs(d)
         self.assertTrue(self.open("chat")["ok"])
         self.assertEqual(self.opened, [os.path.realpath(d)])
@@ -1226,7 +1238,7 @@ class OpenFolderTest(unittest.TestCase):
 
     def test_exports_folder_turned_into_a_link_is_refused(self):
         import _winapi
-        d = os.path.join(os.environ["HAZOP_WORK_ROOT"], "output", "exports")
+        d = paths.output_root("exports")
         os.makedirs(os.path.dirname(d))
         _winapi.CreateJunction(self.out, d)
         self.assertFalse(self.open("chat")["ok"])
