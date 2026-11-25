@@ -491,8 +491,13 @@ export const tests = [
     await setup();
     let props = null;
     function Probe() { props = useNodeCanvas("graph-A").props; return html`<i></i>`; }
+    store.set({ panel: "drawings" });
     const host = mount(html`<${Probe} />`);
     await tick();
+    assert.equal([props.segments, props.outside], [[], []], "도면 탭에는 구간 색 강조가 없다(화면 단순화)");
+    await new Promise((r) => setTimeout(r, 80));      // 숨은 페이지는 구독 효과가 늦다
+    store.set({ panel: "nodes" });
+    await new Promise((r) => setTimeout(r, 80)); await tick();
     assert.equal(props.segments.map((s) => [s.node_id, s.ids, s.active]), [["S1", ["n1", "n2"], false], ["S2", ["n2", "n3"], false]]);
     assert.equal(props.outside, ["n4", "n5"]);
     assert.equal(props.mode, "pan");

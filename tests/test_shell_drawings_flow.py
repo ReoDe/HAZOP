@@ -289,24 +289,42 @@ class TitleblockLinkFlowTest(W.ShellBase):
 
 
 class ItemBubbleFlowTest(W.ShellBase):
-    def test_the_component_card_shows_the_korean_kind_name_first_and_the_english_one_small(self):
+    def test_the_component_card_shows_properties_in_korean_without_english_kind_or_ids(self):
+        """화면 단순화 B(사용자 결정 2026-11-25): 구성요소를 누르면 태그·종류(한글)·이어진 곳·든 구간·출처가 나오고, 영문 종류 이름·내부 ID·
+        '지식그래프에서 보기'·'고치기'는 없다. '분석 결과 추적'은 있다."""
         win = self.window()
         gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
         from hazop.shell import api
-        item = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"][0]["id"]      # 고치기가 읽을 수 있는 실제 구성요소
+        item = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"][0]["id"]
         bubble = {"sheet": gid, "id": item, "tag": "RC-V001", "kind": "control_valve", "kind_label": "제어 밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
         self.js(win, "window.__hz.store.set({sheet: %s, panel: null, bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble') !== null") is True, 15))
-        text = self.js(win, "document.querySelector('.bubble div').textContent")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble.props') !== null") is True, 15))
+        text = self.js(win, "document.querySelector('.bubble.props').textContent")
         self.assertIn("RC-V001", text)
         self.assertIn("제어 밸브", text)
-        self.assertIn("control_valve", text)
-        self.assertLess(text.index("제어 밸브"), text.index("control_valve"), "한글이 먼저")
-        self.js(win, "window.__hz.store.set({bubble: %s})" % json.dumps(dict(bubble, kind_label=None)))      # 사전에 없는 종류는 영문만
-        self.assertTrue(wait_for(lambda: "제어 밸브" not in (self.js(win, "document.querySelector('.bubble div').textContent") or ""), 10))
-        self.assertIn("control_valve", self.js(win, "document.querySelector('.bubble div').textContent"))
-        self.assertTrue(self.click(win, ".bubble button[aria-label='고치기']"), "말풍선에서 바로 고치기로 간다")
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble') === null") is True, 10), "말풍선은 닫히고 고치기 카드로 넘어간다(카드 모양은 s-viewer의 시험이 본다)")
+        for word in ("control_valve", item, "지식그래프", "고치기"):
+            self.assertNotIn(word, text)
+        for label in ("이어진 곳", "든 구간", "출처"):
+            self.assertIn(label, text)
+        self.js(win, "window.__hz.store.set({bubble: %s})" % json.dumps(dict(bubble, kind_label=None)))      # 사전에 없는 종류는 영문 대신 '종류 미확인'
+        self.assertTrue(wait_for(lambda: "종류 미확인" in (self.js(win, "document.querySelector('.bubble.props').textContent") or ""), 10))
+        self.assertNotIn("control_valve", self.js(win, "document.querySelector('.bubble.props').textContent"))
+        self.assertTrue(self.click(win, ".bubble button[aria-label='분석 결과 추적']"))
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "results", 10))
+        self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
+
+    def test_the_drawing_tab_shows_extraction_boxes_and_no_segment_colors(self):
+        """도면 탭은 원본 위에 추출한 것을 네모로(색 범례가 뜸) 보이고, 구간 색 강조(S1 딱지)는 구간 탭에서만 나온다."""
+        win = self.window()
+        gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
+        self.js(win, "window.__hz.store.set({sheet: %s, panel: 'drawings'})" % json.dumps(gid))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') !== null") is True, 30), "도면 탭에 추출 확인 범례")
+        self.assertIn("읽음", self.js(win, "document.querySelector('.extract-legend').textContent"))
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.hz-sheet svg *').length") or 0) > 0, 10))
+        self.js(win, "window.__hz.store.set({panel: 'nodes'})")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') === null") is True, 10), "구간 탭에는 추출 확인 범례가 없다")
+        self.js(win, "window.__hz.store.set({panel: null})")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') !== null") is True, 10), "패널을 닫아 도면만 볼 때도 추출 확인")
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
 
 

@@ -312,7 +312,7 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
 /** 범례 항목. 표시가 없으면 빈 목록. */
 export function legendEntries(marks, seg) {
   const out = [];
-  const m = marks || [];
+  const m = (marks || []).filter((x) => x.id !== "extract-check");      // 도면 탭의 추출 확인 창은 자기 범례(extract_check.js)가 있다
   if (m.some((x) => x.op === "path")) {
     out.push({ text: "경로(굵은 선, 단계 번호)", color: STYLE_COLORS.path, dashed: false });
     out.push({ text: "출발", color: STYLE_COLORS.focus, dashed: false, box: true });

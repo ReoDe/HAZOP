@@ -3,25 +3,25 @@
 // 도면·모델에서 온 글(태그, 이름)은 htm이 이스케이프하는 텍스트로만 넣는다.
 import { html } from "../ui/html.js";
 import { useEffect, useLayoutEffect, useMemo } from "../../vendor/hooks.module.js";
-import { store as shell } from "../store.js";
+import { store as shell, useStore } from "../store.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { escStep, keyAction, canEdit, colorOf, sheetSegments } from "../panels/nodes_logic.js";
 import * as N from "../panels/nodes_state.js";
-import { EditOverlay, useEditCanvas } from "./edit.js";
 
 /** <Sheet>에 펼칠 props와 키 처리. 상태는 nodes_state의 저장소에 있다. */
 export function useNodeCanvas(sheet, { onEsc } = {}) {
   N.wire();
   const mode = N.useNodes((s) => s.mode);
   const selection = N.useNodes((s) => s.selection);
+  const panel = useStore((s) => s.panel);          // 구간 색 강조는 구간 탭에서만(도면 탭은 추출 확인 창)
   const sheetView = N.useNodes((s) => s.sheetView);
   const list = N.useNodes((s) => s.list.nodes);
   const focus = N.useNodes((s) => s.focus);
   const showOutside = N.useNodes((s) => s.showOutside);
-  const segments = useMemo(() => (sheetView && sheetView.graph_id === sheet ? sheetSegments(sheetView, list, focus) : []), [sheetView, list, focus, sheet]);
+  const segments = useMemo(() => (panel === "nodes" && sheetView && sheetView.graph_id === sheet ? sheetSegments(sheetView, list, focus) : []), [panel, sheetView, list, focus, sheet]);
   const links = useMemo(() => (sheetView && sheetView.graph_id === sheet && Array.isArray(sheetView.links) ? sheetView.links : []), [sheetView, sheet]);
-  const outside = useMemo(() => (showOutside && sheetView && sheetView.graph_id === sheet && sheetView.segments.length ? sheetView.outside_ids : []), [sheetView, showOutside, sheet]);
+  const outside = useMemo(() => (panel === "nodes" && showOutside && sheetView && sheetView.graph_id === sheet && sheetView.segments.length ? sheetView.outside_ids : []), [panel, sheetView, showOutside, sheet]);
 
   useLayoutEffect(() => {          // 그린 바로 뒤에 키를 잇는다(끌기 → Enter가 바로 먹게)
     function key(e) {
@@ -41,10 +41,8 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
     return () => window.removeEventListener("keydown", key);
   }, []);
 
-  const ec = useEditCanvas(sheet);           // 도면 고치기(edit.js): 도구가 있을 때 누르기를 고치기로 돌린다
   return {
     props: {
-      ...ec,
       mode, selection, segments, outside, links,
       onLinkClick: (link) => N.followLink(link),
       onSelection: (d) => N.setSelection(d.selected, d.truncated),
@@ -143,5 +141,5 @@ function OutsideChip() {
 
 export function NodeOverlay() {
   N.wire();
-  return html`<${OutsideChip} /><${SelectionBar} /><${PickHint} /><${NewNodeCard} /><${Toolbar} /><${EditOverlay} />`;
+  return html`<${OutsideChip} /><${SelectionBar} /><${PickHint} /><${NewNodeCard} /><${Toolbar} />`;
 }
