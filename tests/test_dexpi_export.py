@@ -460,6 +460,30 @@ class InstrumentRoundtripTest(unittest.TestCase):
                 missing = [u for u in back["validation"]["unknowns"] if u["check"] == "missing_tag" and u["target"] == got["local_id"]]
                 self.assertEqual(len(missing), 0 if tag else 1)
 
+    def test_missing_tag_is_cleared_when_the_sidecar_gives_the_tag(self):
+        ex, _ = dexpi_pair("small-pid-dexpi2.xml")
+        n = next(n for n in ex["nodes"] if n["category"] == "instrument")
+        n["tag"] = n["label"] = n["label_text"] = n["attributes"]["tag"] = "LOCAL PANEL"
+        for k in [k for k in n["attributes"] if k.startswith("dexpi:ProcessInstrumentation")]:
+            del n["attributes"][k]
+        exp = export((ex, build.build_graph(ex)))
+
+        def missing(back):
+            lid = next(x["local_id"] for x in back["nodes"] if x["source_object_id"] == n["source_object_id"])
+            return [u for u in back["validation"]["unknowns"] if u["check"] == "missing_tag" and u["target"] == lid]
+        self.assertEqual((len(missing(reimport(exp, with_sidecar=False))), len(missing(reimport(exp)))), (1, 0))
+
+    def test_a_sidecar_tag_that_is_not_text_is_not_put_back(self):
+        exp = export(dexpi_pair("small-pid-dexpi2.xml"))
+        plain = {n["source_object_id"]: n["tag"] for n in reimport(exp)["nodes"]}
+        for bad in (["P-1"], {"a": 1}, 7, True):
+            with self.subTest(bad):
+                side = copy.deepcopy(exp.sidecar)
+                side["entities"][0]["tag"] = bad
+                back = dexpi_import.extract_bytes(exp.xml, "x.xml", sidecar=side)[0]
+                self.assertEqual({n["source_object_id"]: n["tag"] for n in back["nodes"]}, plain)
+                self.assertEqual(len([u for u in back["validation"]["unknowns"] if u["check"] == "dexpi_sidecar_bad_tag"]), 1)
+
     def test_a_wrong_instrument_tag_in_the_file_is_caught_before_writing(self):
         real = de._Builder._finish
         pair = snp_pair([p for p in SNP if "SNP-M-101" in p][0])
@@ -654,6 +678,77 @@ class WriteTest(unittest.TestCase):
         res = self.export(require_confirmed_number=True)
         self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
         self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-102", "number_unconfirmed")])
+
+    def test_files_left_from_an_earlier_export_are_named_not_deleted(self):
+        self.export()
+        with open(os.path.join(self.out, "SNP-M-102.dexpi.xml"), "rb") as fh:
+            old = fh.read()
+        res = self.export(confirmation=self.gate({"SNP-M-101": "confirmed", "SNP-M-102": "open"}), overwrite=True)
+        with open(res["manifest"], encoding="utf-8") as fh:
+            man = json.load(fh)
+        want = ["SNP-M-102.dexpi.xml", "SNP-M-102.excluded.json", "SNP-M-102.hazop.json"]
+        self.assertEqual((man["stale_files"], res["stale_files"]), (want, want))
+        self.assertIn("이번에 내지 않은", man["stale_reason"])
+        with open(os.path.join(self.out, "SNP-M-102.dexpi.xml"), "rb") as fh:
+            self.assertEqual(fh.read(), old)
+        res = self.export(overwrite=True)
+        self.assertEqual(res["stale_files"], [])
+
+    def test_one_malformed_drawing_does_not_empty_the_list(self):
+        for text in ("[]", '{"source": []}', '{"source": {"drawing_number": 3}, "validation": []}'):
+            with self.subTest(text):
+                with open(os.path.join(self.graph_root, "SNP-M-101", "graph.json"), "w", encoding="utf-8") as fh:
+                    fh.write(text)
+                rows = de.list_exportable(self.graph_root, self.extract_root, confirmation="assume")
+                self.assertEqual([(r["name"], r["exportable"]) for r in rows], [("SNP-M-101", False), ("SNP-M-102", False)])
+                self.assertEqual(rows[1]["drawing_number"], "SNP-M-102")
+        rows = de.list_exportable(self.graph_root, self.extract_root, confirmation=lambda name: [1] if name == "SNP-M-101" else
+                                  {"state": "confirmed"})
+        self.assertEqual(len(rows), 2)
+        res = self.export(confirmation=lambda name: {"state": "confirmed", "unconfirmed": 3} if name == "SNP-M-101" else {"state": "confirmed"})
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-102"])
+
+    def test_a_page_that_cannot_be_turned_into_bytes_does_not_stop_the_others(self):
+        real = de.export_drawing
+
+        def broken(graph, *a, **k):
+            exp = real(graph, *a, **k)
+            if graph["source"]["drawing_number"] == "SNP-M-101":
+                exp.sidecar["bad"] = {1, 2}
+            return exp
+        with mock.patch.object(de, "export_drawing", side_effect=broken):
+            res = self.export()
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-102"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-101", "check_failed")])
+
+    def failing_replace(self, fail):
+        real = os.replace
+
+        def replace(src, dst):
+            if fail(src, dst):
+                raise PermissionError(13, "denied", dst)
+            return real(src, dst)
+        return mock.patch.object(de.os, "replace", side_effect=replace)
+
+    def test_new_files_are_removed_when_the_swap_fails(self):
+        os.makedirs(self.out)
+        with self.failing_replace(lambda src, dst: dst == os.path.join(self.out, "manifest.json")):
+            with self.assertRaises(OSError):
+                self.export()
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_a_previous_file_that_cannot_be_put_back_is_kept_aside(self):
+        self.export()
+        name = "SNP-M-101.dexpi.xml"
+        with open(os.path.join(self.out, name), "rb") as fh:
+            old = fh.read()
+        with self.failing_replace(lambda src, dst: dst == os.path.join(self.out, name)):
+            with self.assertRaises(OSError):
+                self.export(overwrite=True)
+        kept = glob.glob(os.path.join(glob.escape(self.out), ".hazop-dexpi-old-*", name))
+        self.assertEqual(len(kept), 1)
+        with open(kept[0], "rb") as fh:
+            self.assertEqual(fh.read(), old)
 
     def test_assumed_pages_are_not_called_human_or_auto(self):
         self.assertEqual({d["level"] for d in self.export()["drawings"]}, {"assumed"})
@@ -947,6 +1042,68 @@ class ConfirmedExportTest(unittest.TestCase):
             self.assertNotIn(">%s<" % v["tag"], self.read_out(".dexpi.xml"))
         listed = de.list_exportable(confirmation="auto")[0]
         self.assertEqual((listed["exportable"], listed["level"], listed["state"]), (True, "auto", "open"))
+
+    def test_components_with_automatically_accepted_values_are_marked_in_the_sidecar(self):
+        from hazop.extract import corrections
+        valves = self.auto_page()
+        pump = next(n for n in self.ex["nodes"] if n.get("kind") == "pump" and n.get("tag"))
+        ops = []
+        for op, n, value, who in (("set_tag", valves[2], {"tag": "AUTO-1"}, corrections.AUTO_BY),
+                                  ("set_tag", pump, {"tag": "AUTO-2"}, corrections.AUTO_BY),
+                                  ("set_kind", pump, {"kind": "compressor", "category": "equipment"}, "검토자")):
+            auto = who == corrections.AUTO_BY
+            made = corrections.make_op(self.ex, op, n["source_object_id"], value, who, existing_ops=ops, name=self.name, auto=auto)
+            if auto:
+                made["accepted_by"] = who
+            ops.append(made)
+        corrections.save_fp(self.name, ops, corrections.AUTO_BY, auto=True)
+        res = de.export_names([self.name], self.out, confirmation="auto")
+        self.assertEqual(res["drawings"][0]["auto_accepted"], 2)
+        side = json.loads(self.read_out(".hazop.json"))
+        self.assertEqual({e["tag"]: (e["origin"], e["auto"]) for e in side["entities"] if e["auto"]},
+                         {"AUTO-1": ("ai_auto", ["tag"]), "AUTO-2": ("human_edit", ["tag"])})
+        back = dexpi_import.extract_bytes(self.read_out(".dexpi.xml").encode("utf-8"), "x.xml", sidecar=side)[0]
+        self.assertEqual({n["tag"]: n["evidence"]["hazop_sidecar"]["auto"] for n in back["nodes"] if n["evidence"]["hazop_sidecar"]["auto"]},
+                         {"AUTO-1": ["tag"], "AUTO-2": ["tag"]})
+
+    def test_auto_page_whose_sources_change_before_writing_is_not_exported(self):
+        valves = self.auto_page()
+        real = de.export_drawing
+
+        def edit(*a, **k):
+            self.save_ops(("set_tag", valves[2]["source_object_id"], {"tag": "LATE-1"}))
+            return real(*a, **k)
+        with mock.patch.object(de, "export_drawing", side_effect=edit):
+            with self.assertRaises(de.ExportError) as cm:
+                de.export_names([self.name], self.out, confirmation="auto")
+        self.assertEqual(self.cf.sheet_confirmation(self.name)["level"], "auto")
+        self.assertIn("직전", " ".join(cm.exception.reasons))
+        self.assertFalse(os.path.exists(self.out))
+
+    def test_unconfirmed_counts_places_not_lines(self):
+        valves = self.auto_page()
+        self.ex["validation"]["unknowns"].append(
+            {"check": "missing_kind", "target": valves[0]["local_id"], "source_object_id": valves[0]["source_object_id"], "field": "kind",
+             "reason": "근거 없음"})
+        self.save_extraction()
+        self.assertEqual(len(self.cf.sheet_confirmation(self.name)["unconfirmed"]), 3)
+        self.assertEqual(de.export_names([self.name], self.out, confirmation="auto")["drawings"][0]["unconfirmed"], 2)
+
+    def test_assumed_item_order_does_not_drop_the_component(self):
+        valves = self.auto_page()
+        self.ex["validation"]["unknowns"].append(
+            {"check": "dexpi_item_order_assumed", "target": valves[2]["local_id"], "source_object_id": valves[2]["source_object_id"],
+             "field": "kind", "reason": "순서 가정"})
+        self.save_extraction()
+        de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn(">%s<" % valves[2]["tag"], self.read_out(".dexpi.xml"))
+
+    def test_any_error_while_rebuilding_the_graph_leaves_only_that_page_out(self):
+        self.auto_page()
+        with mock.patch.object(build, "build_graph", side_effect=RecursionError("deep")):
+            with self.assertRaises(de.ExportError) as cm:
+                de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("그래프를 다시 만들 수 없음", " ".join(cm.exception.reasons))
 
     def test_human_confirmed_page_says_human(self):
         self.save_extraction()
