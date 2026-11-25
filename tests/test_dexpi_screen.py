@@ -236,7 +236,12 @@ class FallBackTest(Base):
 
     def test_a_sheet_whose_name_becomes_the_same_file_name_does_not_get_this_picture(self):
         self.assertEqual(paths.safe_name("S "), paths.safe_name("S"))
-        self.assertEqual(ds.open_view("S ", self.page).code, "stale")
+        self.assertEqual(ds.open_view("S ", self.page).code, "no_cache")
+
+    def test_sheets_whose_names_become_the_same_file_name_keep_their_own_pictures(self):
+        for name in ("S ", "s"):    # 파일 이름으로 바꾸면 같아지는 이름, Windows에서 같은 파일인 이름
+            self.assertTrue(ds.prepare(name, self.page).ok)
+            self.assertEqual([ds.open_view(n, self.page).code for n in ("S", name)], [None, None])
 
     def test_a_changed_file_does_not_match_its_sidecar(self):
         xml = ds.cache_paths("S")[0]
