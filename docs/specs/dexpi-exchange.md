@@ -563,6 +563,7 @@ DEXPI XML의 `id`는 `[A-Za-z_][A-Za-z_0-9]*`만 됩니다(XSD `id-pattern`). �
 | `Auto` | 자동 확정이 정해 사람이 보지 않은 칸이 있는 것 | 그 칸의 이름 `kind`·`tag`·`flow`·`normal_position`·`fail_position`·`endpoint`·`path`·`add_node`·`add_relation`(빈칸으로 나눔). 배관의 `tag`는 배관 번호 |
 | `Edited` | 사람이 고친 칸이 있는 것 | 그 칸의 이름(`Auto`와 같은 이름) |
 | `TagBasis` | 태그를 추정했거나 자동으로 정한 구성요소 | 추출이 남긴 근거 글(`[추론]`이 든 것만) |
+| `Fail` | 고장 위치가 `FL`인 것 | `FL`. 파일의 고장 시 동작이 `FailRetainPosition`일 때만 씀(DEXPI에 `FL`이 없음) |
 | `Open` | 이미 어긋나 풀리지 않은 칸이 있는 것 | 그 칸의 이름(`kind`·`tag`·`label_text`·`flow_direction`·`line_no`). 다시 내보내도 미확인이 이어짐 |
 | `Echo` | 모두 | 표준 값 지문 |
 

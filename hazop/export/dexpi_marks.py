@@ -34,6 +34,8 @@ def marks(model, entities, pipes, graph):
             mark["Tag"] = n["tag"] or ""
         elif (n["tag"] or None) != dexpi_import._tag_of(item)[0]:  # 표준 자리에 실리지 않은 태그(도면 연결 기호 등): 되읽으면 미확인으로 남는다
             mark["Tag"] = n["tag"] or ""
+        if n["attributes"].get("fail_position") == "FL":
+            mark["Fail"] = "FL"
         if item["group"] == "offpage":
             mark["Line"] = n["attributes"].get("line_no")
         mark.update(_grades(n, unsettled))

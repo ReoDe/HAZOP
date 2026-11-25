@@ -274,6 +274,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 attrs["fail_position"] = dexpi_map.FAIL_ACTION[fa]
             elif fa:
                 attrs["dexpi:FailAction"] = fa
+            if claim.marked and model.origins[iid].get("Fail") == "FL" and attrs.get("fail_position") == "FAI":
+                attrs["fail_position"] = "FL"  # DEXPI에는 FL이 없어 FailRetainPosition(FAI)으로 나갔다
             if controlled[iid]["number"]:
                 attrs["dexpi:ActuatingSystemNumber"] = controlled[iid]["number"]
         if group == "equipment":

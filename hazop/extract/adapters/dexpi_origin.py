@@ -15,7 +15,7 @@ OWN_URI = "urn:hazop:dexpi-export:"  # 이 앱이 낸 파일의 Model uri 앞부
 CLASS = "HazopOrigin"
 TYPE = "/" + CLASS
 TARGET = "Target"
-FIELDS = ("Kind", "Tag", "Text", "Flow", "Basis", "Auto", "Edited", "TagBasis", "Open", "Line", "Echo")
+FIELDS = ("Kind", "Tag", "Text", "Flow", "Basis", "Auto", "Edited", "TagBasis", "Open", "Line", "Fail", "Echo")
 # 출처 등급(§6.9.3): 자동 확정이 정한 칸(Auto)과 이 파일을 낸 프로젝트에서 사람이 고친 칸(Edited)의 이름, 빈칸으로 나눔. 배관의 tag는 배관 번호다
 GRADED = ("kind", "tag", "flow", "normal_position", "fail_position", "endpoint", "path", "add_node", "add_relation", "line_no")
 EDITED_FLOW = "human_elsewhere"  # 다른 프로젝트에서 사람이 정한 흐름의 근거. 이 프로젝트의 사람이 정한 것(human)이 아니다
