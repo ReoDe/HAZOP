@@ -9,7 +9,6 @@ import { Btn } from "./ui/parts.js";
 import * as R from "./panels/results_state.js";
 import { NodeOverlay, useNodeCanvas } from "./canvas/nodes_canvas.js";
 import { CleanOverlay, useCleanCanvas } from "./canvas/clean_ui.js";
-import { SheetConfirm } from "./sheet_confirm.js";
 import { ScanNote } from "./scan_note.js";
 import { CompareCard, ComparePane, useCmp } from "./compare.js";
 import { ExtractLegend, neighborsOf, segmentsOf, sheetFacts, useExtractCheck } from "./canvas/extract_check.js";
@@ -91,5 +90,5 @@ export function SheetHost() {
   }
   if (!Comp) return html`<${Fallback} sheet=${sheet} />`;
   return html`<div class=${"canvas" + (split ? " cmp-side" : "")}><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} ...${cc.props} layers=${layers} onReady=${(g) => store.set({ readySheet: g })} marks=${items} dataRev=${rev}
-    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, kind_label: d.kind_label, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${ExtractLegend} counts=${check.counts} /><${SheetConfirm} /><${ScanNote} sheet=${sheet} /><${ComparePane} /><${CompareCard} /><${ItemBubble} /></div>`;
+    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, kind_label: d.kind_label, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${ExtractLegend} counts=${check.counts} /><${ScanNote} sheet=${sheet} /><${ComparePane} /><${CompareCard} /><${ItemBubble} /></div>`;
 }

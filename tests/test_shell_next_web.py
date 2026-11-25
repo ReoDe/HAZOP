@@ -47,6 +47,7 @@ class QueueCardTest(ShellBase):
 class ReviewFlowTest(ShellBase):
     """도면별 AI 검토 한 바퀴(HZ-DSN-06 G7): 도면 위 'AI 검토 시작' → 확인 창 → 시작 → 끝 알림 → 검토하기 → 그 도면 대기열. 가짜 구독 클라이언트."""
 
+    @unittest.skip("화면 단순화: 표제란·AI 검토 시작·쪽 확정 단추를 화면에서 뺐다. 자동 확정(C2)이 들어올 때 새 흐름으로 다시 쓴다")
     def test_start_on_the_drawing_then_review_the_queue(self):
         from tests.test_ai_review import StubClient
         from tests.test_shell_aireview import FakeAi, kind_answers
@@ -83,6 +84,7 @@ class QueueFocusTest(ShellBase):
         QTest.keyClick(target, getattr(Qt, "Key_" + k), Qt.NoModifier)
         pump(0.3)
 
+    @unittest.skip("화면 단순화: 표제란·AI 검토 시작·쪽 확정 단추를 화면에서 뺐다. 자동 확정(C2)이 들어올 때 새 흐름으로 다시 쓴다")
     def test_e_moves_focus_into_the_field_and_enter_saves_not_reopens(self):
         from hazop.app import data
         from hazop.extract import ai_review as ar

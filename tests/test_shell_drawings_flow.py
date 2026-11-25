@@ -22,6 +22,7 @@ pump, wait_for = W.pump, W.wait_for
 tearDownModule = W.shell_teardown
 
 
+@unittest.skip("화면 단순화: 표제란·AI 검토 시작·쪽 확정 단추를 화면에서 뺐다. 자동 확정(C2)이 들어올 때 새 흐름으로 다시 쓴다")
 class SheetConfirmFlowTest(W.ShellBase):
     def setUp(self):
         self.gid = None
@@ -278,6 +279,7 @@ class AiEstimateFlowTest(W.ShellBase):
 
 
 class TitleblockLinkFlowTest(W.ShellBase):
+    @unittest.skip("화면 단순화: 표제란·AI 검토 시작·쪽 확정 단추를 화면에서 뺐다. 자동 확정(C2)이 들어올 때 새 흐름으로 다시 쓴다")
     def test_a_drawing_row_opens_the_titleblock_panel_for_that_sheet(self):
         win = self.window()
         self.js(win, "window.__hz.store.set({panel: 'drawings'})")

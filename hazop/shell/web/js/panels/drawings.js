@@ -6,9 +6,7 @@ import { cmd, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { SourceConflicts, choicesCount, displacedOf } from "./drawings_sources.js";
-import { focusSheet as openTitleblock } from "./titleblock.js";
 import { DrawingExcludedChip, DrawingPicks } from "./nodes_screen.js";
-import { ReviewChip } from "../review/review.js";      // 도면별 AI 검토 시작(자동 확정이 들어오기 전까지 유일한 길: 별도 커밋에서 뺀다)
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
@@ -86,8 +84,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
               ${many[d.graph_id] ? html`<${Btn} sm=${true} kind="ghost" label=${d.display + " 원본 " + many[d.graph_id] + "개, 고르기 카드로 가기"}
                 title="같은 도면 자리에 원본이 둘 이상 있습니다. 분석에 쓸 원본은 아래 원본 고르기 카드에서 고릅니다." onClick=${toCard}>원본 ${many[d.graph_id]}개<//>` : null}
               <${DrawingExcludedChip} graphId=${d.graph_id} />
-              <${ReviewChip} gid=${d.graph_id} />
-              <${Btn} sm=${true} kind="ghost" label=${d.display + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//></span></div>`)}</div>`}</div>
+              </span></div>`)}</div>`}</div>
       <${SourceConflicts} />
       <${DexpiExport} />
       ${data.documents.length ? html`<div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">등록 자료 ${data.documents.length}건</div><div class="list">
