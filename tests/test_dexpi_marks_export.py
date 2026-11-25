@@ -461,6 +461,19 @@ class ProvenanceTest(unittest.TestCase):
             other = read(x.xml.replace(b"FailRetainPosition", b"FailOpen"))
             self.assertEqual(next(n for n in other["nodes"] if n["tag"] == valve["tag"])["attributes"]["fail_position"], "FO")
 
+    def test_a_signal_line_keeps_its_standing(self):
+        soid = {n["local_id"]: n["source_object_id"] for n in self.pair[0]["nodes"]}
+        for kind in ("measurement_connection", "signal_connection"):
+            rel = next(r for r in self.pair[0]["relations"] if r["kind"] == kind)
+            end = next(e for e in rel["endpoints"] if e["end"] == "target")
+            for by_auto in (True, False):
+                pair = edited(self.pair, ("set_endpoint", rel["source_object_id"], {"end": "target", "node": soid[end["node_local_id"]]}, by_auto))
+                for x, (_ex, g) in self.trips(pair):
+                    got = [e for e in g["edges"] if e["kind"] == kind and (e.get("auto") or e.get("edited_elsewhere"))]
+                    self.assertEqual([(e.get("auto"), e.get("edited_elsewhere"), e["origin"]) for e in got],
+                                     [(["endpoint"], None, "ai_auto") if by_auto else (None, ["endpoint"], "pid_extract")])
+                    self.assertEqual(sorted(set(marks_in(x.xml)) - {e["dexpi_id"] for e in x.sidecar["entities"] + x.sidecar["pipes"]}), [got[0]["source_object_id"]])
+
     def test_what_a_person_sets_afterwards_is_not_automatic(self):
         _x, (ex, g) = next(self.trips(self.automatic()))
         oid = next(n["source_object_id"] for n in ex["nodes"] if n["tag"] == "RC-ZZ99")
