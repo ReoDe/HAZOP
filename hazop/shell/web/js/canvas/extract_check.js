@@ -4,7 +4,7 @@
 // 그리기는 캔버스의 기존 표시(mark) 길을 쓴다. 이 파일은 도면 자료(/api/sheet, /api/clean)에서 무엇을 어떤 색으로 칠할지만 정한다.
 import { html } from "../ui/html.js";
 import { useEffect, useState } from "../../vendor/hooks.module.js";
-import { fetchClean, fetchSheet } from "./sheet.js";
+import { cleanFor, fetchSheet } from "./sheet.js";
 
 export const CHECK_ID = "extract-check";
 /** 범례: 칠하는 말(표시 스타일)과 화면 글. 색은 canvas/marks.js의 STYLE_COLORS가 정한다. */
@@ -49,11 +49,13 @@ function load(gid, rev) {
   for (const k of [...cache.keys()]) if (k.startsWith(gid + "@") && k !== key) cache.delete(k);      // 도면 판이 바뀌면 옛 자료는 버린다
   if (!cache.has(key)) {
     if (cache.size > 6) cache.delete(cache.keys().next().value);
-    cache.set(key, Promise.all([fetchSheet(gid).catch(() => null), fetchClean(gid)]).then(([sheet, clean]) => ({ sheet, clean })));
+    cache.set(key, Promise.all([fetchSheet(gid).catch(() => null), cleanFor(gid, rev)]).then(([sheet, clean]) => ({ sheet, clean })));
   }
   return cache.get(key);
 }
 export const sheetFacts = load;
+/** 그 도면(없으면 전부)의 쌓은 도면·정리 자료를 버린다(고침·다시 추출 뒤 오래된 것을 보이지 않는다). */
+export function dropFacts(gid) { for (const k of [...cache.keys()]) if (gid == null || k.startsWith(gid + "@")) cache.delete(k); }
 
 /** 추출 확인 창용 표시 하나와 개수. on이 거짓이거나 자료를 못 읽으면 표시가 없다. */
 export function useExtractCheck(gid, rev, on, links) {

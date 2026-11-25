@@ -218,7 +218,7 @@ class ResultsPanelTest(W.ShellBase):
         self.assertEqual(self.js(win, "document.querySelectorAll('.vg-cell.on').length"), 0, "고른 칸도 비워진다")
         # 낡은 화면이 보낸 쓰기는 바뀐 프로젝트에 닿지 않는다(웹이 싣는 프로젝트 ID가 새 프로젝트로 바뀌었다)
         self.js(win, "window.__hz.cmd('results.stop', {})")
-        self.assertEqual(self.js(win, "window.__hz.store.get().app.project_id"), "OTHER")
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().app.project_id") == "OTHER", 10), "바뀜 알림은 모아서 오므로 기다린다")
 
     def test_without_nodes_the_panel_points_to_the_node_panel(self):
         for n in list(self.ns["nodes"]):
@@ -316,6 +316,7 @@ class ResultsToSheetTest(W.ShellBase):
         win = self.window()
         self.switch_project(win, "SNP")
         node, _local = self.make_confirmed_node_with_a_recommendation(win)
+        W.pump(0.6)      # 엔진의 바뀜 알림은 모아서(150ms) 웹에 오므로 구간 목록을 다시 읽을 때까지 기다린다
         self.assertTrue(self.click(win, ".rail button", 2))
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.res-matrix .vg-cell').length") or 0) > 0, 15), self.text(win)[-300:])
         self.js(win, "(() => { const e = document.querySelector('.vg-cell[style*=\"top: 0px; left: 0px\"]'); if (e) e.click(); })()")
