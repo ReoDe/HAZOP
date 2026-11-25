@@ -397,6 +397,35 @@ class ProvenanceTest(unittest.TestCase):
             x = export((ex, build.build_graph(ex)))
             self.assertEqual(next(m for m in read(x.xml)["nodes"] if m["tag"] == "RC-SG01")["label_text"], text)
 
+    def connector(self):
+        for r in self.pair[0]["relations"]:
+            for n in self.pair[0]["nodes"]:
+                if n["kind"] == "continuation" and r["line_no"] and n["attributes"].get("line_no") == r["line_no"] \
+                        and n["local_id"] in [e["node_local_id"] for e in r["endpoints"]]:
+                    return r, n
+        raise AssertionError
+
+    def test_a_connector_does_not_confirm_the_automatic_number_of_its_pipe(self):
+        rel, conn = self.connector()
+        for by_auto, want in ((True, "ai_auto"), (False, "pid_extract")):
+            pair = edited(self.pair, ("set_tag", rel["source_object_id"], {"tag": "LINE-9"}, by_auto))
+            for sidecar in (False, True):
+                for _x, (ex, g) in self.trips(pair, sidecar):
+                    got = [c for c in claims.drawing_claims(g) if c["value"] == "LINE-9"]
+                    self.assertEqual({(c["knowledge_status"], c["origin"]) for c in got}, {("hypothesis", want)})
+                    n = next(n for n in ex["nodes"] if n["label_text"] == conn["label_text"])
+                    refused = [u["field"] for u in ex["validation"]["unknowns"] if u["check"] == origin.CHECK]
+                    self.assertEqual((n["attributes"]["line_no"], refused), (rel["line_no"], []) if sidecar else ("LINE-9", ["line_no"]))
+
+    def test_a_tag_on_a_connector_is_not_lost_in_silence(self):
+        _rel, conn = self.connector()
+        pair = edited(self.pair, ("set_tag", conn["source_object_id"], {"tag": "OPC-1"}, False))
+        for sidecar in (False, True):
+            for _x, (ex, _g) in self.trips(pair, sidecar):
+                n = next(n for n in ex["nodes"] if n["label_text"] == conn["label_text"])
+                refused = [u["field"] for u in ex["validation"]["unknowns"] if u["check"] == origin.CHECK]
+                self.assertEqual((n["tag"], refused), ("OPC-1", []) if sidecar else (None, ["tag"]))
+
     def test_what_a_person_sets_afterwards_is_not_automatic(self):
         _x, (ex, g) = next(self.trips(self.automatic()))
         oid = next(n["source_object_id"] for n in ex["nodes"] if n["tag"] == "RC-ZZ99")
