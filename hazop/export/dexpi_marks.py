@@ -1,5 +1,6 @@
 """내보낸 DEXPI에 원래 값 표시를 얹는다(HZ-PLN-22 §6.9). 내보내기(dexpi_export)가 부른다."""
 
+import json
 import xml.etree.ElementTree as ET
 
 from hazop.export import dexpi_xml
@@ -9,13 +10,21 @@ from hazop.extract.adapters import dexpi_import, dexpi_origin as origin, dexpi_r
 def marks_of(export, graph):
     """표시 없이 내보낸 결과와 그 그래프 -> {DEXPI id: {칸: 글자}}."""
     model = dexpi_import.extract_bytes(export.xml, "marks.dexpi.xml")[1]
-    return marks(model, export.sidecar["entities"], export.sidecar["pipes"], {n["entity_id"]: n for n in graph["nodes"]})
+    return marks(model, export.sidecar["entities"], export.sidecar["pipes"], graph)
 
 
-def marks(model, entities, pipes, by_id):
-    """되읽은 Model과 곁 파일의 줄(구성요소·배관), {entity_id: 그래프 노드} -> {DEXPI id: {칸: 글자}}. 지문은 되읽은 표준 값에서 셈한다.
-    자동 확정이 정해 사람이 보지 않은 칸은 Auto에 적는다."""
+def _grades(node, unsettled):
+    g = origin.grades_out(node)
+    return {"Auto": " ".join(g.get("auto", ())) or None, "Edited": " ".join(g.get("edited", ())) or None, "TagBasis": g.get("tag_basis"),
+            "Open": " ".join(x for x in origin.OPEN_FIELDS if (node["entity_id"], x) in unsettled) or None}
+
+
+def marks(model, entities, pipes, graph):
+    """되읽은 Model과 곁 파일의 줄(구성요소·배관), 그래프 -> {DEXPI id: {칸: 글자}}. 지문은 되읽은 표준 값에서 셈한다.
+    값의 출처 등급(자동 확정이 정함, 사람이 고침, 추정한 태그)도 함께 적어 되읽을 때 등급이 올라가지 않게 한다."""
     out, controlled = {}, dexpi_import.controlled_valves(model)
+    by_id = {n["entity_id"]: n for n in graph["nodes"]}
+    unsettled = {(u.get("target"), u.get("field")) for u in graph["validation"]["unknowns"] if u.get("check") == origin.CHECK}
     for row in entities:
         n, item = by_id[row["entity_id"]], model.items.get(row["dexpi_id"])
         if item is None:
@@ -23,7 +32,7 @@ def marks(model, entities, pipes, by_id):
         mark = {"Kind": n["kind"] or None, "Text": n["label_text"], "Echo": origin.node_echo(item, dexpi_import.drive_of(controlled, row["dexpi_id"]))}
         if item["group"] == "instrument":
             mark["Tag"] = n["tag"] or ""
-        mark["Auto"] = " ".join(x for x in ("kind", "tag") if x in (n.get("auto") or ())) or None
+        mark.update(_grades(n, unsettled))
         out[row["dexpi_id"]] = _writable(mark)
     conns = {c["id"]: c for c in model.connections if c["id"]}
     for row in pipes:
@@ -31,38 +40,28 @@ def marks(model, entities, pipes, by_id):
         if conn is None:
             continue
         mark = {"Text": n["label_text"] or None, "Echo": origin.pipe_echo(conn)}
+        mark.update(_grades(n, unsettled))
         fd = n.get("flow_direction")
         if fd:
             mark["Flow"] = origin.OTHER_END[fd["from_end"]] if row["swapped"] else fd["from_end"]
-            mark["Basis"] = fd.get("basis")
-            if "flow" in (n.get("auto") or ()):  # 고침의 근거 이름은 자동이어도 human이다. 사람이 본 것처럼 싣지 않는다
-                mark["Auto"], mark["Basis"] = "flow", "ai_auto"
+            mark["Basis"] = origin.basis_for(fd.get("basis"), origin.grades_out(n))
         out[row["dexpi_id"]] = _writable(mark)
     return out
 
 
-_CELLS = {"kind": ("Kind",), "tag": ("Tag",), "label_text": ("Text",), "flow_direction": ("Flow", "Basis")}
-
-
-def write(xml, model, entities, pipes, by_id):
-    """표시 없는 DEXPI 바이트(와 그것을 되읽은 Model)에 표시를 얹어 (바이트, 되읽은 추출 결과). 되읽을 때 쓰이지 않을 칸(사람이 태그를 바꿔 계측 기능의 조각과 어긋난 것
-    등)은 싣지 않는다."""
-    rows = marks(model, entities, pipes, by_id)
-    out = add(xml, rows)
-    again = dexpi_import.extract_bytes(out, "marks.dexpi.xml")[0]
-    useless = [(u["source_object_id"], u["field"]) for u in again["validation"]["unknowns"] if u["check"] == origin.CHECK]
-    if useless:
-        for oid, field in useless:
-            for cell in _CELLS.get(field, ()):
-                rows.get(oid, {}).pop(cell, None)
-        out = add(xml, rows)
-        again = dexpi_import.extract_bytes(out, "marks.dexpi.xml")[0]
-    return out, again
+def write(xml, model, entities, pipes, graph):
+    """표시 없는 DEXPI 바이트(와 그것을 되읽은 Model)에 표시를 얹어 (바이트, 되읽은 추출 결과). 표준 값과 어긋나 되읽을 때 쓰이지 않을 칸(사람이
+    태그를 바꿔 계측 기능의 조각과 어긋난 것, 흐름을 도면 연결과 반대로 둔 것)도 싣는다. 되읽으면 미확인으로 남아 조용히 바뀌지 않는다."""
+    out = add(xml, marks(model, entities, pipes, graph))
+    return out, dexpi_import.extract_bytes(out, "marks.dexpi.xml")[0]
 
 
 def _writable(mark):
-    """XML에 그대로 실리는 글자만. 되읽으면 달라질 글자(XML 밖 글자, 줄바꿈 CR)가 든 칸은 쓰지 않는다."""
-    return {k: v for k, v in mark.items() if isinstance(v, str) and "\r" not in v and dexpi_xml.clean_text(v) == v}
+    """글자가 있는 칸만. XML에 그대로 실리지 않는 글자(XML 밖 글자, 줄바꿈 CR)가 든 값은 JSON 글자로 적어 잃지 않는다."""
+    def text(v):
+        plain = "\r" not in v and dexpi_xml.clean_text(v) == v and not v.startswith(origin.PACKED)
+        return v if plain else origin.PACKED + json.dumps(v)
+    return {k: text(v) for k, v in mark.items() if isinstance(v, str)}
 
 
 def add(xml, rows):

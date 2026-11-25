@@ -162,7 +162,7 @@ def slice_of(extraction):
 def key_of(piece, ver=None, symbols=None):
     """캐시 열쇠. ver: 화면의 판(sheet_refresh.ver_of), symbols: 기호 그림의 판(주는 쪽이 정하는 값). 둘이 없어도 내용 지문으로 바뀐 것을 안다."""
     data = json.dumps(piece, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    return {"ver": ver, "symbols": symbols, "writer": [WRITER, dexpi_export.EXPORTER_VERSION, dexpi_import.SCRIPT_VERSION, dexpi_import.RULES_VERSION],
+    return {"ver": ver, "symbols": symbols, "writer": [WRITER, dexpi_export.WRITE_MARKS, dexpi_export.EXPORTER_VERSION, dexpi_import.SCRIPT_VERSION, dexpi_import.RULES_VERSION],
             "input_sha256": hashlib.sha256(data).hexdigest()}
 
 

@@ -69,6 +69,7 @@ def drawing_claims(graph):
         src = {"graph_id": gid, "graph_version": gver, "source_object_id": soid}
         auto = {"set_" + p for p in n.get("auto") or []}     # 자동 확정이 정한 값: 사람 값이 아니라 가설(설계 auto-confirm-design.md 5장)
         ops = set(((n.get("human_edit") or {}).get("ops")) or []) - auto
+        elsewhere = {"set_" + p for p in n.get("edited_elsewhere") or []}  # 들여온 DEXPI에서 사람이 고쳤다고 적힌 값: 여기서 확인한 것이 아니다
 
         def meta(edited, status="confirmed", by_auto=False):
             if by_auto:
@@ -81,7 +82,7 @@ def drawing_claims(graph):
             basis = n.get("tag_basis") or ""
             edited = basis == "human" or "set_tag" in ops
             # PDF에서 계통 접두를 추정한 태그: 노드는 그대로 두고 이 주장만 가설(설계안 §3)
-            status = "hypothesis" if INFERRED_MARK in basis else "confirmed"
+            status = "hypothesis" if INFERRED_MARK in basis or "set_tag" in elsewhere else "confirmed"
             out.append(_record(target, tag_prop, None, n["tag"], **meta(edited, status, "set_tag" in auto)))
         for name in sorted(n.get("attributes") or {}):
             value = n["attributes"][name]
@@ -91,7 +92,8 @@ def drawing_claims(graph):
             unit = basis = None
             if spec["type"] == "quantity":
                 value, unit, basis = parse_quantity(value)
-            out.append(_record(target, name, None, str(value), unit, basis, **meta("set_" + name in ops, by_auto="set_" + name in auto)))
+            out.append(_record(target, name, None, str(value), unit, basis, **meta("set_" + name in ops, "hypothesis" if "set_" + name in elsewhere else "confirmed",
+                                                                                            by_auto="set_" + name in auto)))
     return out
 
 

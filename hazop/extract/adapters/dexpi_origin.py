@@ -15,8 +15,10 @@ OWN_URI = "urn:hazop:dexpi-export:"  # 이 앱이 낸 파일의 Model uri 앞부
 CLASS = "HazopOrigin"
 TYPE = "/" + CLASS
 TARGET = "Target"
-FIELDS = ("Kind", "Tag", "Text", "Flow", "Basis", "Auto", "Echo")
-AUTO_NAMES = ("kind", "tag", "flow")  # 사람이 보지 않고 자동 확정이 정한 칸의 이름(Auto 칸, 빈칸으로 나눔)
+FIELDS = ("Kind", "Tag", "Text", "Flow", "Basis", "Auto", "Edited", "TagBasis", "Open", "Echo")
+# 출처 등급(§6.9.3): 자동 확정이 정한 칸(Auto)과 이 파일을 낸 프로젝트에서 사람이 고친 칸(Edited)의 이름, 빈칸으로 나눔. 배관의 tag는 배관 번호다
+GRADED = ("kind", "tag", "flow", "normal_position", "fail_position", "endpoint", "path", "add_node", "add_relation")
+EDITED_FLOW = "human_elsewhere"  # 다른 프로젝트에서 사람이 정한 흐름의 근거. 이 프로젝트의 사람이 정한 것(human)이 아니다
 ECHO_VERSION = "1"  # 지문 셈이 바뀌면 올린다(옛 표시는 지문이 달라 쓰이지 않는다)
 OTHER_END = {"source": "target", "target": "source"}
 UNNAMED_BASIS = "dexpi_origin"  # 근거 이름이 없거나 이름 꼴이 아닐 때
@@ -79,8 +81,32 @@ def _fields(obj):
         if name in out or name not in FIELDS or len(d) != 1 or d[0].tag != "String":
             twice.add(name)
         else:
-            out[name] = d[0].text or ""
+            out[name] = unpack(d[0].text or "")
     return {k: v for k, v in out.items() if k not in twice}
+
+
+PACKED = "json:"  # XML에 그대로 실리지 않는 글자가 든 값은 이 머리 뒤에 JSON 글자로 적는다
+
+
+def unpack(text):
+    if not text.startswith(PACKED):
+        return text
+    try:
+        value = json.loads(text[len(PACKED):])
+    except ValueError:
+        return text
+    return value if isinstance(value, str) else text
+
+
+OPEN_FIELDS = ("kind", "tag", "label_text", "flow_direction")
+
+
+def open_of(mark):
+    """파일을 낸 프로젝트에서 이미 표시와 표준 값이 어긋나 풀리지 않은 칸(Open)."""
+    return [x for x in OPEN_FIELDS if x in (mark.get("Open") or "").split()]
+
+
+WAS_OPEN = "이 파일을 낸 곳에서 원래 값 표시와 표준 값이 어긋나 풀리지 않은 칸"
 
 
 # ---------------------------------------------------------------- 검사
@@ -105,9 +131,61 @@ def claim_node(mark, item, plain, drive):
     return Claim(values, problems, not stale)
 
 
-def auto_of(mark):
-    """표시가 자동으로 정한 값이라고 적은 칸의 이름."""
-    return [x for x in AUTO_NAMES if x in (mark.get("Auto") or "").split()]
+def grades_of(mark):
+    """표시가 적은 등급 {"auto"|"edited": [칸 이름]}(빈 것은 없음). 자동이 사람보다 낮은 등급이라 둘 다면 자동이다."""
+    auto = [x for x in GRADED if x in (mark.get("Auto") or "").split()]
+    edited = [x for x in GRADED if x in (mark.get("Edited") or "").split() and x not in auto]
+    return {k: v for k, v in (("auto", auto), ("edited", edited)) if v}
+
+
+def without(grades, names):
+    out = {k: [x for x in v if x not in names] for k, v in grades.items()}
+    return {k: v for k, v in out.items() if v}
+
+
+def basis_for(basis, grades):
+    """파일에 싣거나 파일에서 되살리는 흐름의 근거. 자동으로 정한 것과 다른 프로젝트의 사람이 정한 것은 이 프로젝트의 사람(human)이 아니다."""
+    if "flow" in grades.get("auto", ()) or basis == "ai_auto":
+        return "ai_auto"
+    return EDITED_FLOW if "flow" in grades.get("edited", ()) else basis
+
+
+def _names(item):
+    """이 프로젝트에서 사람이나 자동 확정이 정한 칸의 이름(연산 이름에서 set_를 뺀 것)."""
+    return {o[len("set_"):] if o.startswith("set_") else o for o in (item.get("human_edit") or {}).get("ops") or ()}
+
+
+def grades_out(node):
+    """그래프 노드(구성요소·배관)의 등급 {"auto"|"edited": [칸 이름]}과, 추정한 태그면 "tag_basis". 파일에 싣는 값이다."""
+    ops = _names(node)
+    auto = set(node.get("auto") or ())
+    edited = (ops | set(node.get("edited_elsewhere") or ())) - auto
+    basis = node.get("tag_basis") or ""
+    if basis == "human":
+        edited.add("tag")
+    flow = (node.get("flow_direction") or {}).get("basis")
+    auto |= {"flow"} if flow == "ai_auto" else set()
+    edited |= {"flow"} if flow in ("human", EDITED_FLOW) and "flow" not in auto else set()
+    out = {k: [x for x in GRADED if x in v] for k, v in (("auto", auto), ("edited", edited))}
+    out = {k: v for k, v in out.items() if v}
+    return dict(out, tag_basis=basis) if INFERRED in basis else out
+
+
+def grades_in(item):
+    """추출 노드·관계 -> 그래프 노드에 둘 {"auto", "edited_elsewhere"}. 들여온 뒤 여기서 다시 정한 칸은 뺀다."""
+    grades = without((item.get("evidence") or {}).get("dexpi_origin") or {}, _names(item))
+    return {k: v for k, v in (("auto", grades.get("auto")), ("edited_elsewhere", grades.get("edited"))) if v}
+
+
+INFERRED = "[추론]"
+
+
+def tag_basis_of(mark):
+    """표시가 추정했거나 자동으로 정한 태그라고 적었으면 그 근거, 아니면 None. 확정이라고 적은 것은 보지 않는다."""
+    basis = mark.get("TagBasis") or ""
+    if basis.startswith("ai_auto"):
+        return "ai_auto"
+    return None if INFERRED not in basis else basis if len(basis) <= 200 else INFERRED
 
 
 def _why_kind(kind, item, drive):

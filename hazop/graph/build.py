@@ -30,6 +30,7 @@ import json
 import math
 
 from hazop.extract import ids, isa
+from hazop.extract.adapters import dexpi_origin
 from hazop.graph import old_names, sheets
 
 SCHEMA_VERSION = "0.1"
@@ -83,6 +84,14 @@ def _origin(rec):
 def node_origin(n):
     """그래프 노드·엣지의 생성 주체. origin이 없는 옛 graph.json은 수정 표시 유무로 정한다."""
     return n.get("origin") or ("human_edit" if n.get("human_edit") else "pid_extract")
+
+
+def _with_grades(node, rec):
+    """들여온 DEXPI가 적은 출처 등급(자동으로 정함, 다른 프로젝트에서 사람이 고침)을 잇는다. 없으면 칸을 두지 않는다."""
+    for key, names in dexpi_origin.grades_in(rec).items():
+        node[key] = list(dict.fromkeys(list(node.get(key) or ()) + names))
+        if key == "auto" and node["origin"] == "pid_extract":
+            node["origin"] = "ai_auto"
 
 
 def _graph_version(extraction):
@@ -144,6 +153,7 @@ def build_graph(extraction, extraction_file=None, graph_id=None):
             "position": _center(loc["bbox"]) if loc else None,
             **_origin(n), **old_names.carried(n),
         })
+        _with_grades(nodes[-1], n)
         if n["category"] == "instrument":  # 태그에서 읽은 측정변수·기능 문자·루프 번호(못 읽으면 None). tag는 그대로
             nodes[-1]["isa"] = isa.parse_tag(n["tag"])
         basis = (n.get("evidence") or {}).get("tag_basis")
@@ -183,13 +193,15 @@ def build_graph(extraction, extraction_file=None, graph_id=None):
                 "position": _polyline_midpoint(pts),
                 **_origin(r), **old_names.carried(r),
             })
+            _with_grades(nodes[-1], r)
+            origin = nodes[-1]["origin"]
             mapping.append({"extraction_run_id": run_id, "local_id": r["local_id"], "entity_id": sid})
             for ep, ne in zip(ends, end_entities):
                 rel_no += 1
                 edges.append({"entity_id": "relation-%03d" % rel_no, "kind": "has_endpoint",
                               "nodes": [sid, ne], "segment": sid, "node": ne, "end": ep["end"],
                               "constraint": ep["constraint"], "port": ep.get("port"), "local_id": r["local_id"],
-                              "source_object_id": r["source_object_id"], "origin": _origin(r)["origin"]})
+                              "source_object_id": r["source_object_id"], "origin": origin})
             if flow is None:
                 unknowns.append({"check": "unknown_flow_direction", "target": sid, "field": "flow_direction",
                                  "reason": "흐름 방향 미확인(원본에 지정 없음)"})

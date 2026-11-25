@@ -765,10 +765,15 @@ class _Builder:
 
     def _mark(self, xml, model, plain, entities, flows, problems):
         """검사를 통과한 파일에 원래 값 표시를 얹고 다시 검사한다(§6.5-6) -> (바이트, 되읽은 추출 결과)."""
-        xml, again = dexpi_marks.write(xml, model, entities, flows, {n["entity_id"]: n for n in self.g["nodes"]})
+        xml, again = dexpi_marks.write(xml, model, entities, flows, self.g)
         root = dexpi_read.parse_safely(xml)
         problems += [("표시", x) for x in dexpi_read.check_structure(root, definitions=True) + dexpi_read.check_references(root)]
-        problems += [("표시", u["reason"]) for u in again["validation"]["unknowns"] if u["check"] == dexpi_origin.CHECK]
+        entity_of = {x["dexpi_id"]: x["entity_id"] for x in entities + flows}
+        for u in again["validation"]["unknowns"]:
+            if u["check"] == dexpi_origin.CHECK and u.get("field"):  # 표준 값과 어긋나 되읽을 때 쓰이지 않을 칸
+                self.approx.append({"entity_id": entity_of.get(u["source_object_id"]), "reason": "origin_mark_not_accepted", "field": u["field"]})
+            elif u["check"] == dexpi_origin.CHECK:
+                problems.append(("표시", u["reason"]))
         for key in ("nodes", "relations", "unresolved_connectors"):
             if [(x["local_id"], x["source_object_id"], x.get("geometry")) for x in again[key]] != \
                     [(x["local_id"], x["source_object_id"], x.get("geometry")) for x in plain[key]]:
@@ -810,13 +815,13 @@ class _Builder:
             n = self.nodes[eid]
             entities.append({"dexpi_id": p["id"], "dexpi_class": p["cls"], "entity_id": eid, "local_id": n["local_id"],
                              "kind": n["kind"], "tag": n["tag"], "origin": n["origin"], "human_edit": n.get("human_edit"),
-                             "auto": list(n.get("auto") or []), "attributes": n["attributes"]})
+                             "auto": list(n.get("auto") or []), "attributes": n["attributes"], **_grade(n)})
         flows = []
         for pipe in pipes:
             seg = pipe["seg"]
             flows.append({"dexpi_id": pipe["id"], "entity_id": seg["entity_id"], "local_id": seg["local_id"],
                           "line_no": seg.get("line_no"), "swapped": pipe["swapped"], "flow_direction": seg.get("flow_direction"),
-                          "auto": list(seg.get("auto") or []), "attributes": seg.get("attributes")})
+                          "auto": list(seg.get("auto") or []), "attributes": seg.get("attributes"), **_grade(seg)})
         if WRITE_MARKS and not problems:
             xml, re_ex = self._mark(xml, model, re_ex, entities, flows, problems)
         sha = hashlib.sha256(xml).hexdigest()
@@ -854,6 +859,12 @@ class _Builder:
                  "in_file": {"nodes": [p["id"] for p in self.plan.values()],
                              "relations": [x["id"] for x in pipes] + [oid for _e, oid, _a, _b in self.signals]}}
         return Export(self.name, xml, excluded, sidecar, stats, drawn)
+
+
+def _grade(n):
+    """값의 출처 등급(dexpi_origin.grades_out). 파일에서 읽은 값뿐이면 칸이 없다."""
+    grade = dexpi_origin.grades_out(n)
+    return {"grade": grade} if grade else {}
 
 
 _PREFIX = {"equipment": "Equipment", "piping": "Piping", "offpage": "OffPage", "instrument": "ProcessInstrumentationFunction"}

@@ -253,7 +253,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
             extra_unknown = []
         if "tag" in claim.values:
             tag_basis = "원래 값 표시"
-        extra_unknown += [(dexpi_origin.CHECK, why, field) for field, why in claim.problems]
+        refusals = claim.problems + [(f, dexpi_origin.WAS_OPEN) for f in dexpi_origin.open_of(model.origins.get(iid, {})) if f not in dict(claim.problems)]
+        extra_unknown += [(dexpi_origin.CHECK, why, field) for field, why in refusals]
         classification = "classified" if kind is not None else "unclassified"
         if kind is not None and rules.KIND_CATEGORY.get(kind):
             category = rules.KIND_CATEGORY[kind]
@@ -314,11 +315,12 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 attrs["direction"] = "FROM"
         evidence = {"dexpi": {"type": cls, "id": iid if item.get("has_id", True) else None,
                               "xml": item["xml"], "xml_cut": bool(item.get("xml_cut"))}}
-        auto = dexpi_origin.auto_of(model.origins[iid]) if claim.marked else []
-        if auto:
-            evidence["dexpi_origin"] = {"auto": auto}
-        if tag and "tag" in auto:  # 사람이 보지 않은 태그(corrections의 자동 확정과 같은 뜻). ③ 자동 연결이 추정 태그로 다룬다
-            tag_basis = "ai_auto"
+        refused = {field for field, _why in claim.problems}  # 버린 값의 등급은 지금 값의 등급이 아니다
+        grades = dexpi_origin.without(dexpi_origin.grades_of(model.origins.get(iid, {})), refused)
+        if grades:  # 등급은 낮추기만 하므로 지문이 낡은 표시의 것도 본다
+            evidence["dexpi_origin"] = grades
+        if tag and "tag" not in refused:
+            tag_basis = dexpi_origin.tag_basis_of(model.origins.get(iid, {})) or tag_basis
         if tag_basis and tag_basis != "TagName":
             evidence["tag_basis"] = tag_basis
         node = {"local_id": local, "source_object_id": iid, "classification": classification, "category": category,
@@ -465,9 +467,13 @@ def build(model, source, registration=None, page=0, repo_root=None):
         rec = add_relation("physical_connection", "process", c_id, (c["source"], c["source_node"]),
                            (c["target"], c["target_node"]), attrs, flow_dict, path, model.path_nodes.get(c_id, (None, None)), made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
         rec["label_text"] = claim.values.get("label_text", "")
+        grades = dexpi_origin.without(dexpi_origin.grades_of(model.origins.get(c["id"], {})), {"flow"} if "flow_direction" in dict(claim.problems) else ())
+        if grades:
+            rec["evidence"] = {"dexpi_origin": grades}
         if plain_flow is None and flow_dict is not None:
             rec[dexpi_origin.PLAIN] = {"flow_direction": None}
-        for field, why in claim.problems:
+        was_open = [(f, dexpi_origin.WAS_OPEN) for f in dexpi_origin.open_of(model.origins.get(c["id"], {})) if f not in dict(claim.problems)]
+        for field, why in claim.problems + was_open:
             _issue(unknowns, dexpi_origin.CHECK, why, c_id, rec["local_id"], field)
         for end, key in (("source", "source_node_no"), ("target", "target_node_no")):
             if c.get(key):
@@ -705,6 +711,14 @@ def extract_bytes(data, file_label, registration=None, page=0, repo_root=None, s
     return result, model
 
 
+def _put_grade(item, grade):
+    """곁 파일이 적은 등급을 노드·관계에 남긴다. 등급 칸이 없는 옛 곁 파일이면 아무것도 하지 않는다."""
+    grade = {k: [x for x in dexpi_origin.GRADED if x in (grade.get(k) or ())] for k in ("auto", "edited")} if isinstance(grade, dict) else {}
+    grade = {k: v for k, v in grade.items() if v}
+    if grade:
+        item.setdefault("evidence", {})["dexpi_origin"] = grade
+
+
 def apply_sidecar(extraction, sidecar, dexpi_sha256):
     """같은 앱이 내보낸 곁 파일(`<도면>.hazop.json`)로 DEXPI에 자리가 없던 정보를 되붙인다(§6.3·§7.3): 원래 kind(근사 대응), 원래 태그(계기 태그는
     DEXPI의 조각만으로 되돌릴 수 없다), DEXPI에 없던 속성, 흐름 방향, 체크밸브 허용 방향, 원래 출처(entity_id·origin·수정 표시). 곁 파일이 이 DEXPI 파일의 것이 아니거나
@@ -733,6 +747,12 @@ def apply_sidecar(extraction, sidecar, dexpi_sha256):
                    node["local_id"], "tag")
         elif "tag" in ent:
             out["restored_tags"] += _restore_tag(node, ent["tag"], unknowns)
+        _put_grade(node, ent.get("grade"))
+        basis = dexpi_origin.tag_basis_of({"TagBasis": (ent.get("grade") or {}).get("tag_basis")})
+        if basis and (ent.get("tag") or None) == node["tag"]:
+            node.setdefault("evidence", {})["tag_basis"] = basis
+        settled = {f for f in ("kind", "tag") if (ent.get(f) or None) == node[f]}  # 표시로는 받지 못한 값을 곁 파일이 되돌렸다
+        unknowns[:] = [u for u in unknowns if not (u["check"] == dexpi_origin.CHECK and u.get("target") == node["local_id"] and u.get("field") in settled)]
         restored = []
         if (ent.get("attributes") or {}).get("fail_position") == "FL" and node["attributes"].get("fail_position") == "FAI":
             node["attributes"]["fail_position"] = "FL"  # DEXPI에는 FL이 없어 FailRetainPosition(FAI)으로 나갔다
@@ -758,13 +778,16 @@ def apply_sidecar(extraction, sidecar, dexpi_sha256):
             continue
         pipe_of_entity[pipe["entity_id"]] = rel["local_id"]
         fd = pipe.get("flow_direction")
-        if fd and rel["flow_direction"] is None and fd.get("from") in local_of_entity and fd.get("to") in local_of_entity:
+        _put_grade(rel, pipe.get("grade"))
+        refused = [u for u in unknowns if u["check"] == dexpi_origin.CHECK and u.get("target") == rel["local_id"] and u.get("field") == "flow_direction"]
+        if fd and (rel["flow_direction"] is None or refused) and fd.get("from") in local_of_entity and fd.get("to") in local_of_entity:
             a, b = local_of_entity[fd["from"]], local_of_entity[fd["to"]]
             ends = [e["node_local_id"] for e in rel["endpoints"]]
             if a in ends and b in ends and a != b:
                 rel["flow_direction"] = {"from": a, "to": b, "from_end": "source" if ends[0] == a else "target",
-                                         "to_end": "source" if ends[0] == b else "target", "basis": fd.get("basis")}
-                unknowns[:] = [u for u in unknowns if not (u["check"] == "unknown_flow_direction" and u.get("target") == rel["local_id"])]
+                                         "to_end": "source" if ends[0] == b else "target",
+                                         "basis": dexpi_origin.basis_for(fd.get("basis"), (pipe.get("grade") or {}))}
+                unknowns[:] = [u for u in unknowns if u not in refused and not (u["check"] == "unknown_flow_direction" and u.get("target") == rel["local_id"])]
                 out["restored_flows"] += 1
     for dexpi_id, cd in (sidecar.get("check_directions") or {}).items():
         node = node_by_id.get(dexpi_id)
