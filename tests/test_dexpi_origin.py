@@ -414,14 +414,13 @@ class RefusedTest(unittest.TestCase):
 
 class WriteTest(unittest.TestCase):
 
-    def test_text_that_would_not_come_back_is_not_written(self):
+    def test_text_that_xml_cannot_hold_is_packed(self):
         s = sheet()
         g = copy.deepcopy(s.g)
         oid, n = next((o, n) for o, n in s.want.items() if n["kind"] == "pump")
         next(x for x in g["nodes"] if x["entity_id"] == n["entity_id"])["label_text"] = "A\x07B"
         marks = dexpi_marks.marks_of(s.export, g)
-        self.assertNotIn("Text", marks[oid])
-        self.assertIn("Kind", marks[oid])
+        self.assertEqual((marks[oid]["Text"], origin.unpack(marks[oid]["Text"])), ('json:"A\\u0007B"', "A\x07B"))
 
     def test_the_same_input_gives_the_same_bytes(self):
         s = sheet()

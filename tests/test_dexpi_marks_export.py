@@ -372,6 +372,31 @@ class ProvenanceTest(unittest.TestCase):
                 self.assertEqual((pump[key], pump["origin"], len(pipes), pipes[0]["origin"]), (["add_node"], origin_, 1, origin_))
                 self.assertEqual({e["origin"] for e in g["edges"] if e.get("segment") == pipes[0]["entity_id"]}, {origin_})
 
+    def test_a_value_the_file_could_not_hold_stays_open(self):
+        """첫 되읽기에서 남은 미확인이 다시 내보내도 사라지지 않고, 사람이 확인하면 사라진다."""
+        pair = edited(dexpi_pair("small-pid-dexpi2.xml"), ("set_tag", "PIF1", {"tag": "XX-999"}, False))
+        seen = []
+        for _x, pair in self.trips(pair):
+            seen.append([(u["source_object_id"], u["field"]) for u in pair[0]["validation"]["unknowns"] if u["check"] == origin.CHECK])
+        self.assertEqual(seen, [[("PIF1", "tag")]] * 3)
+        u = next(u for u in pair[0]["validation"]["unknowns"] if u["check"] == origin.CHECK)
+        done = edited(pair, ("confirm", "PIF1", {"items": [{"check": u["check"], "reason": u["reason"]}]}, False))
+        _x, after = next(self.trips(done))
+        self.assertEqual([u for u in after[0]["validation"]["unknowns"] if u["check"] == origin.CHECK], [])
+        rel = next(r for r in self.pair[0]["relations"] if r["flow_direction"] and any(n["kind"] == "continuation" for n in self.pair[0]["nodes"]
+                   if n["local_id"] in (r["flow_direction"]["from"], r["flow_direction"]["to"])))
+        so, fd = {n["local_id"]: n["source_object_id"] for n in self.pair[0]["nodes"]}, rel["flow_direction"]
+        pair = edited(self.pair, ("set_flow", rel["source_object_id"], {"from": so[fd["to"]], "to": so[fd["from"]]}, False))
+        self.assertEqual([[u["field"] for u in p[0]["validation"]["unknowns"] if u["check"] == origin.CHECK] for _x, p in self.trips(pair)], [["flow_direction"]] * 3)
+
+    def test_any_text_comes_back_as_it_was(self):
+        for text in ("A\x0bB", "A\r\nB", "A\ufffeB", "\x00", "json:\"x\"", "A\nB", "  A ", "<&>]]>", "A\u0085B", "A\U0001F600", "A\ud800B"):
+            ex = copy.deepcopy(self.pair[0])
+            n = next(n for n in ex["nodes"] if n["tag"] == "RC-SG01")
+            n["label_text"] = text
+            x = export((ex, build.build_graph(ex)))
+            self.assertEqual(next(m for m in read(x.xml)["nodes"] if m["tag"] == "RC-SG01")["label_text"], text)
+
     def test_what_a_person_sets_afterwards_is_not_automatic(self):
         _x, (ex, g) = next(self.trips(self.automatic()))
         oid = next(n["source_object_id"] for n in ex["nodes"] if n["tag"] == "RC-ZZ99")
