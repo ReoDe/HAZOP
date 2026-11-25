@@ -116,6 +116,11 @@ class ReadBoxTest(unittest.TestCase):
     def test_round_shapes_count_their_radius(self):
         self.assertEqual(box(pump(with_pump(usage(), ellipse(1, 0, 7.5, 2.5)))), [53.5, 117.5, 15.0, 5.0])
 
+    def test_an_arc_counts_only_the_part_that_is_drawn(self):
+        arc = ellipse(0, 0, 4, 4).replace("Ellipse", "EllipseArc").replace(
+            "</Object>", '<Data property="StartAngle"><Double>270.0</Double></Data><Data property="EndAngle"><Double>90.0</Double></Data></Object>')
+        self.assertEqual(box(pump(with_pump(usage(), arc))), [60.0, 116.0, 4.0, 8.0])
+
     def test_a_symbol_drawn_as_one_stroke_is_as_thick_as_the_stroke(self):
         self.assertEqual(box(pump(with_pump(usage(rot=270.0), polyline((0, -2), (0, 2), stroke=0.4)))), [58.0, 119.8, 4.0, 0.4])
 
@@ -213,7 +218,7 @@ class PublicPictureTest(unittest.TestCase):
             ex = dexpi_import.extract_bytes(fh.read(), "reference_pid.xml")[0]
         self.assertEqual((len(ex["nodes"]), sum(1 for n in ex["nodes"] if n["geometry"])), (30, 30))
         tank = next(n for n in ex["nodes"] if n["source_object_id"] == "Tank1")
-        self.assertEqual(box(tank), [179.0, 77.75, 30.0, 42.5])
+        self.assertEqual(box(tank), [179.0, 73.5, 30.0, 51.0])  # 접시형 머리의 호까지
         psv = next(n for n in ex["nodes"] if n["kind"] == "psv")
         self.assertEqual(box(psv), [267.0, 89.0, 3.0, 7.0])  # 뒤집힌 각형 안전밸브: 출구가 왼쪽
         self.assertEqual(len([i for i in sheet_items.build_items(ex)["items"] if i["layer"] == "symbol"]), 30)

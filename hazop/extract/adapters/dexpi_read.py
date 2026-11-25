@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 from xml.parsers import expat
 
 from hazop.extract import dexpi_map, ids
+from hazop.extract.adapters import dexpi_shape
 
 MAX_BYTES = 100 * 1024 * 1024
 MAX_ELEMENTS = 3_000_000
@@ -145,7 +146,8 @@ class Model:
         self.nozzles = {}  # id -> {id, cls, parent, port, attrs, nodes, xml}
         self.node_owner = {}  # 노드 id -> (항목 id, 순번)
         self.node_index = {}  # (항목 id, 순번) -> 노드 id (Proteus FromNode·ToNode를 상수 시간에 풀려고)
-        self.conn_paths = {}  # 2.0 연결 id -> 그림의 실제 경로 [(x, y)…] (ConnectorLine: 시작·안쪽 점·끝)
+        self.conn_paths = {}  # 2.0 연결·신호 흐름 id -> 그림의 실제 경로 [(x, y)…] (ConnectorLine: 시작·안쪽 점·끝)
+        self.shapes = {}  # 2.0 항목 id -> 놓인 기호 [{name, box(x, y, 너비, 높이), size(회전 전), rotation, mirrored}]
         self.segment_paths = {}  # Proteus 구간 id -> 구간의 CenterLine 목록 [[(x, y)…], …](각각 FromID에서 ToID 쪽 순서로 본다)
         self.not_imported = {}  # 그래프에 자리가 없어 옮기지 않은 요소의 종류 -> 개수(HZ-PLN-22 §3.6·§5.5)
         self.connections = []  # {id, cls, source, source_node, target, target_node, segment, system}
@@ -511,7 +513,7 @@ def _read_diagram(m, root, objects):
     for diag in _iter_objects(root):
         if (diag.get("type") or "") != "Core/Diagram.Diagram":
             continue
-        _walk_groups(m, diag, objects, None)
+        _walk_groups(m, diag, objects, None, {})
         border = [o for o in diag.iter("Object") if (o.get("type") or "") == "Core/Diagram.Border"]
         if border:
             xs, ys = [], []
@@ -537,6 +539,70 @@ def _read_diagram(m, root, objects):
                 item["position"] = (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
 
 
+def _prop(obj, name):
+    return next((_data_value(d) for d in obj.findall("Data") if d.get("property") == name), None)
+
+
+def _number(obj, name, default):
+    """숫자 속성. 적혀 있지 않으면 default, 적혀 있는데 수가 아니면 nan(놓을 수 없는 기호가 된다)."""
+    text = _prop(obj, name)
+    if text is None:
+        return default
+    v = _float(text)
+    return math.nan if v is None else v
+
+
+def _primitive_points(el):
+    """모양을 이루는 도형 하나가 차지하는 점들(꺾은선의 점, 타원과 타원호의 끝·가장 먼 점)."""
+    pts = [(v.get("X"), v.get("Y")) for d in el.findall("Data") if d.get("property") == "Points"
+           for a in d.findall("AggregatedDataValue") for v in [{x.get("property"): _float(_data_value(x)) for x in a.findall("Data")}]]
+    center, a, b = _data_point(el, "Center"), _float(_prop(el, "HorizontalSemiAxis")), _float(_prop(el, "VerticalSemiAxis"))
+    if center is not None and a is not None and b is not None:
+        pts += dexpi_shape.ellipse_points(center, a, b, _number(el, "Rotation", 0.0), _number(el, "StartAngle", 0.0),
+                                          _number(el, "EndAngle", 360.0))
+    return [p for p in pts if None not in p]
+
+
+def _stroke_width(el):
+    for d in el.findall("Data"):
+        if d.get("property") == "Stroke":
+            for a in d.findall("AggregatedDataValue"):
+                return _float(next((_data_value(x) for x in a.findall("Data") if x.get("property") == "Width"), None)) or 0.0
+    return 0.0
+
+
+def _shape_bounds(shape):
+    """Shape -> dexpi_shape.Bounds. 점을 읽을 수 있는 도형이 없으면 None."""
+    pts, stroke = [], 0.0
+    for el in _children(shape, "Primitives"):
+        got = _primitive_points(el)
+        pts += got
+        stroke = max(stroke, _stroke_width(el)) if got else stroke
+    if not pts:
+        return None
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return dexpi_shape.Bounds(min(xs), min(ys), max(xs), max(ys), stroke)
+
+
+def _placed_shape(usage, objects, cache):
+    """ShapeUsage -> {name, box, size, rotation, mirrored}. 모양이나 놓임을 알 수 없으면 None."""
+    shape_id, pos = (_refs(usage, "Shape") or [None])[0], _data_point(usage)
+    shape = objects.get(shape_id)
+    if shape is None or pos is None or shape.get("type") != "Core/Diagram.Shape":
+        return None
+    if shape_id not in cache:
+        cache[shape_id] = _shape_bounds(shape)
+    bounds = cache[shape_id]
+    mirrored = (_prop(usage, "IsMirrored") or "").lower() in ("true", "1")
+    p = dexpi_shape.Placement(pos[0], pos[1], _number(usage, "ScaleX", 1.0), _number(usage, "ScaleY", 1.0),
+                              _number(usage, "Rotation", 0.0), mirrored)
+    box = dexpi_shape.placed(bounds, p) if bounds is not None else None
+    if box is None:
+        return None
+    return {"name": _prop(shape, "Name"), "box": box, "size": dexpi_shape.local_size(bounds, p), "rotation": p.rotation % 360.0,
+            "mirrored": mirrored}
+
+
 def _connector_path(m, line, pos_of):
     """ConnectorLine -> [시작 위치, 안쪽 점…, 끝 위치]. 시작·끝 위치를 모르면 None."""
     src, dst = (_refs(line, "Source") or [None])[0], (_refs(line, "Target") or [None])[0]
@@ -553,8 +619,11 @@ def _connector_path(m, line, pos_of):
     return [a] + inner + [b]
 
 
-def _walk_groups(m, group, objects, represents):
-    """표현 묶음(RepresentationGroup)을 따라 내려가며 Represents 대상의 모양 위치와 화살표를 모은다."""
+_SYMBOL_GROUPS = ("Core/Diagram.RepresentationGroup", "Core/Diagram.Static")  # 이 묶음의 기호만 구성요소 자신의 것이다(글자표·화살표 묶음은 아님)
+
+
+def _walk_groups(m, group, objects, represents, cache):
+    """표현 묶음(RepresentationGroup)을 따라 내려가며 Represents 대상의 기호(자리·상자·방향), 선, 화살표를 모은다."""
     rep = _refs(group, "Represents")
     current = rep[0] if rep else represents
     for el in group.findall("Components"):
@@ -562,6 +631,10 @@ def _walk_groups(m, group, objects, represents):
             t = child.get("type") or ""
             if t == "Core/Diagram.ShapeUsage" and current in m.items and m.items[current]["position"] is None:
                 m.items[current]["position"] = _data_point(child)
+            if t == "Core/Diagram.ShapeUsage" and current in m.items and group.get("type") in _SYMBOL_GROUPS:
+                placed = _placed_shape(child, objects, cache)
+                if placed is not None:
+                    m.shapes.setdefault(current, []).append(placed)
             if t == "Core/Diagram.ConnectorLine" and current is not None and current not in m.conn_paths:
                 path = _connector_path(m, child, m.pos_objects)
                 if path is not None:
@@ -579,7 +652,7 @@ def _walk_groups(m, group, objects, represents):
                         if pos is not None and direction is not None:
                             m.arrows.append({"segment": current, "position": pos, "direction": direction})
                         break
-            _walk_groups(m, child, objects, current)
+            _walk_groups(m, child, objects, current, cache)
 
 
 # ---------------------------------------------------------------- Proteus XML 1.x

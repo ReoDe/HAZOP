@@ -112,6 +112,28 @@ def _bbox(points):
     return [_clean(min(xs)), _clean(min(ys)), _clean(max(xs) - min(xs)), _clean(max(ys) - min(ys))]
 
 
+def _geometry(shapes):
+    """놓인 기호들 -> 노드의 geometry {x, y, width, height, shape}. 여럿이면 모두를 감싼 상자이고 shape(모양 이름, 돌리기 전 크기, 시계
+    방향 회전, 좌우 뒤집힘)는 기호가 하나일 때만 있다. 기호를 읽지 못했으면 None."""
+    if not shapes:
+        return None
+    x0, y0 = min(s["box"][0] for s in shapes), min(s["box"][1] for s in shapes)
+    x1, y1 = max(s["box"][0] + s["box"][2] for s in shapes), max(s["box"][1] + s["box"][3] for s in shapes)
+    out = {"x": _clean(x0), "y": _clean(y0), "width": _clean(x1 - x0), "height": _clean(y1 - y0)}
+    if len(shapes) == 1:
+        s = shapes[0]
+        out["shape"] = {"name": s["name"], "width": _clean(s["size"][0]), "height": _clean(s["size"][1]), "rotation": _clean(s["rotation"]),
+                        "mirrored": s["mirrored"]}
+    return out
+
+
+def _along(path, start, end):
+    """그림의 선을 관계의 source -> target 차례로. 선은 거꾸로 그려져 있을 수 있어 두 끝의 자리(start·end)와 더 가까운 쪽을 고른다."""
+    def gap(p):
+        return sum(math.dist(a, b) for a, b in ((p[0], start), (p[-1], end)) if b is not None)
+    return path[::-1] if gap(path[::-1]) < gap(path) else path
+
+
 def _points_of(model, item):
     pts = [model.node_pos[n] for n in item.get("nodes", []) if n in model.node_pos]
     for nz in item.get("nozzles", []):
@@ -261,7 +283,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
         node = {"local_id": local, "source_object_id": iid, "classification": classification, "category": category,
                 "kind": kind, "tag": tag, "label": tag or "", "label_text": tag or "", "label_location": None,
                 "attributes": {k: v for k, v in attrs.items() if v is not None}, "style": "", "parent": None,
-                "geometry": None, "evidence": evidence}
+                "geometry": _geometry(model.shapes.get(iid)), "evidence": evidence}
         if kind == "check_valve":
             node["check_direction"] = None
             _issue(unknowns, "unknown_check_valve_direction", "DEXPI에 체크밸브 허용 방향이 없음", iid, local, "flow_direction")
@@ -323,16 +345,18 @@ def build(model, source, registration=None, page=0, repo_root=None):
             out["dexpi:system"] = seg["system"]
         return out
 
-    def add_relation(kind, line_type, c_id, src, dst, extra_attrs, flow=None, waypoints=None, made=False):
+    def add_relation(kind, line_type, c_id, src, dst, extra_attrs, flow=None, path=None, made=False):
         nonlocal rel_no
         rel_no += 1
         lid = _local_id(c_id, used)
         ends, ok = [], True
-        for end, (item_id, node_id) in (("source", src), ("target", dst)):
+        places = [endpoint_point(*src), endpoint_point(*dst)]
+        drawn = [[_clean(x), _clean(y)] for x, y in _along(path, *places)] if path else None
+        for n, (end, (item_id, node_id)) in enumerate((("source", src), ("target", dst))):
             local, port, status, why = resolve(item_id, node_id)
+            basis = "dexpi_node" if node_id in model.node_pos else "dexpi_line" if drawn else "dexpi_item_position" if item_id else None
             ep = {"end": end, "node_local_id": local, "source_object_id": item_id, "constraint": None,
-                  "point": endpoint_point(item_id, node_id), "point_basis": "dexpi_node" if node_id in model.node_pos
-                  else ("dexpi_item_position" if item_id else None), "status": status, "port": port}
+                  "point": drawn[-n] if drawn else places[n], "point_basis": basis, "status": status, "port": port}
             if status != "connected":
                 ok = False
                 _issue(unknowns, "unconnected_endpoint", "%s %s" % (end, why), c_id, lid, end)
@@ -340,7 +364,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
         attrs = dict(extra_attrs)
         rec = {"local_id": lid, "source_object_id": c_id, "kind": kind, "line_type": line_type,
                "line_no": attrs.get("line_no"), "endpoints": ends, "flow_direction": None if not ok else flow,
-               "waypoints": waypoints or [], "label": "", "label_text": "", "label_cells": [], "attributes": attrs,
+               "waypoints": drawn[1:-1] if drawn else [], "label": "", "label_text": "", "label_cells": [], "attributes": attrs,
                "style": "", "parent": None, "geometry": None}
         if made:  # 파일에 있던 id가 아니라 가져오기가 지은 id(문서 순서에서 나옴). 파일이 바뀌면 다른 연결로 밀린다.
             # Proteus 연결은 전부 지은 id라 적지 않는다(ids.made_ids가 flavor로 읽는다. 추출 결과가 그대로여야 graph_version이 안 바뀐다)
@@ -348,17 +372,20 @@ def build(model, source, registration=None, page=0, repo_root=None):
         (relations if ok else unresolved).append(rec)
         if ok:
             resolved_ids.add(id(rec))
-        pts = [e["point"] for e in ends if e["point"] is not None]
+        pts = [p for p in places if p is not None]  # 그린 선이 아니라 두 끝의 자리. 사람 수정이 대상을 다시 찾는 열쇠라 그림을 읽어도 같아야 한다
         if pts:
             source_locations.append({"object_id": c_id, "local_id": lid, "coordinate_space": COORDINATE_SPACE,
                                      "unit": "mm", "bbox": _bbox(pts), "approximate": True, "method": "dexpi_endpoints"})
-        elif ok:
+        elif ok and not drawn:
             _issue(unknowns, "dexpi_no_position", "그림 위치 없음(DEXPI 파일에 그림 정보가 없음)", c_id, lid, "bbox")
         return rec
 
     # ---- 흐름: 도면 연결 기호와 화살표(§5.4)
     assumed_seen = set()
     arrow_of, unplaced_arrows = _arrow_flows(model)
+    parts = {}  # 한 연결이 부품 앞뒤로 나뉜 조각 수. 나뉜 연결은 그림의 선 하나를 나눠 줄 수 없어 선 점을 주지 않는다
+    for c in model.connections:
+        parts[(c["segment"], c.get("index"))] = parts.get((c["segment"], c.get("index")), 0) + 1
     for arrow in unplaced_arrows:
         _issue(unknowns, "dexpi_flow_arrow_unplaced", "흐름 화살표를 배관 경로에 붙이지 못해 방향을 정하지 않음(경로 없음·거리·방향 불일치·모호)",
                arrow["segment"], None, "flow_direction")
@@ -384,8 +411,9 @@ def build(model, source, registration=None, page=0, repo_root=None):
         flow_class = _flow_class(model, c["segment"])
         if flow_class:
             attrs["flow_class"] = flow_class
+        path = model.conn_paths.get(c["id"] or c["synthetic_id"]) if parts[(c["segment"], c.get("index"))] == 1 else None
         rec = add_relation("physical_connection", "process", c_id, (c["source"], c["source_node"]),
-                           (c["target"], c["target_node"]), attrs, flow_dict, made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
+                           (c["target"], c["target_node"]), attrs, flow_dict, path, made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
         for end, key in (("source", "source_node_no"), ("target", "target_node_no")):
             if c.get(key):
                 for ep in rec["endpoints"]:
@@ -408,7 +436,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 _issue(unknowns, "unconnected_endpoint", "측정 위치가 배관 구간이라 구성요소에 붙이지 못함", flow["id"], None, "source")
                 loc_item = None
             add_relation("measurement_connection", "instrument_tap", flow["id"] or "measuring-line",
-                         (loc_item, None), (pif, None), {"line_type": "instrument_tap"}, made=not flow["id"])
+                         (loc_item, None), (pif, None), {"line_type": "instrument_tap"}, path=model.conn_paths.get(flow["id"]),
+                         made=not flow["id"])
         else:
             targets = []
             if tgt in model.items:
@@ -421,7 +450,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
             for n, t in enumerate(targets):
                 cid = flow["id"] if n == 0 else "%s#%d" % (flow["id"], n + 1)
                 add_relation("signal_connection", "signal", cid or "signal-line", (src, None), (t, None),
-                             {"line_type": "signal"}, made=n > 0 or not flow["id"])
+                             {"line_type": "signal"}, path=model.conn_paths.get(flow["id"]) if n == 0 else None,
+                             made=n > 0 or not flow["id"])
 
     # ---- 도면 정보와 식별
     drawing_number, drawing_name = model.drawing["number"], model.drawing["name"]
