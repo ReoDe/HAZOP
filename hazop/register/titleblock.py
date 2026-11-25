@@ -720,6 +720,28 @@ def _carry(sheets, new_record):
     return out, created
 
 
+def carry_previous(record):
+    """번호 확정 길 밖에서(다시 올리기·채팅 추출·이전 화면) 등록판이 올라간 자료를 추출하기 전에, 앞 판 쪽의 사람 수정·AI 후보·자동 확정 기록을
+    이 판의 이름으로 옮긴다. 이미 이 판으로 추출한 쪽은 앞 판에 자동 확정 기록이 있고 옮긴 적이 없을 때만이다. → 새로 만든 파일 경로 목록."""
+    from hazop.extract import ai_review, confirmation, corrections
+
+    def extracted(name):
+        return os.path.isfile(os.path.join(paths.output_root("extract"), name, "extraction.json"))
+    sheets = []
+    for page in range(_page_count(record)):
+        target = _out_name(record, page)
+        prev = next((n for n in (_out_name(record, page, v) for v in range(record["registration_version"] - 1, 0, -1)) if extracted(n)), None)
+        if prev is None:
+            continue
+        if extracted(target):
+            carried = confirmation.auto_record(target) is not None or any(
+                prev in ((doc or {}).get("carried_from") or ()) for doc in (corrections.load(target), ai_review.load_doc(target)))
+            if carried or confirmation.auto_record(prev) is None:
+                continue
+        sheets.append({"page": page, "name": prev})
+    return _carry(sheets, record)[1]
+
+
 def _set_aside(sheets, new_record):
     """새 이름이 될 쪽의 앞 graph.json을 graph.superseded.json으로 비켜 둔다. 반환 [(앞 경로, 비켜 둔 경로)]."""
     moved = []

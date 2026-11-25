@@ -19,10 +19,13 @@ Qt 의존 없음. 클라이언트는 analyze(request) 계약(구독·API·고정
 """
 
 import copy
+import glob
 import hashlib
 import json
 import math
+import os
 import random
+import re
 import time
 from dataclasses import dataclass
 
@@ -61,6 +64,7 @@ AUTO_RULES = AutoRules(version="auto-1", min_confidence={("kind", "kind"): 0.70,
                        inputs=("image",), legends=(AUTO_LEGEND,))
 AUTO_CAP = 20             # 같은 원본에 대해 실행을 넘어 누적하는 호출 상한
 AUTO_ATTEMPTS = 3         # 호출 오류로 끝난 자동 실행의 상한
+_VERSIONED = re.compile(r"(.*__material-[0-9a-f]+)-r\d+-p(\d+)$")      # 등록 경로 추출 이름(scripts/extract_drawio.registered_out_name)의 (자료, 쪽)
 BOX_TOL = 0.5             # pt. 후보를 만들 때의 상자와 지금 대상의 상자가 같다고 보는 차
 NEAR_PART = 8.0           # 이 거리(pt) 안에 종류가 정해진 기호가 있으면 그 기호의 일부(구동부 머리·번호 원·태그판)일 수 있다
 NOT_SYMBOL = "not_symbol"  # 종류 답 가운데 '기호가 아님(다른 기호의 일부·글자 상자·선 조각)'. 후보를 만들지 않는다
@@ -692,7 +696,7 @@ def _recheck_pass(ex, client, images, answer_kinds, stats, kinds, limit, batch, 
 
 
 def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_progress=None,
-        should_stop=None, budget=None, exclude=(), images=None, connect=0, kinds=None):
+        should_stop=None, budget=None, exclude=(), images=None, connect=0, kinds=None, project_id=None):
     """AI 검토 한 번. ex는 바꾸지 않는다. → {candidates, stats}.
     cap: 도면당 호출 상한, budget: 이번 실행에 남은 호출 수(RUN_CAP에서 앞 도면이 쓴 만큼 뺀 값). 둘 중 작은 값까지만 부른다.
     exclude: 묻지 않을 대상 source_object_id(사람이 고친 자리).
@@ -705,6 +709,8 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
     on_progress(끝낸 호출 수, 이번 호출 수, 남은 항목 수), should_stop() → True면 다음 호출 전에 멈춘다.
     kinds: 앞 도면부터 이어지는 오류 종류 목록(실행 전체에서 하나, 이 실행이 그 자리에서 덧붙인다). 주면 '같은 오류 3번이면 멈춤'이
     도면 경계에서 풀리지 않는다(run_many·ai_image_flow.run_pages가 넘긴다). 없으면 이 도면만의 목록.
+    project_id: 지금 프로젝트. 추출 결과의 프로젝트와 둘 다 보내기 정책을 본다(프로젝트를 모르는 추출도 지금 프로젝트의 정책을 따름).
+    돌려주는 answered: 첫 묻기에서 답을 받은 [대상, 필드] 목록(merge_run의 auto가 앞 제안을 뺄 자리).
     멈춤은 응답 상태와 관계없이 error_kind로 providers.halts를 따른다. 호출은 끝났는데 한도·초과 사용이 온 응답은 받은
     답은 반영하고 남은 호출은 멈춘다."""
     stats = {"items": 0, "planned_calls": 0, "needed_calls": 0, "calls": 0, "errors": 0, "dropped": 0, "confirmed": 0,
@@ -715,7 +721,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
              "legend_source": getattr(images, "legend_source", None),
              "legend_boards": len(getattr(images, "legend", None) or ()),
              "no_kind": []}      # '기호 아님'·'모름'이라고 답한 자리. 보이기만 하고 후보로 만들거나 미확인 수에서 빼지 않는다
-    if not stats["refused"] and send_policy(ex.get("project_id")) == "deny":
+    if not stats["refused"] and "deny" in (send_policy(ex.get("project_id")), send_policy(project_id)):
         stats.update(refused=SEND_DENY_TEXT, ai_off=True)
     if stats["refused"]:
         return {"candidates": [], "stats": stats}
@@ -739,7 +745,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         connect_items = ai_connect.page_items(ex, images.page, exclude)
         reserve = min(connect, ai_connect.calls_needed(len(connect_items)))
     p = plan(items, max(0, limit - reserve), batch)
-    cands = []
+    cands, answered = [], []
     kinds = [] if kinds is None else kinds
     stats.update(items=len(items), planned_calls=len(p["calls"]), needed_calls=p["needed"], left=len(items),
                  kind_items=sum(1 for i in items if i["task"] == "kind"))
@@ -758,6 +764,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
                 stats[v] += 1
             stats["no_kind"] += [{"target": i["target"], "bbox": i.get("bbox"), "answer": no_kind[i["item_id"]]}
                                  for i in call if i["item_id"] in no_kind]
+            answered += [[c["target"], c["field"]] for c in new] + [[i["target"], "kind"] for i in call if i["item_id"] in no_kind]
         if on_progress:
             on_progress(n + 1, len(p["calls"]), len(items) - done_items)
         if providers.halts(kinds):
@@ -779,7 +786,7 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         stats["halted"] = providers.halts(kinds)
     stats.pop(_RETRY, None)
     mark = {"input": "image" if images is not None else "text", "legend_source": stats["legend_source"]}
-    return {"candidates": [dict(c, **mark) for c in _dedupe(cands)], "stats": stats}
+    return {"candidates": [dict(c, **mark) for c in _dedupe(cands)], "stats": stats, "answered": answered}
 
 
 def _dedupe(cands):
@@ -985,7 +992,11 @@ def merge_run(doc, result, via=None, model=None, at=None, read_key=None, auto=Fa
     split 후보는 덩어리가 나뉘어 id가 바뀌어도 개체 집합으로 가린다. 이미 있는 split 후보와 개체가 같은 새 후보는 넣지 않고,
     새 split 후보와 개체가 겹치는 오래된 제안 후보(stale_candidates)는 뺀다.
     실행 기록에는 물은 읽기의 read_key(confirmation.read_key)와, 자동 확정이 돌린 실행이면 auto를 적는다."""
-    if auto:    # 아직 아무도 정하지 않은 옛 후보(다른 범례판·밀린 번호)는 새 답으로 갈아 끼운다. 사람이 한 번이라도 정한 후보는 그대로 둔다
+    if auto:    # 이번에 답을 받은 자리에 아무도 정하지 않은 앞 제안이 남아 있으면 뺀다(새 답이 '기호 아님'·'모름'이거나 다른 꼴이어도)
+        answered = {tuple(x) for x in result.get("answered") or ()}
+        doc["candidates"] = [c for c in doc["candidates"] if (c.get("target"), c.get("field")) not in answered or c.get("task") not in IMAGE_TASKS
+                             or c["status"] != "proposed" or c.get("decided_at") or c.get("op_id")]
+        # 아직 아무도 정하지 않은 옛 후보(다른 범례판·밀린 번호)는 새 답으로 갈아 끼운다. 사람이 한 번이라도 정한 후보는 그대로 둔다
         fresh = {c["cand_id"] for c in result["candidates"]}
         doc["candidates"] = [c for c in doc["candidates"] if c["cand_id"] not in fresh or c["status"] != "proposed"
                              or c.get("decided_at") or c.get("op_id")]
@@ -1241,13 +1252,32 @@ def revert(doc, cand_ids, name, by, at=None, confirm=None, also=()):
 # 고르기는 auto_block 한 곳, 쓰기는 accept 한 곳이다(수락 규칙이 두 벌이 되지 않게). 도면 잠금(sheet_refresh.lock) 안에서 부른다.
 
 def calls_used(doc):
-    """이 원본에 지금까지 쓴 호출 수(사람이 시킨 실행 포함). 번호를 확정하면 실행 기록이 새 이름으로 함께 옮겨진다."""
+    """후보 문서 하나에 적힌 호출 수(사람이 시킨 실행 포함)."""
     return sum(r.get("calls") or 0 for r in (doc or {}).get("runs") or [] if isinstance(r, dict))
 
 
-def auto_calls_left(doc):
-    """자동 경로가 이 원본에 더 쓸 수 있는 호출 수(누적 AUTO_CAP. 설정값과 관계없음)."""
-    return max(0, AUTO_CAP - calls_used(doc))
+def calls_of(name):
+    """같은 원본·쪽에 지금까지 쓴 호출 수. 추출 이름은 등록판마다 다르므로(…-r<판>-p<쪽>) 그 쪽의 모든 판의 실행 기록을 합친다(등록 자료
+    하나가 원본 sha256 하나다). 판 사이에 옮겨 쓴 같은 기록은 한 번만 센다."""
+    m = _VERSIONED.match(name)
+    names = {name}
+    if m:
+        folder = glob.escape(os.path.dirname(store_path(name)))
+        for p in glob.glob(os.path.join(folder, glob.escape(paths.safe_name(m.group(1) + "-r")) + "*-p" + m.group(2) + ".json")):
+            other = _VERSIONED.match(os.path.basename(p)[:-len(".json")])
+            if other and other.groups() == m.groups():
+                names.add(os.path.basename(p)[:-len(".json")])
+    runs = {}
+    for n in names:
+        for r in (load_doc(n) or {}).get("runs") or []:
+            if isinstance(r, dict):
+                runs[json.dumps(r, sort_keys=True, ensure_ascii=False)] = r
+    return calls_used({"runs": list(runs.values())})
+
+
+def auto_calls_left(doc, name=None, cap=AUTO_CAP):
+    """자동 경로가 이 원본에 더 쓸 수 있는 호출 수(누적 cap, AUTO_CAP을 넘지 않음). name을 주면 그 쪽의 모든 등록판을 함께 센다."""
+    return max(0, min(cap, AUTO_CAP) - (calls_used(doc) if name is None else calls_of(name)))
 
 
 def _auto_runs(doc):
@@ -1281,8 +1311,8 @@ def _stop_why(r):
     return "stopped" if r.get("stopped") else None
 
 
-def auto_outcome(ex, doc):
-    """추출 결과와 후보 문서(실행 기록)만 보고 정한 자동 확정의 결과 {"result", "why", "attempts", "ai"}(설계 2.3 전이 표). 순수 함수."""
+def auto_outcome(ex, doc, calls=None, cap=AUTO_CAP):
+    """추출 결과와 후보 문서(실행 기록), 쓴 호출 수(없으면 문서에서 셈)와 상한만 보고 정한 자동 확정의 결과 {"result", "why", "attempts", "ai"}(설계 2.3 전이 표). 순수 함수."""
     from hazop.extract import confirmation
     fmt = confirmation.source_format(ex)
     none = {"calls": 0, "left": 0, "status": "none"}
@@ -1294,20 +1324,20 @@ def auto_outcome(ex, doc):
     auto = _auto_runs(doc)
     runs = [r for r in auto if r.get("read_key") == key]
     attempts = sum(1 for r in auto if _failed_run(r))
-    calls = calls_used(doc)
+    calls = calls_used(doc) if calls is None else calls
     last = runs[-1] if runs else None
     ai = {"calls": calls, "left": (last or {}).get("left"), "status": "none"}
 
     def out(result, why=None, **more):
         return {"result": result, "why": why, "attempts": attempts, "ai": dict(ai, **more)}
     if last is None:      # 이 읽기로는 묻지 않았다. 앞선 읽기에서 자료 누적 상한을 다 썼으면 더 물을 수 없어 남은 것을 미확인으로 두고 확정한다
-        return out("confirmed", status="capped") if calls >= AUTO_CAP else out("waiting", "started")
+        return out("confirmed", status="capped") if calls >= cap else out("waiting", "started")
     if any(_run_done(r) for r in runs):
         return out("confirmed", left=0, status="done")
     stop = _stop_why(last)
     if stop in ("no_image", "ai_off"):
         return out("waiting", stop)
-    if calls >= AUTO_CAP:
+    if calls >= cap:
         return out("confirmed", status="capped")
     if stop:
         return out("waiting", stop)
@@ -1447,7 +1477,7 @@ def _auto_accept(name, original_ex, status):
     return {"accepted": [i for i in pick if i not in lost], "blocked": blocked}
 
 
-def auto_finish(name, original_ex):
+def auto_finish(name, original_ex, cap=AUTO_CAP):
     """도면 한 장의 자동 확정을 지금 있는 자료에서 마무리한다: 결과 정하기(auto_outcome) → 확정이면 자동 수락 → 기록(confirmation.record_auto).
     어디서 끊겨도 다시 부르면 같은 끝이다. 이미 이 읽기로 자동 확정된 쪽은 다시 수락하지 않고, 사람이 확정하거나 되돌린 쪽은 손대지 않는다.
     → {"result": confirmed|waiting|reverted|human, "why", "accepted": [cand_id], "blocked": {까닭: 수}}."""
@@ -1459,7 +1489,7 @@ def auto_finish(name, original_ex):
         return {"result": "human", "why": None, "accepted": [], "blocked": {}}
     if cell and (cell["result"] == "reverted" or (cell["result"] == "confirmed" and cell["read_key"] == key)):
         return {"result": cell["result"], "why": None, "accepted": [], "blocked": {}}
-    got = auto_outcome(original_ex, load_doc(name))
+    got = auto_outcome(original_ex, load_doc(name), calls_of(name), cap)
     done = {"accepted": [], "blocked": {}}
     if got["result"] == "confirmed":
         done = auto_accept(name, original_ex)

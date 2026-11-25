@@ -47,9 +47,10 @@ CODES = ("unknown_command", "bad_actor", "stale", "conflict", "unreadable", "rul
 AUTO_BY = corrections.AUTO_BY
 AUTO_RESULTS = ("confirmed", "waiting", "reverted")
 # waiting의 까닭. started: 아직 끝나지 않음(앱이 꺼져도 이것으로 알아봄), taken: 번호가 다른 자료와 겹침, scan·no_image: 그림으로 물을 수 없음,
-# error: 일부 호출 실패(이어 하기 대상), error_final: 같은 실패가 이어져 저절로 다시 부르지 않음, no_consent·ai_off: 보내기 동의 없음·보내지 않는 프로젝트
+# error: 일부 호출 실패(이어 하기 대상), error_final: 같은 실패가 이어져 저절로 다시 부르지 않음, no_consent·ai_off: 보내기 동의 없음·보내지 않는 프로젝트,
+# images_off: 사람이 도면 조각 그림 보내기를 끔
 AUTO_WAITS = ("started", "error", "error_final", "no_connection", "limit", "stopped", "run_cap", "taken", "scan", "no_image",
-              "no_consent", "ai_off")
+              "no_consent", "ai_off", "images_off")
 AUTO_NOT_RESUMED = ("taken", "scan", "error_final")   # 이어 하기가 저절로 다시 잡지 않는 까닭
 
 
