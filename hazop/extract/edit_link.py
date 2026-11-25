@@ -126,7 +126,9 @@ def _judge(sid, base, old, new):
     if base.get("at") is not None:
         if not corrections._same(base, now):
             return "left", "moved"
-        a, b = old.standing(base), new.standing(base)
+        settled = {y for y in set(old.fp) & set(new.fp) if "ends" in old.fp[y] and old.fp[y]["kind"] != base["kind"]
+                   and all(old.fp[y][k] == new.fp[y].get(k) for k in ("kind", "ends"))}     # 두 파일에서 같은 다른 종류의 선
+        a, b = old.standing(base) - settled, new.standing(base) - settled
         return ("left", "not_alone") if a != b and max(len(a), len(b)) > 1 else ("same", None)
     if "ends" in was or "ends" in now:
         return "left", "relation"
