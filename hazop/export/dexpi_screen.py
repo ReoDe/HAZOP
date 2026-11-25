@@ -21,7 +21,7 @@ from hazop.graph import build as graph_build
 
 LOG = logging.getLogger("hazop.export.dexpi_screen")
 SCHEMA = "hazop_dexpi_screen/1"
-WRITER = "1"  # 짓는 규칙이 바뀌면 올린다(옛 캐시는 stale)
+WRITER = "2"  # 짓는 규칙이 바뀌면 올린다(옛 캐시는 stale)
 FORMATS = ("drawio", "dexpi")
 KINDS = ("component", "pipe", "signal", "unresolved")
 GROUPS = ("nodes", "relations", "unresolved")

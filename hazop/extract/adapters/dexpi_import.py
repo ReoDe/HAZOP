@@ -314,6 +314,11 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 attrs["direction"] = "FROM"
         evidence = {"dexpi": {"type": cls, "id": iid if item.get("has_id", True) else None,
                               "xml": item["xml"], "xml_cut": bool(item.get("xml_cut"))}}
+        auto = dexpi_origin.auto_of(model.origins[iid]) if claim.marked else []
+        if auto:
+            evidence["dexpi_origin"] = {"auto": auto}
+        if tag and "tag" in auto:  # 사람이 보지 않은 태그(corrections의 자동 확정과 같은 뜻). ③ 자동 연결이 추정 태그로 다룬다
+            tag_basis = "ai_auto"
         if tag_basis and tag_basis != "TagName":
             evidence["tag_basis"] = tag_basis
         node = {"local_id": local, "source_object_id": iid, "classification": classification, "category": category,

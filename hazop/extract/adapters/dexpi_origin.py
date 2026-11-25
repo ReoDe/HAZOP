@@ -15,7 +15,8 @@ OWN_URI = "urn:hazop:dexpi-export:"  # 이 앱이 낸 파일의 Model uri 앞부
 CLASS = "HazopOrigin"
 TYPE = "/" + CLASS
 TARGET = "Target"
-FIELDS = ("Kind", "Tag", "Text", "Flow", "Basis", "Echo")
+FIELDS = ("Kind", "Tag", "Text", "Flow", "Basis", "Auto", "Echo")
+AUTO_NAMES = ("kind", "tag", "flow")  # 사람이 보지 않고 자동 확정이 정한 칸의 이름(Auto 칸, 빈칸으로 나눔)
 ECHO_VERSION = "1"  # 지문 셈이 바뀌면 올린다(옛 표시는 지문이 달라 쓰이지 않는다)
 OTHER_END = {"source": "target", "target": "source"}
 UNNAMED_BASIS = "dexpi_origin"  # 근거 이름이 없거나 이름 꼴이 아닐 때
@@ -102,6 +103,11 @@ def claim_node(mark, item, plain, drive):
     if "tag" in values and "label_text" not in want:
         values["label_text"] = values["tag"] or ""
     return Claim(values, problems, not stale)
+
+
+def auto_of(mark):
+    """표시가 자동으로 정한 값이라고 적은 칸의 이름."""
+    return [x for x in AUTO_NAMES if x in (mark.get("Auto") or "").split()]
 
 
 def _why_kind(kind, item, drive):

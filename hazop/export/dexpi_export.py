@@ -20,15 +20,16 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 from hazop import paths, store_io
-from hazop.export import dexpi_diagram, dexpi_xml
+from hazop.export import dexpi_diagram, dexpi_marks, dexpi_xml
 from hazop.export.dexpi_xml import components as _components, el as _el, obj as _obj, refs as _refs
 from hazop.extract import dexpi_map
-from hazop.extract.adapters import dexpi_import, dexpi_read
+from hazop.extract.adapters import dexpi_import, dexpi_origin, dexpi_read
 
 SIDECAR_SCHEMA = "hazop_dexpi_sidecar/1"
 EXCLUDED_SCHEMA = "hazop_dexpi_excluded/1"
 MANIFEST_SCHEMA = "hazop_dexpi_manifest/1"
 EXPORTER_VERSION = "0.1.0"
+WRITE_MARKS = True  # 원래 값 표시(§6.9)를 싣는가. 끄면 표시 없는 파일이 나간다
 MODEL_SOURCE = {"Core": "https://data.dexpi.org/models/2.0.1/Core.xml", "Plant": "https://data.dexpi.org/models/2.0.1/Plant.xml"}
 A3 = dexpi_diagram.A3
 MARGIN = 10.0
@@ -762,6 +763,18 @@ class _Builder:
                 centers += [(nid, self._xy(self.nodes[eid]["position"])) for nid in ids]
         pic.write(em, pm.get("id"), self.name, self.ids, owners, pic.node_positions(self.positions, centers))
 
+    def _mark(self, xml, plain, entities, flows, problems):
+        """검사를 통과한 파일에 원래 값 표시를 얹고 다시 검사한다(§6.5-6) -> (바이트, 되읽은 추출 결과)."""
+        xml, again = dexpi_marks.write(xml, entities, flows, {n["entity_id"]: n for n in self.g["nodes"]})
+        root = dexpi_read.parse_safely(xml)
+        problems += [("표시", x) for x in dexpi_read.check_structure(root, definitions=True) + dexpi_read.check_references(root)]
+        problems += [("표시", u["reason"]) for u in again["validation"]["unknowns"] if u["check"] == dexpi_origin.CHECK]
+        for key in ("nodes", "relations", "unresolved_connectors"):
+            if [(x["local_id"], x["source_object_id"], x.get("geometry")) for x in again[key]] != \
+                    [(x["local_id"], x["source_object_id"], x.get("geometry")) for x in plain[key]]:
+                problems.append(("표시", "표시를 얹은 뒤 %s의 id나 자리가 다름" % key))
+        return xml, again
+
     # ----- 5. 검사·곁 파일
     def _finish(self, xml, pipes, instr):
         root = dexpi_read.parse_safely(xml)
@@ -792,7 +805,6 @@ class _Builder:
             problems += [("되읽기", "계기 태그 %s가 쓴 조각과 다름(%s != %s)" % (self.nodes[e]["tag"], read_tags.get(self.plan[e]["id"]), t))
                          for e, t in self.instrument_text.items() if read_tags.get(self.plan[e]["id"]) != t]
             problems += [("그림", x) for x in self.picture.problems(re_ex)]
-        sha = hashlib.sha256(xml).hexdigest()
         entities = []
         for eid, p in self.plan.items():
             n = self.nodes[eid]
@@ -805,6 +817,9 @@ class _Builder:
             flows.append({"dexpi_id": pipe["id"], "entity_id": seg["entity_id"], "local_id": seg["local_id"],
                           "line_no": seg.get("line_no"), "swapped": pipe["swapped"], "flow_direction": seg.get("flow_direction"),
                           "auto": list(seg.get("auto") or []), "attributes": seg.get("attributes")})
+        if WRITE_MARKS and not problems:
+            xml, re_ex = self._mark(xml, re_ex, entities, flows, problems)
+        sha = hashlib.sha256(xml).hexdigest()
         sidecar = {"schema": SIDECAR_SCHEMA, "exporter_version": EXPORTER_VERSION, "dexpi_version": dexpi_map.DEXPI_VERSION,
                    "attribution": dexpi_map.ATTRIBUTION, "dexpi_sha256": sha, "graph_id": self.g["graph_id"],
                    "graph_version": self.g["graph_version"], "drawing_number": self.g["source"]["drawing_number"],
