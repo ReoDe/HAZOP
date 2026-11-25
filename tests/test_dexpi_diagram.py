@@ -277,6 +277,7 @@ class EndsTest(unittest.TestCase):
         exp, again = exported(pair_of(change))
         x0, y0, x1, y1 = box_of(exp, by_id(again)[entity(exp, self.local)["dexpi_id"]])
         self.assertLess(max(abs(a - b) for a, b in zip((x0, y0, x1 - x0, y1 - y0), self.want)), TOL)
+        self.assertEqual([(r["what"], r["local_id"]) for r in exp.sidecar["picture"]["approximate"]], [("symbol", self.local)])
 
 
 class OrientationTest(unittest.TestCase):
@@ -290,6 +291,7 @@ class OrientationTest(unittest.TestCase):
             next(l for l in ex["source_locations"] if l["local_id"] == v["local_id"])["bbox"] = list(box)
             self.local = v["local_id"]
         exp, again = exported(pair_of(change))
+        self.exp = exp
         for row in exp.sidecar["picture"]["not_drawn"]:
             if row["local_id"] == self.local:
                 self.assertEqual(row["box"], list(box))
@@ -350,6 +352,9 @@ class OrientationTest(unittest.TestCase):
             box, shape = self.turned("rotation=%s;" % rot)
             self.assertEqual(box, [400.0, 300.0, 460.0, 320.0], rot)
             self.assertTrue(0.0 <= shape["rotation"] < 360.0, (rot, shape["rotation"]))
+            turns = [float("".join(d.itertext())) for u in objects(self.exp, "Core/Diagram.ShapeUsage") for d in u.findall("Data")
+                     if d.get("property") == "Rotation"]
+            self.assertTrue(all(0.0 <= v < 360.0 for v in turns), rot)
 
     def test_a_turned_symbol_of_a_dexpi_file_keeps_its_turn_when_written_again(self):
         ex, _ = dexpi_pair("small-pid-dexpi2.xml")
