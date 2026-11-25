@@ -304,6 +304,12 @@ class KindOfTheEditTest(unittest.TestCase):
         self.assertEqual(moves.rows([undone])[0]["why"], "not_for_kind")
         self.assertEqual(moves.move([undone])[0]["held"]["why"], "not_for_kind")
 
+    def test_an_undone_edit_is_judged_after_the_edits_that_stand(self):
+        self.arrestor()
+        kind, undone = self.ops(self.KIND, self.NC)
+        moves = edit_link._Moves([kind], [undone], edit_link._Sheet(self.old), edit_link._Sheet(self.new))
+        self.assertEqual(moves.rows([undone])[0]["outcome"], "linked")
+
     def test_held_again_the_next_time(self):
         self.arrestor()
         moved, _v, _d = self.move(self.ops(self.NC))
