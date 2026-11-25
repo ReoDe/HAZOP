@@ -456,7 +456,11 @@ class WriteTest(unittest.TestCase):
     def test_only_confirmed_pages_are_exported_and_the_rest_is_listed(self):
         res = self.export(confirmation=self.gate({"SNP-M-101": "confirmed", "SNP-M-102": "ready"}))
         self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
-        self.assertEqual(res["not_exported"], [{"name": "SNP-M-102", "drawing_number": "SNP-M-102", "state": "ready", "unconfirmed": 3}])
+        row = res["not_exported"][0]
+        self.assertEqual({k: row[k] for k in ("name", "drawing_number", "state", "level", "unconfirmed", "code")},
+                         {"name": "SNP-M-102", "drawing_number": "SNP-M-102", "state": "ready", "level": "extracted",
+                          "unconfirmed": 3, "code": "extracted_only"})
+        self.assertIn("ready", row["reason"])
         self.assertEqual(sorted(os.listdir(self.out)), ["SNP-M-101.dexpi.xml", "SNP-M-101.excluded.json", "SNP-M-101.hazop.json",
                                                          "manifest.json"])
         with open(res["manifest"], encoding="utf-8") as fh:
@@ -522,17 +526,70 @@ class WriteTest(unittest.TestCase):
         self.assertEqual(len(cm.exception.reasons), 2)
         self.assertFalse(os.path.exists(self.out))
 
-    def test_one_failing_drawing_writes_nothing_for_the_others(self):
+    def test_one_failing_drawing_does_not_stop_the_others(self):
         path = os.path.join(self.graph_root, "SNP-M-102", "graph.json")
         with open(path, encoding="utf-8") as fh:
             g = json.load(fh)
         g["validation"]["status"] = "blocked"
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(g, fh)
-        with self.assertRaises(de.ExportError) as cm:
-            self.export()
-        self.assertEqual(len(cm.exception.reasons), 1)
-        self.assertFalse(os.path.exists(self.out))
+        res = self.export()
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
+        with open(res["manifest"], encoding="utf-8") as fh:
+            man = json.load(fh)
+        self.assertEqual([(x["name"], x["code"]) for x in man["not_exported"]], [("SNP-M-102", "check_failed")])
+        self.assertIn("구조 검증", man["not_exported"][0]["reason"])
+        self.assertFalse([f for f in os.listdir(self.out) if f.startswith("SNP-M-102")])
+
+    def test_an_unexpected_error_in_one_drawing_does_not_stop_the_others(self):
+        real = de.export_drawing
+
+        def flaky(graph, *a, **k):
+            if graph["source"]["drawing_number"] == "SNP-M-101":
+                raise KeyError("port")
+            return real(graph, *a, **k)
+        with mock.patch.object(de, "export_drawing", side_effect=flaky):
+            res = self.export()
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-102"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-101", "check_failed")])
+
+    def test_an_unreadable_graph_file_does_not_stop_the_others(self):
+        with open(os.path.join(self.graph_root, "SNP-M-101", "graph.json"), "w", encoding="utf-8") as fh:
+            fh.write("{")
+        res = self.export()
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-102"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-101", "error")])
+
+    def test_a_page_without_a_confirmed_number_does_not_stop_the_others(self):
+        path = os.path.join(self.extract_root, "SNP-M-101", "extraction.json")
+        with open(path, encoding="utf-8") as fh:
+            ex = json.load(fh)
+        ex["drawing"]["identification_basis"] = "registration_confirmed"
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(ex, fh)
+        res = self.export(require_confirmed_number=True)
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-102", "number_unconfirmed")])
+
+    def test_assumed_pages_are_not_called_human_or_auto(self):
+        self.assertEqual({d["level"] for d in self.export()["drawings"]}, {"assumed"})
+
+    def test_an_interrupted_overwrite_puts_the_previous_files_back(self):
+        self.export()
+        before = {f: open(os.path.join(self.out, f), "rb").read() for f in os.listdir(self.out)}
+        real, n = os.replace, []
+
+        def stop(src, dst):
+            if os.path.dirname(dst) == self.out:
+                n.append(dst)
+                if len(n) == 3:
+                    raise KeyboardInterrupt()
+            return real(src, dst)
+        with mock.patch.object(de.os, "replace", side_effect=stop):
+            with self.assertRaises(KeyboardInterrupt):
+                self.export(overwrite=True, now="2027-01-01T00:00:00+00:00")
+        self.assertEqual({f: open(os.path.join(self.out, f), "rb").read() for f in os.listdir(self.out)
+                          if os.path.isfile(os.path.join(self.out, f))}, before)
 
     def test_failed_write_removes_what_was_written(self):
         real = de.store_io.write_bytes
@@ -749,6 +806,12 @@ class ConfirmedExportTest(unittest.TestCase):
             de.export_names(["A", "B"], self.out, require_confirmed_number=False, confirmation="assume")
         self.assertIn("겹침", cm.exception.reasons[0])
         self.assertFalse(os.path.exists(self.out))
+        os.makedirs(os.path.join(groot, "C"))      # 겹친 둘은 어느 쪽이 맞는지 정하지 않고 둘 다 뺀다
+        with open(os.path.join(groot, "C", "graph.json"), "w", encoding="utf-8") as fh:
+            json.dump(dict(g, source=dict(g["source"], drawing_number="SNP-M-999")), fh, ensure_ascii=False)
+        res = de.export_names(["A", "B", "C"], self.out, require_confirmed_number=False, confirmation="assume")
+        self.assertEqual([d["name"] for d in res["drawings"]], ["C"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("A", "name_clash"), ("B", "name_clash")])
 
     def test_r4_existing_files_are_reported_and_a_failed_overwrite_keeps_them(self):
         self.save_extraction()
@@ -771,6 +834,83 @@ class ConfirmedExportTest(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(self.out)), sorted(before))
         with open(ok["manifest"], encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["exported_at"], "2027-01-01T00:00:00+00:00")
+
+    def auto_page(self):
+        """미확인이 남은 채 자동 확정된 쪽: 종류를 모르는 밸브 하나, 종류가 의심스러운 밸브 하나."""
+        valves = [n for n in self.ex["nodes"] if n.get("category") == "valve" and n.get("tag")]
+        valves[0]["kind"], valves[0]["classification"] = None, "unclassified"
+        self.ex["validation"]["unknowns"] = [
+            {"check": "position_kind_mismatch", "target": valves[1]["local_id"], "source_object_id": valves[1]["source_object_id"],
+             "field": "kind", "reason": "종류를 확인할 것"}]
+        self.save_extraction()
+        self.cf.record_auto(self.name, "confirmed")
+        st = self.cf.sheet_confirmation(self.name)
+        self.assertEqual((st["state"], st["level"]), ("open", "auto"))
+        return valves
+
+    def test_auto_confirmed_page_goes_out_with_its_level_and_without_unconfirmed_components(self):
+        valves = self.auto_page()
+        st = self.cf.sheet_confirmation(self.name)
+        res = de.export_names([self.name], self.out, confirmation="auto")
+        with open(res["manifest"], encoding="utf-8") as fh:
+            row = json.load(fh)["drawings"][0]
+        self.assertEqual((row["level"], row["unconfirmed"], row["auto_accepted"], row["state"]),
+                         ("auto", st["unconfirmed_targets"], 0, "open"))
+        self.assertEqual(st["unconfirmed_targets"], 2)
+        out = {(x["tag"], x["reason"]) for x in json.loads(self.read_out(".excluded.json"))["excluded_components"]}
+        self.assertTrue({(valves[0]["tag"], "unclassified"), (valves[1]["tag"], "kind_unconfirmed")} <= out, out)
+        for v in valves[:2]:
+            self.assertNotIn(">%s<" % v["tag"], self.read_out(".dexpi.xml"))
+        listed = de.list_exportable(confirmation="auto")[0]
+        self.assertEqual((listed["exportable"], listed["level"], listed["state"]), (True, "auto", "open"))
+
+    def test_human_confirmed_page_says_human(self):
+        self.save_extraction()
+        self.confirm()
+        d = de.export_names([self.name], self.out, confirmation="auto")["drawings"][0]
+        self.assertEqual((d["level"], d["state"], d["unconfirmed"], d["auto_accepted"]), ("human", "confirmed", 0, 0))
+
+    def test_page_waiting_for_its_number_is_left_out_with_the_reason(self):
+        self.save_extraction()
+        self.cf.record_auto(self.name, "waiting", "taken")
+        row = de.list_exportable(confirmation="auto")[0]
+        self.assertEqual((row["exportable"], row["level"]), (False, "extracted"))
+        with self.assertRaises(de.ExportError) as cm:
+            de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("다른 파일이 같은 도면 번호", " ".join(cm.exception.reasons))
+        self.assertFalse(os.path.exists(self.out))
+
+    def test_auto_page_whose_number_is_not_confirmed_is_left_out(self):
+        self.ex["drawing"].pop("identification_basis")
+        self.auto_page()
+        with self.assertRaises(de.ExportError) as cm:
+            de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("도면 번호", " ".join(cm.exception.reasons))
+
+    def test_auto_page_reverted_before_writing_is_not_exported(self):
+        self.auto_page()
+        real = de.export_drawing
+
+        def revert(*a, **k):
+            self.cf.record_auto(self.name, "reverted", by="검토자")
+            return real(*a, **k)
+        with mock.patch.object(de, "export_drawing", side_effect=revert):
+            with self.assertRaises(de.ExportError) as cm:
+                de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("직전", " ".join(cm.exception.reasons))
+        self.assertFalse(os.path.exists(self.out))
+
+    def test_auto_page_with_an_input_still_waiting_to_be_read_is_not_exported(self):
+        self.auto_page()
+        real = self.cf.load_sheet
+
+        def waiting(name):
+            st, ex, corrected = real(name)
+            return st, ex, dict(corrected, corrections={"inputs": {"waiting": ["op-1"]}})
+        with mock.patch.object(self.cf, "load_sheet", side_effect=waiting):
+            with self.assertRaises(de.ExportError) as cm:
+                de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("반영", " ".join(cm.exception.reasons))
 
     def test_broken_confirmation_record_does_not_stop_the_export_of_others(self):
         self.save_extraction()
