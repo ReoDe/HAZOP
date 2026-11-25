@@ -194,7 +194,10 @@ class Intake:
         self.had = _had(self.path)
         if self.had is None:
             self.had = sheets_of(material_id)
-            store_io.write_json(self.path, {"project_id": project_id, "material_id": material_id, "had": self.had, "number_why": number_why})
+            try:
+                store_io.write_json(self.path, {"project_id": project_id, "material_id": material_id, "had": self.had, "number_why": number_why})
+            except OSError:         # 표지가 없으면 추출 한가운데서 죽었을 때만 이어 하지 못한다. 추출을 막지 않는다
+                LOG.exception("추출 표지를 적지 못함")
 
     def start(self, names):
         for name in names:

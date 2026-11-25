@@ -969,7 +969,7 @@ class RunExecutors:
                 progress("도면 읽는 중", 1, 1)
                 with auto_flow.extracting(self.engine, self.engine.project_id(), reg.get("material_id") or rid) as intake:
                     out = data.extract_and_graph(path)
-                    names = [os.path.basename(p["extract_dir"]) for p in (out.get("pages") or [out]) if p.get("extract_dir")]
+                    names = [os.path.basename(p["extract_dir"]) for p in (out.get("pages") or [out])]
                     intake.start(names)
                 result = {"pages": len(out.get("pages") or [out])}
             except Exception as exc:

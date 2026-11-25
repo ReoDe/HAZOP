@@ -322,9 +322,11 @@ class CapTest(Base):
             # 앞 작업이 도는 사이 들어온 올리기: 예산은 하나
             first = self.engine.auto_budget
             first.enter()
+            for _ in range(5):
+                first.spend()
             self.upload((1, big(1)), (2, big(2)))
             first.leave()
-        self.assertEqual(self.calls(), 25)
+        self.assertEqual(self.calls(), 20)
 
     def test_five_resumes_never_pass_20_calls_for_one_sheet(self):
         self.client.errors = ["transient"] * 2

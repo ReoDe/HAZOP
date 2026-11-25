@@ -152,7 +152,7 @@ class JobOutcomeTest(RunBase):
         def extract_and_graph(path):
             if fail:
                 raise ValueError("해시 불일치")
-            return {"pages": [1, 2]}
+            return {"pages": [{"extract_dir": "x/M-101-p0"}, {"extract_dir": "x/M-101-p1"}]}
         with mock.patch.object(chat_actions.ChatActions, "_registrations", lambda self_, pid: regs), \
                 mock.patch("hazop.app.data.extract_and_graph", extract_and_graph), \
                 mock.patch.object(self.engine, "start_job", lambda label, fn, kind="register": self._run_now(fn)):
