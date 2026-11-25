@@ -54,9 +54,11 @@ def big(i, unread=250, fmt="pdf_vector", project=PROJECT):
     nodes.append(node("pdf-p0-sym-9999", "pump", (10, 10, 20, 20), tag="PP01"))
     for n in nodes:
         n["classification"] = "classified" if n["kind"] else "unclassified"
-    return {"project_id": project, "drawing": {"drawing_number": None}, "nodes": nodes, "relations": [], "unresolved_connectors": [], "texts": [],
+    unknowns = [{"check": "missing_kind", "target": n["local_id"], "source_object_id": n["source_object_id"], "field": "kind", "reason": "종류 미확인"}
+                for n in nodes if not n["kind"]]
+    return {"project_id": project, "drawing": {"drawing_number": None, "ignored_objects": []}, "source_locations": [], "nodes": nodes, "relations": [], "unresolved_connectors": [], "unclassified": [], "texts": [],
             "source": {"format": fmt, "file": os.path.abspath(__file__), "sha256": "s%d" % i, "material_id": "material-%012d" % i},
-            "run": {"script_version": "x", "rules_version": "y", "settings": {"page_index": 0}}, "validation": {"status": "passed", "unknowns": []}}
+            "run": {"script_version": "x", "rules_version": "y", "settings": {"page_index": 0}}, "validation": {"status": "passed", "blockers": [], "unknowns": unknowns}}
 
 
 class Base(unittest.TestCase):
@@ -116,7 +118,7 @@ class Base(unittest.TestCase):
         with mock.patch.object(register_flow.registry, "register", side_effect=register), \
                 mock.patch.object(register_flow.data, "extract_and_graph", side_effect=extract), \
                 mock.patch.object(register_flow.titleblock, "auto_confirm_number",
-                                  side_effect=lambda pid, mid, *_a: dict(got, registration_file=next(p for p, (i, _e) in files.items() if mid.endswith(str(i))))):
+                                  side_effect=lambda pid, mid, *_a: dict(got, registration_file=next(p for p, (i, _e) in files.items() if mid.endswith("%012d" % i)))):
             out = engine.add_files(list(files))
             while self.jobs:
                 self.jobs.pop(0)()
@@ -373,6 +375,21 @@ class CapTest(Base):
         self.upload((2, big(2, unread=25)))
         self.assertEqual([self.level(i) for i in (1, 2)], ["auto", "auto"])
 
+    def test_calls_spent_on_an_older_reading_leave_the_rest_unconfirmed(self):
+        self.upload((1, big(1)))
+        self.assertEqual(self.calls(), 20)
+        ex = big(1)
+        ex["run"]["rules_version"] = "z"
+        self.put(1, ex)
+        auto_flow.start_resume(self.engine)
+        self.assertEqual((self.calls(), self.level(1), self.cell(1)["ai"]["status"]), (20, "auto", "capped"))
+
+    def test_three_same_errors_stop_the_batch(self):
+        self.client.errors = ["timeout"] * 9
+        self.upload(*[(i, big(i, unread=5)) for i in range(1, 7)])
+        self.assertEqual(self.calls(), 3)
+        self.assertEqual({self.state(i) for i in range(1, 7)}, {("waiting", "error")})
+
     def test_a_failed_sheet_is_not_retried_by_its_own_upload(self):
         self.client.errors = ["transient"]
         self.upload((1, big(1, unread=5)))
@@ -465,6 +482,47 @@ class FinishTest(Base):
         self.assertEqual(got, ["busy"])
         api_titleblock._busy_check(self.engine, "material-%012d" % 1)
 
+    def test_auto_run_waits_while_the_number_is_being_changed(self):
+        from hazop.shell import api_titleblock
+        self.put(1, big(1, unread=5))
+        cf.record_auto(self.name(1), "waiting", "started")
+        with api_titleblock._hold(self.engine, "material-%012d" % 1):
+            auto_flow.start_resume(self.engine)
+            self.assertEqual(self.calls(), 0)
+            with self.assertRaises(RuntimeError), api_titleblock._hold(self.engine, "material-%012d" % 1):
+                pass
+        auto_flow.start_resume(self.engine)
+        self.assertEqual(self.calls(), 1)
+
+    def test_extracting_from_chat_also_goes_on_to_auto(self):
+        from types import SimpleNamespace as NS
+        from hazop.shell import chat_actions
+        path = os.path.join(self.tmp, "r.json")
+        regs = {"material-%012d" % 1: {"path": path, "has_result": False, "material_id": "material-%012d" % 1}}
+        runner = chat_actions.RunExecutors(self.engine, lambda: None, lambda: regs, watch=False)
+        with mock.patch("hazop.app.data.extract_and_graph", side_effect=lambda p: self.put(1, big(1, unread=5))):
+            out = runner.extract({"registration_id": "material-%012d" % 1}, NS(action="register.extract"))
+        self.assertTrue(out["ok"], out)
+        self.assertEqual((self.calls(), self.level(1)), (1, "auto"))
+
+    def test_human_fixed_spots_are_not_asked(self):
+        ex = big(1, unread=5)
+        self.put(1, ex)
+        co.save(self.name(1), [co.make_op(ex, "set_tag", "pdf-p0-sym-0002", {"tag": "HUMAN1"}, "사람", name=self.name(1))], "사람")
+        cf.record_auto(self.name(1), "waiting", "started")
+        auto_flow.start_resume(self.engine)
+        asked = [i["target"] if "target" in i else i["item_id"] for q in self.client.requests for i in json.loads(q["context"])["items"]]
+        self.assertTrue(asked)
+        self.assertFalse([a for a in asked if a.endswith("0002")], asked)
+
+    def test_an_unexpected_error_leaves_the_registration_done_and_the_sheet_waiting(self):
+        with mock.patch.object(ar, "run", side_effect=RuntimeError("C:\\secret")):
+            self.upload((1, big(1, unread=5)))
+        self.assertEqual(self.failed_jobs(), [])
+        self.assertEqual(self.state(1), ("waiting", "error"))
+        done = [e for e in self.engine._emit.items if e.get("name") == "job.done"]
+        self.assertNotIn("secret", json.dumps(done, ensure_ascii=False))
+
     def test_two_threads_resume_once(self):
         self.jobs = []
         self.upload((1, big(1, unread=5)), number="off")
@@ -524,10 +582,12 @@ class RestartTest(Base):
                 self.engine.stop_jobs()
             return NONE
         self.client.answer = ask
+        self.jobs = []                      # 창을 닫을 때처럼 두 작업이 함께 서 있다
         self.upload((1, big(1, unread=100)), (2, big(2, unread=20)))
+        self.jobs = None
         self.assertEqual(self.calls(), 3)
         self.assertEqual(self.state(1), ("waiting", "stopped"))
-        self.assertIn(self.state(2)[0], (None, "waiting"))
+        self.assertNotIn("graph-2", self.known, "멈춘 뒤 시작할 파일은 추출하지 않는다")
         self.reopen()
         self.assertEqual(self.level(1), "auto")
         self.assertEqual(sum(r["calls"] for r in ar.load_doc(self.name(1))["runs"]), 13)

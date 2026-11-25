@@ -17,7 +17,7 @@ import threading
 
 from hazop.chat import actions as A
 from hazop.chat import actions_log
-from hazop.shell import chat_edits, chat_screens
+from hazop.shell import auto_flow, chat_edits, chat_screens
 
 LOG = logging.getLogger("hazop.shell.chat_actions")
 NODE_ACTIONS = ("nodes.apply", "nodes.undo", "nodes.confirm", "nodes.unconfirm", "nodes.lock")
@@ -25,11 +25,13 @@ NODE_ACTIONS = ("nodes.apply", "nodes.undo", "nodes.confirm", "nodes.unconfirm",
 RUN_ACTIONS = ("analysis.run", "results.set_status", "results.edit", "export.excel", "export.ie_bundle",
                "register.extract", "register.reextract", "sheet.confirm", "dexpi.export")
 RUN_ACTIONS = RUN_ACTIONS + chat_screens.RUN_ACTIONS     # A11 2차: 지식그래프 판단·AI 후보·원본 고르기(hazop/shell/chat_screens.py)
+AUTO_ACTIONS = ("aireview.auto_run", "aireview.auto_revert")
+RUN_ACTIONS = RUN_ACTIONS + AUTO_ACTIONS                 # 자동 확정(hazop/shell/auto_flow.py)
 RUN_ACTIONS = RUN_ACTIONS + chat_edits.RUN_ACTIONS       # A11 2차 마무리: 표제란·도면 고치기·FMEA·MLD·문서 판 대응(chat_edits.py)
 DISPLAY_ACTIONS = ("show", "goto", "select", "layer", "fit", "kg.find")
 # 동작 표에는 있으나 아직 새 화면이 없는 동작(2차) -> 사람이 할 곳
 NOT_YET = {
-    "extract.suggest": "AI 후보는 AI 검토 패널의 'AI 검토 실행'으로 만든다(만든 후보의 수락·거절은 채팅으로 할 수 있다)",
+    "extract.suggest": "AI 후보는 도면을 올리면 저절로 만들어지고, 채팅의 'AI로 확정'으로 다시 만들 수 있다(만든 후보의 수락·거절은 채팅으로 할 수 있다)",
     "kg.algorithm": "지식그래프 패널에 알고리즘 실행이 생기면 잇는다",
     "kg.rebuild": "지식그래프 패널에 다시 만들기가 생기면 잇는다",
     "ie.reset": "초기사건 패널에서 사람이 한다(읽지 못한 파일을 백업하고 새로 시작)",
@@ -139,6 +141,7 @@ class ChatActions:
         if self._engine is not None:
             out.update(chat_screens.checks(self._engine, self._docs_running))
             out.update(chat_edits.checks(self._engine, self._tb_running))
+            out.update(auto_checks(self._engine))
         return out
 
     def _detail_fns(self):
@@ -148,6 +151,7 @@ class ChatActions:
         if self._engine is not None:
             out.update(chat_screens.details(self._engine))
             out.update(chat_edits.details(self._engine))
+            out.update(auto_details(self._engine))
         return out
 
     def _not_yet(self):
@@ -171,6 +175,7 @@ class ChatActions:
             out.update(self.runner.table())
             out.update(chat_screens.executors(self._engine, self._docs_running, self.runner))
             out.update(chat_edits.executors(self._engine, self._tb_running, self.runner))
+            out.update(auto_executors(self._engine))
         return out
 
     def read_state(self):
@@ -213,7 +218,7 @@ class ChatActions:
                 continue
             names = page_names(rec, e.get("extract_name"))
             entry = {"has_result": bool(e.get("extracted")) or any(_has_output(n) for n in names), "excluded": False,
-                     "path": e.get("path"), "names": names}
+                     "path": e.get("path"), "names": names, "material_id": rec.get("material_id")}
             for key in (rec.get("material_id"), e.get("extract_name"), by_name.get(e.get("extract_name"))):
                 if isinstance(key, str) and key:
                     out.setdefault(key, entry)
@@ -491,7 +496,8 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "export.excel": "Excel로 내보내기", "export.ie_bundle": "초기사건 인계 묶음 내보내기", "register.extract": "추출",
           "register.reextract": "다시 추출", "sheet.confirm": "도면 쪽 확정", "dexpi.export": "DEXPI로 내보내기",
           "kg.judge": "잠재 후보 판단", "aireview.accept": "AI 후보 수락", "aireview.reject": "AI 후보 거절",
-          "aireview.revert": "AI 후보 되돌리기", "aireview.accept_bulk": "AI 후보 묶음 수락", "sources.choose": "원본 형식 고르기",
+          "aireview.revert": "AI 후보 되돌리기", "aireview.accept_bulk": "AI 후보 묶음 수락",
+          "aireview.auto_run": "AI로 확정", "aireview.auto_revert": "자동 수락 되돌리기", "sources.choose": "원본 형식 고르기",
           "ie.move": "초기사건 후보 옮기기", "ie.split": "초기사건 그룹 나누기", "ie.edit_group": "초기사건 그룹 고치기",
           "ie.accept_members": "초기사건 소속 확인", "ie.confirm_group": "초기사건 그룹 확정", "ie.reopen_group": "초기사건 그룹 확정 풀기",
           "ie.set_coverage": "완전성 대조 판정", "ie.export": "초기사건 인계 묶음 내보내기", "docs.extract": "설계 문서 지식 추출",
@@ -608,6 +614,8 @@ def reextract_details(reg):
             pass
     rows = [{"label": "다시 추출할 쪽", "after": "%d쪽" % len(names)},
             {"label": "사람 수정", "after": "%d건을 새 결과 위에 다시 얹습니다. 대상이 사라진 수정은 얹지 못하며, 끝난 뒤 그 목록을 보입니다." % edits}]
+    if any(confirmation.auto_record(n) for n in names):
+        rows.append({"label": "자동 확정", "after": "읽은 내용이 바뀐 쪽은 AI 검토가 이어 돌 수 있습니다(도면마다 누적 20회까지)."})
     if confirmed:
         rows.append({"label": "쪽 확정", "after": "확정한 %d쪽(%s)의 확정이 풀립니다. 다시 견주고 확정해야 DEXPI로 내보낼 수 있습니다."
                      % (len(confirmed), ", ".join(confirmed[:5]) + (" 외" if len(confirmed) > 5 else ""))})
@@ -959,7 +967,10 @@ class RunExecutors:
             from hazop.app import data
             try:
                 progress("도면 읽는 중", 1, 1)
-                out = data.extract_and_graph(path)
+                with auto_flow.extracting(self.engine, self.engine.project_id(), reg.get("material_id") or rid) as intake:
+                    out = data.extract_and_graph(path)
+                    names = [os.path.basename(p["extract_dir"]) for p in (out.get("pages") or [out]) if p.get("extract_dir")]
+                    intake.start(names)
                 result = {"pages": len(out.get("pages") or [out])}
             except Exception as exc:
                 if record is not None:
@@ -970,6 +981,7 @@ class RunExecutors:
                     self._extracting.discard(path)
             if record is not None:
                 record(call, "done", None, [rid])
+            auto_flow.run_budgeted(self.engine, names, progress)
             return result
         try:
             job = self.engine.start_job(("다시 추출: %s" if again else "추출: %s") % rid, work, kind="register")
@@ -999,6 +1011,76 @@ class RunExecutors:
         done, skipped = out.get("drawings") or [], out.get("not_exported") or []
         tail = " · 확정 안 된 쪽 %d장은 뺐습니다" % len(skipped) if skipped else ""
         return _ok("DEXPI로 내보냈습니다: 도면 %d장, 폴더 %s (작업 루트의 output/exports)%s." % (len(done), out.get("folder"), tail))
+
+
+# ================================================================ 자동 확정: AI로 확정 · 자동 수락 되돌리기
+
+GATE_TEXT = {"ai_off": "이 프로젝트는 도면을 AI로 보내지 않도록 정해져 있음", "no_consent": "올린 도면의 조각을 AI로 보내는 데 동의하지 않았음(AI 연결에서 동의)",
+             "no_connection": "AI 구독 연결이 준비되지 않았음"}
+
+
+def auto_checks(engine):
+    def run(item, snap):
+        names = engine.graph_names() or {}
+        gids = list(dict.fromkeys(item.args["graph_ids"]))
+        missing = [g for g in gids if g not in names]
+        if missing:
+            return "지금 프로젝트에 없는 도면: %s" % ", ".join(missing[:5])
+        why = auto_flow.gate(engine, engine.project_id())
+        if why:
+            return GATE_TEXT[why]
+        if not auto_flow.restart_names(engine, gids):
+            return "이미 확정된 도면입니다."
+        item.targets = gids
+        return None
+
+    def revert(item, snap):
+        gid = item.args["graph_id"]
+        name = (engine.graph_names() or {}).get(gid)
+        if not name:
+            return "지금 프로젝트에 없는 도면"
+        seen = auto_flow.revert_preview(name)
+        if not seen["count"] and not seen["record"]:
+            return "되돌릴 자동 확정이 없는 도면"
+        from hazop.shell import sheet_refresh
+        item.targets = [gid]
+        item.basis = {"ver": sheet_refresh.ver_of(name), "confirm": seen["confirm"]}
+        return None
+    return {"aireview.auto_run": run, "aireview.auto_revert": revert}
+
+
+def auto_details(engine):
+    def run(item, snap):
+        names = auto_flow.restart_names(engine, item.args["graph_ids"])
+        return [{"label": "AI로 확정할 도면", "after": "%d장" % len(names)},
+                {"label": "호출 수", "after": "도면마다 누적 20회까지, 한 번에 300회까지(구독 한도를 씁니다)"}]
+
+    def revert(item, snap):
+        name = engine.graph_names()[item.args["graph_id"]]
+        seen = auto_flow.revert_preview(name)
+        rows = [{"label": "되돌릴 자동 값", "after": "%d건" % seen["count"]}]
+        if seen["confirm"]:
+            rows.append({"label": "함께 빠지는 사람 고침", "after": "%d건(자동 값에 기댄 고침)" % len(seen["confirm"])})
+        rows.append({"label": "그 뒤", "after": "이 도면은 다시 시키기 전에는 저절로 확정하지 않습니다."})
+        return rows
+    return {"aireview.auto_run": run, "aireview.auto_revert": revert}
+
+
+def auto_executors(engine):
+    def run(args, call):
+        job, n = auto_flow.restart(engine, list(args["graph_ids"]), call.confirmed_by)
+        if not n:
+            return _refused("AI 검토가 이미 돌고 있거나 이미 확정된 도면입니다.", "busy")
+        return _ok("도면 %d장을 AI로 확정하기 시작했습니다(작업 %s)." % (n, job), ("aireview", "drawings"))
+
+    def revert(args, call):
+        from hazop.shell import api_aireview
+        basis = call.basis or {}
+        out = api_aireview.auto_revert(engine, args["graph_id"], basis.get("ver"), by=call.confirmed_by, confirm=basis.get("confirm"))
+        if not out["ok"]:
+            return _refused(out["message"], out["code"], args["graph_id"])
+        return _ok("자동으로 받은 값 %d건을 되돌렸습니다." % out["removed"], ("aireview", "drawings", "sheet"))
+    return {"aireview.auto_run": run, "aireview.auto_revert": revert}
 
 
 # ================================================================ 표시 동작 풀기

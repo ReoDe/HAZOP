@@ -6,6 +6,9 @@
   AI 검토 실행). 쓰기는 읽은 판(`ver` = 후보 파일과 사람 수정 기록의 지문)을 대조해 어긋나면 stale로 거절한다. 결정한 사람은 설정의 검토자 이름이다.
 - **수락·되돌리기 뒤 그래프를 바로 다시 만든다**(공용 길 hazop/shell/sheet_refresh.py, 도면 고치기와 함께 쓴다). 수락은 사람 수정 기록(hazop.extract.corrections)에 연산으로 들어가므로, 이전 화면처럼 '다시 열면
   반영'이 아니라 그 도면의 그래프(scripts/build_graph.build_one이 기록을 적용)와 프로젝트 지식그래프를 이 자리에서 다시 만든다(hazop.app.data와 같은 길).
+- **자동 확정**(hazop/shell/auto_flow.py): 읽기 `aireview/auto`(동의·보내기 정책·막힌 까닭·쪽마다 자동 기록), 명령 `aireview.consent`(allow: 올린 도면의
+  조각을 자동으로 AI에 보내는 데 동의·거절, 사용자 설정), `aireview.send_policy`(send deny·allow: 이 프로젝트를 AI로 보내지 않음). 도면 한 장의
+  자동 수락 되돌리기 `auto_revert`는 채팅이 부른다.
 - 채팅(d-chat)이 부를 실행 함수: `candidates`, `bulk_ids`(묶음 수락이 고를 ID, 읽기만), `accept`, `accept_bulk`, `reject`, `revert`. 모두 {"ok", ...} 사전을 돌려주고 예외를 올리지 않는다.
   웹 명령은 이 함수들을 감싼 것이다. 웹과 채팅 모두 경로를 주고받지 않고 도면 ID·후보 ID만 쓴다.
 """
@@ -362,6 +365,9 @@ def read(engine, parts, query):
     api = _api()
     if len(parts) == 1:
         return api._json(overview(engine))
+    if len(parts) == 2 and parts[1] == "auto":
+        from hazop.shell import auto_flow
+        return api._json(auto_flow.summary(engine))
     if len(parts) == 2 and parts[1] == "estimate":
         try:
             cap = max(1, min(200, int(query.get("cap") or engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP)))
@@ -534,6 +540,42 @@ def accept_bulk(engine, graph_id, task, ver, by=None):
         return _decide_locked(engine, graph_id, ids, "accept", ver, by)
 
 
+def auto_revert(engine, graph_id, ver, by=None, confirm=None):
+    """도면 한 장의 자동 수락을 한 번에 되돌린다(사람이 수락한 것과 사람 고침은 그대로). confirm: 확인 상자에 보인, 함께 빠질 사람 고침 op_id.
+    되돌린 쪽은 사람이 다시 시키기 전에는 저절로 돌지 않는다. → {ok, removed, ver} 또는 {ok: False, code, message}."""
+    from hazop.shell import api_inputs, auto_flow
+    try:
+        name = _name(engine, graph_id)
+        by = by or engine.reviewer()
+        if not by:
+            raise Refused("bad_args", "검토자 이름을 먼저 설정에서 입력하세요. 되돌린 사람으로 남습니다.")
+        if name in engine._reviewing:
+            raise Refused("busy", BUSY_TEXT)
+        with lock(name):
+            if ver != ver_of(name):
+                raise Refused("stale", STALE_TEXT)
+            seen = auto_flow.revert_preview(name)
+            if not seen["count"] and not seen["record"]:
+                raise Refused("not_found", "이 도면에는 되돌릴 자동 확정이 없습니다.")
+            removed = ai_review.auto_revert(name, by, confirm=confirm)
+    except Refused as exc:
+        return {"ok": False, "code": exc.code, "message": exc.message}
+    except ai_review.RevertNeedsConfirm:
+        return {"ok": False, "code": "stale", "message": "확인한 뒤 함께 빠질 고침이 바뀌어 되돌리지 않았습니다. 다시 요청해 확인 상자를 보세요."}
+    except store_io.Conflict:
+        return {"ok": False, "code": "stale", "message": STALE_TEXT}
+    except (OSError, ValueError) as exc:
+        LOG.exception("자동 수락 되돌리기 실패")
+        return {"ok": False, "code": "failed", "message": "되돌리지 못했습니다(%s)." % errtext.why(exc, 120)}
+    if removed:
+        api_inputs.note(engine, name)
+        engine.changed("sheet", graph_id)
+        engine.changed("inputs", None)
+    for topic in ("aireview", "drawings", "sheetconf"):
+        engine.changed(topic, None)
+    return {"ok": True, "graph_id": graph_id, "removed": len(removed), "ver": ver_of(name)}
+
+
 def run_review(engine, graph_ids, cap, progress, token=None):
     """고른 도면에 AI 검토를 돌린다(작업 스레드). 도면당 cap, 한 번 실행은 RUN_CAP까지. 사람이 고친 자리는 묻지 않는다.
     → {"drawings": [{graph_id, candidates, calls, left, halted}], "calls", "capped"}."""
@@ -625,6 +667,25 @@ def _h_bulk(engine, a):
     return _unwrap(accept_bulk(engine, a["graph_id"], a["task"], a["ver"]))
 
 
+def _h_consent(engine, a):
+    from hazop.shell import auto_flow
+    out = auto_flow.set_consent(engine, a["allow"])
+    if out["allow"]:
+        auto_flow.resume_quietly(engine)
+    return out
+
+
+def _h_send_policy(engine, a):
+    from hazop.shell import auto_flow
+    try:
+        send = auto_flow.set_send_policy(engine, a["send"], a.get("reason"))
+    except ValueError as exc:
+        raise _api().CommandError("bad_args", str(exc))
+    if send == "allow":
+        auto_flow.resume_quietly(engine)
+    return {"send": send}
+
+
 def _h_stop(engine, a):
     out = request_stop(engine, a["graph_id"])
     if out is None:
@@ -697,6 +758,10 @@ def register(commands):
         "수락·거절 되돌리기(수락한 연산은 수정 기록에서 빠지고 그래프를 다시 만든다). 기댄 사람 고침이 있으면 confirm에 미리 알림의 목록")
     put("accept_bulk", dict(base, task=(v_enum(*ai_review.TASK_ORDER), True)), _h_bulk,
         "확신 높은 묶음 수락(묶음은 엔진이 센다. 기호 종류는 확신 0.95 이상이고 이웃 기호에 붙지 않은 것만)")
+    put("consent", {"allow": (api.v_bool(), True)}, _h_consent,
+        "올린 도면의 조각을 자동으로 AI에 보내는 데 동의(true)하거나 하지 않는다(false). 사용자 설정에 남고, 동의하면 기다리던 도면을 이어 한다")
+    put("send_policy", {"send": (v_enum("deny", "allow"), True), "reason": (v_str(0, 300), False)}, _h_send_policy,
+        "이 프로젝트의 도면을 AI로 보내지 않음(deny)·보내도 됨(allow). deny는 자동과 수동 AI 검토를 모두 막는다")
     put("stop", {"graph_id": (v_str(1, 200), True)}, _h_stop,
         "도면 하나의 AI 검토를 멈춘다(묻는 중이면 지금 호출 뒤) 또는 취소한다(차례를 기다리는 중). 다른 도면·작업은 그대로")
     put("run", {"graph_ids": (v_list(v_str(1, 200), 200), True), "cap": (v_int(1, 200), False), "conn_ver": (v_str(1, 40), True)}, _h_run,

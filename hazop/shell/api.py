@@ -164,6 +164,9 @@ class Engine:
         from hazop.shell import ai_gate
         self.ai_gate = ai_gate.Gate()    # 일괄 AI 작업(AI 검토·추출 뒤 자동 검토·AI 분석)의 구독 호출 차례
         self._reviewing = set()          # AI 검토가 돌거나 차례를 기다리는 도면(추출 이름)
+        from hazop.shell import auto_flow
+        self.auto_budget = auto_flow.Budget()      # 자동 확정의 호출 예산(올리기 묶음 하나)
+        self._auto_extracting, self._auto_resuming, self._ai_ready = set(), False, False
         self._catching = set()           # 검토구간 판 이전을 기다리는 프로젝트
         self._settle_gate = threading.Lock()   # 열 때 정착과 도면 등록·추출 작업을 가른다(정착이 다시 짓는 폴더와 추출이 쓰는 폴더가 겹치지 않게)
         # 판 이전과 ⑤ AI 분석 시작을 가른다(분석이 도는 동안 판 이전을 하지 않고, 판 이전 중에는 분석을 시작하지 않는다). 같은 스레드가 다시 잡을 수 있다:
@@ -239,7 +242,18 @@ class Engine:
             api_inputs.scan_on_open(self)
         except Exception:  # noqa: BLE001 - 안내 한 줄을 위한 찾기: 실패해도 열기를 막지 않는다
             LOG.warning("짓지 않은 입력 연산 찾기 실패", exc_info=True)
-        return self.auto_catch_up(self.project_id())
+        done = self.auto_catch_up(self.project_id())
+        from hazop.shell import auto_flow
+        auto_flow.resume_quietly(self)          # 앞서 끝내지 못한 자동 확정을 이어 한다
+        return done
+
+    def on_connection(self):
+        """AI 연결 상태가 바뀌었다(창이 부른다). 쓸 수 있게 된 순간에만 자동 확정을 이어 한다."""
+        from hazop.shell import api_settings, auto_flow
+        ready = bool(api_settings.run_conn(self, "ai_review")["can_start"])
+        was, self._ai_ready = self._ai_ready, ready
+        if ready and not was:
+            self.spawn(lambda: auto_flow.resume_quietly(self), "auto-resume")
 
     def settle_on_open(self):
         """시트 정체 정착(hazop.app.data.settle_sheets)을 프로젝트를 열 때 한 번 한다. 정착 전 프로젝트는 이 단위 전 이름 규칙에 가려진 도면(첫 PDF,
@@ -368,8 +382,9 @@ class Engine:
         if not checked:
             raise CommandError("bad_args", "파일이 없음")
         from hazop.shell import register_flow
-        return {"jobs": [self.start_job(os.path.basename(f), lambda progress, f=f: register_flow.register_and_extract(self, f, progress))
-                         for f in checked]}
+        for _f in checked:                # 작업을 시작하기 전에 모두 세어 한 묶음이 예산 하나를 나눠 쓰게 한다
+            self.auto_budget.enter(file=True)
+        return {"jobs": [self.start_job(os.path.basename(f), lambda progress, f=f: register_flow.upload(self, f, progress)) for f in checked]}
 
     def _thread_jobs(self, job_id, fn):
         t = threading.Thread(target=fn, name="hazop-job-%s" % job_id, daemon=True)
@@ -687,7 +702,7 @@ COMMANDS = {
     "chat.action.decline": Command({"token": (v_str(1, 80), True)}, _h_action_decline, "채팅이 제안한 동작의 확인 상자에서 '하지 않음'"),
     "chat.set_model": Command({"model": (v_enum(*CHAT_MODELS), True)}, _h_chat_model, "채팅 모델(빠름·보통·깊게)"),
     "extract.set_ai_review": Command({"enabled": (v_bool(), False), "cap": (v_int(1, 200), False), "images": (v_bool(), False)}, _h_set_ai_review,
-                                     "추출 뒤 AI 검토 토글, 도면당 호출 상한, 도면 조각 그림을 AI에 보낼지"),
+                                     "AI 검토 토글(자동 확정은 보지 않음), 도면당 호출 상한, 도면 조각 그림을 AI에 보낼지"),
     "register.pick": Command({}, _h_pick_files, "파일 고르기 창을 열어 고른 파일을 등록한다"),
     "app.open_classic": Command({}, _h_open_classic, "이전 위젯 화면으로 연다(이 창은 닫힌다)"),
 }

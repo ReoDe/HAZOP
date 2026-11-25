@@ -284,6 +284,7 @@ class ShellWindow(QMainWindow):
         st = self.ai_conn.status("subscription")
         self.chat.set_availability(st.get("state"), st.get("detail") or "", user_check=user_check)
         self.bridge.send({"t": "event", "name": "conn.changed", "data": self.engine.ai.status()})
+        self.engine.on_connection()
 
     def _make_session(self, model, callbacks):
         pid = self.engine.project_id()

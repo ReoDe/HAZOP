@@ -57,7 +57,7 @@ CARD_SCHEMA = _obj({
 PROMPT_ACTIONS = ("show", "goto", "select", "layer", "fit", "register.extract", "register.reextract", "nodes.apply", "nodes.undo",
                   "nodes.confirm", "nodes.unconfirm", "nodes.lock", "analysis.run", "results.set_status", "results.edit",
                   "export.excel", "export.ie_bundle", "sheet.confirm", "dexpi.export", "kg.find", "kg.judge", "aireview.accept",
-                  "aireview.reject", "aireview.revert", "aireview.accept_bulk", "sources.choose", "ie.draft_rules", "ie.move", "ie.split",
+                  "aireview.reject", "aireview.revert", "aireview.accept_bulk", "aireview.auto_run", "aireview.auto_revert", "sources.choose", "ie.draft_rules", "ie.move", "ie.split",
                   "ie.edit_group", "ie.accept_members", "ie.confirm_group", "ie.reopen_group", "ie.set_coverage", "ie.export",
                   "docs.extract", "docs.revision", "titleblock.confirm", "titleblock.unconfirm", "drawing.edit", "drawing.undo",
                   "drawing.redo", "ie.fmea_status", "ie.fmea_mark", "ie.mld_link", "links.pair", "links.unlink",
