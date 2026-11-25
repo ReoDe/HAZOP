@@ -732,7 +732,7 @@ def sheet_state(name):
     if state == "ready" and compared.get("fingerprint") != fp:
         state = "open"
         reasons.append("원본과 견주지 않음")
-    return {"state": state, "fingerprint": fp, "rev": st.get("rev") or 0, "reason": ", ".join(reasons) or None}
+    return {"state": state, "level": st.get("level"), "fingerprint": fp, "rev": st.get("rev") or 0, "reason": ", ".join(reasons) or None}
 
 
 class _Sheets:
@@ -1009,7 +1009,9 @@ class RunExecutors:
         if out.get("cancelled"):
             return _refused("덮어쓸 파일이 있어 내보내지 않았습니다." if out.get("overwrite_refused") else "내보내지 못했습니다.")
         done, skipped = out.get("drawings") or [], out.get("not_exported") or []
-        tail = " · 확정 안 된 쪽 %d장은 뺐습니다" % len(skipped) if skipped else ""
+        tail = " · 못 내보낸 쪽 %d장(%s)" % (len(skipped), "; ".join("%s: %s" % (x.get("display"), x.get("reason")) for x in skipped[:3])) if skipped else ""
+        if out.get("stale_files"):
+            tail += " · 앞 내보내기에서 남은 파일 %d개는 이번에 내지 않았고 지우지 않았습니다" % len(out["stale_files"])
         return _ok("DEXPI로 내보냈습니다: 도면 %d장, 폴더 %s (작업 루트의 output/exports)%s." % (len(done), out.get("folder"), tail))
 
 

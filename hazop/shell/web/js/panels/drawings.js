@@ -22,6 +22,7 @@ function DexpiExport() {
   const job = jobId ? jobs[jobId] : null;
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [showWhy, setShowWhy] = useState(false);
   const reload = () => read("dexpi").then(setInfo).catch(() => setInfo({ drawings: [], any: false }));
   useEffect(() => { reload(); return onChanged((t) => { if (t === "sheetconf" || t === "drawings") reload(); }); }, []);
   useEffect(() => {
@@ -30,14 +31,17 @@ function DexpiExport() {
     else if (job.state === "failed" || job.state === "stopped") { setBusy(false); setError(job.state === "stopped" ? "" : (job.message || "내보내지 못했습니다.")); setJobId(null); reload(); }
   }, [job && job.state]);
   async function run() {
-    setBusy(true); setError(""); setResult(null);
-    try { const r = await cmd("dexpi.export", { graph_ids: info.drawings.filter((d) => d.exportable).map((d) => d.graph_id) }); setJobId(r.job); }
+    setBusy(true); setError(""); setResult(null); setShowWhy(false);
+    try { const r = await cmd("dexpi.export", { graph_ids: info.drawings.map((d) => d.graph_id) }); setJobId(r.job); }
     catch (e) { setError(e.message || "내보내지 못했습니다."); setBusy(false); reload(); }
   }
   if (!info || !info.drawings.length) return null;
   const done = result && !result.cancelled ? result : null;
   return html`<div class="dexpi-card"><div class="acts-row"><${Btn} kind="primary" sm=${true} icon="file-export" label="DEXPI로 내보내기" disabled=${busy || !info.any} onClick=${run}>DEXPI로 내보내기<//>
-    ${done ? html`<span class="muted small">${done.drawings.length}쪽을 내보냈습니다 · 폴더 ${done.folder}${done.not_exported.length ? " · 내보내지 못한 쪽 " + done.not_exported.length : ""}</span><${OpenFolder} kind="dexpi" />` : null}</div>
+    ${done ? html`<span class="muted small">내보냈습니다 ·</span><${OpenFolder} kind="dexpi" />
+      ${done.not_exported.length ? html`<${Btn} sm=${true} kind="ghost" label=${"못 내보낸 쪽 " + done.not_exported.length + "개, 까닭 보기"} onClick=${() => setShowWhy(!showWhy)}>못 내보낸 쪽 ${done.not_exported.length}개<//>` : null}` : null}</div>
+    ${done && showWhy ? html`<ul class="small muted dexpi-why">${done.not_exported.map((x, i) => html`<li key=${i}>${x.display}: ${x.reason}</li>`)}</ul>` : null}
+    ${done && (done.stale_files || []).length ? html`<${Notice} kind="info" icon="alert-triangle">앞 내보내기에서 남은 파일 ${done.stale_files.length}개는 이번에 내지 않았고 지우지 않았습니다: ${done.stale_files.join(", ")}<//>` : null}
     ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">${error}</span><//>` : null}</div>`;
 }
 

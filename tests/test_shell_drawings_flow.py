@@ -248,7 +248,7 @@ class SheetConfirmFlowTest(W.ShellBase):
         win._save_dir = lambda kind: (asked.append(threading.current_thread()), out)[1]      # 창이 묻는 자리. 내보내기는 작업 스레드에서 도니 화면 스레드로 넘어와야 한다
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='DEXPI로 내보내기']\").disabled") is False, 15), self.text(win)[-400:])
         self.assertTrue(self.click(win, "button[aria-label='DEXPI로 내보내기']"))
-        self.assertTrue(wait_for(lambda: "쪽을 내보냈습니다" in self.text(win), 30), self.text(win)[-500:])
+        self.assertTrue(wait_for(lambda: "내보냈습니다" in self.text(win), 30), self.text(win)[-500:])
         self.assertEqual(asked, [threading.main_thread()], "저장 폴더는 화면 스레드에서 물었다")
         self.assertTrue(self.js(win, "!!document.querySelector(\"button[aria-label='내보낸 폴더 열기']\")"), "내보냄 한 줄 끝에 폴더 열기")
         xml = os.path.join(out, self.name + ".dexpi.xml")
@@ -329,6 +329,34 @@ class AutoConsentTest(W.ShellBase):
             self.assertEqual(self.js(win, "document.querySelectorAll('[aria-label=\"도면 조각 전송 동의\"]').length"), 0)
 
 
+class DexpiLineTest(W.ShellBase):
+    def test_the_export_line_shows_the_failed_count_with_reasons_and_the_stale_files_note(self):
+        """내보냈습니다 · 폴더 열기 한 줄. 못 내보낸 쪽이 있을 때만 그 수 단추(누르면 까닭 목록), 앞 내보내기에서 남은 파일이 있으면 한 줄 알림."""
+        from unittest import mock
+        from hazop.export import dexpi_export
+        n0, n1 = self.names[0], self.names[1]
+        rows = [{"name": n0, "drawing_number": "SNP-M-101", "state": "open", "level": "auto", "unconfirmed": 2, "exportable": True, "why": []},
+                {"name": n1, "drawing_number": "SNP-M-102", "state": "open", "level": "extracted", "unconfirmed": 3, "exportable": False, "why": ["쪽이 확정되지 않음"]}]
+        res = {"status": "written", "manifest": "m", "existing": [], "stale_files": ["old.dexpi.xml"], "stale_reason": "남은 파일",
+               "drawings": [{"name": n0, "drawing_number": "SNP-M-101", "state": "open", "level": "auto", "unconfirmed": 2, "auto_accepted": 4, "files": ["a.xml"], "stats": {}}],
+               "not_exported": [{"name": n1, "drawing_number": "SNP-M-102", "state": "open", "level": "extracted", "unconfirmed": 3, "code": "extracted_only", "reason": "쪽이 확정되지 않음"}]}
+        out = os.path.join(self.tmp, "dexpi-line")
+        os.makedirs(out, exist_ok=True)
+        with mock.patch.object(dexpi_export, "list_exportable", lambda *a, **k: rows), mock.patch.object(dexpi_export, "export_names", lambda *a, **k: res):
+            win = self.window()
+            win._save_dir = lambda kind: out
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='DEXPI로 내보내기']\").disabled") is False, 15))
+            self.assertTrue(self.click(win, "button[aria-label='DEXPI로 내보내기']"))
+            self.assertTrue(wait_for(lambda: "내보냈습니다" in self.text(win), 30), self.text(win)[-400:])
+            self.assertTrue(self.js(win, "!!document.querySelector(\"button[aria-label='내보낸 폴더 열기']\")"))
+            self.assertIn("못 내보낸 쪽 1개", self.text(win))
+            self.assertNotIn("쪽이 확정되지 않음", self.text(win), "까닭은 누르기 전에는 숨어 있다")
+            self.assertTrue(self.click(win, "button[aria-label^='못 내보낸 쪽 1개']"))
+            self.assertTrue(wait_for(lambda: "SNP-M-102: 쪽이 확정되지 않음" in self.text(win), 10), self.text(win)[-400:])
+            self.assertIn("old.dexpi.xml", self.text(win))
+            self.assertNotIn(self.tmp, self.text(win))
+
+
 class AutoFollowUpTest(W.ShellBase):
     def test_a_dot_says_no_connection_before_no_consent_when_no_ai_is_connected(self):
         from unittest import mock
@@ -407,11 +435,12 @@ class ItemBubbleFlowTest(W.ShellBase):
         with mock.patch.object(api_props, "values_for", lambda g, a, d: real(g, {"valve_type": "globe"}, docs)):
             self.js(win, "window.__hz.store.set({sheet: %s, panel: null, bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
             self.assertTrue(wait_for(lambda: "글로브" in (self.js(win, "(document.querySelector('.bubble.props dl') || {}).textContent") or ""), 15))
-            rows = self.jsj(win, "[...document.querySelectorAll('.bubble.props dt')].map((t) => [t.textContent, t.nextElementSibling.textContent.trim()])")
-        by = dict(rows)
-        self.assertEqual(by["형식"], "글로브 SNP-M-101")
-        self.assertEqual(by["재질"], "SA-106 배관 사양서")
-        self.assertEqual(by["호칭 지름"], "—")
+            rows = self.jsj(win, "[...document.querySelectorAll('.bubble.props dt')].map((t) => [t.textContent, [...t.nextElementSibling.children].map((c) => c.textContent.trim())])")
+        by = dict((k, v) for k, v in rows)
+        self.assertEqual(by["형식"], ["글로브", "SNP-M-101"], "값과 출처는 따로 나뉜다")
+        self.assertEqual(by["재질"], ["SA-106", "배관 사양서"])
+        self.assertEqual(by["호칭 지름"], ["—"])
+        self.assertTrue(self.js(win, "(() => { const v = document.querySelector('.bubble.props .pv'), s = document.querySelector('.bubble.props .ps'); return getComputedStyle(s).fontSize !== getComputedStyle(v).fontSize && getComputedStyle(v).textOverflow === 'ellipsis'; })()"), "출처는 더 작은 글씨, 값은 줄임표")
 
     def test_the_drawing_tab_shows_extraction_boxes_and_no_segment_colors(self):
         """도면 탭은 원본 위에 추출한 것을 네모로(색 범례가 뜸) 보이고, 구간 색 강조(S1 딱지)는 구간 탭에서만 나온다."""

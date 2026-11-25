@@ -665,8 +665,8 @@ class ActionPlanner:
         missing = [g for g in ids if g not in snap.sheets]
         if missing:
             raise _Reject("지금 프로젝트에 없는 도면: %s" % ", ".join(missing[:5]))
-        if not any(snap.sheets[g].get("state") == "confirmed" for g in ids):
-            raise _Reject("확정된 쪽이 하나도 없어 내보낼 것이 없음", "도면에서 '쪽 확정'을 마친 쪽만 내보낸다")
+        if not any(snap.sheets[g].get("level") in ("human", "auto") or snap.sheets[g].get("state") == "confirmed" for g in ids):
+            raise _Reject("사람이나 자동으로 확정된 쪽이 하나도 없어 내보낼 것이 없음", "자동 확정이 끝난 쪽이나 사람이 확정한 쪽만 내보낸다")
         item.targets = list(ids)
 
     def _need_nodes(self, item, snap, allow=("applied", "confirmed")):
