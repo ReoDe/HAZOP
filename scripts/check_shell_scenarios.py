@@ -329,6 +329,9 @@ def n1_register(run, c):
     c.ok("도면 목록에 보임(drawings 읽기)", any(gid in json.dumps(d, ensure_ascii=False) for d in drawings.get("drawings", [])),
          json.dumps(drawings, ensure_ascii=False)[:300])
     c.ok("화면: 도면 패널에 도면 이름", run.panel("drawings", "SNP-M-101"), run.text()[-300:])
+    c.ok("화면: 도면 패널에 탭이 없고 도면 줄에 표제란·AI 검토 단추가 없다(자동 확정: 사람이 줄마다 확정하지 않는다)",
+         run.js("document.querySelectorAll('.ptabs').length") == 0 and run.js("document.querySelectorAll(\"button[aria-label$=' 표제란']\").length") == 0,
+         run.text()[-300:])
 
 
 class StubReview:
