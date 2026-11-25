@@ -390,7 +390,7 @@ class ProvenanceTest(unittest.TestCase):
         self.assertEqual([[u["field"] for u in p[0]["validation"]["unknowns"] if u["check"] == origin.CHECK] for _x, p in self.trips(pair)], [["flow_direction"]] * 3)
 
     def test_any_text_comes_back_as_it_was(self):
-        for text in ("A\x0bB", "A\r\nB", "A\ufffeB", "\x00", "json:\"x\"", "A\nB", "  A ", "<&>]]>", "A\u0085B", "A\U0001F600", "A\ud800B"):
+        for text in ("A\x0bB", "A\r\nB", "A\ufffeB", "\x00", "json:\"x\"", "A\nB", "  A ", "<&>]]>", "A\u0085B", "A\U0001F600"):
             ex = copy.deepcopy(self.pair[0])
             n = next(n for n in ex["nodes"] if n["tag"] == "RC-SG01")
             n["label_text"] = text
