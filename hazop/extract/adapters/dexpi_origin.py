@@ -42,6 +42,11 @@ def pipe_echo(conn):
     return _hash("pipe", conn["id"], conn["source"], conn["source_node"], conn["target"], conn["target_node"])
 
 
+def signal_echo(oid):
+    """계장선의 지문. 계장선의 표시는 등급만 적어 낮추기만 하므로 id만 본다."""
+    return _hash("signal", oid)
+
+
 def _hash(*parts):
     return hashlib.sha256(json.dumps((ECHO_VERSION,) + parts, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 

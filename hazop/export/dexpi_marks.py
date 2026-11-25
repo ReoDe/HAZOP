@@ -19,7 +19,7 @@ def _grades(node, unsettled):
             "Open": " ".join(x for x in origin.OPEN_FIELDS if (node["entity_id"], x) in unsettled) or None}
 
 
-def marks(model, entities, pipes, graph):
+def marks(model, entities, pipes, graph, signals=()):
     """되읽은 Model과 곁 파일의 줄(구성요소·배관), 그래프 -> {DEXPI id: {칸: 글자}}. 지문은 되읽은 표준 값에서 셈한다.
     값의 출처 등급(자동 확정이 정함, 사람이 고침, 추정한 태그)도 함께 적어 되읽을 때 등급이 올라가지 않게 한다."""
     out, controlled = {}, dexpi_import.controlled_valves(model)
@@ -52,13 +52,17 @@ def marks(model, entities, pipes, graph):
             mark["Flow"] = origin.OTHER_END[fd["from_end"]] if row["swapped"] else fd["from_end"]
             mark["Basis"] = origin.basis_for(fd.get("basis"), origin.grades_out(n))
         out[row["dexpi_id"]] = _writable(mark)
+    for oid, edge in signals:  # 계장선은 표준 값만으로 되읽히므로 등급이 있을 때만 단다
+        grades = _grades(edge, ())
+        if any(grades.values()):
+            out[oid] = _writable(dict(grades, Echo=origin.signal_echo(oid)))
     return out
 
 
-def write(xml, model, entities, pipes, graph):
+def write(xml, model, entities, pipes, graph, signals=()):
     """표시 없는 DEXPI 바이트(와 그것을 되읽은 Model)에 표시를 얹어 (바이트, 되읽은 추출 결과). 표준 값과 어긋나 되읽을 때 쓰이지 않을 칸(사람이
     태그를 바꿔 계측 기능의 조각과 어긋난 것, 흐름을 도면 연결과 반대로 둔 것)도 싣는다. 되읽으면 미확인으로 남아 조용히 바뀌지 않는다."""
-    out = add(xml, marks(model, entities, pipes, graph))
+    out = add(xml, marks(model, entities, pipes, graph, signals))
     return out, dexpi_import.extract_bytes(out, "marks.dexpi.xml")[0]
 
 

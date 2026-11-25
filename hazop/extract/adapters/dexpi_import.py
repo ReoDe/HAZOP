@@ -497,6 +497,11 @@ def build(model, source, registration=None, page=0, repo_root=None):
                    "양방향 흐름 구간(DEXPI DualFlow): 한쪽으로 확정하지 않음" if flow_class == "dual"
                    else "DEXPI 연결의 Source·Target은 흐름 방향이 아님(근거 없음)", c_id, rec["local_id"], "flow_direction")
 
+    def grade_signal(rec, oid):
+        grades = dexpi_origin.grades_of(model.origins.get(oid, {}))
+        if grades:
+            rec["evidence"] = {"dexpi_origin": grades}
+
     # ---- 계장 연결: 측정선(센서 위치 -> 계측 기능), 신호선(계측 기능 -> 구동 대상)
     for flow in model.info_flows:
         cls = flow["cls"] or ""
@@ -508,9 +513,10 @@ def build(model, source, registration=None, page=0, repo_root=None):
             if loc_item and loc_item in model.segments:
                 _issue(unknowns, "unconnected_endpoint", "측정 위치가 배관 구간이라 구성요소에 붙이지 못함", flow["id"], None, "source")
                 loc_item = None
-            add_relation("measurement_connection", "instrument_tap", flow["id"] or "measuring-line",
+            rec = add_relation("measurement_connection", "instrument_tap", flow["id"] or "measuring-line",
                          (loc_item, None), (pif, None), {"line_type": "instrument_tap"}, path=model.conn_paths.get(flow["id"]),
                          made=not flow["id"])
+            grade_signal(rec, flow["id"])
         else:
             targets = []
             if tgt in model.items:
@@ -522,9 +528,10 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 targets = [None]
             for n, t in enumerate(targets):
                 cid = flow["id"] if n == 0 else "%s#%d" % (flow["id"], n + 1)
-                add_relation("signal_connection", "signal", cid or "signal-line", (src, None), (t, None),
+                rec = add_relation("signal_connection", "signal", cid or "signal-line", (src, None), (t, None),
                              {"line_type": "signal"}, path=model.conn_paths.get(flow["id"]) if n == 0 else None,
                              made=n > 0 or not flow["id"])
+                grade_signal(rec, flow["id"])
 
     # ---- 도면 정보와 식별
     drawing_number, drawing_name = model.drawing["number"], model.drawing["name"]

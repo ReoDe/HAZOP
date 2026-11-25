@@ -765,7 +765,7 @@ class _Builder:
 
     def _mark(self, xml, model, plain, entities, flows, problems):
         """검사를 통과한 파일에 원래 값 표시를 얹고 다시 검사한다(§6.5-6) -> (바이트, 되읽은 추출 결과)."""
-        xml, again = dexpi_marks.write(xml, model, entities, flows, self.g)
+        xml, again = dexpi_marks.write(xml, model, entities, flows, self.g, [(oid, e) for e, oid, _a, _b in self.signals])
         root = dexpi_read.parse_safely(xml)
         problems += [("표시", x) for x in dexpi_read.check_structure(root, definitions=True) + dexpi_read.check_references(root)]
         entity_of = {x["dexpi_id"]: x["entity_id"] for x in entities + flows}

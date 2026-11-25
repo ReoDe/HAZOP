@@ -213,6 +213,7 @@ def build_graph(extraction, extraction_file=None, graph_id=None):
                           "ends": [ep["end"] for ep in ends], "line_type": r["line_type"],
                           "line_no": r["line_no"], "flow_direction": flow, "local_id": r["local_id"],
                           "source_object_id": r["source_object_id"], **_origin(r)})
+            _with_grades(edges[-1], r)
             mapping.append({"extraction_run_id": run_id, "local_id": r["local_id"], "entity_id": rid})
         else:
             unknowns.append({"check": "unknown_relation_kind", "target": r["local_id"], "field": "kind",
