@@ -63,7 +63,7 @@
 - 수정 기록과 AI 후보가 바뀌어도 풀리지 않는다. 자동 확정은 '이 읽기에 스크립트와 AI가 한 번 다 돌았다'는 뜻이지 내용을 보증하는 말이 아니다. 내용은 미확인 수와 자동 수락 수로 말하고, 두 수는 읽을 때마다 다시 센다.
 - `level` 계산은 한 함수다. `state == "confirmed"`이면 `human`. 아니면 `auto.result == "confirmed"`이고 `read_key`가 지금 값과 같고 **추출 검증이 `passed`이고 구성요소가 하나 이상**이면 `auto`. 나머지는 `extracted`.
 - 검증과 구성요소 수를 조건에 넣는 까닭: 구성요소 0개이고 검증이 `blocked`인 쪽도 지금 `check()`로는 미확인 0곳이다(실측). 이 조건이 없으면 빈 쪽이 '자동 확정(미확인 0)'이 된다.
-- 미확인 n은 **서로 다른 대상 수 + 대상 없는 미확인 줄 수**다. 지금 세는 법은 두 곳이 어긋난다. 한 기호를 '종류 미정'과 'AI 후보 남음'으로 두 번 세고(`confirmation.py` 186, 211), 대상 없는 줄은 같은 사유끼리 하나로 뭉친다(217, 실측: `not_registered` 세 줄이 1로 셈). 앞의 것은 대상으로 묶고 뒤의 것은 원래 줄 수로 센다.
+- 미확인 n은 **서로 다른 대상 수 + 대상 없는 미확인 줄 수**다. 지금 세는 법은 두 곳이 어긋난다. 한 기호를 '종류 미정'과 'AI 후보 남음'으로 두 번 세고(`confirmation.py` 186, 211), 대상 없는 줄은 같은 사유끼리 하나로 뭉친다(217, 실측: `not_registered` 세 줄이 1로 셈). 앞의 것은 대상으로 묶고 뒤의 것은 원래 줄 수로 센다. 묶을 때 id를 하나로 맞춘다. 지금 AI 후보 줄의 id는 `source_object_id`이고 나머지 줄은 `local_id`라(211, 실측: 같은 기호가 `pdf-p0-sym-0001`과 `local-node-001` 두 id로 나옴) 그대로 묶으면 여전히 둘로 세인다. 정리 보기의 AI 후보 표시가 나오지 않는 것도 같은 어긋남이다(`hazop/shell/clean_items.py` 102, 141, 실측 0건).
 - n 옆에 '원본에 남은 것'을 함께 보인다. drawio·DEXPI는 수, **벡터 PDF와 스캔은 '셀 수 없음'** 이다. 벡터 PDF 추출은 지금 `leftovers`를 내지 않는다(실측: SNP-M-101 PDF와 개발용 다섯 쪽 모두 `None`). 그래서 벡터 PDF 쪽은 지금 사람 확정도 될 수 없다(`confirmation.py` 338, 394).
 
 ### 2.3 상태 전이
@@ -363,7 +363,7 @@ git grep -nE "sheetconf" -- "hazop/*.py" "hazop/*.js" "scripts/*.py"
 | `hazop/chat/card.py` 59~62, `hazop/shell/chat_actions.py` 26·492~507, `hazop/shell/chat_screens.py` 20·151~257, `hazop/shell/chat_edits.py` 20·57~149 | 쪽 확정·AI 후보·표제란을 채팅 동작으로 | 바뀜 | 고치는 통로가 채팅뿐이므로 남긴다. `aireview.auto_revert`와 'AI로 확정' 동작을 더하고, 확인 글에서 패널 이름을 뺀다 |
 | `hazop/shell/api_inputs.py`, `api_titleblock.py`, `api_aireview.py`의 `sheetconf` 알림 | 확정 카드를 다시 읽게 함 | 남음 | 알림을 받는 화면이 없어져도 채팅과 도면 탭이 같은 토픽을 쓴다 |
 | `hazop/shell/sheet_refresh.py` 85 | 판(`ver`)을 세 파일로 만듦 | 남음 | 확정 기록은 판에 들지 않는다 |
-| `hazop/shell/clean_items.py` 141 | 검토 표시(human·ai_accepted·script) | 바뀜 | `human_edit.auto`면 `ai_auto`. 지금 `ai_accepted` 가지는 추출 노드의 `origin`을 보는데 그 칸은 그래프에만 있어 타지 않는다(코드) |
+| `hazop/shell/clean_items.py` 102·141 | 검토 표시(human·ai_accepted·script), 수락 전 AI 후보 표시(id가 어긋나 나오지 않음) | 바뀜 | `human_edit.auto`면 `ai_auto`. 지금 `ai_accepted` 가지는 추출 노드의 `origin`을 보는데 그 칸은 그래프에만 있어 타지 않는다(코드) |
 | `hazop/graph/build.py` 67, `hazop/kg/claims.py` 70, `hazop/kg/screen.py` 416 | 고친 것은 모두 사람 것 | 바뀜 | 5장 |
 | `hazop/extract/corrections.py` 379 | 태그를 고치면 근거를 `human`으로 | 바뀜 | 자동이면 `ai_auto`. 그래야 지식그래프 자동 연결이 추정 태그로 다룬다 |
 | `hazop/kg/claims.py` 78 | 태그 근거 `human`·`set_tag`면 사람이 정한 주장 | 바뀜 | 위와 같음. 종류는 주장이 아니라 여기서 걸러지지 않는다 |
@@ -433,7 +433,7 @@ git grep -nE "sheetconf" -- "hazop/*.py" "hazop/*.js" "scripts/*.py"
   5. 번호가 밀린 추출에서 사람 고침·거절한 자리에 자동 수락이 들어가지 않음
   6. 번호가 밀린 후보가 다른 기호에 수락되지 않음(상자 견줌)
   7. 구성요소 0개, 검증 blocked → 자동이 되지 않음. 대상 없는 미확인 세 줄이 3으로 셈
-  8. 태그 후보도 규칙 5를 지남, 프로젝트 판으로 물은 후보는 막힘, 넓혀 묻지 못한 밸브는 막힘
+  8. AI 후보가 남은 미분류 기호 하나를 미확인 1곳으로 셈. 태그 후보도 규칙 5를 지남, 프로젝트 판으로 물은 후보는 막힘, 넓혀 묻지 못한 밸브는 막힘
   9. 도면 단위 되돌리기와 기댄 사람 고침 알림
   10. 자동 종류가 범례판 견본에 들지 않음, 태그 근거가 `ai_auto`
   11. 그래프 노드의 자동 표시, 주장 `hypothesis`
