@@ -368,6 +368,14 @@ def _auto_cell(record):
     return a
 
 
+def auto_record(name):
+    """쪽의 자동 확정 기록(없거나 읽을 수 없으면 None). 추출 결과를 읽지 않아 목록에서 여러 쪽을 훑을 때 쓴다."""
+    try:
+        return _auto_cell(_read_record(name)[0])
+    except (OSError, ValueError):
+        return None
+
+
 def level(status):
     """확정 수준. 사람 확정이 이긴다. 자동은 기록이 confirmed이고 지금 읽은 내용의 것이며, 추출 검증을 통과했고 구성요소가 있을 때만."""
     if status.get("state") == "confirmed":

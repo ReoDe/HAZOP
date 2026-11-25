@@ -713,7 +713,8 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
              "wide_dropped": 0, "no_image": 0, "legacy_key_hits": 0, "recheck_items": 0, "recheck_calls": 0,
              "recheck_asked": 0, "recheck_no_kind": 0, "recheck_rules": {}, "retries": 0,
              "legend_source": getattr(images, "legend_source", None),
-             "legend_boards": len(getattr(images, "legend", None) or ())}
+             "legend_boards": len(getattr(images, "legend", None) or ()),
+             "no_kind": []}      # '기호 아님'·'모름'이라고 답한 자리. 보이기만 하고 후보로 만들거나 미확인 수에서 빼지 않는다
     if not stats["refused"] and send_policy(ex.get("project_id")) == "deny":
         stats.update(refused=SEND_DENY_TEXT, ai_off=True)
     if stats["refused"]:
@@ -755,6 +756,8 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
             cands += new
             for v in no_kind.values():
                 stats[v] += 1
+            stats["no_kind"] += [{"target": i["target"], "bbox": i.get("bbox"), "answer": no_kind[i["item_id"]]}
+                                 for i in call if i["item_id"] in no_kind]
         if on_progress:
             on_progress(n + 1, len(p["calls"]), len(items) - done_items)
         if providers.halts(kinds):
@@ -1297,8 +1300,8 @@ def auto_outcome(ex, doc):
 
     def out(result, why=None, **more):
         return {"result": result, "why": why, "attempts": attempts, "ai": dict(ai, **more)}
-    if last is None:
-        return out("waiting", "started")
+    if last is None:      # 이 읽기로는 묻지 않았다. 앞선 읽기에서 자료 누적 상한을 다 썼으면 더 물을 수 없어 남은 것을 미확인으로 두고 확정한다
+        return out("confirmed", status="capped") if calls >= AUTO_CAP else out("waiting", "started")
     if any(_run_done(r) for r in runs):
         return out("confirmed", left=0, status="done")
     stop = _stop_why(last)
