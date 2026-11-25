@@ -297,6 +297,33 @@ class ProvenanceTest(unittest.TestCase):
             for _x, (_ex, g) in self.trips(self.inferred(), True):
                 self.assertEqual(self.status(g, "RC-LT101") | self.status(g, "RC-SG01"), {"hypothesis"})
 
+    def test_the_sidecar_alone_keeps_the_standing_of_automatic_and_edited_values(self):
+        person = edited(self.pair, ("set_tag", self.sg["source_object_id"], {"tag": "RC-ZZ99"}, False),
+                        ("set_tag", next(r for r in self.pair[0]["relations"] if r["line_no"])["source_object_id"], {"tag": "LINE-9"}, False))
+        with off():
+            for _x, (_ex, g) in self.trips(self.automatic(), True):
+                for tag in ("RC-LT777", "RC-ZZ99", "LINE-9"):
+                    self.assertEqual({(c["knowledge_status"], c["origin"]) for c in claims.drawing_claims(g) if c["value"] == tag and c["property"] != "kind"
+                                      and c["target"] not in self.connectors(g)}, {("hypothesis", "ai_auto")}, tag)
+            for _x, (_ex, g) in self.trips(person, True):
+                for tag in ("RC-ZZ99", "LINE-9"):
+                    self.assertEqual({c["knowledge_status"] for c in claims.drawing_claims(g) if c["value"] == tag and c["target"] not in self.connectors(g)},
+                                     {"hypothesis"}, tag)
+
+    @staticmethod
+    def connectors(g):
+        return {claims.stable_ref(g["graph_id"], n["source_object_id"]) for n in g["nodes"] if n["kind"] == "continuation"}
+
+    def test_the_standing_of_a_flow_is_known_by_its_basis_too(self):
+        for basis, want in (("human", {"edited": ["flow"]}), ("human_elsewhere", {"edited": ["flow"]}), ("ai_auto", {"auto": ["flow"]}), ("source_to_target", {})):
+            self.assertEqual(origin.grades_out({"flow_direction": {"basis": basis}}), want)
+
+    def test_a_system_with_an_automatic_and_an_edited_pipe_is_automatic(self):
+        model = mock.Mock(origins={"a": {"Auto": "tag"}, "b": {"Edited": "tag"}, "c": {"Edited": "flow"}})
+        for order in ("abc", "bac", "cba"):
+            model.connections = [{"id": x, "system": "S"} for x in order]
+            self.assertEqual(origin.line_grades(model), {"S": "auto"})
+
     def test_an_old_sidecar_is_read_as_before(self):
         x = export(self.inferred())
         side = copy.deepcopy(x.sidecar)
