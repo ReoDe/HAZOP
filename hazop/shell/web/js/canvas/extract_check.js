@@ -1,6 +1,6 @@
 // 도면 탭의 추출 확인 창(화면 단순화, 사용자 결정 2026-11-25): 원본 그림 위에 스크립트와 AI 검토가 읽어 낸 것을 네모로 겹쳐 보인다.
-// 도면을 사람이 하나씩 확정하지 않으므로 이 겹침이 읽은 결과를 눈으로 확인하는 유일한 수단이다. 그래서 읽지 못한 곳(종류 미확인 기호)과
-// 끊긴 연결(열린 끝 배관·이어지지 않은 도면 연결)은 색이 달라 눈에 띄게 한다. 구간 색 강조는 여기에 없고 구간 탭에서만 한다.
+// 도면을 사람이 하나씩 확정하지 않으므로 이 겹침이 읽은 결과를 눈으로 확인하는 유일한 수단이다. 색은 셋뿐이다: 읽은 것, 읽지 못한 것(종류 미확인 기호·
+// 끊긴 연결), AI가 후보를 낸 것. 구간 색 강조는 여기에 없고 구간 탭에서만 한다.
 // 그리기는 캔버스의 기존 표시(mark) 길을 쓴다. 이 파일은 도면 자료(/api/sheet, /api/clean)에서 무엇을 어떤 색으로 칠할지만 정한다.
 import { html } from "../ui/html.js";
 import { useEffect, useState } from "../../vendor/hooks.module.js";
@@ -10,37 +10,32 @@ export const CHECK_ID = "extract-check";
 /** 범례: 칠하는 말(표시 스타일)과 화면 글. 색은 canvas/marks.js의 STYLE_COLORS가 정한다. */
 export const LEGEND = [
   { key: "ok", style: "chk-ok", text: "읽음" },
-  { key: "link", style: "chk-link", text: "도면 연결" },
   { key: "unknown", style: "chk-unknown", text: "읽지 못함" },
-  { key: "broken", style: "chk-broken", text: "끊긴 연결" },
-  { key: "aifill", style: "chk-ai", text: "AI가 채움" },
-  { key: "notsym", style: "chk-notsym", text: "AI: 기호 아님" },
+  { key: "ai", style: "chk-ai", text: "AI 후보 있음" },
 ];
 
 const BROKEN_REASONS = new Set(["open_end", "unresolved_connector"]);
 const UNREAD_REASONS = new Set(["unknown_symbol", "ai_candidate", "missing_tag"]);
 
 /** 도면 자료(sheet), 정리된 보기 자료(clean, 미확인 목록), 도면 연결(links, 구간 쪽이 읽은 것이 있으면 그것) → 칠할 묶음과 개수.
- *  끊긴 연결: 이어지지 않은 도면 연결, 열린 끝 배관. 읽지 못함: 종류를 못 정한 기호, 태그를 못 읽은 기호, 수락 전 AI 후보. */
+ *  읽지 못함: 종류를 못 정한 기호, 태그를 못 읽은 기호, 이어지지 않은 도면 연결, 열린 끝 배관. AI 후보 있음: AI가 기호가 아니라고 본 것, 수락 전 후보, 자동으로 채운 것. */
 export function extractGroups(sheet, clean, links) {
   const items = (sheet && sheet.items) || [];
   const linkOf = new Map((links || (sheet && sheet.links) || []).map((l) => [l.id, l]));
   const reasons = new Map();
   for (const u of (clean && clean.unconfirmed) || []) { if (!reasons.has(u.id)) reasons.set(u.id, new Set()); reasons.get(u.id).add(u.reason); }
   const any = (set, want) => !!set && [...set].some((r) => want.has(r));
-  const ids = { ok: [], link: [], unknown: [], broken: [], aifill: [], notsym: [] };
+  const ids = { ok: [], unknown: [], ai: [] };
   const extras = (clean && clean.items) || {};
   for (const it of items) {
     if (!it || !it.id || it.layer === "tag") continue;
     const link = linkOf.get(it.id), why = reasons.get(it.id), ex = extras[it.id] || {};
-    const unread = it.layer !== "pipe" && (it.unknown || any(why, UNREAD_REASONS));      // 무게: 읽지 못함 > 끊긴 연결 > 그 밖
+    const unread = it.layer !== "pipe" && (it.unknown || any(why, UNREAD_REASONS));
     const broken = (link && link.status !== "linked") || any(why, BROKEN_REASONS) || (it.layer === "pipe" && it.unknown);
-    if (ex.ai_answer === "not_symbol") ids.notsym.push(it.id);      // AI가 기호가 아니라고 본 것: 읽지 못함 대신 따로 보인다(미확인 수에서는 빠지지 않는다)
-    else if (unread) ids.unknown.push(it.id);
-    else if (broken) ids.broken.push(it.id);
-    else if (ex.review === "ai_auto") ids.aifill.push(it.id);      // 자동 확정이 AI 답으로 채운 것
-    else if (link) ids.link.push(it.id);
-    else if (it.layer !== "pipe") ids.ok.push(it.id);
+    // 셋으로 나눈다: AI가 후보를 낸 것(기호 아님이라 본 것, 수락 전 후보, 자동으로 채운 것) > 읽지 못한 것(끊긴 연결 포함) > 읽은 것(도면 연결 포함)
+    if (ex.ai_answer === "not_symbol" || ex.review === "ai_candidate" || ex.review === "ai_auto") ids.ai.push(it.id);
+    else if (unread || broken) ids.unknown.push(it.id);
+    else if (link || it.layer !== "pipe") ids.ok.push(it.id);
   }
   const groups = LEGEND.filter((l) => ids[l.key].length).map((l) => ({ ids: ids[l.key], style: l.style, label: null, thin: true }));      // 가는 테두리: 추적·강조 표시와 모양이 다르다
   const counts = Object.fromEntries(LEGEND.map((l) => [l.key, ids[l.key].length]));

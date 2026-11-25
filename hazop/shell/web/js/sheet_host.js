@@ -65,7 +65,7 @@ function ItemBubble() {
     <div><b>${b.tag || "태그 없음"}</b> ${b.kind_label || "종류 미확인"}</div>
     ${ai ? html`<div class="muted small">${ai}</div>` : null}
     <dl class="props-list">${((props && props.items) || []).map((it) => html`<${Fragment} key=${it.label}>
-      <dt>${it.label}</dt><dd>${it.value ? it.value : html`<span class="muted">—</span>`}${src(it.source) ? html` <span class="muted small">${src(it.source)}</span>` : null}</dd><//>`)}</dl>
+      <dt>${it.label}</dt><dd><span class="pv" title=${it.value || ""}>${it.value ? it.value : html`<span class="muted">—</span>`}</span>${src(it.source) ? html`<span class="ps muted small" title=${src(it.source)}>${src(it.source)}</span>` : null}</dd><//>`)}</dl>
     <div class="acts-row"><${Btn} sm=${true} label="분석 결과 추적" title="소속 구간, 그 구간의 칸과 권고를 따라갑니다" onClick=${trace}>분석 결과 추적<//>
       <${Btn} sm=${true} kind="ghost" icon="x" label="말풍선 닫기" onClick=${() => store.set({ bubble: null })} /></div></div>`;
 }

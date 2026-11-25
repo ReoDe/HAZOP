@@ -8,7 +8,7 @@ export const STYLE_COLORS = {
   safeguard: "var(--hl-safeguard, #c026d3)", warn: "var(--hl-warn, #a8740d)", muted: "var(--hl-muted, #6b7280)",
 };
 /** 추출 확인 창(도면 탭)의 가는 테두리 색: 추적·강조·구간 색과 겹치지 않게 옅은 따로의 색을 쓴다. */
-export const CHECK_COLORS = { "chk-ok": "var(--chk-ok, #6f9bd1)", "chk-link": "var(--chk-link, #c98f4d)", "chk-unknown": "var(--chk-unknown, #b59a1e)", "chk-broken": "var(--chk-broken, #cf6679)", "chk-ai": "var(--chk-ai, #8b6fc9)", "chk-notsym": "var(--chk-notsym, #8a8f98)" };
+export const CHECK_COLORS = { "chk-ok": "var(--chk-ok, #6f9bd1)", "chk-unknown": "var(--chk-unknown, #d9534f)", "chk-ai": "var(--chk-ai, #8b6fc9)" };
 export const SEG_COUNT = 5;   // 지금 구간 색은 seg1~seg5를 돌려 쓴다(채팅 규격 §6의 12색은 실제와 다름 — 보고)
 export const DIM_OPACITY = 0.16;   // HL_DIM
 
