@@ -952,10 +952,10 @@ class _Page:
 
 
 def _ask(gate, name):
-    """쪽 확정 함수의 답. 추출 결과가 없거나(FileNotFoundError) 깨진 파일(ValueError)이면 상태 'error'로 뺀다."""
+    """쪽 확정 함수의 답. 추출 결과가 없거나 깨졌거나 꼴이 틀리면 상태 'error'로 뺀다(그 쪽이 나머지를 막지 않게)."""
     try:
         return gate(name) or {}
-    except (OSError, ValueError) as exc:
+    except Exception as exc:  # noqa: BLE001
         raise _Skip("error", "쪽 확정을 읽을 수 없음(%s)" % exc, "error")
 
 
@@ -1089,6 +1089,7 @@ def export_names(names, out_dir, graph_root=None, extract_root=None, require_con
     cf = _engine(gate)
     if names is None:
         names = sorted(d for d in os.listdir(graph_root) if os.path.isfile(os.path.join(graph_root, d, "graph.json")))
+    names = list(dict.fromkeys(names))
     pages, not_exported = [], []
 
     def step(page, fn, *args):
