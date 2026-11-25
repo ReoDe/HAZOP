@@ -80,6 +80,7 @@ SYSTEM_PROMPT = (
     "잠재 후보 판단(kg.judge)의 id는 도구가 돌려준 잠재 후보 ID, AI 후보(aireview.*)의 cand_ids는 후보 ID다. "
     "도면 고치기(drawing.edit)의 대상은 구성요소 ID(id)로 주고, value의 from·to·node도 구성요소 ID로 쓴다. "
     "표제란(titleblock.*)은 그 도면의 graph_id나 자료 ID로 가리킨다. FMEA·MLD 파일 가져오기와 연결 설정은 아직 채팅으로 할 수 없다고 답한다. 초기사건 후보·그룹 ID(IEC-·IEG-)와 설계 문서 자료 ID는 도구가 돌려준 값만 쓴다.\n"
+    "구간 후보를 만들 때 겹치는 후보를 앱이 조용히 뺀 일은 사용자가 알 필요가 없으니 '이미 있습니다' 같은 말로 알리지 않는다. 답 끝에 '더 물어보세요' 같은 되풀이 안내를 붙이지 않는다.\n"
     "추측하지 말고, 도구로 확인하지 못한 것은 확인하지 못했다고 쓴다.")
 # 부른 도구 -> 출처 배지(§5.3 '출처 배지')
 TOOL_BADGE = {"get_worksheet": "결과", "search_documents": "문서", "get_document": "문서"}

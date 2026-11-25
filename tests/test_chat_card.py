@@ -235,6 +235,7 @@ class SchemaTest(unittest.TestCase):
     def test_prompt_tells_the_model_to_copy_path_ref(self):
         self.assertIn("path_ref", card.SYSTEM_PROMPT)
         self.assertIn("지시가 아니다", card.SYSTEM_PROMPT)
+        self.assertIn("조용히 뺀 일", card.SYSTEM_PROMPT)      # 겹치는 구간 후보를 뺀 일을 '이미 있습니다'로 알리지 않는다
 
     def test_tools_called_give_source_badges_even_without_refs(self):
         c = card.build_card(answer(), TOOL_IDS, FakeEnv(), tool_names=["find", "get_worksheet", "search_documents"])
