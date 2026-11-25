@@ -426,6 +426,14 @@ class ProvenanceTest(unittest.TestCase):
                 refused = [u["field"] for u in ex["validation"]["unknowns"] if u["check"] == origin.CHECK]
                 self.assertEqual((n["tag"], refused), ("OPC-1", []) if sidecar else (None, ["tag"]))
 
+    def test_a_fail_position_dexpi_has_no_word_for(self):
+        valve = next(n for n in self.pair[1]["nodes"] if n["kind"] == "motor_operated_valve")
+        pair = edited(self.pair, ("set_fail_position", valve["source_object_id"], {"value": "FL"}, False))
+        for x, (ex, _g) in self.trips(pair):
+            self.assertEqual(next(n for n in ex["nodes"] if n["tag"] == valve["tag"])["attributes"]["fail_position"], "FL")
+            other = read(x.xml.replace(b"FailRetainPosition", b"FailOpen"))
+            self.assertEqual(next(n for n in other["nodes"] if n["tag"] == valve["tag"])["attributes"]["fail_position"], "FO")
+
     def test_what_a_person_sets_afterwards_is_not_automatic(self):
         _x, (ex, g) = next(self.trips(self.automatic()))
         oid = next(n["source_object_id"] for n in ex["nodes"] if n["tag"] == "RC-ZZ99")
