@@ -198,15 +198,21 @@ class ReadLineTest(unittest.TestCase):
         self.assertEqual([r["waypoints"] for r in cut], [[], []])
 
     def test_a_signal_line_is_read_between_its_two_marks(self):
+        self.assertEqual(line(self.with_signal("Ins1", "Ins2"), "SC1"), [[100.0, 60.0], [110.0, 60.0], [100.0, 115.0]])
+
+    def test_a_signal_line_drawn_the_other_way_is_turned_by_the_place_of_its_ends(self):
+        self.assertEqual(line(self.with_signal("Ins2", "Ins1"), "SC1"), [[100.0, 60.0], [110.0, 60.0], [100.0, 115.0]])
+
+    @staticmethod
+    def with_signal(source, target):
         marks = "".join('<Object id="%s" type="Plant/Diagram.InstrumentationNodePosition">%s</Object>' % (i, points("Position", p))
                         for i, p in (("Ins1", (100.0, 60.0)), ("Ins2", (100.0, 115.0))))
         group = ('<Object type="Core/Diagram.RepresentationGroup"><Components property="Groups"><Object type="Core/Diagram.Static">'
-                 '<Components property="Elements"><Object type="Core/Diagram.ConnectorLine">%s<References objects="#Ins1" property="Source"/>'
-                 '<References objects="#Ins2" property="Target"/></Object></Components></Object></Components>'
-                 '<References objects="#SC1" property="Represents"/></Object>' % points("InnerPoints", (110.0, 60.0)))
-        ex = extract(swap('<Object id="Pos1"', marks + '<Object id="Pos1"', swap(
+                 '<Components property="Elements"><Object type="Core/Diagram.ConnectorLine">%s<References objects="#%s" property="Source"/>'
+                 '<References objects="#%s" property="Target"/></Object></Components></Object></Components>'
+                 '<References objects="#SC1" property="Represents"/></Object>' % (points("InnerPoints", (110.0, 60.0)), source, target))
+        return extract(swap('<Object id="Pos1"', marks + '<Object id="Pos1"', swap(
             '<Object type="Core/Diagram.RepresentationGroup">', group + '<Object type="Core/Diagram.RepresentationGroup">')))
-        self.assertEqual(line(ex, "SC1"), [[100.0, 60.0], [110.0, 60.0], [100.0, 115.0]])
 
 
 class PlaceKeyTest(unittest.TestCase):

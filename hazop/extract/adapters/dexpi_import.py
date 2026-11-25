@@ -22,6 +22,7 @@ SCRIPT_NAME = "hazop.extract.adapters.dexpi_import"
 SCRIPT_VERSION = "0.1.0"
 RULES_VERSION = "dexpi-import-2026-11-13"
 COORDINATE_SPACE = "dexpi_diagram"
+OWN_URI = "urn:hazop:dexpi-export:"  # 이 앱이 낸 파일의 Model uri 앞부분(hazop.export.dexpi_export)
 FLOW_COS = 0.7  # 화살표 방향이 그 선분의 방향과 이 값 이상 맞아야 흐름으로 읽는다
 ARROW_MAX_MM = 1.5  # 화살표가 길(폴리라인)에서 이보다 멀면 그 길의 것으로 보지 않는다
 ARROW_TIE_MM = 0.5  # 두 길에 이 차이 안으로 가까우면 어느 쪽인지 정하지 않는다
@@ -149,6 +150,13 @@ def _points_of(model, item):
     if item.get("position") is not None:
         pts.append(item["position"])
     return pts
+
+
+def _middle(model, item_id):
+    """이 앱이 낸 파일의 기호이면 그 가운데, 아니면 None. 그림이 없던 옛 내보내기는 모든 노드를 구성요소 가운데에 적었으므로, 새로 내보낸
+    파일로 바꿔 등록해도 자리 열쇠(source_locations)가 같도록 배관 끝이 아니라 가운데를 쓴다. 기호가 없는 옛 파일에는 닿지 않는다."""
+    owner = model.nozzles[item_id]["parent"] if item_id in model.nozzles else item_id
+    return model.items[owner]["position"] if (model.uri or "").startswith(OWN_URI) and owner in model.shapes else None
 
 
 def _tag_not_unique(nodes, unknowns):
@@ -304,7 +312,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
         for check, field, reason in properties.node_issues(kind, {k: v for k, v in node["attributes"].items()
                                                                   if not k.startswith("dexpi:")}):
             _issue(unknowns, check, reason, iid, local, field)
-        pts = _points_of(model, item)
+        middle = _middle(model, iid)
+        pts = [middle] if middle is not None else _points_of(model, item)
         if pts:
             loc = {"object_id": iid, "local_id": local, "coordinate_space": COORDINATE_SPACE, "unit": "mm",
                    "bbox": _bbox(pts), "approximate": True, "method": "dexpi_positions"}
@@ -380,7 +389,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
         (relations if ok else unresolved).append(rec)
         if ok:
             resolved_ids.add(id(rec))
-        pts = [p for p in places if p is not None]  # 그린 선이 아니라 두 끝의 자리. 사람 수정이 대상을 다시 찾는 열쇠라 그림을 읽어도 같아야 한다
+        # 그린 선이 아니라 두 끝의 자리. 사람 수정이 대상을 다시 찾는 열쇠라 그림을 읽어도 같아야 한다
+        pts = [p for p in (_middle(model, end[0]) or place for end, place in zip((src, dst), places)) if p is not None]
         if pts:
             source_locations.append({"object_id": c_id, "local_id": lid, "coordinate_space": COORDINATE_SPACE,
                                      "unit": "mm", "bbox": _bbox(pts), "approximate": True, "method": "dexpi_endpoints"})

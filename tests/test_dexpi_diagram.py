@@ -198,6 +198,8 @@ class EndsTest(unittest.TestCase):
         got = next(r for r in again["relations"] if r["kind"] == "measurement_connection" and r["waypoints"])
         self.assertLess(math.dist(back(exp, got["endpoints"][0]["point"]), self.sense), TOL)
         self.assertEqual([round(v) for v in back(exp, got["waypoints"][0])], [777, 333])
+        written = dexpi_read.read(exp.xml).conn_paths[got["source_object_id"]]
+        self.assertLess(math.dist(back(exp, written[0]), self.sense), TOL, "파일의 선도 측정 자리에서 시작함")
 
     def test_a_pipe_whose_flow_starts_at_its_target_is_drawn_along_the_flow(self):
         def change(ex):

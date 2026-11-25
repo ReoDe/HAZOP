@@ -422,7 +422,7 @@ class _Builder:
         self._allocate()
         self.excl_attrs = []
         root = ET.Element("Model", name=_safe_name(self.g["source"]["drawing_number"]),
-                          uri="urn:hazop:dexpi-export:" + _safe_name(self.g["source"]["drawing_number"]))
+                          uri=dexpi_import.OWN_URI + _safe_name(self.g["source"]["drawing_number"]))
         for prefix in ("Core", "Plant"):
             _el(root, "Import", prefix=prefix, source=MODEL_SOURCE[prefix])
         em = _obj(root, "Core/EngineeringModel")

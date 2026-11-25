@@ -140,6 +140,7 @@ class Model:
         self.fmt = fmt
         self.version = version
         self.application = None
+        self.uri = None  # 2.0 Model의 uri
         self.schema_version = None  # Proteus 스키마 판(예 4.1.1)
         self.drawing = {"number": None, "name": None, "width": None, "height": None}
         self.items = {}  # id -> 항목 dict(equipment·piping·offpage·instrument)
@@ -277,6 +278,7 @@ def _data_point(obj, prop="Position"):
 
 def read_dexpi_xml(root, version):
     m = Model(FMT_DEXPI, version)  # Import의 주소는 열지 않는다. 판 번호는 detect가 이미 뽑았다
+    m.uri = root.get("uri")
     versions = import_versions(root)
     if len(set(versions.values())) > 1:
         m.issue("dexpi_version_mixed", None, "Core와 Plant의 DEXPI 판이 다름(%s)" % ", ".join("%s %s" % kv for kv in sorted(versions.items())))
