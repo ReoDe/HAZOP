@@ -1,0 +1,1590 @@
+{
+ "note": "정리된 보기를 DEXPI에서 그릴 때 화면에 넘기는 값의 견본(HZ-PLN-22 §6.8). page는 고친 추출 결과, 나머지는 그 쪽에서 나오는 값. 가상 자료.",
+ "page": {
+  "schema_version": "0.1",
+  "project_id": null,
+  "extraction_run_id": "extract-sample",
+  "run": {
+   "script": "sample",
+   "script_version": "0",
+   "rules_version": "sample",
+   "scope": "full",
+   "settings": {}
+  },
+  "source": {
+   "format": "drawio",
+   "file": "sample.drawio",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "page_count": 1
+  },
+  "source_context": {
+   "document_id": null,
+   "page_id": "page-1",
+   "page_name": "sample"
+  },
+  "review_status": "not_reviewed",
+  "drawing": {
+   "page_width": 700,
+   "page_height": 400,
+   "drawing_number": "SMP-1",
+   "title": "견본",
+   "revision": null,
+   "ignored_objects": []
+  },
+  "coordinate_system": {
+   "coordinate_space": "drawio_page",
+   "unit": "px",
+   "svg_alignment": {
+    "offset": [
+     10,
+     20
+    ],
+    "viewBox": "0 0 700 400"
+   }
+  },
+  "nodes": [
+   {
+    "local_id": "local-node-001",
+    "source_object_id": "n1",
+    "classification": "classified",
+    "category": "equipment",
+    "kind": "steam_generator",
+    "tag": "RC-SG01",
+    "label": "RC-SG01",
+    "label_text": "RC-SG01",
+    "label_location": {
+     "bbox": [
+      100,
+      220,
+      40,
+      12
+     ]
+    },
+    "attributes": {},
+    "style": "flipV=1",
+    "parent": null,
+    "geometry": {
+     "x": 100,
+     "y": 100,
+     "width": 60,
+     "height": 120
+    },
+    "evidence": {}
+   },
+   {
+    "local_id": "local-node-002",
+    "source_object_id": "n2",
+    "classification": "classified",
+    "category": "valve",
+    "kind": "motor_operated_valve",
+    "tag": "RC-V010",
+    "label": "RC-V010",
+    "label_text": "RC-V010",
+    "label_location": {
+     "bbox": [
+      240,
+      170,
+      40,
+      12
+     ]
+    },
+    "attributes": {},
+    "style": "rotation=0",
+    "parent": null,
+    "geometry": {
+     "x": 240,
+     "y": 150,
+     "width": 30,
+     "height": 20
+    },
+    "evidence": {},
+    "human_edit": {
+     "ops": [
+      "op-1"
+     ],
+     "auto": [
+      "op-1"
+     ]
+    }
+   },
+   {
+    "local_id": "local-node-003",
+    "source_object_id": "n3",
+    "classification": "classified",
+    "category": "piping_element",
+    "kind": "tee",
+    "tag": "T1",
+    "label": "T1",
+    "label_text": "T1",
+    "label_location": {
+     "bbox": [
+      340,
+      162,
+      40,
+      12
+     ]
+    },
+    "attributes": {},
+    "style": "",
+    "parent": null,
+    "geometry": {
+     "x": 340,
+     "y": 158,
+     "width": 4,
+     "height": 4
+    },
+    "evidence": {}
+   },
+   {
+    "local_id": "local-node-004",
+    "source_object_id": "n4",
+    "classification": "unclassified",
+    "category": "unclassified",
+    "kind": null,
+    "tag": null,
+    "label": "",
+    "label_text": "",
+    "label_location": null,
+    "attributes": {},
+    "style": "",
+    "parent": null,
+    "geometry": {
+     "x": 420,
+     "y": 150,
+     "width": 20,
+     "height": 20
+    },
+    "evidence": {}
+   },
+   {
+    "local_id": "local-node-005",
+    "source_object_id": "n5",
+    "classification": "classified",
+    "category": "valve",
+    "kind": "damper",
+    "tag": "D-1",
+    "label": "D-1",
+    "label_text": "D-1",
+    "label_location": {
+     "bbox": [
+      340,
+      264,
+      40,
+      12
+     ]
+    },
+    "attributes": {},
+    "style": "",
+    "parent": null,
+    "geometry": {
+     "x": 340,
+     "y": 240,
+     "width": 24,
+     "height": 24
+    },
+    "evidence": {},
+    "human_edit": {
+     "ops": [
+      "op-2"
+     ]
+    }
+   },
+   {
+    "local_id": "local-node-006",
+    "source_object_id": "n6",
+    "classification": "classified",
+    "category": "instrument",
+    "kind": "transmitter",
+    "tag": "RC-LT101",
+    "label": "RC-LT101",
+    "label_text": "RC-LT101",
+    "label_location": {
+     "bbox": [
+      240,
+      100,
+      40,
+      12
+     ]
+    },
+    "attributes": {},
+    "style": "",
+    "parent": null,
+    "geometry": {
+     "x": 240,
+     "y": 60,
+     "width": 40,
+     "height": 40
+    },
+    "evidence": {}
+   },
+   {
+    "local_id": "local-node-007",
+    "source_object_id": "n7",
+    "classification": "classified",
+    "category": "off_page",
+    "kind": "continuation",
+    "tag": null,
+    "label": "SNP-M-102\nRC-L010 SURGE LINE",
+    "label_text": "SNP-M-102\nRC-L010 SURGE LINE",
+    "label_location": null,
+    "attributes": {},
+    "style": "",
+    "parent": null,
+    "geometry": {
+     "x": 480,
+     "y": 300,
+     "width": 120,
+     "height": 34
+    },
+    "evidence": {}
+   },
+   {
+    "local_id": "local-node-008",
+    "source_object_id": "n8",
+    "classification": "classified",
+    "category": "valve",
+    "kind": "check_valve",
+    "tag": "CV-9",
+    "label": "CV-9",
+    "label_text": "CV-9",
+    "label_location": null,
+    "attributes": {},
+    "style": "",
+    "parent": null,
+    "geometry": null,
+    "evidence": {}
+   }
+  ],
+  "relations": [
+   {
+    "local_id": "local-rel-001",
+    "source_object_id": "r1",
+    "kind": "physical_connection",
+    "line_type": "process",
+    "line_no": "RC-L001",
+    "endpoints": [
+     {
+      "end": "source",
+      "node_local_id": "local-node-001",
+      "source_object_id": "n1",
+      "constraint": null,
+      "point": [
+       160,
+       160
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     },
+     {
+      "end": "target",
+      "node_local_id": "local-node-002",
+      "source_object_id": "n2",
+      "constraint": null,
+      "point": [
+       240,
+       160
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     }
+    ],
+    "flow_direction": {
+     "from": "local-node-001",
+     "to": "local-node-002",
+     "from_end": "source",
+     "to_end": "target",
+     "basis": "arrow"
+    },
+    "waypoints": [
+     [
+      200,
+      160
+     ]
+    ],
+    "label": "",
+    "label_text": "",
+    "label_cells": [],
+    "attributes": {
+     "line_type": "process",
+     "line_no": "RC-L001"
+    },
+    "style": "",
+    "parent": null,
+    "geometry": null
+   },
+   {
+    "local_id": "local-rel-002",
+    "source_object_id": "r2",
+    "kind": "physical_connection",
+    "line_type": "process",
+    "line_no": "RC-L001",
+    "endpoints": [
+     {
+      "end": "source",
+      "node_local_id": "local-node-002",
+      "source_object_id": "n2",
+      "constraint": null,
+      "point": [
+       270,
+       160
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     },
+     {
+      "end": "target",
+      "node_local_id": "local-node-003",
+      "source_object_id": "n3",
+      "constraint": null,
+      "point": [
+       342,
+       160
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     }
+    ],
+    "flow_direction": null,
+    "waypoints": [],
+    "label": "",
+    "label_text": "",
+    "label_cells": [],
+    "attributes": {
+     "line_type": "process",
+     "line_no": "RC-L001"
+    },
+    "style": "",
+    "parent": null,
+    "geometry": null
+   },
+   {
+    "local_id": "local-rel-003",
+    "source_object_id": "r3",
+    "kind": "physical_connection",
+    "line_type": "process",
+    "line_no": "RC-L002",
+    "endpoints": [
+     {
+      "end": "source",
+      "node_local_id": "local-node-003",
+      "source_object_id": "n3",
+      "constraint": null,
+      "point": [
+       342,
+       160
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     },
+     {
+      "end": "target",
+      "node_local_id": "local-node-004",
+      "source_object_id": "n4",
+      "constraint": null,
+      "point": [
+       420,
+       160
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     }
+    ],
+    "flow_direction": null,
+    "waypoints": [],
+    "label": "",
+    "label_text": "",
+    "label_cells": [],
+    "attributes": {
+     "line_type": "process",
+     "line_no": "RC-L002"
+    },
+    "style": "",
+    "parent": null,
+    "geometry": null
+   },
+   {
+    "local_id": "local-rel-004",
+    "source_object_id": "r4",
+    "kind": "measurement_connection",
+    "line_type": "instrument_tap",
+    "line_no": null,
+    "endpoints": [
+     {
+      "end": "source",
+      "node_local_id": "local-node-002",
+      "source_object_id": "n2",
+      "constraint": null,
+      "point": [
+       255,
+       150
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     },
+     {
+      "end": "target",
+      "node_local_id": "local-node-006",
+      "source_object_id": "n6",
+      "constraint": null,
+      "point": [
+       260,
+       100
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     }
+    ],
+    "flow_direction": null,
+    "waypoints": [],
+    "label": "",
+    "label_text": "",
+    "label_cells": [],
+    "attributes": {
+     "line_type": "instrument_tap",
+     "line_no": null
+    },
+    "style": "",
+    "parent": null,
+    "geometry": null
+   },
+   {
+    "local_id": "local-rel-005",
+    "source_object_id": "r5",
+    "kind": "measurement_connection",
+    "line_type": "instrument_tap",
+    "line_no": null,
+    "endpoints": [
+     {
+      "end": "source",
+      "node_local_id": "local-node-001",
+      "source_object_id": "n1",
+      "constraint": null,
+      "point": [
+       130,
+       100
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     },
+     {
+      "end": "target",
+      "node_local_id": "local-node-006",
+      "source_object_id": "n6",
+      "constraint": null,
+      "point": [
+       240,
+       80
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     }
+    ],
+    "flow_direction": null,
+    "waypoints": [],
+    "label": "",
+    "label_text": "",
+    "label_cells": [],
+    "attributes": {
+     "line_type": "instrument_tap",
+     "line_no": null
+    },
+    "style": "",
+    "parent": null,
+    "geometry": null
+   },
+   {
+    "local_id": "local-rel-006",
+    "source_object_id": "r6",
+    "kind": "physical_connection",
+    "line_type": "process",
+    "line_no": "RC-L003",
+    "endpoints": [
+     {
+      "end": "source",
+      "node_local_id": "local-node-003",
+      "source_object_id": "n3",
+      "constraint": null,
+      "point": null,
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     },
+     {
+      "end": "target",
+      "node_local_id": "local-node-005",
+      "source_object_id": "n5",
+      "constraint": null,
+      "point": null,
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     }
+    ],
+    "flow_direction": null,
+    "waypoints": [],
+    "label": "",
+    "label_text": "",
+    "label_cells": [],
+    "attributes": {
+     "line_type": "process",
+     "line_no": "RC-L003"
+    },
+    "style": "",
+    "parent": null,
+    "geometry": null
+   }
+  ],
+  "unresolved_connectors": [
+   {
+    "local_id": "local-rel-007",
+    "source_object_id": "r7",
+    "kind": "physical_connection",
+    "line_type": "process",
+    "line_no": "RC-L004",
+    "endpoints": [
+     {
+      "end": "source",
+      "node_local_id": "local-node-003",
+      "source_object_id": "n3",
+      "constraint": null,
+      "point": [
+       342,
+       162
+      ],
+      "point_basis": "geometry",
+      "status": "connected",
+      "port": null
+     },
+     {
+      "end": "target",
+      "node_local_id": null,
+      "source_object_id": null,
+      "constraint": null,
+      "point": [
+       342,
+       220
+      ],
+      "point_basis": "geometry",
+      "status": "unconnected",
+      "port": null
+     }
+    ],
+    "flow_direction": null,
+    "waypoints": [],
+    "label": "",
+    "label_text": "",
+    "label_cells": [],
+    "attributes": {
+     "line_type": "process",
+     "line_no": "RC-L004"
+    },
+    "style": "",
+    "parent": null,
+    "geometry": null
+   }
+  ],
+  "texts": [
+   {
+    "text": "NOTE 1",
+    "bbox": [
+     20,
+     360,
+     60,
+     14
+    ],
+    "owner": null
+   }
+  ],
+  "unclassified": [],
+  "source_locations": [
+   {
+    "object_id": "n1",
+    "local_id": "local-node-001",
+    "coordinate_space": "drawio_page",
+    "unit": "px",
+    "approximate": false,
+    "method": "geometry",
+    "bbox": [
+     100,
+     100,
+     60,
+     120
+    ]
+   },
+   {
+    "object_id": "n2",
+    "local_id": "local-node-002",
+    "coordinate_space": "drawio_page",
+    "unit": "px",
+    "approximate": false,
+    "method": "geometry",
+    "bbox": [
+     240,
+     150,
+     30,
+     20
+    ]
+   },
+   {
+    "object_id": "n3",
+    "local_id": "local-node-003",
+    "coordinate_space": "drawio_page",
+    "unit": "px",
+    "approximate": false,
+    "method": "geometry",
+    "bbox": [
+     340,
+     158,
+     4,
+     4
+    ]
+   },
+   {
+    "object_id": "n4",
+    "local_id": "local-node-004",
+    "coordinate_space": "drawio_page",
+    "unit": "px",
+    "approximate": false,
+    "method": "geometry",
+    "bbox": [
+     420,
+     150,
+     20,
+     20
+    ]
+   },
+   {
+    "object_id": "n5",
+    "local_id": "local-node-005",
+    "coordinate_space": "drawio_page",
+    "unit": "px",
+    "approximate": false,
+    "method": "geometry",
+    "bbox": [
+     340,
+     240,
+     24,
+     24
+    ]
+   },
+   {
+    "object_id": "n6",
+    "local_id": "local-node-006",
+    "coordinate_space": "drawio_page",
+    "unit": "px",
+    "approximate": false,
+    "method": "geometry",
+    "bbox": [
+     240,
+     60,
+     40,
+     40
+    ]
+   },
+   {
+    "object_id": "n7",
+    "local_id": "local-node-007",
+    "coordinate_space": "drawio_page",
+    "unit": "px",
+    "approximate": false,
+    "method": "geometry",
+    "bbox": [
+     480,
+     300,
+     120,
+     34
+    ]
+   }
+  ],
+  "validation": {
+   "status": "passed",
+   "blockers": [],
+   "unknowns": [
+    {
+     "check": "unknown_symbol",
+     "target": "local-node-004",
+     "source_object_id": "n4",
+     "field": "kind",
+     "reason": "분류 못 함"
+    }
+   ]
+  }
+ },
+ "items": {
+  "width": 700.0,
+  "height": 400.0,
+  "items": [
+   {
+    "id": "local-node-001",
+    "kind": "steam_generator",
+    "kind_label": "증기발생기",
+    "category": "equipment",
+    "tag": "RC-SG01",
+    "layer": "symbol",
+    "bbox": [
+     90.0,
+     80.0,
+     150.0,
+     200.0
+    ],
+    "polyline": null,
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": [
+     90.0,
+     200.0,
+     130.0,
+     212.0
+    ]
+   },
+   {
+    "id": "local-node-002",
+    "kind": "motor_operated_valve",
+    "kind_label": "전동 밸브",
+    "category": "valve",
+    "tag": "RC-V010",
+    "layer": "symbol",
+    "bbox": [
+     230.0,
+     130.0,
+     260.0,
+     150.0
+    ],
+    "polyline": null,
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": [
+     230.0,
+     150.0,
+     270.0,
+     162.0
+    ]
+   },
+   {
+    "id": "local-node-003",
+    "kind": "tee",
+    "kind_label": "티",
+    "category": "piping_element",
+    "tag": "T1",
+    "layer": "symbol",
+    "bbox": [
+     330.0,
+     138.0,
+     334.0,
+     142.0
+    ],
+    "polyline": null,
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": [
+     330.0,
+     142.0,
+     370.0,
+     154.0
+    ]
+   },
+   {
+    "id": "local-node-004",
+    "kind": null,
+    "kind_label": null,
+    "category": "unclassified",
+    "tag": null,
+    "layer": "symbol",
+    "bbox": [
+     410.0,
+     130.0,
+     430.0,
+     150.0
+    ],
+    "polyline": null,
+    "classification": "unclassified",
+    "unknown": true,
+    "label_bbox": null
+   },
+   {
+    "id": "local-node-005",
+    "kind": "damper",
+    "kind_label": "댐퍼",
+    "category": "valve",
+    "tag": "D-1",
+    "layer": "symbol",
+    "bbox": [
+     330.0,
+     220.0,
+     354.0,
+     244.0
+    ],
+    "polyline": null,
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": [
+     330.0,
+     244.0,
+     370.0,
+     256.0
+    ]
+   },
+   {
+    "id": "local-node-006",
+    "kind": "transmitter",
+    "kind_label": "전송기",
+    "category": "instrument",
+    "tag": "RC-LT101",
+    "layer": "symbol",
+    "bbox": [
+     230.0,
+     40.0,
+     270.0,
+     80.0
+    ],
+    "polyline": null,
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": [
+     230.0,
+     80.0,
+     270.0,
+     92.0
+    ]
+   },
+   {
+    "id": "local-node-007",
+    "kind": "continuation",
+    "kind_label": "도면 연결점",
+    "category": "off_page",
+    "tag": null,
+    "layer": "symbol",
+    "bbox": [
+     470.0,
+     280.0,
+     590.0,
+     314.0
+    ],
+    "polyline": null,
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": null
+   },
+   {
+    "id": "local-rel-001",
+    "kind": "physical_connection",
+    "category": "pipe",
+    "tag": "RC-L001",
+    "layer": "pipe",
+    "bbox": [
+     150.0,
+     140.0,
+     230.0,
+     140.0
+    ],
+    "polyline": [
+     [
+      150.0,
+      140.0
+     ],
+     [
+      190.0,
+      140.0
+     ],
+     [
+      230.0,
+      140.0
+     ]
+    ],
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": null
+   },
+   {
+    "id": "local-rel-002",
+    "kind": "physical_connection",
+    "category": "pipe",
+    "tag": "RC-L001",
+    "layer": "pipe",
+    "bbox": [
+     260.0,
+     140.0,
+     332.0,
+     140.0
+    ],
+    "polyline": [
+     [
+      260.0,
+      140.0
+     ],
+     [
+      332.0,
+      140.0
+     ]
+    ],
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": null
+   },
+   {
+    "id": "local-rel-003",
+    "kind": "physical_connection",
+    "category": "pipe",
+    "tag": "RC-L002",
+    "layer": "pipe",
+    "bbox": [
+     332.0,
+     140.0,
+     410.0,
+     140.0
+    ],
+    "polyline": [
+     [
+      332.0,
+      140.0
+     ],
+     [
+      410.0,
+      140.0
+     ]
+    ],
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": null
+   },
+   {
+    "id": "local-rel-004",
+    "kind": "measurement_connection",
+    "category": "pipe",
+    "tag": "",
+    "layer": "pipe",
+    "bbox": [
+     245.0,
+     80.0,
+     250.0,
+     130.0
+    ],
+    "polyline": [
+     [
+      245.0,
+      130.0
+     ],
+     [
+      250.0,
+      80.0
+     ]
+    ],
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": null
+   },
+   {
+    "id": "local-rel-005",
+    "kind": "measurement_connection",
+    "category": "pipe",
+    "tag": "",
+    "layer": "pipe",
+    "bbox": [
+     120.0,
+     60.0,
+     230.0,
+     80.0
+    ],
+    "polyline": [
+     [
+      120.0,
+      80.0
+     ],
+     [
+      230.0,
+      60.0
+     ]
+    ],
+    "classification": "classified",
+    "unknown": false,
+    "label_bbox": null
+   }
+  ]
+ },
+ "clean": {
+  "source_format": "drawio",
+  "items": {
+   "local-node-001": {
+    "orient": {
+     "rot": 0.0,
+     "flip_h": false,
+     "flip_v": true,
+     "basis": "drawio"
+    },
+    "review": "script",
+    "tbox": [
+     90.0,
+     80.0,
+     150.0,
+     200.0
+    ]
+   },
+   "local-node-002": {
+    "orient": {
+     "rot": 0.0,
+     "flip_h": false,
+     "flip_v": false,
+     "basis": "drawio"
+    },
+    "review": "ai_auto",
+    "tbox": [
+     232.5,
+     126.0,
+     262.5,
+     146.0
+    ]
+   },
+   "local-node-003": {
+    "orient": {
+     "rot": 0,
+     "flip_h": false,
+     "flip_v": false,
+     "basis": "none"
+    },
+    "review": "script",
+    "tbox": [
+     330.0,
+     138.0,
+     334.0,
+     142.0
+    ]
+   },
+   "local-node-004": {
+    "orient": {
+     "rot": 0,
+     "flip_h": false,
+     "flip_v": false,
+     "basis": "none"
+    },
+    "review": "script"
+   },
+   "local-node-005": {
+    "orient": {
+     "rot": 0,
+     "flip_h": false,
+     "flip_v": false,
+     "basis": "none"
+    },
+    "review": "human",
+    "tbox": [
+     330.0,
+     220.0,
+     354.0,
+     244.0
+    ]
+   },
+   "local-node-006": {
+    "orient": {
+     "rot": 0,
+     "flip_h": false,
+     "flip_v": false,
+     "basis": "none"
+    },
+    "review": "script",
+    "tbox": [
+     223.5,
+     36.0,
+     271.5,
+     84.0
+    ]
+   },
+   "local-node-007": {
+    "orient": {
+     "rot": 0,
+     "flip_h": false,
+     "flip_v": false,
+     "basis": "none"
+    },
+    "review": "script",
+    "label": [
+     "SNP-M-102",
+     "RC-L010 SURGE LINE"
+    ],
+    "tbox": [
+     450.0,
+     275.0,
+     610.0,
+     319.0
+    ]
+   },
+   "local-rel-001": {
+    "line_type": "process",
+    "flow": "source_to_target",
+    "ends": [
+     {
+      "end": "source",
+      "point": [
+       137.41,
+       140.0
+      ],
+      "status": "connected",
+      "node": "local-node-001"
+     },
+     {
+      "end": "target",
+      "point": [
+       237.5,
+       140.0
+      ],
+      "status": "connected",
+      "node": "local-node-002"
+     }
+    ],
+    "review": "script",
+    "tline": [
+     [
+      137.41,
+      140.0
+     ],
+     [
+      190.0,
+      140.0
+     ],
+     [
+      237.5,
+      140.0
+     ]
+    ]
+   },
+   "local-rel-002": {
+    "line_type": "process",
+    "flow": null,
+    "ends": [
+     {
+      "end": "source",
+      "point": [
+       257.5,
+       140.0
+      ],
+      "status": "connected",
+      "node": "local-node-002"
+     },
+     {
+      "end": "target",
+      "point": [
+       332.0,
+       140.0
+      ],
+      "status": "connected",
+      "node": "local-node-003"
+     }
+    ],
+    "review": "script",
+    "tline": [
+     [
+      257.5,
+      140.0
+     ],
+     [
+      332.0,
+      140.0
+     ]
+    ]
+   },
+   "local-rel-003": {
+    "line_type": "process",
+    "flow": null,
+    "ends": [
+     {
+      "end": "source",
+      "point": [
+       332.0,
+       140.0
+      ],
+      "status": "connected",
+      "node": "local-node-003"
+     },
+     {
+      "end": "target",
+      "point": [
+       410.0,
+       140.0
+      ],
+      "status": "connected",
+      "node": "local-node-004"
+     }
+    ],
+    "review": "script",
+    "tline": [
+     [
+      332.0,
+      140.0
+     ],
+     [
+      410.0,
+      140.0
+     ]
+    ]
+   },
+   "local-rel-004": {
+    "line_type": "instrument_tap",
+    "flow": null,
+    "ends": [
+     {
+      "end": "source",
+      "point": [
+       247.5,
+       128.0
+      ],
+      "status": "connected",
+      "node": "local-node-002"
+     },
+     {
+      "end": "target",
+      "point": [
+       247.5,
+       84.0
+      ],
+      "status": "connected",
+      "node": "local-node-006"
+     }
+    ],
+    "review": "script",
+    "tline": [
+     [
+      247.5,
+      128.0
+     ],
+     [
+      247.5,
+      84.0
+     ]
+    ]
+   },
+   "local-rel-005": {
+    "line_type": "instrument_tap",
+    "flow": null,
+    "ends": [
+     {
+      "end": "source",
+      "point": [
+       109.2,
+       83.6
+      ],
+      "status": "connected",
+      "node": "local-node-001"
+     },
+     {
+      "end": "target",
+      "point": [
+       223.5,
+       60.0
+      ],
+      "status": "connected",
+      "node": "local-node-006"
+     }
+    ],
+    "review": "script",
+    "tline": [
+     [
+      109.2,
+      83.6
+     ],
+     [
+      171.75,
+      83.6
+     ],
+     [
+      171.75,
+      60.0
+     ],
+     [
+      223.5,
+      60.0
+     ]
+    ]
+   }
+  },
+  "text_items": [
+   {
+    "text": "NOTE 1",
+    "bbox": [
+     10.0,
+     340.0,
+     70.0,
+     354.0
+    ]
+   }
+  ],
+  "unconfirmed": [
+   {
+    "id": "local-node-004",
+    "reason": "unknown_symbol"
+   },
+   {
+    "id": "local-rel-007",
+    "reason": "unresolved_connector"
+   },
+   {
+    "id": "local-node-008",
+    "reason": "unplaced"
+   },
+   {
+    "id": "local-rel-006",
+    "reason": "unplaced"
+   }
+  ],
+  "counts": {
+   "unknown_symbol": 1,
+   "unresolved_connector": 1,
+   "unplaced": 2,
+   "open_end": 0,
+   "missing_tag": 0,
+   "ai_candidate": 0,
+   "total": 4
+  },
+  "unplaced": [
+   {
+    "id": "local-node-008",
+    "kind": "node",
+    "tag": "CV-9"
+   },
+   {
+    "id": "local-rel-006",
+    "kind": "relation",
+    "tag": "RC-L003"
+   }
+  ],
+  "leftovers": {
+   "counted": true,
+   "n": 0,
+   "items": [],
+   "excluded_by_author": 0
+  },
+  "hops": [],
+  "layout_lint": {
+   "topology_changed": 0,
+   "moved_too_far": 0,
+   "off_axis": 0,
+   "inline_off_center": 0,
+   "size_mismatch": 0,
+   "port_miss": 0,
+   "symbol_overlap": 0,
+   "pipe_through_symbol": 0,
+   "pipe_overlap": 0,
+   "crossing_without_hop": 0,
+   "visual_off_axis": 0,
+   "moved": 4.72,
+   "reverted": 0,
+   "flow_unknown": 2
+  }
+ },
+ "verdict": {
+  "source": "dexpi",
+  "code": null,
+  "why": null,
+  "detail": null,
+  "ledger": {
+   "component": {
+    "dashed": 3,
+    "solid": 4,
+    "total": 8,
+    "unplaced": 1
+   },
+   "pipe": {
+    "dashed": 1,
+    "solid": 2,
+    "total": 4,
+    "unplaced": 1
+   },
+   "signal": {
+    "dashed": 1,
+    "solid": 1,
+    "total": 2,
+    "unplaced": 0
+   },
+   "unresolved": {
+    "dashed": 1,
+    "solid": 0,
+    "total": 1,
+    "unplaced": 0
+   }
+  },
+  "dashed": [
+   {
+    "id": "local-node-004",
+    "what": "component",
+    "reason": "unclassified",
+    "points": null
+   },
+   {
+    "id": "local-node-005",
+    "what": "component",
+    "reason": "no_dexpi_class",
+    "points": null
+   },
+   {
+    "id": "local-node-007",
+    "what": "component",
+    "reason": "direction_unknown",
+    "points": null
+   },
+   {
+    "id": "local-rel-003",
+    "what": "pipe",
+    "reason": "endpoint_excluded",
+    "points": [
+     [
+      332,
+      140
+     ],
+     [
+      410,
+      140
+     ]
+    ]
+   },
+   {
+    "id": "local-rel-005",
+    "what": "signal",
+    "reason": "sensing_location_not_piping_component",
+    "points": [
+     [
+      120,
+      80
+     ],
+     [
+      230,
+      60
+     ]
+    ]
+   },
+   {
+    "id": "local-rel-007",
+    "what": "unresolved",
+    "reason": "unresolved_connector",
+    "points": [
+     [
+      332,
+      142
+     ],
+     [
+      332,
+      200
+     ]
+    ]
+   }
+  ],
+  "unplaced": [
+   {
+    "id": "local-node-008",
+    "what": "component"
+   },
+   {
+    "id": "local-rel-006",
+    "what": "pipe"
+   }
+  ]
+ },
+ "fallback_verdicts": [
+  {
+   "source": "extraction",
+   "code": "format",
+   "why": "이 형식의 도면은 읽은 결과로 그립니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "no_cache",
+   "why": "파일로 만든 그림이 아직 없습니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "no_sidecar",
+   "why": "그림의 곁 파일이 없습니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "unreadable",
+   "why": "파일로 만든 그림을 읽을 수 없습니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "sidecar_mismatch",
+   "why": "그림과 곁 파일이 서로 맞지 않습니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "stale",
+   "why": "도면이 바뀌어 그림을 다시 만들어야 합니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "build_failed",
+   "why": "그림 파일을 만들지 못했습니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "missing_part",
+   "why": "그림 파일에서 빠진 것이 있습니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "extra_part",
+   "why": "그림 파일에 도면에 없는 것이 있습니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "ledger",
+   "why": "그림에 있는 것과 도면에 있는 것이 다릅니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  },
+  {
+   "source": "extraction",
+   "code": "differs",
+   "why": "그림의 값이 도면과 다릅니다",
+   "detail": "기록용 글",
+   "ledger": null,
+   "dashed": [],
+   "unplaced": []
+  }
+ ]
+}
