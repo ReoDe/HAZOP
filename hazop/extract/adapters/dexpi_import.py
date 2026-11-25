@@ -643,7 +643,10 @@ def apply_sidecar(extraction, sidecar, dexpi_sha256):
             node["kind"], node["category"], node["classification"] = kind, rules.KIND_CATEGORY[kind], "classified"
             node["attributes"]["kind"] = kind
             out["restored_kinds"] += 1
-        if "tag" in ent:
+        if ent.get("tag") is not None and not isinstance(ent["tag"], str):
+            _issue(unknowns, "dexpi_sidecar_bad_tag", "곁 파일의 태그가 글자가 아니어서 되붙이지 않음", node["source_object_id"],
+                   node["local_id"], "tag")
+        elif "tag" in ent:
             out["restored_tags"] += _restore_tag(node, ent["tag"], unknowns)
         restored = []
         if (ent.get("attributes") or {}).get("fail_position") == "FL" and node["attributes"].get("fail_position") == "FAI":
@@ -655,7 +658,8 @@ def apply_sidecar(extraction, sidecar, dexpi_sha256):
                 restored.append(k)
         out["restored_attributes"] += len(restored)
         node.setdefault("evidence", {})["hazop_sidecar"] = {"entity_id": ent["entity_id"], "graph_version": sidecar.get("graph_version"),
-                                                           "origin": ent.get("origin"), "human_edit": ent.get("human_edit")}
+                                                           "origin": ent.get("origin"), "human_edit": ent.get("human_edit"),
+                                                           "auto": ent.get("auto") or []}
         gone = set(restored)
         if kind and node["kind"] == kind:
             gone.add("kind")
