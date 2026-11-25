@@ -400,9 +400,10 @@ git grep -nE "sheetconf" -- "hazop/*.py" "hazop/*.js" "scripts/*.py"
 
 | 항목 | 규칙 |
 | --- | --- |
-| 자료당 상한 20 | 같은 원본(sha256·쪽)에 대해 실행을 넘어 **누적** 20회다. 지금 20회는 실행마다 새로 세인다(`ai_review.run`의 `cap`). 누적은 `runs[].calls` 합으로 세고 번호 확정 때 함께 옮겨진다. 자동 경로는 설정값과 관계없이 20을 넘지 않는다(설정은 지금 200까지 받음, `api_aireview.py` 702) |
+| 자료당 상한 20 | 같은 원본(sha256·쪽)에 대해 실행을 넘어 **누적** 20회다. 지금 20회는 실행마다 새로 세인다(`ai_review.run`의 `cap`). 누적은 `runs[].calls` 합으로 세고 번호 확정 때 함께 옮겨진다. 자동 경로는 `min(설정값, 20)`이다. 사용자가 낮춘 값은 따르고 올린 값은 따르지 않는다(R3 판정 2026-11-25). 등록판이 올라가 이름이 바뀌어도 같은 쪽의 모든 판을 함께 센다 |
 | 자동 시도 | 자료당 3번(호출 오류로 끝난 것만 셈). 넘으면 `waiting(error_final)` |
 | 실행당 상한 300 | **올리기 묶음 전체**에 건다. 지금은 파일마다 작업이 생기고(`api.py` 371) 작업마다 300을 새로 센다(`register_flow.py` 69). 자동 작업이 하나도 없을 때 새 예산 300을 만들고, 도는 동안 들어온 등록 작업은 그 예산을 나눠 쓴다. 다 쓰면 남은 쪽은 `waiting(run_cap)` |
+| 그림 스위치 | 사용자가 '도면 조각 그림 보내기'를 끄면 부르지 않고 `waiting(images_off)`. 동의하면 켠 것으로 적고(동의 문장이 조각 그림을 말함), 동의 뒤에 끈 것이 이긴다(R3 판정 2026-11-25) |
 | 그림 입력만 | drawio·DEXPI·스캔은 자동 경로에서 부르지 않는다. 받지 않을 후보에 호출을 쓰지 않고, 자동으로 밖에 나가는 자료도 그만큼 준다. 원본 PDF가 없는 쪽은 `waiting(no_image)` |
 | 구독만 | `ai_image_flow.subscription_client` 그대로. API 연결이면 `waiting(no_connection)` |
 | 한도·멈춤 | `waiting`과 까닭. 추출·그래프는 완료. 받은 답은 저장(`ai_image_flow.py` 168 `_tolerant`) |
@@ -640,11 +641,13 @@ git grep -nE "sheetconf" -- "hazop/*.py" "hazop/*.js" "scripts/*.py"
 | 명령 `aireview.send_policy {send, reason?}` | 이 프로젝트를 AI로 보내지 않음(deny)·보내도 됨(allow). 검토자 이름이 있어야 함. allow면 이어 함 |
 | 채팅 `aireview.auto_run {graph_ids}`, `aireview.auto_revert {graph_id}` | AI로 확정, 도면 단위 되돌리기. 둘 다 확인 상자를 거침 |
 
+`export.open_folder {kind}`(excel·ie·fmea·dexpi·chat)는 이번 실행에서 내보낸 폴더를 탐색기로 연다. 경로는 받지 않는다(`hazop/shell/export_folder.py`).
+
 ### 15.2 저장 꼴
 
 - 동의: 사용자 설정 파일의 `auto_send_consent` = `{"allow": bool, "notice": "auto-send-1", "at", "by"}`. 네 칸의 꼴이 온전하지 않거나 `notice`가 다르면 묻지 않은 것으로 본다. 쓰는 곳은 명령 하나뿐이고 채팅은 쓰지 못한다. 옛 토글 `extract_ai_review`는 이 흐름이 보지 않는다.
 - 보내지 않음: C1의 `send-policy` 파일 그대로.
-- 까닭 코드(`auto.why`): `no_consent`, `ai_off`(보내지 않음), `no_connection`, `limit`, `error`·`error_final`(실패), `stopped`, `run_cap`, `taken`, `scan`, `no_image`, `started`(도는 중이거나 끊김).
+- 까닭 코드(`auto.why`): `no_consent`, `ai_off`(보내지 않음), `no_connection`, `limit`, `error`·`error_final`(실패), `stopped`, `run_cap`, `taken`, `scan`, `no_image`, `images_off`(그림 보내기를 끔), `started`(도는 중이거나 끊김).
 - `data/ai-review/auto/calls-<원본>-p<쪽>.json`: 지금 도는 실행이 쓴 호출 수. 끝나면 지운다. 남아 있으면 호출 중에 죽은 것이라 다음 실행이 실행 기록으로 옮긴다(`auto_id`로 한 번만). `intent-<프로젝트>-<자료>.json`: 추출하는 동안의 표지. 쪽 기록을 적기 전에 죽은 쪽을 이어 하기가 거둔다.
 - 실행 기록 `runs[].no_kind`: AI가 "기호 아님"·"모름"이라고 답한 자리. 후보가 아니므로 수락·견본·미확인 수에 들지 않는다.
 
@@ -659,5 +662,9 @@ git grep -nE "sheetconf" -- "hazop/*.py" "hazop/*.js" "scripts/*.py"
 | 8장 이어 하기 | 다음 올리기 때의 이어 하기는 그 묶음의 마지막 파일 뒤에 남은 예산으로 돎. 묶음이 다룬 쪽은 다시 잡지 않음 | 실패한 쪽이 한 번의 올리기에서 시도 3번을 다 쓰지 않게 |
 | 10.2 파일 | `hazop/shell/auto_flow.py`(새 파일), `window.py` 한 줄(연결 알림), `hazop/chat/card.py`·`chat_edits.py` 한 줄씩, 엔진 `confirmation.auto_record`·`ai_review`의 `no_kind` | 흐름을 한 곳에 모음 |
 | 7.2 채팅 추출 | `register.extract`·`register.reextract`도 이 흐름을 탐 | 올리다 멈춘 자료를 채팅으로 추출하면 자동 확정 밖에 남는다 |
+| 2.5 | 번호 확정 길 밖에서 등록판이 올라간 추출(다시 올리기, 채팅 추출, 이전 화면 뒤)도 앞 판의 수정·후보·자동 기록을 먼저 옮김(`titleblock.carry_previous`). 새 쪽은 (자료, 쪽)으로 판정 | 되돌림과 누적 20이 사라지고 옛 자료가 소급해 돌았다(검토 재현) |
+| 4.4 | 자동 실행에서 답을 받은 자리의 아무도 정하지 않은 앞 제안을 먼저 뺌 | 새 답이 '기호 아님'이어도 옛 제안이 수락됐다(검토 재현) |
+| 4.5 | 켜는 판정에 Wilson 하한 80%, 뒤집는 오답 0, 짝 없는 구성요소 2건 이하, 태그 95%(10건 미만은 끔), 0.60은 그 구간만 20건·85%·뒤집는 오답 0을 더함(`check_auto_accept.py --floors`) | 총괄 결정 2026-11-25 |
+| 9장 | 추출에 프로젝트가 없으면 지금 프로젝트의 보내기 정책을 봄(둘 다 모르면 자동은 보내지 않음) | 검토 지적 |
 | P11 | 채팅 쪽 확정이 견줌을 함께 적는 일은 하지 않음 | 벡터 PDF는 지금 확정할 수 없어 쓸 쪽이 drawio·DEXPI뿐이다(backlog 제안) |
 
