@@ -1378,8 +1378,12 @@ def protected_targets(name, resolved, doc=None):
     out = set()
 
     def place(op):
-        at = (op.get("base") or {}).get("at")
-        if at:
+        held = op.get("held") if isinstance(op.get("held"), dict) else {}     # 새 파일로 옮기며 남긴 고침(edit_link): 지문이 여기 있다
+        if held and op.get("target") and not (held.get("base") or {}).get("at"):
+            out.add(op["target"])
+        for at in [(fp or {}).get("at") for fp in [op.get("base"), held.get("base"), *(held.get("refs") or {}).values()]]:
+            if not at:
+                continue
             out.update(_at_place(nodes, [at[0] - 1, at[1] - 1, at[0] + 1, at[1] + 1]))
     for o in resolved["ops"]:
         if corrections.is_auto(o) or not o.get("target"):

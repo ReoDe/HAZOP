@@ -18,7 +18,8 @@ from hazop.console import safe_console  # noqa: E402
 
 from hazop.extract import edit_link  # noqa: E402
 
-STATES = {"none": "옮길 고침이 없음", "already": "이미 옮김", "preview": "미리 보기(쓰지 않음)", "carried": "옮김"}
+STATES = {"none": "옮길 고침이 없음", "already": "이미 옮김", "preview": "미리 보기(쓰지 않음)", "carried": "옮김",
+          "already_stale": "이미 옮겼고 그 뒤 옛 기록이 바뀜(덮거나 합치지 않음)"}
 
 
 def main(argv=None):
@@ -34,7 +35,12 @@ def main(argv=None):
     except (OSError, ValueError) as exc:
         print("옮기지 않음: %s" % exc)
         return 1
+    if out["state"] == "already_stale":
+        print("%s: 바뀐 고침 %d" % (STATES["already_stale"], out["changed"]))
+        return 1
     count = collections.Counter(r["outcome"] for r in out["rows"])
+    if out["candidates"] == "refused":
+        print("사람이 정한 AI 후보가 새 도면에 이미 있어 후보는 옮기지 않음")
     print("%s: 그대로 적용 %d, 이어짐 %d, 적용 안 됨 %d" % (STATES[out["state"]], count["same"], count["linked"], count["left"]))
     for r in out["rows"]:
         if r["outcome"] == "left":

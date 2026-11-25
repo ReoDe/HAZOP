@@ -8,21 +8,27 @@
 
 import collections
 import copy
+import hashlib
 import json
 import os
 
 from hazop import paths, store_io
-from hazop.extract import ai_review, corrections, ids
+from hazop.extract import ai_review, confirmation, corrections, ids
+
+MIN_MARKS = 3               # 알아볼 수 있는 구성요소가 이보다 적게 맞으면 같은 도면으로 보지 않는다
+HELD_TARGET = "carry-held"  # 남긴 add_* 연산의 target. add_*는 대상이 없어야 적용되므로 옛 앱도 적용하지 않는다
 
 # 잇지 않은 까닭(rows[].why)
 WHY = {"not_of_old_file": "옛 파일에서도 적용되지 않던 고침", "gone": "새 파일에 그 id가 없음", "duplicate_id": "같은 id가 둘 이상",
        "relation": "자리를 모르는 배관·계장선(태그가 없어 확인할 수 없음)", "made_id": "파일에 없어 읽을 때 지은 id", "no_tag": "태그가 없음",
        "no_kind": "종류를 모름", "kind_changed": "종류가 다름", "tag_changed": "태그가 다름", "tag_not_unique": "같은 태그가 둘 이상",
-       "moved": "자리나 내용이 달라짐", "not_alone": "같은 자리에 똑같이 보이는 것이 있고 그 id들이 달라짐"}
+       "moved": "자리나 내용이 달라짐", "not_alone": "같은 자리에 다른 것이 있고 그 id들이 달라짐",
+       "in_file": "사람이 더한 것이 이미 파일에 있음", "needs_left": "남긴 고침이 더한 것에 기댐", "unknown": "까닭을 읽을 수 없음"}
 REFUSALS = {"not_dexpi": "DEXPI 도면끼리만 잇습니다.", "other_project": "프로젝트가 다릅니다.", "other_page": "쪽이 다릅니다.",
             "number_unknown": "파일에 도면 번호가 없어 같은 도면인지 알 수 없습니다.",
             "other_drawing": "도면 번호나 제목, 구성요소가 달라 같은 도면으로 볼 수 없습니다.",
-            "new_has_edits": "새 도면에 이미 사람 고침이나 AI 후보 기록이 있어 합치지 않습니다."}
+            "corrupt": "기록이나 추출 결과를 읽을 수 없습니다.",
+            "new_has_edits": "새 도면에 이미 사람 고침이나 사람이 정한 AI 후보가 있어 합치지 않습니다."}
 
 
 class Refused(ValueError):
@@ -73,15 +79,12 @@ def check_same_drawing(old, new):
     if numbers[0] != numbers[1] or (all(confirmed) and confirmed[0] != confirmed[1]) or (all(titles) and titles[0] != titles[1]):
         raise Refused("other_drawing")
     known = [_marks(x) for x in (old, new)]
-    if not known[0] or 2 * len(known[0] & known[1]) <= len(known[0]):
+    same = len(known[0] & known[1])
+    if same < MIN_MARKS or 2 * same <= len(known[0]):
         raise Refused("other_drawing")
 
 
 # ---------------------------------------------------------------- 고침 하나하나
-def _look(fp):
-    return fp.get("kind"), _tag_key(fp.get("tag")), tuple(fp["at"] or ()), "ends" in fp
-
-
 class _Sheet:
     def __init__(self, extraction):
         self.fp = corrections._fingerprints(extraction)
@@ -89,9 +92,26 @@ class _Sheet:
         everything = [x for key in ("nodes", "relations", "unresolved_connectors") for x in extraction[key]]
         self.twice = {k for k, n in collections.Counter(x["source_object_id"] for x in everything).items() if n > 1}
         self.tags = collections.Counter(_tag_key(n.get("tag")) for n in extraction["nodes"])
-        self.alike = {}     # 겉모습(종류·태그·자리, 관계인지) -> 그 id들
-        for sid, fp in self.fp.items():
-            self.alike.setdefault(_look(fp), set()).add(sid)
+        self.soid = {n["local_id"]: n["source_object_id"] for n in extraction["nodes"]}
+        self.nodes = [(n, fp["at"], _tag_key(n.get("tag"))) for n, fp in ((n, self.fp[n["source_object_id"]]) for n in extraction["nodes"])]
+        self.lines = collections.Counter((r.get("kind"), frozenset(self.soid.get(e.get("node_local_id")) for e in r["endpoints"]))
+                                         for r in extraction["relations"])
+
+    def standing(self, base):
+        """같은 자리(반올림)에서 base와 같은 대상으로 보일 수 있는 id들. corrections._same과 같은 관용을 쓴다(모르는 종류·태그가 채워진 것,
+        배관이 측정선이 된 것). 관계의 끝 id는 순번이라 보지 않는다."""
+        mine = {k: v for k, v in base.items() if k != "ends"}
+        return {sid for sid, fp in self.fp.items() if ("ends" in fp) == ("ends" in base)
+                and corrections._same(mine, {k: v for k, v in fp.items() if k != "ends"})}
+
+    def holding(self, add):
+        """사람이 더한 것(add: _final의 값)과 같아 보이는 것의 수 (태그로, 자리로)."""
+        if add["op"] == "add_relation":
+            return (self.lines[(add["kind"], frozenset((add["from"], add["to"])))], 0)
+        x, y, w, h = add["bbox"]
+        tag = _tag_key(add.get("tag"))
+        return (sum(1 for _n, _at, t in self.nodes if tag and t == tag),
+                sum(1 for n, at, _t in self.nodes if at and n.get("kind") == add["kind"] and x - 1 <= at[0] <= x + w + 1 and y - 1 <= at[1] <= y + h + 1))
 
 
 def _judge(sid, base, old, new):
@@ -106,7 +126,7 @@ def _judge(sid, base, old, new):
     if base.get("at") is not None:
         if not corrections._same(base, now):
             return "left", "moved"
-        a, b = old.alike[_look(was)], new.alike[_look(now)]
+        a, b = old.standing(base), new.standing(base)
         return ("left", "not_alone") if a != b and max(len(a), len(b)) > 1 else ("same", None)
     if "ends" in was or "ends" in now:
         return "left", "relation"
@@ -129,41 +149,96 @@ def _bound(sid):
     return str(sid).startswith(corrections.MANUAL_PREFIX)
 
 
-def _move(op, old, new):
-    """연산 하나 → (새 기록에 적을 연산, 갈래, 까닭). 대상과 참조 가운데 하나라도 이을 수 없으면 통째로 남긴다."""
-    op = copy.deepcopy(op)
-    target, refs = op.get("target"), op.get("refs") or {}
+def _value(op):
+    return op["value"] if isinstance(op.get("value"), dict) else {}
+
+
+def _final(add, ops):
+    """더한 것이 뒤 고침까지 거친 모습. 새 파일에는 이 모습으로 들어 있다."""
+    out, mine = dict(_value(add), op=add["op"]), corrections.MANUAL_PREFIX + str(add.get("op_id"))
+    for o in ops:
+        v = _value(o)
+        if o.get("target") == mine:
+            out.update({"set_tag": {"tag": v.get("tag")}, "set_kind": {"kind": v.get("kind")}}.get(o.get("op"), {}))
+            if o.get("op") == "set_endpoint":
+                out["from" if v.get("end") == "source" else "to"] = v.get("node")
+    return out
+
+
+def _refs(op):
+    v = _value(op)
+    return [(sid, (op.get("refs") or {}).get(sid) or {}) for sid in corrections._refs(v)]
+
+
+def _judge_op(op, ops, old, new):
+    """연산 하나(더한 것에 기댄 몫은 빼고) → (갈래, 까닭, 이을 id들)."""
     if op.get("held"):
-        return op, "left", op["held"]["why"]
-    pieces = [(target, op.get("base") or {})] if target and not _bound(target) else []
-    value = op.get("value")
-    pieces += [(sid, refs.get(sid) or {}) for sid in (corrections._refs(value) if isinstance(value, dict) else [])]
+        why = op["held"].get("why") if isinstance(op["held"], dict) else None
+        return "left", why if why in WHY else "unknown", ()
+    if op.get("op") in ("add_node", "add_relation"):
+        add = _final(op, ops)
+        if any(n > o for n, o in zip(new.holding(add), old.holding(add))):
+            return "left", "in_file", ()
+    target = op.get("target")
+    pieces = ([(target, op.get("base") or {})] if target and not _bound(target) else []) + _refs(op)
     judged = [(sid,) + _judge(sid, base, old, new) for sid, base in pieces]
     why = next((w for _sid, outcome, w in judged if outcome == "left"), None)
-    if why:     # 지문을 그대로 두면 같은 자리의 다른 대상에 옮겨 붙을 수 있다(corrections._rematch). 원래 지문은 held에 남긴다
-        op["held"] = {"why": why, "base": op.get("base"), "refs": op.get("refs")}
-        op["base"], op["refs"] = None, {}
-        return op, "left", why
+    if why:
+        return "left", why, ()
     linked = {sid for sid, outcome, _w in judged if outcome == "link"}
-    if not linked:
-        return op, "same", None
-    op["base_before"] = {sid: base for sid, base in pieces if sid in linked}
-    if target in linked:
-        op["base"] = new.fp[target]
-    if refs:
-        op["refs"] = {sid: new.fp[sid] if sid in linked else fp for sid, fp in refs.items()}
-    return op, "linked", None
+    return ("linked" if linked else "same"), None, linked
+
+
+def _needs(op):
+    """이 연산이 가리키는, 사람이 더한 것의 id."""
+    return [x for x in [op.get("target")] + [_value(op).get(k) for k in corrections.REF_KEYS] if isinstance(x, str) and _bound(x)]
+
+
+def _moved(op, outcome, why, linked, new):
+    """새 기록에 적을 연산."""
+    op = copy.deepcopy(op)
+    if outcome == "left" and not op.get("held"):
+        # 지문을 그대로 두면 같은 자리의 다른 대상에 옮겨 붙을 수 있다(corrections._rematch). 원래 값은 held에 남긴다
+        op["held"] = {"why": why, "base": op.get("base"), "refs": op.get("refs")}
+        if "ai_candidate" in op:    # 같은 번호의 새 후보가 이 고침으로 수락된 것처럼 되지 않게(ai_review.reconcile)
+            op["held"]["ai_candidate"] = op.pop("ai_candidate")
+        op["base"], op["refs"] = None, {}
+        if not op.get("target"):
+            op["target"] = HELD_TARGET
+    elif outcome == "linked":
+        before = {sid: fp for sid, fp in [(op.get("target"), op.get("base"))] + _refs(op) if sid in linked}
+        op["base_before"] = dict(before, **(op.get("base_before") or {}))
+        if op.get("target") in linked:
+            op["base"] = new.fp[op["target"]]
+        op["refs"] = {sid: new.fp[sid] if sid in linked else fp for sid, fp in (op.get("refs") or {}).items()}
+    return op
+
+
+class _Moves:
+    """기록의 연산 전부(지금 것과 지운 것)를 함께 가른다. 더한 것을 남기면 거기에 기댄 고침도 남는다."""
+
+    def __init__(self, ops, removed, old, new):
+        self.new, self.verdicts, everything = new, {}, list(ops) + list(removed)
+        for op in everything:
+            self.verdicts[id(op)] = _judge_op(op, ops, old, new)
+        gone = None
+        while gone != (now := {corrections.MANUAL_PREFIX + str(o.get("op_id")) for o in everything if self.verdicts[id(o)][0] == "left"}):
+            gone = now
+            for op in everything:
+                if self.verdicts[id(op)][0] != "left" and any(x in gone for x in _needs(op)):
+                    self.verdicts[id(op)] = ("left", "needs_left", ())
+
+    def move(self, ops):
+        return [_moved(o, *self.verdicts[id(o)], self.new) for o in ops]
+
+    def rows(self, ops):
+        return [{"op_id": o.get("op_id"), "target": o.get("target"), "outcome": self.verdicts[id(o)][0], "why": self.verdicts[id(o)][1]} for o in ops]
 
 
 def move_ops(ops, old_extraction, new_extraction):
     """연산 목록 → (옮긴 연산 목록, [{op_id, target, outcome: same|linked|left, why}]). 입력은 바꾸지 않는다."""
-    old, new = _Sheet(old_extraction), _Sheet(new_extraction)
-    out, rows = [], []
-    for op in ops:
-        moved, outcome, why = _move(op, old, new)
-        out.append(moved)
-        rows.append({"op_id": op.get("op_id"), "target": op.get("target"), "outcome": outcome, "why": why})
-    return out, rows
+    moves = _Moves(ops, [], _Sheet(old_extraction), _Sheet(new_extraction))
+    return moves.move(ops), moves.rows(ops)
 
 
 # ---------------------------------------------------------------- 기록 파일
@@ -172,44 +247,117 @@ def _extraction(name):
         return json.load(fh)
 
 
-def _moved_candidates(old_name, new_name, new_extraction):
-    """새 이름의 AI 후보 문서. 사람이 정한 후보(수락·거절·되돌림)만 옮긴다. 옮길 것이 없으면 None."""
-    doc = ai_review.load_doc(old_name)
-    kept = [copy.deepcopy(c) for c in (doc or {}).get("candidates") or [] if c.get("status") in ("accepted", "rejected") or c.get("decided_at")]
-    return dict(ai_review.new_doc(new_name, new_extraction), candidates=kept, carried_from=[old_name]) if kept else None
+def _decided(c):
+    return c.get("status") in ("accepted", "rejected") or bool(c.get("decided_at"))
+
+
+def _digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _split_candidates(doc, rows, old, new):
+    """사람이 정한 후보 → (옮길 것, 얼릴 것). 대상과 상대가 새 파일에서도 같은 대상일 때만 옮긴다. 후보에는 지문이 없어 옛 추출의 것으로 본다."""
+    left = {r["op_id"] for r in rows if r["outcome"] == "left"}
+    kept, frozen = [], []
+    for c in (doc or {}).get("candidates") or []:
+        if not _decided(c):
+            continue
+        about = [c.get("target")] + [v for v in c.get("values") or [] if c.get("field") == "connection" and v in old.fp]
+        good = all(_judge(sid, old.fp.get(sid) or {}, old, new)[0] != "left" for sid in about) and c.get("op_id") not in left
+        (kept if good else frozen).append(copy.deepcopy(c))
+    return kept, frozen + copy.deepcopy((doc or {}).get("frozen") or [])
+
+
+def _put_candidates(old_name, new_name, new_extraction, rows, old, new, taken):
+    """사람이 정한 후보를 새 이름의 후보 문서에 적는다. 얼린 후보(frozen)는 candidates 밖의 칸이라 제안·수락·다시 묻기에 쓰이지 않는다.
+    이미 적었으면 아무것도 안 한다. 새 이름에 기계가 만든 제안만 있으면 합치되, 사람이 고쳤거나 정한 대상의 제안은 뺀다. → 상태."""
+    kept, frozen = _split_candidates(ai_review.load_doc(old_name), rows, old, new)
+    have = ai_review.load_doc(new_name)
+    if have is not None and old_name in (have.get("carried_from") or []):
+        return "already"
+    if not kept and not frozen and (have is None or not taken):
+        return "none"
+    if have is not None and any(_decided(c) for c in have["candidates"]):
+        return "refused"
+    doc = have or ai_review.new_doc(new_name, new_extraction)
+    closed = taken | {c.get("target") for c in kept}
+    doc["candidates"] = kept + [c for c in doc["candidates"] if c.get("target") not in closed]
+    if frozen:
+        doc["frozen"] = frozen
+    doc["carried_from"] = list(doc.get("carried_from") or []) + [old_name]
+    ai_review.save_doc(doc)
+    return "carried"
+
+
+def _put_reverted(old_name, new_name):
+    """옛 도면의 자동 확정을 사람이 통째로 되돌렸으면 그 되돌림만 한 번 옮긴다(확정은 옮기지 않음). 뒤에 사람이 다시 시킨 것은 덮지 않는다."""
+    cell = confirmation._auto_cell(confirmation._read_record(old_name)[0])
+    if cell is None or cell["result"] != "reverted":
+        return
+    log = confirmation._read_record(new_name)[0].get("log") or []
+    if not any(e.get("action") == "auto_carried" and e.get("from") == old_name for e in log):
+        confirmation.carry_auto(old_name, new_name)
+
+
+def _changed(then, ops):
+    now = {str(o.get("op_id")): _digest(o) for o in ops}
+    return sum(1 for k in set(then) | set(now) if then.get(k) != now.get(k))
 
 
 def carry(old_name, new_name, by, at=None, dry_run=False):
-    """옛 추출(old_name)의 사람 고침·사람이 정한 AI 후보를 새 추출(new_name)의 기록으로 옮겨 쓴다. 같은 도면이 아니면 Refused(아무것도 쓰지 않음).
-    이미 옮겼으면 아무것도 하지 않는다. 앞뒤 두 파일 가운데 AI 후보를 먼저 쓰고 고침 기록을 끝에 써서, 중간에 끊겨도 다시 하면 같은 끝이 된다.
-    쪽 확정과 자동 확정 기록은 옮기지 않는다. 그래프는 부르는 쪽이 다시 짓는다. → {"state": none|already|preview|carried, "rows"}."""
+    """옛 추출(old_name)의 사람 고침·사람이 정한 AI 후보·자동 확정 되돌림을 새 추출(new_name)의 기록으로 옮겨 쓴다. 같은 도면이 아니거나 읽을
+    수 없는 기록이면 Refused(아무것도 쓰지 않음). 고침 기록을 먼저 쓰고 후보와 되돌림을 뒤에 쓴다. 중간에 끊기면 다시 부를 때 빠진 것만 마저
+    쓴다(그사이 사람이 새로 고친 것은 그대로). 이미 옮긴 뒤 옛 기록이 바뀌었으면 쓰지 않고 already_stale로 알린다. 쪽 확정은 옮기지 않는다.
+    그래프는 부르는 쪽이 다시 짓는다.
+    → {"state": none|preview|carried|already|already_stale, "rows", "candidates": none|carried|already|refused, "changed": 바뀐 고침 수}."""
+    if not str(by or "").strip():
+        raise ValueError("옮긴 사람 이름이 있어야 함")
     corrections.check_person(by)
+    try:
+        return _carry(old_name, new_name, by, at, dry_run)
+    except (Refused, store_io.Conflict, FileNotFoundError):
+        raise
+    except (AttributeError, KeyError, TypeError, IndexError, ValueError) as exc:
+        raise Refused("corrupt") from exc
+
+
+def _carry(old_name, new_name, by, at, dry_run):
     record = corrections.load(old_name)
-    if record is None:
-        return {"state": "none", "rows": []}
+    ops = (record or {}).get("ops") or []
     have, fp = corrections.load_fp(new_name)
-    if have is not None and any((e.get("carry") or {}).get("from") == old_name for e in have.get("log") or []):
-        # 기록의 carried_from은 다음 저장(corrections.save_fp)에서 빠지므로 log로 안다
-        return {"state": "already", "rows": []}
-    ai_have = ai_review.load_doc(new_name)
-    if have is not None or (ai_have is not None and old_name not in (ai_have.get("carried_from") or [])):
+    done = next((e["carry"] for e in (have or {}).get("log") or [] if (e.get("carry") or {}).get("from") == old_name), None)
+    if done is not None:    # 기록의 carried_from은 다음 저장(corrections.save_fp)에서 빠지므로 log로 안다
+        if done["record"] != _digest(record):
+            return {"state": "already_stale", "rows": [], "candidates": "none", "changed": _changed(done["ops"], ops)}
+    ai_old, ai_have = ai_review.load_doc(old_name), ai_review.load_doc(new_name)
+    marked = ai_have is not None and old_name in (ai_have.get("carried_from") or [])
+    if done is None and (have is not None or (ai_have is not None and not marked and any(_decided(c) for c in ai_have["candidates"]))):
         raise Refused("new_has_edits")
-    old, new = _extraction(old_name), _extraction(new_name)
-    check_same_drawing(old, new)
-    ops, rows = move_ops(record.get("ops") or [], old, new)
+    cell = confirmation._auto_cell(confirmation._read_record(old_name)[0])
+    if record is None and not any(_decided(c) for c in (ai_old or {}).get("candidates") or []) and (cell is None or cell["result"] != "reverted"):
+        return {"state": "none", "rows": [], "candidates": "none", "changed": 0}
+    old_ex, new_ex = _extraction(old_name), _extraction(new_name)
+    check_same_drawing(old_ex, new_ex)
+    old, new = _Sheet(old_ex), _Sheet(new_ex)
+    log = (record or {}).get("log") or []
+    moves = _Moves(ops, [o for e in log for o in e.get("removed_ops") or []], old, new)
+    rows = moves.rows(ops)
     if dry_run:
-        return {"state": "preview", "rows": rows}
-    at = at or store_io.now_utc()
-    log = [dict(e, removed_ops=move_ops(e["removed_ops"], old, new)[0]) if e.get("removed_ops") else copy.deepcopy(e)
-           for e in record.get("log") or []]     # 지운 고침도 함께 옮긴다: 다시 하기가 되고, 되돌린 AI 값의 자리가 지켜진다
-    log.append({"at": at, "by": by, "action": "save", "added": [], "removed": [], "removed_ops": [],
-                "carry": {"from": old_name, "left": [{"op_id": r["op_id"], "why": r["why"]} for r in rows if r["outcome"] == "left"],
-                          "linked": [r["op_id"] for r in rows if r["outcome"] == "linked"]}})
-    candidates = _moved_candidates(old_name, new_name, new)
-    if candidates is not None and ai_have is None:
-        ai_review.save_doc(candidates)
-    corrections._stamp_old_graph(new_name)
-    doc = dict(record, extraction_name=new_name, drawing_number=new["drawing"].get("drawing_number"), ops=ops, log=log,
-               carried_from=list(dict.fromkeys(list(record.get("carried_from") or []) + [old_name])))
-    store_io.write_json(corrections.store_path(new_name), doc, expect=fp)
-    return {"state": "carried", "rows": rows}
+        return {"state": "preview", "rows": rows, "candidates": "none", "changed": 0}
+    if done is None and record is not None:
+        # 지운 고침도 같은 규칙으로 옮긴다: 이어졌거나 그대로인 것은 다시 하기가 되고, 되돌린 AI 값의 자리가 지켜진다
+        out = [dict(e, removed_ops=moves.move(e["removed_ops"])) if e.get("removed_ops") else copy.deepcopy(e) for e in log]
+        out.append({"at": at or store_io.now_utc(), "by": by, "action": "save", "added": [], "removed": [], "removed_ops": [], "carry": {
+            "from": old_name, "record": _digest(record), "ops": {str(o.get("op_id")): _digest(o) for o in ops},
+            "left": [{"op_id": r["op_id"], "why": r["why"]} for r in rows if r["outcome"] == "left"],
+            "linked": [r["op_id"] for r in rows if r["outcome"] == "linked"]}})
+        corrections._stamp_old_graph(new_name)
+        doc = dict(record, extraction_name=new_name, drawing_number=new_ex["drawing"].get("drawing_number"), ops=moves.move(ops), log=out,
+                   carried_from=list(dict.fromkeys(list(record.get("carried_from") or []) + [old_name])))
+        store_io.write_json(corrections.store_path(new_name), doc, expect=fp)
+    # 이번에 이어졌거나 그대로인 대상만: 남긴 고침의 id는 새 파일에서 다른 것일 수 있다
+    taken = {r["target"] for r in rows if r["target"] and r["outcome"] != "left"} if done is None else set()
+    candidates = _put_candidates(old_name, new_name, new_ex, rows, old, new, taken)
+    _put_reverted(old_name, new_name)
+    return {"state": "already" if done is not None or (record is None and marked) else "carried", "rows": [] if done else rows,
+            "candidates": candidates, "changed": 0}
