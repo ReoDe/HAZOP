@@ -5,7 +5,7 @@
 hazop.extract.ai_images·ai_review가 한다.
 
 - 켜고 끄기: 설정 `ai_review_images`. 수동 실행은 값이 없으면 켬이다(스위치와 안내가 실행 전에 보인다).
-- 자동 확정(run_pages의 auto, hazop.shell.auto_flow)은 이 설정을 보지 않는다. 동의·보내기 정책을 auto_flow.gate가 먼저 보고, 늘 그림 입력에
+- 자동 확정(run_pages의 auto, hazop.shell.auto_flow)도 끈 것을 따른다(auto_flow.gate의 images_off). 동의·보내기 정책을 gate가 먼저 보고, 늘 그림 입력에
   표준 기호 판(ai_review.AUTO_LEGEND)만 쓴다. 그림을 만들지 못하거나 표준 판이 없으면 글로 묻지 않고 그 도면을 묻지 않는다.
 - 그림을 싣는 도면: 추출 결과의 source.format이 pdf_vector이고 source.file의 원본 PDF가 지금 있는 도면. drawio·DEXPI·스캔·원본이 없는 도면은 글 입력.
 - 범례판 캐시: paths.folder('cache', 'ai-legend') 아래에만 쓴다(지워도 되는 계산 결과, 저장소·배포본에 들어가지 않음).
@@ -204,16 +204,16 @@ def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=F
         budget, limit, img, info = run_cap - used, cap, None, None
         if images is not None and budget > 0 and pdf_source(ex):
             img = images(name, ex)
-            if img is None and auto:
-                continue
-            if img is None:
+            if img is None and not auto:
                 limit = min(cap, ai_review.estimate_pages([(name, ex)], cap=cap, run_cap=budget, images=estimate_input())["calls"])
                 info = {"failed": True}
-            else:
+            elif img is not None:
                 info = {"legend_source": img.legend_source}
+        if img is None and auto:         # 그림을 실을 수 없으면(원본이 사라짐, 예산 없음 포함) 글로 보내지 않고 묻지 않는다
+            continue
         result = ai_review.run(ex, client, cap=limit, budget=budget, exclude=ai_review.decided_targets(name),
                                on_progress=_tolerant(progress, name) if progress else None, should_stop=should_stop, images=img,
-                               kinds=kinds)
+                               kinds=kinds, project_id=engine.project_id())
         stats = result["stats"]
         used += stats["calls"]
         if info is not None:

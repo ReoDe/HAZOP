@@ -43,7 +43,7 @@ def register_and_extract(engine, path, progress):
     progress("도면 읽는 중", 2, 2)
     # 스캔 도면은 쪽마다 20~30초라 extract_and_graph가 progress(끝난 쪽 수, 전체 쪽 수, 문구)를 부른다(벡터·drawio는 부르지 않는다)
     wants = {"progress": lambda done, total, text=None: progress(text or "도면 읽는 중", done, total)} if "progress" in inspect.signature(data.extract_and_graph).parameters else {}
-    with auto_flow.extracting(engine, pid, rec.get("material_id"), number["why"]) as intake:
+    with auto_flow.extracting(engine, pid, rec.get("material_id"), number["registration_file"], number["why"]) as intake:
         out = data.extract_and_graph(number["registration_file"], **wants)
         names = [os.path.basename(p["extract_dir"]) for p in (out.get("pages") or [out])]
         intake.start(names)

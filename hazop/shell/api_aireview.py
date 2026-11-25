@@ -671,7 +671,8 @@ def _h_consent(engine, a):
     from hazop.shell import auto_flow
     out = auto_flow.set_consent(engine, a["allow"])
     if out["allow"]:
-        auto_flow.resume_quietly(engine)
+        engine.changed("state")
+        engine.spawn(lambda: auto_flow.resume_quietly(engine), "auto-resume")      # 이어 할 쪽을 세는 일이 쪽 수만큼 걸려 화면을 붙잡지 않게
     return out
 
 
@@ -682,7 +683,7 @@ def _h_send_policy(engine, a):
     except ValueError as exc:
         raise _api().CommandError("bad_args", str(exc))
     if send == "allow":
-        auto_flow.resume_quietly(engine)
+        engine.spawn(lambda: auto_flow.resume_quietly(engine), "auto-resume")
     return {"send": send}
 
 
@@ -707,7 +708,7 @@ def _h_run(engine, a):
     if not plan["can_start"]:
         raise api.CommandError("failed", plan["guide"] or "AI 연결이 준비되지 않았습니다. 설정에서 연결을 확인하세요.")
     cap = a.get("cap") or int(engine.settings.get("extract_ai_cap") or ai_review.DEFAULT_CAP)
-    if engine.settings.get(ai_image_flow.KEY) is None:          # 실행을 누르는 것은 화면의 안내와 스위치를 본 뒤다: 그때의 값을 적어 둔다(그 뒤부터 추출 뒤 자동 검토도 이 값을 따른다)
+    if engine.settings.get(ai_image_flow.KEY) is None:          # 실행을 누르는 것은 화면의 안내와 스위치를 본 뒤다: 그때의 값을 적어 둔다(끈 값은 자동 확정도 따른다)
         engine.settings[ai_image_flow.KEY] = ai_image_flow.enabled(engine)
         engine.save_settings()
         engine.changed("state")

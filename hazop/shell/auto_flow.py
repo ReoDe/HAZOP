@@ -3,10 +3,10 @@
 설계는 docs/units/2026-11-13-drawing-knowledge/evidence/auto-confirm-design.md(3·8·9·15장). 결과를 정하고 수락하는 규칙은 엔진(hazop.extract.ai_review의
 auto_finish, confirmation.record_auto) 한 곳에 있고, 이 모듈은 언제·무엇을 보낼지만 정한다.
 
-- 보내도 되는가는 `gate` 한 곳이다: ai_off(보내지 않는 프로젝트) · no_consent(동의 기록 없음) · no_connection(구독 연결 없음). 막히면 호출 없이
+- 보내도 되는가는 `gate` 한 곳이다: ai_off(보내지 않는 프로젝트) · no_consent(동의 기록 없음) · images_off(그림 보내기를 끔) · no_connection(구독 연결 없음). 막히면 호출 없이
   쪽마다 그 까닭으로 waiting을 적는다. 호출 하나하나 앞에서도 다시 본다(동의를 거두면 다음 호출부터 나가지 않는다).
 - 동의는 사용자 설정(CONSENT_KEY)에 있고 `set_consent`(명령 aireview.consent)만 쓴다. 기본은 동의 없음. 옛 토글(extract_ai_review)은 동의가 아니다.
-- 호출 상한: 같은 자료 누적 ai_review.AUTO_CAP, 올리기 묶음 전체 ai_review.RUN_CAP(Budget). 부르기 전에 호출 수를 파일에 남겨(_Counted)
+- 호출 상한: 같은 자료 누적 ai_review.AUTO_CAP(사용자가 낮춘 extract_ai_cap이 있으면 그 값), 올리기 묶음 전체 ai_review.RUN_CAP(Budget). 부르기 전에 호출 수를 파일에 남겨(_Counted)
   앱이 죽어도 그 호출을 다시 세지 않고 쓰지 않는다.
 - 이어 하기(start_resume): 앱 열기, AI 연결이 준비됨, 다음 올리기의 끝, 동의·보내기 허용. 자동 기록이 없는 옛 쪽은 건드리지 않는다.
 """
@@ -26,7 +26,7 @@ from hazop.study.nodes import now_utc
 LOG = logging.getLogger("hazop.shell.auto_flow")
 CONSENT_KEY = "auto_send_consent"
 CONSENT_NOTICE = "auto-send-1"      # 사용자에게 보인 동의 문장의 판. 보내는 범위가 바뀌면 올린다(옛 동의는 동의가 아니게 된다)
-SHARED_STOPS = ("limit", "no_connection", "stopped", "no_consent", "ai_off")      # 한 쪽에서 걸리면 남은 쪽도 같은 까닭인 것
+SHARED_STOPS = ("limit", "no_connection", "stopped", "no_consent", "ai_off", "images_off")      # 한 쪽에서 걸리면 남은 쪽도 같은 까닭인 것
 JOB_LABEL = "AI 검토 이어 하기"
 TRIES = 3
 
@@ -42,15 +42,20 @@ def consent(engine):
 
 
 def set_consent(engine, allow):
-    """사람의 답을 사용자 설정에 적는다(명령 aireview.consent만 부른다). 저장하지 못하면 앞 값으로 되돌리고 예외를 올린다."""
-    before = engine.settings.get(CONSENT_KEY)
+    """사람의 답을 사용자 설정에 적는다(명령 aireview.consent만 부른다). 동의 문장이 조각 그림을 말하므로 동의하면 그림 보내기도 켠다(뒤에 끄면 끈 것이
+    이김). 저장하지 못하면 예외를 올린다. 그때 동의는 앞 값으로 되돌리고, 거절·철회는 이 실행 동안 그대로 지킨다."""
+    keys = (CONSENT_KEY, ai_image_flow.KEY)
+    before = {k: engine.settings[k] for k in keys if k in engine.settings}
     engine.settings[CONSENT_KEY] = {"allow": bool(allow), "notice": CONSENT_NOTICE, "at": now_utc(), "by": engine.reviewer()}
+    if allow:
+        engine.settings[ai_image_flow.KEY] = True
     try:
         engine.save_settings()
     except Exception:
-        engine.settings.pop(CONSENT_KEY, None)
-        if before is not None:
-            engine.settings[CONSENT_KEY] = before
+        if allow:
+            for k in keys:
+                engine.settings.pop(k, None)
+            engine.settings.update(before)
         raise
     engine.changed("aireview", None)
     return consent(engine)
@@ -72,9 +77,20 @@ def set_send_policy(engine, send, reason=None):
 
 def _may_send(engine, project_id):
     """연결을 빼고, 보내도 되는가(호출마다 본다) → 막는 까닭 또는 None."""
-    if ai_review.send_policy(project_id) == "deny":
+    known = {p for p in (project_id, engine.project_id()) if p}
+    if not known or any(ai_review.send_policy(p) == "deny" for p in known):      # 어느 프로젝트인지 모르면 정책도 모르므로 보내지 않는다
         return "ai_off"
-    return None if consent(engine)["allow"] else "no_consent"
+    if not consent(engine)["allow"]:
+        return "no_consent"
+    return None if ai_image_flow.enabled(engine) else "images_off"
+
+
+def cap_of(engine):
+    """같은 자료 누적 상한: 사용자가 낮춘 값이 있으면 그 값, AUTO_CAP을 넘지 않음."""
+    try:
+        return max(1, min(ai_review.AUTO_CAP, int(engine.settings.get("extract_ai_cap") or ai_review.AUTO_CAP)))
+    except (TypeError, ValueError):
+        return ai_review.AUTO_CAP
 
 
 def gate(engine, project_id):
@@ -128,7 +144,8 @@ class Budget:
 def _call_path(ex):
     src, run = ex.get("source") or {}, ex.get("run") or {}
     page = (run.get("settings") or {}).get("page_index") or 0
-    return paths.folder("ai-review", "auto", "calls-%s-p%s.json" % (paths.safe_name(str(src.get("sha256") or "none"))[:64], page))
+    return paths.folder("ai-review", "auto", paths.safe_name("calls-%s-%s-p%s" % (
+        str(src.get("sha256") or "none")[:64], ex.get("project_id") or "none", page)) + ".json")      # 같은 PDF라도 프로젝트마다 따로 센다
 
 
 class _Counted:
@@ -185,10 +202,11 @@ def sheets_of(material_id):
 
 
 class Intake:
-    """등록한 자료 하나의 추출 → 자동 확정 시작. 새로 추출한 쪽에만 'waiting(started)'를 적는다(앞서 추출한 쪽은 자동 기록이 있는 것만 이어 한다)."""
+    """등록한 자료 하나의 추출 → 자동 확정 시작. 처음 추출한 쪽에만 'waiting(started)'를 적는다. 처음인지는 이름이 아니라 (자료, 쪽)으로 본다(등록판이
+    올라가면 이름이 바뀐다). 앞서 추출한 쪽은 자동 기록이 있는 것만 이어 하며, 등록판이 올라갔으면 앞 판의 기록을 먼저 옮긴다."""
 
-    def __init__(self, project_id, material_id, number_why=None):
-        self.number_why = number_why
+    def __init__(self, project_id, material_id, registration_file, number_why=None):
+        self.number_why, self.created = number_why, _carry_previous(registration_file)
         self.path = _intent_path(project_id, material_id)
         # 앞 추출이 표지를 남긴 채 죽었으면 그때의 '추출 전 쪽'을 이어 쓴다(그때 새로 추출한 쪽이 옛 쪽으로 보이지 않게)
         self.had = _had(self.path)
@@ -201,9 +219,30 @@ class Intake:
 
     def start(self, names):
         for name in names:
-            if not _has_record(name) and name not in self.had:
+            if not _has_record(name) and _is_new(name, self.had):
                 mark_waiting(name, "taken" if self.number_why == "taken" else "started")
         _remove(self.path)
+
+    def undo(self):
+        """추출하지 못함: 이번에 옮겨 만든 사본을 지운다(앞 판의 기록 하나만 진실로 남게)."""
+        for path in self.created:
+            _remove(path)
+
+
+def _is_new(name, had):
+    """추출 전에 이 자료의 이 쪽이 어느 등록판으로도 없었는가."""
+    key = sheets.from_out_name(name)
+    return name not in had and not (key and any((sheets.from_out_name(h) or (None, None, None))[2] == key[2] for h in had))
+
+
+def _carry_previous(registration_file):
+    from hazop.register import titleblock
+    try:
+        record = data.read_json(registration_file)
+        return titleblock.carry_previous(record) if isinstance(record, dict) and record.get("registration_version", 1) > 1 else []
+    except (OSError, ValueError, KeyError, TypeError):
+        LOG.warning("앞 등록판의 기록을 옮기지 못함", exc_info=True)
+        return []
 
 
 def _had(path):
@@ -228,18 +267,23 @@ def _adopt_intents(project_id, busy):
         if doc.get("project_id") != project_id or mid in busy:
             continue
         for name in sheets_of(mid):
-            if name not in (doc.get("had") or []) and not _has_record(name):
+            if _is_new(name, doc.get("had") or []) and not _has_record(name):
                 mark_waiting(name, "taken" if doc.get("number_why") == "taken" else "started")
         _remove(path)
 
 
 @contextlib.contextmanager
-def extracting(engine, project_id, material_id, number_why=None):
+def extracting(engine, project_id, material_id, registration_file, number_why=None):
     """추출 한 번을 감싼다 → Intake. 추출이 오류로 끝나거나 앱이 죽으면 표지가 남아 다음 추출이나 이어 하기가 거둔다."""
     with engine._lock:
         engine._auto_extracting.add(material_id)
     try:
-        yield Intake(project_id, material_id, number_why)
+        intake = Intake(project_id, material_id, registration_file, number_why)
+        try:
+            yield intake
+        except Exception:
+            intake.undo()
+            raise
     finally:
         with engine._lock:
             engine._auto_extracting.discard(material_id)
@@ -280,7 +324,7 @@ def _finish(engine, name):
     """엔진의 마무리(결과 정하기 → 수락 → 기록). 수락한 것이 있으면 그래프 다시 짓기를 짓기 차례에 맡긴다."""
     def go():
         with sheet_refresh.lock(name):
-            return ai_review.auto_finish(name, _read(name))
+            return ai_review.auto_finish(name, _read(name), cap_of(engine))
     out = _retry(go)
     if out["accepted"]:
         from hazop.shell import api_inputs
@@ -295,7 +339,7 @@ def _read(name):
 ASK, FINISH = "ask", "finish"
 
 
-def _next(name, ex):
+def _next(engine, name, ex):
     """이 쪽에 할 일: FINISH(부르지 않고 마무리) · ASK(물음) · no_image(그림을 실을 수 없음) · None(할 것 없음)."""
     st = confirmation.sheet_confirmation(name)
     if not confirmation.auto_resumable(st):
@@ -306,7 +350,7 @@ def _next(name, ex):
     doc = ai_review.load_doc(name)
     if ai_review.auto_asked(doc, st["read_key"]):
         return FINISH
-    if not ai_review.auto_calls_left(doc):
+    if not ai_review.auto_calls_left(doc, name, cap_of(engine)):
         return FINISH
     return ASK if ai_image_flow.pdf_source(ex) else "no_image"
 
@@ -324,7 +368,7 @@ def run(engine, names, progress):
     try:
         for name in held:
             engine.auto_budget.touched.add(name)
-            step = _guarded(engine, name, lambda: _next(name, _read(name)))
+            step = _guarded(engine, name, lambda: _next(engine, name, _read(name)))
             if step == ASK:
                 ask.append(name)
             elif step == FINISH:
@@ -391,7 +435,7 @@ def _ask_all(engine, names, client, progress, token, out):
         if shared:
             break
         ex = _guarded(engine, name, lambda: _read(name))
-        step = _guarded(engine, name, lambda: _next(name, ex)) if ex else None      # 차례를 기다리는 동안 바뀐 것을 다시 본다
+        step = _guarded(engine, name, lambda: _next(engine, name, ex)) if ex else None      # 차례를 기다리는 동안 바뀐 것을 다시 본다
         if step != ASK:
             if step == FINISH:
                 _guarded(engine, name, lambda: _finish(engine, name))
@@ -416,11 +460,12 @@ def _ask_all(engine, names, client, progress, token, out):
             continue
         why, rest = got.get("why"), names[n + 1:]
         if why in SHARED_STOPS or got.get("halted"):
-            shared = why if why in SHARED_STOPS else "error"
-            if shared == "stopped" and not engine.stop_requested():      # 사람이 이 도면만 멈췄다
+            # 이 쪽이 확정(상한)되거나 실패로 남아도 멈춘 까닭은 실행 기록에 있다. 모르면 남은 쪽은 묻지 않은 것일 뿐이라 stopped
+            shared = why if why in SHARED_STOPS else got.get("stop") or "stopped"
+            if shared == "stopped" and not got.get("halted") and not engine.stop_requested():      # 사람이 이 도면만 멈췄다
                 shared = None
                 continue
-            if shared != "stopped":
+            if shared != "stopped" or got.get("halted"):
                 budget.stop = shared
             break
         try:
@@ -436,7 +481,7 @@ def _ask_one(engine, name, ex, client, kinds, progress, token, stop_engine, out)
     """도면 하나를 묻고 마무리한다 → auto_finish의 답 + {"halted"}. 그림을 실을 수 없으면 부르지 않고 no_image."""
     from hazop.shell import api_aireview as AR
     doc = ai_review.load_doc(name)
-    cap = ai_review.auto_calls_left(doc)
+    cap = ai_review.auto_calls_left(doc, name, cap_of(engine))
     items = ai_review.estimate_pages([(name, ex)], cap=cap, images=ai_image_flow.estimate_input())["pages"][0]["items"]
     path = _call_path(ex)
     note = {"auto_id": "%s/%s" % (now_utc(), os.urandom(4).hex()), "name": name, "items": items}
@@ -446,7 +491,7 @@ def _ask_one(engine, name, ex, client, kinds, progress, token, stop_engine, out)
         lambda: stop_engine() or bool(_may_send(engine, ex.get("project_id"))), auto=True, kinds=kinds, note={"auto_id": note["auto_id"]})
     _remove(path)
     if not done:
-        why = "no_image" if images.failed else _may_send(engine, ex.get("project_id")) or "stopped"
+        why = "no_image" if images.failed or not ai_image_flow.pdf_source(ex) else _may_send(engine, ex.get("project_id")) or "stopped"
         mark_waiting(name, why)
         return {"why": why}
     stats = done[0][2]
@@ -458,7 +503,7 @@ def _ask_one(engine, name, ex, client, kinds, progress, token, stop_engine, out)
         got = dict(got, why=why)
     if got["result"] != "waiting":
         out["done"].append(name)
-    return dict(got, halted=bool(stats["halted"]))
+    return dict(got, halted=bool(stats["halted"]), stop=ai_review._stop_why(stats))
 
 
 # ---------------------------------------------------------------- 이어 하기
@@ -573,6 +618,7 @@ def restart_names(engine, graph_ids):
 def restart(engine, graph_ids, by):
     """되돌린 쪽·멈춘 쪽·옛 쪽도 다시 시작한다(누적 상한은 그대로) → (작업 ID, 도면 수). 이미 AI 검토가 도는 도면은 뺀다."""
     names = [n for n in restart_names(engine, graph_ids) if n not in engine._reviewing]
+    _carry_for_restart(engine, names)
     for name in names:
         def write(name=name):
             with sheet_refresh.lock(name):
@@ -592,6 +638,21 @@ def restart(engine, graph_ids, by):
     except Exception:
         engine.auto_budget.leave()
         raise
+
+
+def _carry_for_restart(engine, names):
+    """이전 화면이 새 등록판으로 추출해 둔 쪽: 앞 판의 되돌림·후보·호출 수를 먼저 옮긴다(사람이 물린 자리를 다시 받지 않게)."""
+    from hazop.register import registry
+    from hazop.shell import api_inputs
+    for mid in {(sheets.from_out_name(n) or (None,))[0] for n in names} - {None}:
+        try:
+            _rec, path = registry.latest(engine.project_id(), mid, paths.store_root())
+        except (OSError, ValueError, KeyError):
+            continue
+        if path and _carry_previous(path):
+            for n in sheets_of(mid):
+                if n in names:
+                    api_inputs.note(engine, n)
 
 
 def revert_preview(name):

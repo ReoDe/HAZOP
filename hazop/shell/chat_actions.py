@@ -967,7 +967,7 @@ class RunExecutors:
             from hazop.app import data
             try:
                 progress("도면 읽는 중", 1, 1)
-                with auto_flow.extracting(self.engine, self.engine.project_id(), reg.get("material_id") or rid) as intake:
+                with auto_flow.extracting(self.engine, self.engine.project_id(), reg.get("material_id") or rid, path) as intake:
                     out = data.extract_and_graph(path)
                     names = [os.path.basename(p["extract_dir"]) for p in (out.get("pages") or [out])]
                     intake.start(names)
@@ -1016,6 +1016,7 @@ class RunExecutors:
 # ================================================================ 자동 확정: AI로 확정 · 자동 수락 되돌리기
 
 GATE_TEXT = {"ai_off": "이 프로젝트는 도면을 AI로 보내지 않도록 정해져 있음", "no_consent": "올린 도면의 조각을 AI로 보내는 데 동의하지 않았음(AI 연결에서 동의)",
+             "images_off": "도면 조각 그림 보내기를 꺼 두었음",
              "no_connection": "AI 구독 연결이 준비되지 않았음"}
 
 
