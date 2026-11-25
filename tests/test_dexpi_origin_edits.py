@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -214,6 +215,100 @@ class NotTheSameTest(unittest.TestCase):
     def test_a_part_the_old_file_had_is_not_the_added_one_because_of_its_mark(self):
         mark(self.new, "PIF1", tag="PIC-500")
         self.assertEqual(self.added("PIC-500"), ("same", None))
+
+
+class KindOfTheEditTest(unittest.TestCase):
+    """옛 파일에서 적용되던 고침이 표시된 종류에는 할 수 없으면 남긴다(not_for_kind)."""
+
+    def setUp(self):
+        self.old, self.new = new_file(), new_file()
+
+    def arrestor(self, kind="flame_arrestor", category="inline_component"):
+        """파일만 읽으면 psv인 것이 표시로 kind가 된다. 옛 파일은 표시가 없다."""
+        for ex in (self.old, self.new):
+            node(ex, "Valve1").update(kind="psv", category="valve")
+        mark(self.new, "Valve1", kind=kind, category=category)
+
+    def ops(self, *rows):
+        out = []
+        for op, target, value in rows:
+            out.append(corrections.make_op(self.old, op, target, value, "검토자", existing_ops=out))
+        return out
+
+    def move(self, ops):
+        moved, rows = edit_link.move_ops(ops, self.old, self.new)
+        return moved, [(r["outcome"], r["why"]) for r in rows], corrections.apply(self.new, moved)["corrections"]["applied"]
+
+    NC, KIND = ("set_normal_position", "Valve1", {"value": "NC"}), ("set_kind", "Valve1", {"kind": "manual_valve", "category": "valve"})
+
+    def test_a_normal_position_given_to_what_was_read_as_a_valve(self):
+        self.arrestor()
+        ops = self.ops(self.NC)
+        before = copy.deepcopy(ops)
+        (m,), verdict, done = self.move(ops)
+        self.assertEqual((verdict, done), ([("left", "not_for_kind")], []))
+        self.assertEqual((m["held"], m["base"], m["value"], m["target"]),
+                         ({"why": "not_for_kind", "base": before[0]["base"], "refs": {}}, None, {"value": "NC"}, "Valve1"))
+        self.assertEqual(ops, before)
+
+    def test_a_fail_position(self):
+        for ex in (self.old, self.new):
+            node(ex, "Valve1").update(kind="control_valve", category="valve")
+        mark(self.new, "Valve1", kind="flame_arrestor", category="inline_component")
+        ops = self.ops(("set_fail_position", "Valve1", {"value": "FO"}))
+        self.assertEqual(self.move(ops)[1:], ([("left", "not_for_kind")], []))
+
+    def test_an_edit_the_marked_kind_allows_is_linked(self):
+        self.arrestor("relief_valve", "valve")
+        self.assertEqual(self.move(self.ops(self.NC))[1:], ([("linked", None)], ["c-0001"]))
+
+    def test_a_person_gave_the_kind_first(self):
+        self.arrestor()
+        _m, verdict, done = self.move(self.ops(self.KIND, self.NC))
+        self.assertEqual((verdict, done), ([("linked", None), ("linked", None)], ["c-0001", "c-0002"]))
+
+    def test_a_person_gave_the_kind_afterwards(self):
+        self.arrestor()
+        _m, verdict, done = self.move(self.ops(self.NC, self.KIND))
+        self.assertEqual((verdict, done), ([("left", "not_for_kind"), ("linked", None)], ["c-0002"]))
+
+    def test_an_edit_that_did_not_apply_before_is_not_judged_by_this(self):
+        self.arrestor()
+        ops = self.ops(self.NC)
+        node(self.old, "Valve1").update(kind="tank", category="equipment")
+        self.assertEqual(self.move(ops)[1], [("left", "not_of_old_file")])
+        self.arrestor()
+        tee = next(n["source_object_id"] for n in self.old["nodes"] if n["kind"] == "tee")
+        bad = dict(copy.deepcopy(ops[0]), target=tee, base=corrections._fingerprints(self.old)[tee])      # 분기에는 옛 파일에서도 정상 위치를 두지 않는다
+        mark(self.new, tee, kind="reducer")
+        self.assertEqual([v[0] for v in self.move([bad])[1]], ["linked"])
+
+    def test_going_back_to_a_file_without_marks_is_not_judged_by_this(self):
+        self.arrestor("relief_valve", "valve")
+        self.old, self.new = self.new, self.old
+        node(self.new, "Valve1").update(kind=None)
+        node(self.old, "Valve1")[origin.PLAIN]["kind"] = None
+        self.assertEqual(self.move(self.ops(self.NC))[1:], ([("same", None)], []))
+
+    def test_without_marks_nothing_is_applied_to_find_out(self):
+        with mock.patch.object(edit_link.corrections, "apply", side_effect=AssertionError("부르지 않음")):
+            ops = [{"op_id": "c-0001", "op": "set_normal_position", "target": "Valve1", "base": corrections._fingerprints(self.old)["Valve1"], "refs": {},
+                    "value": {"value": "NC"}}]
+            self.assertEqual(edit_link.move_ops(ops, self.old, self.new)[1][0]["outcome"], "same")
+
+    def test_an_undone_edit_is_judged_too(self):
+        self.arrestor()
+        (undone,) = self.ops(self.NC)
+        old, new = edit_link._Sheet(self.old), edit_link._Sheet(self.new)
+        moves = edit_link._Moves([], [undone], old, new)
+        self.assertEqual(moves.rows([undone])[0]["why"], "not_for_kind")
+        self.assertEqual(moves.move([undone])[0]["held"]["why"], "not_for_kind")
+
+    def test_held_again_the_next_time(self):
+        self.arrestor()
+        moved, _v, _d = self.move(self.ops(self.NC))
+        again, rows = edit_link.move_ops(moved, self.new, self.new)
+        self.assertEqual((again, rows[0]["why"]), (moved, "not_for_kind"))
 
 
 class UnmarkedTest(unittest.TestCase):
