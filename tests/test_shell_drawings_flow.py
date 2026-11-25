@@ -301,7 +301,7 @@ class AutoWaitDotTest(W.ShellBase):
         with mock.patch.object(auto_flow, "summary", lambda engine: fake):
             win = self.window()          # 도면 패널은 시작 때 열려 있어 읽기가 창을 만들 때 나간다
             self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow .drow-dot').length") == 1, 15))
-            self.assertIn("허락하지 않아", self.js(win, "document.querySelectorAll('.drow')[0].querySelector('.drow-dot').title"))
+            self.assertIn("허락하지 않았습니다", self.js(win, "document.querySelectorAll('.drow')[0].querySelector('.drow-dot').title"))
             self.assertEqual(self.js(win, "document.querySelectorAll('.drow')[1].querySelectorAll('.drow-dot').length"), 0)
             self.assertNotIn("no_consent", self.js(win, "document.querySelector('.drow').textContent"))
         self.assertEqual(self.js(win, "document.querySelectorAll('.ptabs').length"), 0, "표제란·AI 검토 탭이 없다")
@@ -327,6 +327,44 @@ class AutoConsentTest(W.ShellBase):
             self.js(win, "window.__hz.store.set({panel: 'settings'})")
             self.assertTrue(wait_for(lambda: "도면 조각을 AI에 보내 읽기 돕기" in self.text(win), 15))
             self.assertEqual(self.js(win, "document.querySelectorAll('[aria-label=\"도면 조각 전송 동의\"]').length"), 0)
+
+
+class AutoFollowUpTest(W.ShellBase):
+    def test_a_dot_says_no_connection_before_no_consent_when_no_ai_is_connected(self):
+        from unittest import mock
+        from hazop.shell import auto_flow
+        fake = {"connected": False, "ask": False, "consent": {"allow": False, "asked": False, "unsaved": False},
+                "sheets": [{"graph_id": "graph-SNP-M-101", "result": "waiting", "why": "no_consent"},
+                           {"graph_id": "graph-SNP-M-102", "result": "waiting", "why": "taken"}]}
+        with mock.patch.object(auto_flow, "summary", lambda engine: fake):
+            win = self.window()
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow .drow-dot').length") == 2, 15))
+            titles = self.jsj(win, "[...document.querySelectorAll('.drow .drow-dot')].map((e) => e.title)")
+            self.assertIn("연결된 AI가 없습니다", titles[0])
+            self.assertIn("채팅에서 번호를 알려 주세요", titles[1])
+
+    def test_a_registered_file_that_could_not_be_read_shows_as_a_row_with_a_dot(self):
+        win = self.window()
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow').length") == 2, 15))
+        self.js(win, """(() => { const d = window.__hz.store.get().drawings; window.__hz.store.set({ drawings: Object.assign({}, d, { documents: d.documents.concat([
+            { material_id: 'm-bad', name: 'broken.pdf', type: 'P&ID', status: 'registered', graphed: false, extracted: false }]) }) }); })()""")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow').length") == 3, 10))
+        row = self.js(win, "document.querySelectorAll('.drow')[2].textContent")
+        self.assertIn("broken.pdf", row)
+        self.assertIn("읽지 못했습니다", self.js(win, "document.querySelectorAll('.drow')[2].querySelector('.drow-dot').title"))
+
+    def test_an_unsaved_withdrawal_stays_as_a_notice_and_the_switch_shows_the_saved_value_and_the_picture_switch_is_in_settings(self):
+        from unittest import mock
+        from hazop.shell import auto_flow
+        fake = {"connected": True, "ask": False, "consent": {"allow": False, "asked": True, "unsaved": True}, "sheets": []}
+        with mock.patch.object(auto_flow, "summary", lambda engine: fake):
+            win = self.window()
+            self.js(win, "window.__hz.store.set({panel: 'settings'})")
+            self.assertTrue(wait_for(lambda: "도면 조각을 AI에 보내 읽기 돕기" in self.text(win), 15))
+            self.assertTrue(wait_for(lambda: "다시 열면 보내게 됩니다" in self.text(win), 10), "남는 알림 한 줄")
+            on = self.js(win, "document.querySelector('[aria-label=\"도면 조각을 AI에 보내 읽기 돕기\"]').getAttribute('aria-checked')")
+            self.assertEqual(on, "true", "저장된 값(켬)을 보인다")
+            self.assertIn("조각 그림도 보내기", self.text(win))
 
 
 class ItemBubbleFlowTest(W.ShellBase):

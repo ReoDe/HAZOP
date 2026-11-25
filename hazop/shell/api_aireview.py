@@ -667,9 +667,18 @@ def _h_bulk(engine, a):
     return _unwrap(accept_bulk(engine, a["graph_id"], a["task"], a["ver"]))
 
 
+UNSAVED_TEXT = "저장하지 못했습니다. 이번 실행 동안은 보내지 않지만, 다시 열면 보내게 됩니다. 다시 시도하세요."
+
+
 def _h_consent(engine, a):
     from hazop.shell import auto_flow
-    out = auto_flow.set_consent(engine, a["allow"])
+    try:
+        out = auto_flow.set_consent(engine, a["allow"])
+    except Exception as exc:
+        if a["allow"]:
+            raise
+        LOG.exception("동의를 거둔 것을 저장하지 못함")
+        raise _api().CommandError("failed", UNSAVED_TEXT) from exc
     if out["allow"]:
         engine.changed("state")
         engine.spawn(lambda: auto_flow.resume_quietly(engine), "auto-resume")      # 이어 할 쪽을 세는 일이 쪽 수만큼 걸려 화면을 붙잡지 않게

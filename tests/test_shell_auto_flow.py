@@ -257,6 +257,31 @@ class ConsentTest(Base):
         self.assertFalse(json.loads(AR.read(self.engine, ["aireview", "auto"], {}).body.decode("utf-8"))["ask"])
 
 
+    def test_a_withdrawal_that_cannot_be_saved_says_so_and_the_read_shows_the_saved_value(self):
+        """철회 저장이 실패하면 이번 실행은 보내지 않지만 파일에는 '보냄'이 남는다. 화면이 알도록 오류 글을 주고, 읽기에 unsaved를 켠다.
+        다음 저장이 성공하면(파일이 꺼진 값으로 바뀌면) unsaved도 꺼진다."""
+        self.consent()
+        read = lambda: json.loads(AR.read(self.engine, ["aireview", "auto"], {}).body.decode("utf-8"))["consent"]
+        self.assertEqual((read()["allow"], read()["unsaved"]), (True, False))
+        with mock.patch.object(self.engine, "save_settings", side_effect=OSError("disk full")):
+            out = self.engine.dispatch("aireview.consent", {"allow": False})
+        self.assertFalse(out["ok"], out)
+        self.assertIn("다시 열면 보내게 됩니다", out["error"]["message"])
+        got = read()
+        self.assertEqual((got["allow"], got["unsaved"]), (False, True), "메모리는 꺼져 보내지 않고, 화면은 저장된 값(켬)을 보여야 한다")
+        self.assertTrue(paths.load_settings(self.engine.settings_path)[auto_flow.CONSENT_KEY]["allow"], "파일에는 '보냄'이 남아 있다")
+        self.consent(False)
+        got = read()
+        self.assertEqual((got["allow"], got["unsaved"]), (False, False))
+
+    def test_a_failed_grant_is_not_kept_and_not_flagged(self):
+        with mock.patch.object(self.engine, "save_settings", side_effect=OSError("disk full")):
+            out = self.engine.dispatch("aireview.consent", {"allow": True})
+        self.assertFalse(out["ok"])
+        got = json.loads(AR.read(self.engine, ["aireview", "auto"], {}).body.decode("utf-8"))["consent"]
+        self.assertEqual((got["allow"], got["asked"], got["unsaved"]), (False, False, False))
+
+
 class GateTest(Base):
     def setUp(self):
         super().setUp()

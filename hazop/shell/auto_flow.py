@@ -33,12 +33,22 @@ TRIES = 3
 
 # ---------------------------------------------------------------- 동의와 보내기 정책
 
+def _disk_allows(engine):
+    """설정 파일에 '보냄'이 남아 있는가(다른 저장이 성공해 파일이 이미 꺼진 값으로 바뀌었으면 거짓)."""
+    try:
+        rec = paths.load_settings(engine.settings_path).get(CONSENT_KEY)
+    except Exception:
+        return False
+    return isinstance(rec, dict) and rec.get("allow") is True and rec.get("notice") == CONSENT_NOTICE
+
+
 def consent(engine):
     """{"allow", "asked", "at"}. 온전한 기록이 아니면 묻지 않은 것으로 본다(보내지 않는 쪽)."""
     rec = engine.settings.get(CONSENT_KEY)
     ok = isinstance(rec, dict) and isinstance(rec.get("allow"), bool) and rec.get("notice") == CONSENT_NOTICE \
         and isinstance(rec.get("at"), str) and bool(rec["at"])
-    return {"allow": ok and rec["allow"], "asked": ok, "at": rec["at"] if ok else None}
+    # unsaved: 동의를 거두는 저장이 실패해 이번 실행 동안만 꺼 둔 상태(파일에는 '보냄'이 남아 다시 열면 보낸다). 화면이 저장된 값(켬)과 알림을 보인다
+    return {"allow": ok and rec["allow"], "asked": ok, "at": rec["at"] if ok else None, "unsaved": bool(getattr(engine, "consent_unsaved", False)) and not (ok and rec["allow"]) and _disk_allows(engine)}
 
 
 def set_consent(engine, allow):
@@ -56,7 +66,11 @@ def set_consent(engine, allow):
             for k in keys:
                 engine.settings.pop(k, None)
             engine.settings.update(before)
+        else:
+            engine.consent_unsaved = True      # 이번 실행은 보내지 않지만 파일에는 '보냄'이 남았다: 화면이 알린다
+            engine.changed("aireview", None)
         raise
+    engine.consent_unsaved = False
     engine.changed("aireview", None)
     return consent(engine)
 

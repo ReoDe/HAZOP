@@ -8,7 +8,7 @@ import { Btn, Chip, Notice } from "../ui/parts.js";
 import { SourceConflicts, choicesCount } from "./drawings_sources.js";
 import { DrawingExcludedChip, DrawingPicks } from "./nodes_screen.js";
 import { OpenFolder } from "./open_folder.js";
-import { ConsentAsk, useAuto, waitsOf } from "./auto_state.js";
+import { ConsentAsk, UNREAD_TEXT, useAuto, waitsOf } from "./auto_state.js";
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
@@ -62,6 +62,8 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const many = choicesCount(sources);
   const auto = useAuto();
   const waits = waitsOf(auto);
+  // 읽기에 실패해 그래프가 없는 도면 파일(등록은 됐다): 도면 줄 자리에 파일 이름과 까닭 점으로. 도는 작업이 있으면 아직 읽는 중이라 보이지 않는다.
+  const unread = running.length ? [] : data.documents.filter((d) => d.type === "P&ID" && d.status === "registered" && !d.graphed && !data.drawings.some((x) => x.material_id === d.material_id));
   const toCard = () => { const el = document.getElementById("src-card"); if (el) el.scrollIntoView({ block: "nearest" }); };
 
   const pick = () => cmd("register.pick").catch(toastError);
@@ -80,7 +82,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
           ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}
           <${Btn} sm=${true} kind="ghost" icon="x" label=${j.label + " 알림 닫기"} title="닫기" onClick=${() => dismissJob(id)} /></div>`)}</details>` : null}
       <div>${picked.length ? html`<${DrawingPicks} ids=${picked} onDone=${() => setPicked([])} />` : null}
-        ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다.<//>` : html`<div class="list">
+        ${data.drawings.length === 0 && !unread.length ? html`<${Notice}>등록된 도면이 없습니다.<//>` : html`<div class="list">
           ${data.drawings.map((d) => html`<div key=${d.graph_id} class=${"row drow" + (d.graph_id === sheet ? " on" : "")} onClick=${(e) => { if (!e.target.closest("input,label,.acts-end")) onOpen(d.graph_id); }}>
             <input type="checkbox" aria-label=${d.display + " 고르기"} checked=${picked.includes(d.graph_id)} onChange=${() => toggle(d.graph_id)} />
             <button type="button" class="main drow-open" aria-label=${d.display + (d.title ? " " + d.title : "") + " 열기"}><b>${d.display}</b><span>${d.title || ""}</span></button>
@@ -89,7 +91,9 @@ export function DrawingsPanel({ onOpen, onClose }) {
                 title="같은 도면 자리에 원본이 둘 이상 있습니다. 분석에 쓸 원본은 아래 원본 고르기 카드에서 고릅니다." onClick=${toCard}>원본 ${many[d.graph_id]}개<//>` : null}
               ${waits[d.graph_id] ? html`<span class="drow-dot" role="img" tabindex="0" title=${waits[d.graph_id]} aria-label=${d.display + ": " + waits[d.graph_id]}></span>` : null}
               <${DrawingExcludedChip} graphId=${d.graph_id} />
-              </span></div>`)}</div>`}</div>
+              </span></div>`)}
+          ${unread.map((d) => html`<div key=${d.material_id} class="row drow"><div class="main"><b>${d.name || d.material_id}</b></div>
+            <span class="acts-end"><span class="drow-dot" role="img" tabindex="0" title=${UNREAD_TEXT} aria-label=${(d.name || d.material_id) + ": " + UNREAD_TEXT}></span></span></div>`)}</div>`}</div>
       <${ConsentAsk} auto=${auto} />
       <${SourceConflicts} />
       <${DexpiExport} />
