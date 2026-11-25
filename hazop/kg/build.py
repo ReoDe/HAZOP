@@ -20,6 +20,7 @@ import re
 import shutil
 
 from hazop import store_io
+from hazop.graph import old_names
 from hazop.kg import claims
 from hazop.kg.inputs import SOURCE_COLUMNS, candidate_fields, normalize_tag, normalize_text, text_sha256
 from hazop.kg.schema import PID_ROOT, REGISTRY
@@ -200,6 +201,11 @@ class _PidIndex:
             return end, ("graph_blocked", "참조한 P&ID 그래프가 구조 검증을 통과하지 못함: %s" % gid)
         if sep == ":":
             hits = [n for n in g["nodes"] if n.get("tag") == key]
+            old = [n for n in g["nodes"] if old_names.old_tag(n) == key]  # 원래 값 표시가 태그를 바꾼 노드의 옛 태그
+            if old and len(hits) + len(old) > 1:
+                return end, ("ambiguous_tag", "태그 %s가 %s에서 옛 태그와 겹침 - graph_id#source_object_id로 지정해야 함(%s)"
+                             % (key, gid, ", ".join(sorted(n["source_object_id"] for n in hits + old))))
+            hits = hits or old
             if len(hits) > 1:
                 return end, ("ambiguous_tag", "태그 %s가 %s에 %d개 - graph_id#source_object_id로 지정해야 함(%s)"
                              % (key, gid, len(hits), ", ".join(sorted(n["source_object_id"] for n in hits))))

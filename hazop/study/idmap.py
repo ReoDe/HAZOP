@@ -53,6 +53,7 @@ import math
 import re
 
 from hazop.extract import ids
+from hazop.graph import old_names
 
 TOMB_PREFIX = "lost:"
 EXP_SEP = "|exp:"
@@ -635,7 +636,8 @@ def compute(node_set, graph, at=None):
                 continue                        # 시트 자료가 다르면 같은 파일 id·같은 겉모습도 같은 기호가 아니다
             ref = rec["ref"] if sheet == was else sheet + "#" + rec["ref"].partition("#")[2]   # 연결 구간 참조에는 도면이 없다
             look = _renamed_sheet(rec["look"], relocated(rec["look"][1], lost_in, rec["ref"]))
-            hits = [e for e in by_ref.get(ref) or () if new_basis[e] == ids.SOURCE and _same_look(look, look_of(by_id[e]))]
+            hits = [e for e in by_ref.get(ref) or () if new_basis[e] == ids.SOURCE
+                    and (_same_look(look, look_of(by_id[e])) or _same_look(look, look_of(old_names.plain_node(by_id[e]))))]
         else:
             continue
         # 자료로 옮겨 찾은 묘비(옛 이름이 사라졌거나 다른 파일이 받음): 그 기호는 새 이름 판 사진의 같은 기호가 이미 잡고 있으므로 잡힘을 보지 않는다

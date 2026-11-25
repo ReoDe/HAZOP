@@ -22,6 +22,7 @@ import logging
 import threading
 
 from hazop import store_io
+from hazop.graph import old_names
 from hazop.study import idmap
 from hazop.study.idmap import ref_of  # noqa: F401  여러 곳(ie·shell·refs)이 이 이름으로 부른다
 
@@ -238,6 +239,10 @@ def plan(node_set, graph):
     old_refs = ns.get("graph_member_refs") or {}
     names = {e: old_refs[m] for m, e in eid.items() if not idmap.is_tomb(e) and old_refs.get(m)}
     fresh = node_digests(graph, {k: v for k, v in moved.items() if not any(idmap.is_tomb(x) for x in v)}, names)
+    # 원래 값 표시로 태그만 바뀐 구간은 옛 태그로 센 지문이 같다(HZ-PLN-22 §6.9.4). 종류·흐름이 바뀐 것은 재확인으로 간다
+    tags = {x["entity_id"]: old_names.plain_node(x).get("tag") for x in graph["nodes"] if old_names.PLAIN in x}
+    renamed = node_digests(dict(graph, nodes=[dict(x, tag=tags[x["entity_id"]]) if x["entity_id"] in tags else x for x in graph["nodes"]]),
+                           {k: v for k, v in moved.items() if k in fresh and tags.keys() & set(v)}, names) if tags else {}
     recheck = {}
     for n in ns["nodes"]:
         nid = n["node_id"]
@@ -253,7 +258,7 @@ def plan(node_set, graph):
                 ["%d개는 같은 파일 id·같은 종류로" % (len(back) - len(by_mark))] if len(back) > len(by_mark) else [])
             recheck[nid] = "잃었던 구성요소 %d개를 되찾음(%s)" % (len(back), ", ".join(parts))
         elif rec.startswith("md3-"):
-            if rec != fresh.get(nid):
+            if rec != fresh.get(nid) and rec != renamed.get(nid):
                 recheck[nid] = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
         elif not legacy_same and n.get("state") in ("confirmed", "locked"):
             recheck[nid] = "옛 판의 구간 내용 기록이 없음"  # 확정한 적 없는 적용됨 구간은 분석 전이라 판만 옮김

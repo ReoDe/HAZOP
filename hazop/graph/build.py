@@ -21,6 +21,7 @@
 - 노드의 id_basis(source_object_id가 다시 추출하면 바뀔 수 있는 순번인지: sequence|source, hazop.extract.ids)도
   추출 결과(source.format·source_object_id, DEXPI는 가져오기가 지은 id의 표시)에서만 정해지므로 같은 이유로 올리지 않는다.
   그래프 머리 source 틀은 그대로 둔다.
+- DEXPI의 원래 값 표시가 값을 바꾼 노드는 파일만 읽은 값을 read_as에 옮긴다(hazop.graph.old_names). 표시가 없으면 칸이 없다.
 같은 입력이면 같은 결과(ID·순서)가 나오도록 결정적으로 만든다.
 """
 
@@ -29,7 +30,7 @@ import json
 import math
 
 from hazop.extract import ids, isa
-from hazop.graph import sheets
+from hazop.graph import old_names, sheets
 
 SCHEMA_VERSION = "0.1"
 BUILDER = "hazop.graph.build"
@@ -141,7 +142,7 @@ def build_graph(extraction, extraction_file=None, graph_id=None):
             "source_object_id": n["source_object_id"], "id_basis": ids.basis(fmt, n["source_object_id"], ids.is_made(n, made)),
             "bbox": loc["bbox"] if loc else None,
             "position": _center(loc["bbox"]) if loc else None,
-            **_origin(n),
+            **_origin(n), **old_names.carried(n),
         })
         if n["category"] == "instrument":  # 태그에서 읽은 측정변수·기능 문자·루프 번호(못 읽으면 None). tag는 그대로
             nodes[-1]["isa"] = isa.parse_tag(n["tag"])

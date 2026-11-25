@@ -19,6 +19,7 @@ import os
 import threading
 
 from hazop import gcpause, paths
+from hazop.graph import old_names
 from hazop.kg import build, docextract, inputs, link
 from hazop.kg.schema import REGISTRY
 
@@ -174,9 +175,11 @@ def _latest_documents(project_id, doc_root):
 
 def tag_links(documents, graphs):
     """문서 문장의 태그 -> 설비 적용 후보 관계와 notes. 태그 비교는 inputs.normalize_tag."""
-    index = {}
+    index, old_tags = {}, set()
     for g in graphs:
         for n in g["nodes"]:
+            if old_names.old_tag(n):
+                old_tags.add((g["graph_id"], old_names.old_tag(n)))
             if n.get("tag"):
                 index.setdefault(g["graph_id"], {}).setdefault(inputs.normalize_tag(n["tag"]), []).append(n)
     kinds = {n["id"]: n["node_type"] for d in documents for n in d["nodes"]}
@@ -196,6 +199,8 @@ def tag_links(documents, graphs):
                 elif total == 1:
                     gid, nodes = hits[0]
                     ref = "%s:%s" % (gid, nodes[0]["tag"])
+                    if (gid, nodes[0]["tag"]) in old_tags:  # 다른 노드의 옛 태그이기도 함
+                        ref = "%s#%s" % (gid, nodes[0]["source_object_id"])
                     lid = "krel-%s-%s" % (m["node_id"], hashlib.sha256(ref.encode("utf-8")).hexdigest()[:8])
                     inferred = "[추론]" in (nodes[0].get("tag_basis") or "")
                     links.append(docextract.link_record(
