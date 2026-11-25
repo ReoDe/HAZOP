@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 from xml.parsers import expat
 
 from hazop.extract import dexpi_map, ids
-from hazop.extract.adapters import dexpi_shape
+from hazop.extract.adapters import dexpi_origin, dexpi_shape
 
 MAX_BYTES = 100 * 1024 * 1024
 MAX_ELEMENTS = 3_000_000
@@ -141,6 +141,7 @@ class Model:
         self.version = version
         self.application = None
         self.uri = None  # 2.0 Model의 uri
+        self.origins = {}  # 이 앱이 낸 2.0 파일의 원래 값 표시: 대상 id -> {칸: 글자}(dexpi_origin)
         self.schema_version = None  # Proteus 스키마 판(예 4.1.1)
         self.drawing = {"number": None, "name": None, "width": None, "height": None}
         self.items = {}  # id -> 항목 dict(equipment·piping·offpage·instrument)
@@ -350,6 +351,7 @@ def read_dexpi_xml(root, version):
             loc = _refs(obj, "SensingLocation")
             m.sensing[obj.get("_id")] = {"item": loc[0] if loc else None}
     _read_diagram(m, root, objects)
+    m.origins = dexpi_origin.collect(root, m)
     return m
 
 
@@ -982,7 +984,7 @@ _DATA_VALUES = ("AggregatedDataValue", "DataReference", "Boolean", "DateTime", "
 _MODEL_DEFINITIONS = ("Package", "AbstractClass", "ConcreteClass", "ClassExtension", "AbstractDataType", "AggregatedDataType",
                       "Enumeration", "BooleanType", "DateTimeType", "DoubleType", "IntegerType", "StringType", "UndefinedType")
 # 요소 이름 -> 허용 자식 요소, 필수 속성, 허용 속성(XSD complexType과 같다). 정의 쪽(Package·ConcreteClass 등)은 이 앱이 읽지 않아
-# 이름만 허용하고 안쪽은 보지 않는다.
+# 등록에서는 이름만 허용하고 안쪽은 보지 않는다. 이 앱이 쓴 파일을 검사할 때(definitions=True)는 DEFINITIONS로 안쪽도 본다.
 STRUCTURE = {
     "Model": {"children": ("Import",) + _MODEL_DEFINITIONS + ("Object", "Data"), "required": ("name", "uri"),
               "attributes": ("name", "uri")},
@@ -1005,8 +1007,49 @@ _MULTI = {("References", "objects")}
 _MIN_ONE_CHILD = ("Components", "Data")  # XSD minOccurs=1
 
 
-def check_structure(root, limit=50):
-    """DEXPI XML 2.0 뿌리(Model)가 스키마의 인스턴스 규칙을 지키는지 본다. 어긋난 곳의 문장 목록(최대 limit개). 비면 통과."""
+def _definition_rules():
+    """정의 요소 이름 -> {children, attributes {이름: (XSD 형, 필수)}, low·high: Data가 아닌 자식의 수}. Data는 늘 그 뒤에 온다.
+    first: 맨 앞에 하나 와야 하는 자식."""
+    name = {"name": ("name", True)}
+    super_types = dict(name, superTypes=("nameReferences", False))
+    members = ("CompositionProperty", "DataProperty", "ReferenceProperty")
+    class_ref, data_ref = ("ClassReference", "UnionClass", "BoundClass"), ("DataTypeReference", "UnionDataType", "BoundDataType")
+    prop = dict(name, lower=("xsd:integer", True), upper=("xsd:integer", False), isOrdered=("xsd:boolean", True))
+
+    def rule(children, attributes, low=0, high=None, data=True, first=None):
+        return {"children": tuple(children) + (("Data",) if data else ()), "attributes": attributes, "low": low, "high": high, "first": first}
+    out = {"Package": rule(_MODEL_DEFINITIONS + ("Object",), name), "Enumeration": rule(("EnumerationLiteral",), super_types),
+           "ClassExtension": rule(members, dict(name, baseType=("nameReference", False))),
+           "AggregatedDataType": rule(("DataProperty", "DataTypeParameter"), super_types), "EnumerationLiteral": rule((), name),
+           "ClassParameter": rule(class_ref, name, 1, 1), "DataTypeParameter": rule(data_ref, name, 1, 1),
+           "CompositionProperty": rule(class_ref, prop, 1, 1),
+           "DataProperty": rule(data_ref, dict(prop, isUnique=("xsd:boolean", True)), 1, 1),
+           "ReferenceProperty": rule(class_ref, dict(prop, isUnique=("xsd:boolean", True), oppositeLower=("xsd:integer", True),
+                                                     oppositeUpper=("xsd:integer", False)), 1, 1),
+           "UnionClass": rule(class_ref, {}, 1, data=False), "UnionDataType": rule(data_ref, {}, 1, data=False),
+           "BoundClass": rule(("ClassReference", "ClassBinding", "DataTypeBinding"), {}, 2, data=False, first="ClassReference"),
+           "BoundDataType": rule(("DataTypeReference", "DataTypeBinding"), {}, 2, data=False, first="DataTypeReference"),
+           "ClassBinding": rule(class_ref, {"parameter": ("nameReference", True)}, 1, data=False),
+           "DataTypeBinding": rule(data_ref, {"parameter": ("nameReference", True)}, 1, data=False)}
+    for kind in ("ConcreteClass", "AbstractClass"):
+        out[kind] = rule(members + ("DataTypeParameter", "ClassParameter"), super_types)
+    for kind in ("AbstractDataType", "BooleanType", "DoubleType"):
+        out[kind] = rule((), super_types)
+    for kind in ("DateTimeType", "IntegerType", "StringType", "UndefinedType"):
+        out[kind] = rule((), name)
+    for kind in ("ClassReference", "DataTypeReference"):
+        out[kind] = rule((), {"type": ("nameReference", True)}, data=False)
+    return out
+
+
+DEFINITIONS = _definition_rules()
+_XSD_TYPES = {"name": _NAME, "nameReference": _NAME_REF, "xsd:boolean": re.compile("true|false|0|1"), "xsd:integer": re.compile(r"[+-]?\d+"),
+              "nameReferences": re.compile(r"(?:%s)(?: (?:%s))*" % (_NAME_REF.pattern, _NAME_REF.pattern))}
+
+
+def check_structure(root, limit=50, definitions=False):
+    """DEXPI XML 2.0 뿌리(Model)가 스키마의 인스턴스 규칙을 지키는지 본다. 어긋난 곳의 문장 목록(최대 limit개). 비면 통과.
+    definitions: 정의 요소(ConcreteClass 등)의 안쪽도 본다."""
     problems = []
 
     def bad(msg):
@@ -1026,7 +1069,45 @@ def check_structure(root, limit=50):
                 bad("Data는 Object 뒤에 와야 함")
             seen_definition = True
     _check_element(root, bad, "")
+    if definitions:
+        for child in root:
+            if child.tag in DEFINITIONS:
+                _check_definition(child, bad)
     return problems
+
+
+def _check_definition(el, bad):
+    rule = DEFINITIONS[el.tag]
+    label = ("%s %s" % (el.tag, el.get("name") or "")).strip()
+    for name, (kind, needed) in rule["attributes"].items():
+        value = el.get(name)
+        if value is None:
+            if needed:
+                bad("%s: 필수 속성 %s 없음" % (label, name))
+        elif _XSD_TYPES[kind].fullmatch(value) is None:
+            bad("%s: 속성 %s 값 형식이 아님: %r" % (label, name, value))
+    for name in el.attrib:
+        if name not in rule["attributes"] and not name.startswith("_"):
+            bad("%s: 허용하지 않은 속성 %s" % (label, name))
+    heads, data_seen = [], False
+    for child in el:
+        if child.tag not in rule["children"]:
+            bad("%s 아래에 올 수 없는 요소: %s" % (label, child.tag))
+            continue
+        if child.tag == "Data":
+            data_seen = True
+        else:
+            heads.append(child.tag)
+            if data_seen:
+                bad("%s: Data는 다른 요소 뒤에 와야 함" % label)
+        if child.tag in DEFINITIONS:
+            _check_definition(child, bad)
+        else:
+            _check_element(child, bad, "")
+    if len(heads) < rule["low"] or (rule["high"] is not None and len(heads) > rule["high"]):
+        bad("%s: 자식 요소 수가 맞지 않음(%d)" % (label, len(heads)))
+    if rule["first"] and (heads[:1] != [rule["first"]] or (rule["first"] in heads[1:])):
+        bad("%s: 처음에 %s 하나가 와야 함" % (label, rule["first"]))
 
 
 def _check_element(el, bad, where):

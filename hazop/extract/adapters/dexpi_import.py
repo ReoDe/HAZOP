@@ -14,7 +14,7 @@ import math
 import re
 
 from hazop.extract import dexpi_map, ids, properties, rules
-from hazop.extract.adapters import dexpi_read
+from hazop.extract.adapters import dexpi_origin, dexpi_read
 
 SCHEMA_VERSION = "0.1"
 SIDECAR_SCHEMA = "hazop_dexpi_sidecar/1"  # hazop.export.dexpi_export와 같은 값
@@ -22,13 +22,14 @@ SCRIPT_NAME = "hazop.extract.adapters.dexpi_import"
 SCRIPT_VERSION = "0.1.0"
 RULES_VERSION = "dexpi-import-2026-11-13"
 COORDINATE_SPACE = "dexpi_diagram"
-OWN_URI = "urn:hazop:dexpi-export:"  # 이 앱이 낸 파일의 Model uri 앞부분(hazop.export.dexpi_export)
+OWN_URI = dexpi_origin.OWN_URI
 FLOW_COS = 0.7  # 화살표 방향이 그 선분의 방향과 이 값 이상 맞아야 흐름으로 읽는다
 ARROW_MAX_MM = 1.5  # 화살표가 길(폴리라인)에서 이보다 멀면 그 길의 것으로 보지 않는다
 ARROW_TIE_MM = 0.5  # 두 길에 이 차이 안으로 가까우면 어느 쪽인지 정하지 않는다
 
 _NAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]")
 TAGGED_CATEGORIES = ("equipment", "valve", "instrument")
+NO_CLAIM = dexpi_origin.Claim({}, [])
 UNIT_NAMES = {"Bar": "bar", "MegaPascal": "MPa", "KiloPascal": "kPa", "Pascal": "Pa", "DegreeCelsius": "°C",
               "Kelvin": "K", "DegreeFahrenheit": "°F"}
 # 설비 속성 이름 -> (우리 속성, 챔버 안의 이름). 챔버가 하나일 때만 설비 값으로 올린다(§3.5)
@@ -233,12 +234,20 @@ def build(model, source, registration=None, page=0, repo_root=None):
             else:
                 kind = None  # 구동 방식을 지어내지 않는다(§3.4)
                 extra_unknown.append(("dexpi_actuator_kind_unknown", "구동계가 있으나 구동 방식을 알 수 없음", "kind"))
+        tag, tag_basis = _tag_of(item)
+        plain = {"kind": kind, "tag": tag, "label_text": tag or ""}
+        claim = dexpi_origin.claim_node(model.origins[iid], item, plain, iid in controlled) if iid in model.origins else NO_CLAIM
+        kind, tag, label_text = (claim.values.get(k, plain[k]) for k in ("kind", "tag", "label_text"))
+        if "kind" in claim.values:
+            extra_unknown = []
+        if "tag" in claim.values:
+            tag_basis = "원래 값 표시"
+        extra_unknown += [(dexpi_origin.CHECK, why, field) for field, why in claim.problems]
         classification = "classified" if kind is not None else "unclassified"
         if kind is not None and rules.KIND_CATEGORY.get(kind):
             category = rules.KIND_CATEGORY[kind]
         else:
             category = "valve" if (kind is None and iid in controlled) else dexpi_map.raw_category(group)
-        tag, tag_basis = _tag_of(item)
         if kind is not None:
             attrs["kind"] = kind
         if tag:
@@ -297,9 +306,11 @@ def build(model, source, registration=None, page=0, repo_root=None):
         if tag_basis and tag_basis != "TagName":
             evidence["tag_basis"] = tag_basis
         node = {"local_id": local, "source_object_id": iid, "classification": classification, "category": category,
-                "kind": kind, "tag": tag, "label": tag or "", "label_text": tag or "", "label_location": None,
+                "kind": kind, "tag": tag, "label": tag or "", "label_text": label_text, "label_location": None,
                 "attributes": {k: v for k, v in attrs.items() if v is not None}, "style": "", "parent": None,
                 "geometry": _geometry(model.shapes.get(iid)), "evidence": evidence}
+        if claim.values:
+            node[dexpi_origin.PLAIN] = plain
         if kind == "check_valve":
             node["check_direction"] = None
             _issue(unknowns, "unknown_check_valve_direction", "DEXPI에 체크밸브 허용 방향이 없음", iid, local, "flow_direction")
@@ -418,6 +429,12 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 _issue(unknowns, "dexpi_item_order_assumed", "어느 연결의 끝에도 없는 부품을 문서 순서로 길에 끼움", item_id,
                        local_of.get(item_id), "kind")
         flow, basis = _flow_of(model, c, arrow_of.get(idx))
+        flow_class = _flow_class(model, c["segment"])
+        claim = NO_CLAIM
+        if c["id"] in model.origins:
+            disputed = flow_class == "dual" or (flow is None and (idx in arrow_of or _flow_of(model, c, None)[0] is not None))
+            claim = dexpi_origin.claim_pipe(model.origins[c["id"]], c, flow, disputed)
+            flow, basis = claim.values.get("flow", (flow, basis))
         flow_dict = None
         src_local = resolve(c["source"], c["source_node"])[0]
         dst_local = resolve(c["target"], c["target_node"])[0]
@@ -426,12 +443,14 @@ def build(model, source, registration=None, page=0, repo_root=None):
             a, b = (src_local, dst_local) if flow == "forward" else (dst_local, src_local)
             flow_dict = {"from": a, "to": b, "from_end": first, "to_end": last, "basis": basis}
             attrs["flow_direction"] = "source_to_target" if flow == "forward" else "target_to_source"
-        flow_class = _flow_class(model, c["segment"])
         if flow_class:
             attrs["flow_class"] = flow_class
         path = model.conn_paths.get(c["id"] or c["synthetic_id"]) if parts[(c["segment"], c.get("index"))] == 1 else None
         rec = add_relation("physical_connection", "process", c_id, (c["source"], c["source_node"]),
                            (c["target"], c["target_node"]), attrs, flow_dict, path, model.path_nodes.get(c_id, (None, None)), made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
+        rec["label_text"] = claim.values.get("label_text", "")
+        for field, why in claim.problems:
+            _issue(unknowns, dexpi_origin.CHECK, why, c_id, rec["local_id"], field)
         for end, key in (("source", "source_node_no"), ("target", "target_node_no")):
             if c.get(key):
                 for ep in rec["endpoints"]:
@@ -598,7 +617,7 @@ def match_arrow(arrow, candidates):
 
 
 def _arrow_flows(model):
-    """흐름 화살표 -> ({연결 순번: 'forward'|'backward'}, 붙이지 못한 화살표 목록).
+    """흐름 화살표 -> ({연결 순번: 'forward'|'backward', 어긋나는 화살표가 둘이면 None}, 붙이지 못한 화살표 목록).
     2.0은 연결마다 그림의 ConnectorLine(시작·안쪽 점·끝)이 길이다. Proteus는 구간의 CenterLine이 길이고(처음 FromID → 끝 ToID 순서),
     구간에 연결이 하나(구간 안 부품으로 나뉜 관계들은 한 연결)일 때만 쓴다. 그 구간 전체가 한 방향 길이라 나뉜 관계 모두에 같은 방향을 준다."""
     by_segment = {}
@@ -625,7 +644,7 @@ def _arrow_flows(model):
                 out[i] = None
             else:
                 out[i] = flow
-    return {k: v for k, v in out.items() if v is not None}, unplaced
+    return out, unplaced
 
 
 def _flow_class(model, segment_id):

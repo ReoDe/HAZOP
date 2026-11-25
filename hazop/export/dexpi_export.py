@@ -765,7 +765,7 @@ class _Builder:
     # ----- 5. 검사·곁 파일
     def _finish(self, xml, pipes, instr):
         root = dexpi_read.parse_safely(xml)
-        problems = [("스키마 규칙", x) for x in dexpi_read.check_structure(root)]
+        problems = [("스키마 규칙", x) for x in dexpi_read.check_structure(root, definitions=True)]
         for o in root.iter("Object"):
             if not dexpi_map.type_is_known(o.get("type", "")):
                 problems.append(("클래스 목록", "2.0.1 클래스 목록에 없음: %s" % o.get("type")))
