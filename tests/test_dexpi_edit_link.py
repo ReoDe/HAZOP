@@ -206,6 +206,18 @@ class LinkTest(unittest.TestCase):
         self.assertNotIn(oid, self.applied())
         self.assertEqual(node(self.resolved(), "Valve2")["tag"], "V-101")
 
+    def test_two_that_look_alike_in_one_place_and_the_ids_moved_on(self):
+        """태그 없는 티 둘이 (반올림해) 같은 자리에 있는데 앞의 하나가 빠져 순번이 밀린 파일. 지금 비교로는 같은 대상으로 보인다."""
+        def change():
+            extra(self.new, "Tee0", "Tee1", [140, 110, 0, 0])
+        extra(self.old, "Tee2", "Tee1", [140, 110, 0, 0])
+        self.assertEqual(self.outcome(change, target="Tee1", op="confirm", value=CONFIRM), (False, "left", "not_alone"))
+
+    def test_two_that_look_alike_in_one_place_with_the_same_ids_stay(self):
+        for ex in (self.old, self.new):
+            extra(ex, "Tee2", "Tee1", [140, 110, 0, 0])
+        self.assertEqual(self.outcome(target="Tee1", op="confirm", value=CONFIRM), (True, "same", None))
+
     def test_a_relation_without_a_place(self):
         place(self.old, "SC1", None)
         self.assertEqual(self.outcome(target="SC1", op="confirm", value=CONFIRM), (False, "left", "relation"))
