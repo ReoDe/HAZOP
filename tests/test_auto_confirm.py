@@ -1157,7 +1157,7 @@ class OldAppTest(Base):
         cls.root = tempfile.mkdtemp(prefix="hazop-oldapp-")
         tar = os.path.join(cls.root, "old.tar")
         try:
-            subprocess.run(["git", "-C", REPO, "archive", "--format=tar", "-o", tar, OLD, "hazop", "resources/library"],
+            subprocess.run(["git", "-C", REPO, "archive", "--format=tar", "-o", tar, OLD, "hazop", "/".join(("resources", "library"))],
                            check=True, capture_output=True, timeout=120)
         except (OSError, subprocess.SubprocessError):
             shutil.rmtree(cls.root, True)
