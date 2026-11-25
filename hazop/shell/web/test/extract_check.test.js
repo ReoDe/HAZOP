@@ -3,6 +3,8 @@ import { LEGEND, extractGroups, neighborsOf, segmentsOf } from "../js/canvas/ext
 import { resolveMark, styleColor } from "../js/canvas/marks.js";
 import { syncInputsNotice } from "../js/next/next.js";
 import { store } from "../js/store.js";
+import { deliver } from "../js/bridge.js";
+import * as D from "../js/panels/docs_state.js";
 
 const SHEET = {
   items: [
@@ -61,6 +63,20 @@ export const tests = [
     assert(n && n.text === "수락한 내용이 아직 반영되지 않은 도면 2장" && n.action.label === "다시 읽기", JSON.stringify(store.get().notices));
     syncInputsNotice([]);
     assert(!store.get().notices.some((x) => x.id === "inputs-pending"), "처리되면 지움");
+  } },
+  { name: "문서 작업 결과의 지식그래프 재확인 글(kg_notes)은 경고 한 줄로 남고, 끝났다는 글은 없다(차단 3)", async run(assert) {
+    window.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
+    window.hazopBridge = { send(text) { const m = JSON.parse(text); if (m.t !== "cmd") return;
+      Promise.resolve().then(() => deliver(JSON.stringify({ t: "reply", id: m.id, ok: true, data: { job: "jd1" } }))); }, setHandler() {} };
+    D.wire();
+    await D.extractAgain("m1");
+    deliver(JSON.stringify({ t: "event", name: "job.done", data: { id: "jd1", label: "추출", result: { counts: { items: 3 }, kg_notes: ["확인한 조각 언급 2건이 다시 후보가 됨"] } } }));
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(D.docs.get().notice, "확인한 조각 언급 2건이 다시 후보가 됨");
+    await D.extractAgain("m1");
+    deliver(JSON.stringify({ t: "event", name: "job.done", data: { id: "jd1", label: "추출", result: { counts: { items: 3 }, kg_notes: [] } } }));
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(D.docs.get().notice, null, "알릴 것이 없으면 글이 없다");
   } },
   { name: "추출 확인 창: 자료가 비었으면 표시가 없다", run(assert) {
     assert.equal(extractGroups(null).mark, null);
