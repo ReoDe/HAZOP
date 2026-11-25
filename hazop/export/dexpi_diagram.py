@@ -59,8 +59,6 @@ def source_placement(node, location, fmt):
         raise Undrawable("no_box")
     if not _ok(box):
         raise Undrawable("bad_number")
-    if box[2] <= 0 or box[3] <= 0:
-        raise Undrawable("zero_size")
     shape = (node.get("geometry") or {}).get("shape")
     if shape:  # DEXPI에서 읽은 기호: 돌리기 전 크기와 각도를 그대로 되쓴다
         size = (shape.get("width"), shape.get("height"), shape.get("rotation"))
@@ -281,7 +279,8 @@ class Picture:
         for oid, (pts, _signal) in self.lines.items():
             r = rels.get(oid)
             got = [r["endpoints"][0]["point"]] + r["waypoints"] + [r["endpoints"][1]["point"]] if r else []
-            if len(got) != len(pts) or any(math.dist(a, b) > MATCH_MM for a, b in zip(got, pts)):
+            # 신호선의 자리는 노드를 가리키지 않아 되읽을 때 시작과 끝이 바뀔 수 있다. 그려지는 선은 같다
+            if not any(len(way) == len(pts) and all(math.dist(a, b) <= MATCH_MM for a, b in zip(way, pts)) for way in (got, got[::-1])):
                 out.append("선 %s의 점이 다름" % oid)
         return out
 

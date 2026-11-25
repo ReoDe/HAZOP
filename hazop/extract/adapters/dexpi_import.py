@@ -129,8 +129,14 @@ def _geometry(shapes):
     return out
 
 
-def _along(path, start, end):
-    """그림의 선을 관계의 source -> target 차례로. 선은 거꾸로 그려져 있을 수 있어 두 끝의 자리(start·end)와 더 가까운 쪽을 고른다."""
+def _along(path, nodes, ends, start, end):
+    """그림의 선을 관계의 source -> target 차례로. 선은 거꾸로 그려져 있을 수 있다. 선의 자리가 가리키는 노드(nodes)가 관계의 두 끝 노드
+    (ends)와 맞으면 그것으로, 모르면 두 끝의 자리(start·end)와 더 가까운 쪽으로 정한다."""
+    forward = sum(a is not None and a == b for a, b in zip(nodes, ends))
+    backward = sum(a is not None and a == b for a, b in zip(nodes, ends[::-1]))
+    if forward != backward:
+        return path if forward > backward else path[::-1]
+
     def gap(p):
         return sum(math.dist(a, b) for a, b in ((p[0], start), (p[-1], end)) if b is not None)
     return path[::-1] if gap(path[::-1]) < gap(path) else path
@@ -347,13 +353,13 @@ def build(model, source, registration=None, page=0, repo_root=None):
             out["dexpi:system"] = seg["system"]
         return out
 
-    def add_relation(kind, line_type, c_id, src, dst, extra_attrs, flow=None, path=None, made=False):
+    def add_relation(kind, line_type, c_id, src, dst, extra_attrs, flow=None, path=None, nodes=(None, None), made=False):
         nonlocal rel_no
         rel_no += 1
         lid = _local_id(c_id, used)
         ends, ok = [], True
         places = [endpoint_point(*src), endpoint_point(*dst)]
-        drawn = [[_clean(x), _clean(y)] for x, y in _along(path, *places)] if path else None
+        drawn = [[_clean(x), _clean(y)] for x, y in _along(path, nodes, (src[1], dst[1]), *places)] if path else None
         for n, (end, (item_id, node_id)) in enumerate((("source", src), ("target", dst))):
             local, port, status, why = resolve(item_id, node_id)
             basis = "dexpi_node" if node_id in model.node_pos else "dexpi_line" if drawn else "dexpi_item_position" if item_id else None
@@ -415,7 +421,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
             attrs["flow_class"] = flow_class
         path = model.conn_paths.get(c["id"] or c["synthetic_id"]) if parts[(c["segment"], c.get("index"))] == 1 else None
         rec = add_relation("physical_connection", "process", c_id, (c["source"], c["source_node"]),
-                           (c["target"], c["target_node"]), attrs, flow_dict, path, made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
+                           (c["target"], c["target_node"]), attrs, flow_dict, path, model.path_nodes.get(c_id, (None, None)), made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
         for end, key in (("source", "source_node_no"), ("target", "target_node_no")):
             if c.get(key):
                 for ep in rec["endpoints"]:

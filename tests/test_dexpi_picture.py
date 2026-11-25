@@ -171,6 +171,12 @@ class ReadLineTest(unittest.TestCase):
             '"Target"', '"Source"').replace('"S"', '"Target"')
         self.assertEqual(line(extract(swap(PIPE1_LINE, back)), "Pipe1"), [[70.0, 120.0], [70.0, 90.0], [95.0, 90.0], [95.0, 120.0]])
 
+    def test_the_marks_of_the_line_decide_which_way_it_runs_before_the_distances(self):
+        """밸브 쪽 자리가 펌프 쪽보다 펌프에 가깝게 그려져도(자리를 옮긴 파일) 자리가 가리키는 노드를 따른다."""
+        text = swap('<Object id="Pos1"', '<Object id="PosFar" type="Plant/Diagram.PipingNodePosition"><References objects="#Nd2" property="Node"/>%s'
+                    '</Object><Object id="Pos1"' % points("Position", (300.0, 120.0)), swap(PIPE1_LINE, PIPE1_LINE.replace("#Pos2", "#PosFar")))
+        self.assertEqual(line(extract(text), "Pipe1"), [[300.0, 120.0], [95.0, 120.0]])
+
     def test_an_open_end_is_where_the_line_stops(self):
         text = swap(PIPE1_LINE, PIPE1_LINE.replace("#Pos3", "#PosOpen"))
         text = swap('<Object id="Pos1"', '<Object id="PosOpen" type="Plant/Diagram.PipingNodePosition">%s</Object><Object id="Pos1"'

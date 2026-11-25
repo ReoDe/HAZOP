@@ -163,6 +163,80 @@ class RoundtripTest(unittest.TestCase):
             json.loads(exp.files[exp.name + ".hazop.json"].decode("utf-8"))
 
 
+class EndsTest(unittest.TestCase):
+    """가상 도면에 없는 꼴: 거꾸로 적힌 계장선, 흐름이 target에서 시작하는 배관, 한 노즐에 다른 자리로 닿는 두 배관, 부모 도형 안의 기호."""
+
+    @staticmethod
+    def backwards(r):
+        a, b = r["endpoints"]
+        r["endpoints"] = [dict(b, end="source"), dict(a, end="target")]
+        r["waypoints"] = r["waypoints"][::-1]
+
+    def test_a_measuring_line_written_the_other_way_starts_at_the_sensing_end(self):
+        def change(ex):
+            kinds = {n["local_id"]: n["category"] for n in ex["nodes"]}
+            rel = next(r for r in ex["relations"] if r["kind"] == "measurement_connection" and kinds[r["endpoints"][0]["node_local_id"]] != "instrument"
+                       and kinds[r["endpoints"][0]["node_local_id"]] != "equipment")
+            rel["waypoints"] = [[777, 333]]
+            self.sense = rel["endpoints"][0]["point"]
+            self.backwards(rel)
+        exp, again = exported(pair_of(change))
+        got = next(r for r in again["relations"] if r["kind"] == "measurement_connection" and r["waypoints"])
+        self.assertLess(math.dist(back(exp, got["endpoints"][0]["point"]), self.sense), TOL)
+        self.assertEqual([round(v) for v in back(exp, got["waypoints"][0])], [777, 333])
+
+    def test_a_pipe_whose_flow_starts_at_its_target_is_drawn_along_the_flow(self):
+        def change(ex):
+            rel = next(r for r in ex["relations"] if r["kind"] == "physical_connection" and r["waypoints"] and r["flow_direction"]
+                       and r["flow_direction"]["from_end"] == "source")
+            self.local, self.points = rel["local_id"], line_of(rel)
+            fd = rel["flow_direction"]
+            rel["flow_direction"] = dict(fd, **{"from": fd["to"], "to": fd["from"], "from_end": "target", "to_end": "source"})
+        exp, again = exported(pair_of(change))
+        row = next(p for p in exp.sidecar["pipes"] if p["local_id"] == self.local)
+        self.assertTrue(row["swapped"])
+        got = line_of(by_id(again, "relations")[row["dexpi_id"]])
+        self.assertLess(far(self.points[::-1], [back(exp, p) for p in got]), TOL)
+
+    def test_a_signal_line_whose_ends_lie_nearer_the_other_symbol_does_not_stop_the_export(self):
+        def change(ex):
+            rel = next(r for r in ex["relations"] if r["kind"] == "measurement_connection")
+            a, b = (e["point"] for e in rel["endpoints"])
+            for r in ex["relations"]:
+                if r["kind"] == "measurement_connection":
+                    r["endpoints"][0]["point"], r["endpoints"][1]["point"] = r["endpoints"][1]["point"], r["endpoints"][0]["point"]
+            self.assertNotEqual(a, b)
+        exp, _ = exported(pair_of(change))
+        self.assertGreater(exp.stats["picture"]["signals"], 0)
+
+    def test_two_pipes_at_one_nozzle_keep_their_own_ends(self):
+        def change(ex):
+            kinds = {n["local_id"]: n["category"] for n in ex["nodes"]}
+            ends = {}
+            for r in ex["relations"]:
+                for e in r["endpoints"]:
+                    if r["kind"] == "physical_connection" and kinds[e["node_local_id"]] == "equipment":
+                        ends.setdefault(e["node_local_id"], []).append((r, e))
+            self.two = next(v for v in ends.values() if len(v) >= 2 and v[0][1]["point"] != v[1][1]["point"])[:2]
+            for _r, e in self.two:
+                e["port"] = "N9"
+        exp, again = exported(pair_of(change))
+        rels = by_id(again, "relations")
+        for r, e in self.two:
+            row = next(p for p in exp.sidecar["pipes"] if p["local_id"] == r["local_id"])
+            got = [back(exp, p) for p in line_of(rels[row["dexpi_id"]])]
+            self.assertLess(min(math.dist(got[0], e["point"]), math.dist(got[-1], e["point"])), TOL)
+
+    def test_a_symbol_inside_a_parent_shape_is_drawn_at_its_place_on_the_sheet(self):
+        def change(ex):
+            v = next(n for n in ex["nodes"] if n["category"] == "valve")
+            self.local, self.want = v["local_id"], [v["geometry"][k] for k in ("x", "y", "width", "height")]
+            v["geometry"] = dict(v["geometry"], x=3, y=4)  # 부모 기준 좌표. 쪽 기준 자리는 source_locations에 있다
+        exp, again = exported(pair_of(change))
+        x0, y0, x1, y1 = box_of(exp, by_id(again)[entity(exp, self.local)["dexpi_id"]])
+        self.assertLess(max(abs(a - b) for a, b in zip((x0, y0, x1 - x0, y1 - y0), self.want)), TOL)
+
+
 class OrientationTest(unittest.TestCase):
 
     def turned(self, style, box=(400.0, 300.0, 60.0, 20.0)):

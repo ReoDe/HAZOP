@@ -147,6 +147,7 @@ class Model:
         self.node_owner = {}  # 노드 id -> (항목 id, 순번)
         self.node_index = {}  # (항목 id, 순번) -> 노드 id (Proteus FromNode·ToNode를 상수 시간에 풀려고)
         self.conn_paths = {}  # 2.0 연결·신호 흐름 id -> 그림의 실제 경로 [(x, y)…] (ConnectorLine: 시작·안쪽 점·끝)
+        self.path_nodes = {}  # 같은 id -> (시작 자리가 가리키는 배관 노드 id, 끝 자리의 노드 id). 가리키는 노드가 없으면 None
         self.shapes = {}  # 2.0 항목 id -> 놓인 기호 [{name, box(x, y, 너비, 높이), size(회전 전), rotation, mirrored}]
         self.segment_paths = {}  # Proteus 구간 id -> 구간의 CenterLine 목록 [[(x, y)…], …](각각 FromID에서 ToID 쪽 순서로 본다)
         self.not_imported = {}  # 그래프에 자리가 없어 옮기지 않은 요소의 종류 -> 개수(HZ-PLN-22 §3.6·§5.5)
@@ -160,6 +161,7 @@ class Model:
         self.arrows = []  # {segment, position, direction}
         self.node_pos = {}  # 노드 id -> (x, y)
         self.pos_objects = {}  # 2.0 PipingNodePosition 객체 id -> (x, y)
+        self.pos_nodes = {}  # 2.0 PipingNodePosition 객체 id -> 가리키는 배관 노드 id
         self.diagram_count = 0
         self.process_objects = 0
         self.issues = []  # {check, target, reason}
@@ -510,6 +512,7 @@ def _read_diagram(m, root, objects):
             for nid in _refs(obj, "Node"):
                 if p is not None:
                     m.node_pos[nid] = p
+                    m.pos_nodes.setdefault(obj.get("_id"), nid)
     for diag in _iter_objects(root):
         if (diag.get("type") or "") != "Core/Diagram.Diagram":
             continue
@@ -639,6 +642,7 @@ def _walk_groups(m, group, objects, represents, cache):
                 path = _connector_path(m, child, m.pos_objects)
                 if path is not None:
                     m.conn_paths[current] = path
+                    m.path_nodes[current] = tuple(m.pos_nodes.get((_refs(child, end) or [None])[0]) for end in ("Source", "Target"))
             if t == "Core/Diagram.PipeFlowArrow" and current in m.segments:
                 for su in child.iter("Object"):
                     if (su.get("type") or "") == "Core/Diagram.ShapeUsage":
