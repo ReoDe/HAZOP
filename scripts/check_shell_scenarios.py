@@ -495,7 +495,7 @@ def n5_sheet_confirm(run, c):
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as fh:
             c.ok("확정자는 검토자 이름", REVIEWER in fh.read())
-    c.ok("화면: 도면 패널에 확정 표시", run.panel("drawings", "확정"), run.text()[-300:])
+    c.ok("화면: 표제란 패널에 확정 표시(도면 줄에는 확정 표시가 없다)", run.panel("titleblock", "확정"), run.text()[-300:])
 
 
 def n6_chat_path(run, c):

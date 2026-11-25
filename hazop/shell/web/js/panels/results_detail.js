@@ -149,7 +149,7 @@ export function EditMore({ st, setSt, c, id }) {
       <label class="chk"><input type="checkbox" aria-label="비완화 결과" checked=${st.basis} onChange=${(x) => put("basis", x.target.checked)} /> 보호수단이 모두 실패했다고 보고 쓴 결과(비완화)</label></div>
     <div class="sub-h small">원인 위치</div>
     ${st.causeRefs.map((r, i) => html`<div class="acts-row" key=${"c" + i}><${TargetSelect} value=${r.ref} c=${c} known=${st.known} label=${"원인 위치 " + (i + 1)} onChange=${(v) => row("causeRefs", i, { ref: v })} />
-      <input class="textbox fm" aria-label=${"고장모드 " + (i + 1)} placeholder="고장모드(예: FTO)" maxlength="40" value=${r.failure_mode || ""} onInput=${(x) => row("causeRefs", i, { failure_mode: x.target.value })} />
+      <input class="textbox fm" aria-label=${"고장모드 " + (i + 1)} placeholder="고장모드" maxlength="40" value=${r.failure_mode || ""} onInput=${(x) => row("causeRefs", i, { failure_mode: x.target.value })} />
       <${Btn} sm=${true} kind="ghost" label=${"원인 위치 " + (i + 1) + " 빼기"} onClick=${() => drop("causeRefs", i)}>빼기<//></div>`)}
     <${Btn} sm=${true} kind="ghost" label="원인 위치 더하기" onClick=${() => put("causeRefs", st.causeRefs.concat([{ i0: null, ref: "", failure_mode: "" }]))}>+ 원인 위치<//>
     <div class="sub-h small">영향 대상</div>

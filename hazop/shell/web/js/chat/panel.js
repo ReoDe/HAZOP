@@ -78,7 +78,7 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
     </div>
     <div class="composer">
       <div class="box">
-        <textarea ref=${input} class="chat-input" rows="2" placeholder="도면에 대해 물어보세요 (Enter로 보내기, Shift+Enter로 줄 바꾸기)" aria-label="채팅 질문"
+        <textarea ref=${input} class="chat-input" rows="2" aria-label="채팅 질문"
           value=${text} disabled=${blocked} onInput=${onInput} onKeyDown=${onKey}></textarea>
         ${chat.busy
           ? html`<button type="button" class="send stop" title="멈추기" aria-label="멈추기" onClick=${() => cmd("chat.stop")}><${Icon} name="player-stop" size=${16} /></button>`

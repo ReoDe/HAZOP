@@ -291,29 +291,50 @@ class TitleblockLinkFlowTest(W.ShellBase):
 
 
 class ItemBubbleFlowTest(W.ShellBase):
-    def test_the_component_card_shows_properties_in_korean_without_english_kind_or_ids(self):
-        """화면 단순화 B(사용자 결정 2026-11-25): 구성요소를 누르면 태그·종류(한글)·이어진 곳·든 구간·출처가 나오고, 영문 종류 이름·내부 ID·
-        '지식그래프에서 보기'·'고치기'는 없다. '분석 결과 추적'은 있다."""
+    def test_the_component_card_shows_its_own_specification_items_without_links_or_english(self):
+        """속성 카드(사용자 결정 2026-11-25): 머리는 '태그 한글 종류', 아래는 그 구성요소 자체의 사양 항목(값이 없으면 '—'). 이어진 곳·든 구간·
+        영문 종류 이름·내부 ID·'지식그래프에서 보기'·'고치기'는 없고 '분석 결과 추적'은 있다."""
         win = self.window()
         gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
-        from hazop.shell import api
-        item = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"][0]["id"]
-        bubble = {"sheet": gid, "id": item, "tag": "RC-V001", "kind": "control_valve", "kind_label": "제어 밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
+        from hazop.shell import api, api_props
+        items = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"]
+        valve = next(i for i in items if i.get("layer") == "symbol" and api_props.group_of(i.get("kind"), "symbol") == "valve")
+        bubble = {"sheet": gid, "id": valve["id"], "tag": "RC-V001", "kind": valve["kind"], "kind_label": "제어 밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
         self.js(win, "window.__hz.store.set({sheet: %s, panel: null, bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble.props') !== null") is True, 15))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.bubble.props dt').length") == 6, 15), "밸브 항목 6개")
         text = self.js(win, "document.querySelector('.bubble.props').textContent")
         self.assertIn("RC-V001", text)
         self.assertIn("제어 밸브", text)
-        for word in ("control_valve", item, "지식그래프", "고치기"):
+        labels = self.jsj(win, "[...document.querySelectorAll('.bubble.props dt')].map((e) => e.textContent)")
+        self.assertEqual(labels, [x[0] for x in api_props.SPECS["valve"][1]])
+        for word in (valve["kind"], valve["id"], "지식그래프", "고치기", "이어진 곳", "든 구간"):
             self.assertNotIn(word, text)
-        for label in ("이어진 곳", "든 구간", "출처"):
-            self.assertIn(label, text)
         self.js(win, "window.__hz.store.set({bubble: %s})" % json.dumps(dict(bubble, kind_label=None)))      # 사전에 없는 종류는 영문 대신 '종류 미확인'
         self.assertTrue(wait_for(lambda: "종류 미확인" in (self.js(win, "document.querySelector('.bubble.props').textContent") or ""), 10))
-        self.assertNotIn("control_valve", self.js(win, "document.querySelector('.bubble.props').textContent"))
+        self.assertNotIn(valve["kind"], self.js(win, "document.querySelector('.bubble.props').textContent"))
         self.assertTrue(self.click(win, ".bubble button[aria-label='분석 결과 추적']"))
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "results", 10))
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
+
+    def test_a_value_is_shown_with_its_source_next_to_it(self):
+        """값 옆에 작은 글씨로 출처(도면 번호 또는 문서 이름)만 보이고, 값이 없는 항목은 '—'다."""
+        from unittest import mock
+        win = self.window()
+        gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
+        from hazop.shell import api, api_props
+        items = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"]
+        valve = next(i for i in items if i.get("layer") == "symbol" and api_props.group_of(i.get("kind"), "symbol") == "valve")
+        real = api_props.values_for
+        docs = [{"property": "material", "item": None, "value": "SA-106", "unit": None, "name": "배관 사양서"}]
+        bubble = {"sheet": gid, "id": valve["id"], "tag": "RC-V001", "kind": valve["kind"], "kind_label": "밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
+        with mock.patch.object(api_props, "values_for", lambda g, a, d: real(g, {"valve_type": "globe"}, docs)):
+            self.js(win, "window.__hz.store.set({sheet: %s, panel: null, bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
+            self.assertTrue(wait_for(lambda: "글로브" in (self.js(win, "(document.querySelector('.bubble.props dl') || {}).textContent") or ""), 15))
+            rows = self.jsj(win, "[...document.querySelectorAll('.bubble.props dt')].map((t) => [t.textContent, t.nextElementSibling.textContent.trim()])")
+        by = dict(rows)
+        self.assertEqual(by["형식"], "글로브 SNP-M-101")
+        self.assertEqual(by["재질"], "SA-106 배관 사양서")
+        self.assertEqual(by["호칭 지름"], "—")
 
     def test_the_drawing_tab_shows_extraction_boxes_and_no_segment_colors(self):
         """도면 탭은 원본 위에 추출한 것을 네모로(색 범례가 뜸) 보이고, 구간 색 강조(S1 딱지)는 구간 탭에서만 나온다."""

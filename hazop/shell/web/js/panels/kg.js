@@ -272,7 +272,7 @@ function Head({ s }) {
   };
   return html`<div class="kg-head">
     <div class="kg-search"><${Icon} name="search" size=${16} />
-      <input type="text" value=${q} maxlength="100" placeholder="태그·이름·규칙 찾기 (Enter로 첫 결과)" aria-label="지식그래프에서 찾기" onInput=${onInput} onKeyDown=${onKey} />
+      <input type="text" value=${q} maxlength="100" placeholder="태그·이름" aria-label="지식그래프에서 찾기" onInput=${onInput} onKeyDown=${onKey} />
       ${hits.length ? html`<div class="kg-hits" role="listbox" aria-label="찾은 항목">${hits.map((h) => html`<button type="button" role="option" class="kg-hit" key=${h.id} onClick=${() => K.focus(h.id, h.group)}>
         <b>${h.label}</b><span class="muted small">${TYPE_NAMES[h.type] || h.type} · ${h.drawing}</span></button>`)}</div>` : null}</div>
     <div class="acts-row kg-chips">
@@ -327,7 +327,7 @@ function Judge({ d }) {
       icon=${a.action === "undo" ? "arrow-back-up" : null} label=${a.label} disabled=${busy || !d.can_judge} onClick=${() => run(a)}>${a.label}<//>`)}</div>
     ${cur ? html`<div class="acts-col kg-form">${cur.needs.map(([k, label]) => html`<label key=${k} class="small">${label}
         <input type="text" maxlength=${k === "reason" ? 500 : 300} value=${k === "reason" ? reason : evidence} aria-label=${label}
-          placeholder=${k === "evidence" ? "예: 계통설계기술서 3.2절" : ""} onInput=${(e) => (k === "reason" ? setReason : setEvidence)(e.target.value)} /></label>`)}
+          onInput=${(e) => (k === "reason" ? setReason : setEvidence)(e.target.value)} /></label>`)}
       <div class="acts-row"><${Btn} sm=${true} kind="primary" label=${cur.label + " 저장"} disabled=${busy || !ready} onClick=${() => K.judge(d.id, cur.action, reason.trim(), evidence.trim())}>${cur.label} 저장<//>
         <${Btn} sm=${true} kind="ghost" label="취소" onClick=${() => setOpen(null)}>취소<//></div></div>` : null}
     ${d.can_judge ? null : html`<div class="muted small">판단 파일을 읽을 수 없어 지금은 판단을 저장하지 않습니다.</div>`}</div>`;

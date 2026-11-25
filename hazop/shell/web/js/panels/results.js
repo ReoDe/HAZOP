@@ -270,7 +270,7 @@ function TraceBox() {
   const [text, setText] = useState("");
   const go = () => { if (text.trim()) R.loadTrace(text); };
   return html`<div class="acts-row tracebox"><label for="trace-q" class="small muted">구성요소 추적</label>
-    <input id="trace-q" class="textbox" maxlength="120" placeholder="태그 또는 구성요소 ID" value=${text} onInput=${(e) => setText(e.target.value)}
+    <input id="trace-q" class="textbox" maxlength="120" placeholder="태그" value=${text} onInput=${(e) => setText(e.target.value)}
       onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); go(); } }} />
     <${Btn} sm=${true} label="추적" disabled=${!text.trim()} onClick=${go}>추적<//></div>`;
 }

@@ -95,7 +95,7 @@ export const tests = [
     C.onClean("g1", data("drawio", U));
     await tick();
     assert(!btn("정리").disabled && btn("정리").getAttribute("aria-pressed") === "true", "정리가 켜짐(drawio 기본)");
-    assert(host.textContent.includes("미확인 3곳"), host.textContent);
+    assert(!host.textContent.includes("미확인 3곳"), "도면 위에 '미확인 n곳' 칩은 없다(읽지 못한 곳은 도면 탭의 네모가 보여 준다)");
     btn("원본").click();
     await tick();
     assert.equal(C.viewOf(C.clean.get(), "g1"), "orig");
@@ -165,7 +165,7 @@ export const tests = [
     render(html`<${C.CleanOverlay} />`, host);
     await tick();
     const top = [...host.querySelector(".viewswitch").children].filter((n) => !n.classList.contains("viewmenu")).map((n) => n.textContent.trim());
-    assert.equal(top.length, 3, "위 줄은 원본|정리, 미확인, 보기 셋: " + top.join(" / "));
+    assert.equal(top.length, 2, "위 줄은 원본|정리, 보기 둘(미확인 칩은 없다): " + top.join(" / "));
     assert(!host.textContent.includes("위치 없음 2") && host.querySelector(".vm-dot.warn"), "접힌 메뉴 안의 알릴 것은 점으로");
     host.querySelector(".vm-btn").click();
     await tick();

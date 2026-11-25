@@ -118,7 +118,7 @@ function NewNodeCard() {
     <div class="field"><label for="nn-name">이름</label>
       <input id="nn-name" class="textbox" autofocus value=${card.name} maxlength="120" onInput=${(e) => N.editCard({ name: e.target.value })} /></div>
     <div class="field"><label for="nn-intent">설계 의도</label>
-      <textarea id="nn-intent" class="textbox" rows="3" maxlength="2000" placeholder="이 구간이 무엇을 하는지(비워 둘 수 있습니다)" value=${card.intent} onInput=${(e) => N.editCard({ intent: e.target.value })}></textarea></div>
+      <textarea id="nn-intent" class="textbox" rows="3" maxlength="2000" value=${card.intent} onInput=${(e) => N.editCard({ intent: e.target.value })}></textarea></div>
     ${sg && sg.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${sg.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
     ${sg && sg.asked > sg.count ? html`<${Notice} kind="warn" icon="alert-triangle">고른 ${sg.asked}개 가운데 ${sg.asked - sg.count}개는 구간에 넣을 수 없는 선(신호선·계측선)이라 뺐습니다.<//>` : null}
     ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//>` : null}

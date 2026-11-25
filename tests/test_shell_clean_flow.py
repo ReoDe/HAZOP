@@ -85,11 +85,11 @@ class CleanFlowTest(W.ShellBase):
         pump(1.0)
         self.assertEqual(self.pressed(win, "원본"), "true", "앞 도면의 고른 보기는 기억한다")
 
-    def test_the_status_chip_is_drawn_in_the_frame(self):
+    def test_no_unconfirmed_chip_is_drawn_over_the_sheet(self):
         win = self.window()
         self.open_sheet(win)
         chip = self.js(win, "(() => { const c = document.querySelector('.viewswitch .chip'); return c ? c.textContent.trim() : ''; })()")
-        self.assertTrue("미확인" in chip or "drawio" in chip, chip)      # 미확인이 있으면 '미확인 n곳', 모두 읽었으면 읽은 방법 꼬리표
+        self.assertEqual(chip, "", chip)      # 도면 위의 '미확인 n곳' 칩은 없다
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
 
     def test_marks_use_the_same_store_key_and_are_drawn_in_both_views(self):

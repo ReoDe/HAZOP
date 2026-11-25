@@ -249,7 +249,7 @@ function Row({ row, onOpen, open, noReviewer }) {
       <${AskCard} row=${row} />
       <div class="tb-grid">${row.fields.map((f) => html`<${Field} key=${f.field} row=${row} f=${f} locked=${locked} />`)}</div>
       <div class="tb-foot">
-        <input class="tb-reason" placeholder="까닭(선택, 기록에 남음)" maxlength="300" value=${reason} aria-label="확정 까닭"
+        <input class="tb-reason" placeholder="까닭" maxlength="300" value=${reason} aria-label="확정 까닭"
           onInput=${(e) => tb.set({ reasons: Object.assign({}, tb.get().reasons, { [row.material_id]: e.target.value }) })} />
         ${missing ? html`<${Btn} sm=${true} label="확정 전 항목을 후보 그대로 확정" disabled=${busy || noReviewer} onClick=${() => confirmRow(row, true)}>후보 그대로 확정<//>` : null}
         <${Btn} sm=${true} kind="primary" label="입력한 값으로 확정" disabled=${busy || noReviewer} onClick=${() => confirmRow(row, false)}>확정<//></div>

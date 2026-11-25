@@ -437,11 +437,12 @@ class ShellChatTest(ShellBase):
         self.assertEqual(self.sessions, [])
 
     def test_chat_shows_no_examples_or_guide_text(self):
-        """화면 단순화(사용자 결정 2026-11-25): 추천 질문과 '물어보세요' 안내 문구가 없고, 입력 칸의 자리표 글은 그대로다."""
+        """화면 단순화(사용자 결정 2026-11-25): 추천 질문과 '물어보세요' 안내 문구가 없고, 입력 칸도 자리표 글이 없다(낭독용 이름만)."""
         win = self.window()
         self.assertEqual(self.js(win, "document.querySelectorAll('.examples').length"), 0)
         self.assertNotIn("물어보세요.", self.js(win, "document.querySelector('.msgs').textContent"))
-        self.assertIn("도면에 대해 물어보세요", self.js(win, "document.querySelector('.chat-input').placeholder"))
+        self.assertEqual(self.js(win, "document.querySelector('.chat-input').placeholder"), "")
+        self.assertEqual(self.js(win, "document.querySelector('.chat-input').getAttribute('aria-label')"), "채팅 질문")
         self.assertEqual(self.sessions, [])
 
     def test_enter_sends_and_shift_enter_does_not(self):
