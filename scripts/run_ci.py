@@ -59,6 +59,7 @@ NOT_IN_CI = {
     "check_shell_scenarios": "QtWebEngine 새 화면을 띄우고 --out이 필요하다(둘째 단계). 지금은 알려진 결함 N10(표제란 미확정 도면이 있으면 Excel 내보내기가 멈춤) 때문에 rc 1",
     "check_desktop_support": "실제 데스크톱이 필요하다",
     "check_apr1400": "저장소 밖 DCD 원본이 필요하다",
+    "check_auto_accept": "저장소 밖 AI 응답과 정답지가 필요하다",
     "check_project_kg": "저장소 밖 DCD 원본이 필요하다",
     "check_cli_live": "실제 Claude CLI를 부른다",
     "check_ai_analysis": "실제 Claude를 부른다",

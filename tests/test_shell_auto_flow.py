@@ -1156,7 +1156,7 @@ class OpenFolderTest(unittest.TestCase):
         self.e = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=Events(), run_jobs=lambda _i, fn: fn())
         self.e.settings["project_id"] = "P"
         self.opened = []
-        self.e.hooks["explore"] = self.opened.append
+        self.e.hooks["explore"] = lambda path: self.opened.append(path) or True
         self.out = os.path.join(self.tmp, "out")
         os.makedirs(self.out)
 
@@ -1244,12 +1244,12 @@ class OpenFolderTest(unittest.TestCase):
         self.assertFalse(self.open("chat")["ok"])
         os.rmdir(d)
 
-    def test_only_folders_are_explored(self):
+    def test_refused_when_no_window_or_the_folder_does_not_open(self):
         self.exported("excel")
+        self.e.hooks["explore"] = lambda path: False
+        self.assertFalse(self.open("excel")["ok"])
         del self.e.hooks["explore"]
-        with mock.patch("os.startfile") as start:
-            self.assertTrue(self.open("excel")["ok"])
-        start.assert_called_once_with(self.out, "explore")
+        self.assertFalse(self.open("excel")["ok"])
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 - excel·ie·fmea·dexpi: 이번 실행에서 이 프로젝트를 내보낼 때 저장 대화상자(engine.hooks의 save_path·save_dir)가 돌려준 자리(Hooks가 적어 둠).
   그 자리에 대화상자를 닫은 뒤 쓰인 파일(dexpi는 manifest.json)이 있을 때만 내보낸 것으로 본다.
 - chat: 채팅 내보내기의 정해진 자리(작업 루트 output/exports).
-UNC, 링크·접합을 지나는 자리, 없거나 폴더가 아닌 자리는 열지 않는다. 폴더만 여는 동작(explore)으로 열어 파일을 실행하지 않는다.
+UNC, 링크·접합을 지나는 자리, 없거나 폴더가 아닌 자리는 열지 않는다. 여는 일은 창이 꽂은 explore가 하고(열었으면 True), 폴더임을 확인한 자리만 넘긴다.
 """
 
 import os
@@ -69,9 +69,7 @@ def folder(engine, kind):
 
 def open_folder(engine, kind):
     path = folder(engine, kind)
-    explore = engine.hooks.get("explore") or (lambda p: os.startfile(p, "explore"))
-    try:
-        explore(path)
-    except OSError as exc:
-        raise Refused(REFUSED) from exc
+    explore = engine.hooks.get("explore")
+    if explore is None or not explore(path):
+        raise Refused(REFUSED)
     return path

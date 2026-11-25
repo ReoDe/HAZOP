@@ -262,6 +262,7 @@ class ShellWindow(QMainWindow):
         self.gui_call.connect(self._run_gui_call, Qt.BlockingQueuedConnection)
         self.engine.hooks["save_dir"] = lambda kind: self._on_gui(lambda: self._save_dir(kind))      # 내보내기는 작업 스레드에서 도니 대화상자는 화면 스레드에서 연다
         self.engine.hooks["confirm_overwrite_files"] = lambda names: self._on_gui(lambda: self._ask_overwrite_files(names))
+        self.engine.hooks["explore"] = lambda path: self._on_gui(lambda: self._explore(path))      # 내보낸 폴더 열기(폴더인지는 export_folder가 확인)
         self.engine.hooks["jobs_idle"] = self.jobs_idle.emit
         self.jobs_idle.connect(self._on_jobs_idle)
         self.confirm_overwrite_files = self._ask_overwrite_files_box     # 시험이 모달 창 없이 답을 꽂는 자리: True(덮어씀) | False
@@ -337,6 +338,10 @@ class ShellWindow(QMainWindow):
         if kind == "err":
             raise value
         return value
+
+    def _explore(self, path):
+        from PySide6.QtGui import QDesktopServices
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def _pick_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "도면 파일 고르기", "", "도면 (*.drawio *.pdf *.xml)")
