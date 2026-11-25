@@ -272,6 +272,42 @@ DEXPI 파일은 밖에서 온 파일입니다. 읽기 전에 아래를 모두 �
 - **선 점(rev 5).** 연결이나 신호 흐름을 나타내는 `ConnectorLine`의 시작·`InnerPoints`·끝이 관계의 끝점과 `waypoints`입니다. 선이 연결과 거꾸로 그려져 있으면 선의 자리가 가리키는 배관 노드로, 노드를 가리키지 않으면 두 끝의 자리로 가려 뒤집습니다. 아무것에도 붙지 않은 끝도 선이 멈춘 자리를 끝점으로 씁니다. 부품 앞뒤로 나뉜 연결(§5.7)은 선 하나를 나눌 수 없어 선 점을 주지 않습니다.
 - **`source_locations`는 그림을 읽기 전과 같습니다(rev 5).** 노드는 배관 노드·기호의 점들, 관계는 두 끝의 자리로 셈합니다. 사람 수정이 대상을 다시 찾는 열쇠(`at`), 판 이전의 표시, 도면 연결점의 지문이 이 자리를 쓰므로, 이미 들여온 도면을 다시 읽어도 그것들이 달라지지 않게 합니다. 상자와 선 점이 생기는 만큼 `graph_version`은 바뀝니다(그림에 기호나 선이 있는 파일만). 이 앱이 낸 파일(`Model`의 `uri`가 `urn:hazop:dexpi-export:`로 시작)이고 기호가 있는 구성요소는 배관 끝이 아니라 기호 가운데를 자리로 씁니다. 그림이 없던 옛 내보내기가 모든 노드를 가운데에 적었으므로, 같은 도면을 새로 내보낸 파일로 바꿔 등록해도 밸브·설비·배관의 자리가 이어집니다.
 
+#### 5.3.1 `geometry.shape` 계약(2026-11-25)
+
+노드의 `geometry`와 `geometry.shape`를 읽는 쪽이 따를 약속입니다. 만드는 곳은 `hazop/extract/adapters/dexpi_import.py`의 `_geometry`, 셈은 `hazop/extract/adapters/dexpi_shape.py`, 되쓰는 곳은 `hazop/export/dexpi_diagram.py`의 `source_placement`입니다. 견본과 모서리 자리는 `tests/fixtures/dexpi/geometry-shape-samples.json`에 있고, `tests/test_dexpi_shape_contract.py`가 코드와 이 절의 견본을 맞대어 봅니다.
+
+| 키 | 뜻 |
+| --- | --- |
+| `geometry.x`·`y` | 돌리고 뒤집어 놓은 기호가 차지하는 상자의 왼쪽 위 |
+| `geometry.width`·`height` | 그 상자의 크기. 돌린 **뒤**의 값 |
+| `geometry.shape.name` | 파일에 적힌 모양 이름. 없으면 `null` |
+| `geometry.shape.width`·`height` | 돌리기 **전** 기호의 크기(배율을 곱한 값). 선 하나로 그린 기호는 선 굵기가 두께(굵기가 적혀 있지 않으면 0) |
+| `geometry.shape.rotation` | 회전 각도(도). 0 이상 360 미만이고, 양수는 화면에서 시계 방향 |
+| `geometry.shape.mirrored` | 좌우 뒤집힘(`true`·`false`) |
+
+- **단위와 축.** 길이는 DEXPI 파일의 도면 단위(`coordinate_system.unit`) 그대로이고, 원점은 왼쪽 위, x는 오른쪽, y는 아래로 커집니다. 길이와 각도는 소수 셋째 자리까지입니다.
+- **기준점.** `geometry` 상자의 가운데 `(x + width/2, y + height/2)`입니다. 돌리기 전 기호의 가운데가 이 점에 오고, 뒤집기와 회전은 이 점을 두고 합니다. DEXPI 파일의 `Position`(모양의 원점)은 남지 않습니다.
+- **적용 차례.** 돌리기 전 기호의 가운데를 원점으로 한 점 `(u, v)`(왼쪽 위가 `(−shape.width/2, −shape.height/2)`)를 다음 차례로 옮깁니다. 위아래 뒤집기는 따로 없고 좌우 뒤집기와 180도 회전으로 나타납니다.
+  1. `mirrored`이면 `u`의 부호를 바꿉니다.
+  2. 회전 `θ`: `X = 가운데x + u·cos θ − v·sin θ`, `Y = 가운데y + u·sin θ + v·cos θ`.
+- **없을 때.** `shape`는 기호가 하나일 때만 있습니다. 기호가 둘 이상이면 `geometry`는 모두를 감싼 상자이고 `shape`가 없습니다. 기호를 읽지 못했거나 Proteus(1.x) 파일이면 `geometry`가 `null`입니다. drawio·벡터 PDF에서 읽은 노드와 사람이 더한 노드에는 `shape`가 없습니다. 사람 고침은 이미 있는 노드의 `geometry`를 바꾸지 않습니다.
+
+견본 두 개는 같은 모양(모양 안 좌표로 x −4~1, y −1~2인 상자)을 `Position` (60, 120)에 놓은 것입니다. 회전만(배율 1·1):
+
+```json
+{"x": 58.0, "y": 116.0, "width": 3.0, "height": 5.0,
+ "shape": {"name": "BOX_SHAPE", "width": 5.0, "height": 3.0, "rotation": 90.0, "mirrored": false}}
+```
+
+기호의 왼쪽 위 모서리는 (61, 116), 오른쪽 위 모서리는 (61, 121)에 놓입니다. 회전과 뒤집힘(배율 2·1):
+
+```json
+{"x": 59.0, "y": 112.0, "width": 3.0, "height": 10.0,
+ "shape": {"name": "BOX_SHAPE", "width": 10.0, "height": 3.0, "rotation": 270.0, "mirrored": true}}
+```
+
+기호의 왼쪽 위 모서리는 (59, 112), 오른쪽 위 모서리는 (59, 122)에 놓입니다.
+
 ### 5.4 흐름 방향
 
 DEXPI 연결의 Source→Target은 '연결이 시작하고 끝나는 곳'이지 흐름 방향이 아닙니다(F13). 구간의 `FlowDirection`은 한 방향인지 양방향인지만 말합니다. 그래서 이 둘만으로 `flow_direction`을 정하지 않습니다. 근거가 될 수 있는 것과 다루는 법:
