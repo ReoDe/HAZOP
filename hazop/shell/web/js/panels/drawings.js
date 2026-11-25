@@ -7,6 +7,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { SourceConflicts, choicesCount, displacedOf } from "./drawings_sources.js";
 import { DrawingExcludedChip, DrawingPicks } from "./nodes_screen.js";
+import { OpenFolder } from "./open_folder.js";
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
@@ -35,7 +36,7 @@ function DexpiExport() {
   if (!info || !info.drawings.length) return null;
   const done = result && !result.cancelled ? result : null;
   return html`<div class="dexpi-card"><div class="acts-row"><${Btn} kind="primary" sm=${true} icon="file-export" label="DEXPI로 내보내기" disabled=${busy || !info.any} onClick=${run}>DEXPI로 내보내기<//>
-    ${done ? html`<span class="muted small">${done.drawings.length}쪽을 내보냈습니다 · 폴더 ${done.folder}${done.not_exported.length ? " · 내보내지 못한 쪽 " + done.not_exported.length : ""}</span>` : null}</div>
+    ${done ? html`<span class="muted small">${done.drawings.length}쪽을 내보냈습니다 · 폴더 ${done.folder}${done.not_exported.length ? " · 내보내지 못한 쪽 " + done.not_exported.length : ""}</span><${OpenFolder} kind="dexpi" />` : null}</div>
     ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">${error}</span><//>` : null}</div>`;
 }
 

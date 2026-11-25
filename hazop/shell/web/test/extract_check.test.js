@@ -27,7 +27,7 @@ const CLEAN = { items: { p1: { ends: [{ node: "a", status: "connected" }, { node
 export const tests = [
   { name: "추출 확인 창: 읽은 기호·도면 연결·읽지 못한 기호·끊긴 연결(열린 끝 배관, 이어지지 않은 도면 연결)을 서로 다른 색으로 나눈다", run(assert) {
     const g = extractGroups(SHEET, CLEAN_REASONS);
-    assert.equal(g.counts, { ok: 2, link: 1, unknown: 2, broken: 3 });
+    assert.equal(g.counts, { ok: 2, link: 1, unknown: 2, broken: 3, aifill: 0, notsym: 0 });
     const by = Object.fromEntries(g.mark.groups.map((x) => [x.style, x.ids]));
     assert.equal(by["chk-ok"], ["a", "b"]);
     assert.equal(by["chk-link"], ["d"]);
@@ -37,7 +37,7 @@ export const tests = [
     assert.equal(g.mark.op, "mark");
     assert(g.mark.dim_others === false, "다른 것을 흐리게 하지 않는다");
     assert(!JSON.stringify(g).includes("t1"), "글자(태그) 층은 칠하지 않는다");
-    assert.equal(LEGEND.map((l) => l.text), ["읽음", "도면 연결", "읽지 못함", "끊긴 연결"]);
+    assert.equal(LEGEND.map((l) => l.text), ["읽음", "도면 연결", "읽지 못함", "끊긴 연결", "AI가 채움", "AI: 기호 아님"]);
   } },
   { name: "추출 확인 창: 추적·강조 색(focus·path·cause·warn)과 다른 색, 그리는 쪽은 가는 선(차단 1)", run(assert) {
     const hl = ["focus", "path", "cause", "warn", "safeguard", "muted"].map(styleColor);
@@ -51,9 +51,21 @@ export const tests = [
   { name: "추출 확인 창: 한 기호에 사유가 여럿이면 가장 무거운 것(읽지 못함 > 끊긴 연결 > 그 밖)(경미 7)", run(assert) {
     const sheet = { items: [{ id: "x", layer: "symbol", unknown: false }] };
     const clean = { unconfirmed: [{ id: "x", reason: "unknown_symbol" }, { id: "x", reason: "open_end" }] };
-    assert.equal(extractGroups(sheet, clean).counts, { ok: 0, link: 0, unknown: 1, broken: 0 });
+    assert.equal(extractGroups(sheet, clean).counts, { ok: 0, link: 0, unknown: 1, broken: 0, aifill: 0, notsym: 0 });
     const clean2 = { unconfirmed: [{ id: "x", reason: "open_end" }, { id: "x", reason: "flow_direction" }] };
-    assert.equal(extractGroups(sheet, clean2).counts, { ok: 0, link: 0, unknown: 0, broken: 1 });
+    assert.equal(extractGroups(sheet, clean2).counts, { ok: 0, link: 0, unknown: 0, broken: 1, aifill: 0, notsym: 0 });
+  } },
+  { name: "추출 확인 창: AI가 '기호 아님'이라 본 것과 자동으로 채운 것은 따로 칠하고, 색이 서로 다르다", run(assert) {
+    const sheet = { items: [{ id: "n", layer: "symbol", unknown: true }, { id: "f", layer: "symbol", unknown: false, kind: "valve" }, { id: "o", layer: "symbol", unknown: false, kind: "pump" }] };
+    const clean = { items: { n: { ai_answer: "not_symbol", review: "script" }, f: { review: "ai_auto" }, o: { review: "script" } } };
+    const g = extractGroups(sheet, clean);
+    const by = Object.fromEntries(g.mark.groups.map((x) => [x.style, x.ids]));
+    assert.equal(by["chk-notsym"], ["n"]);
+    assert.equal(by["chk-ai"], ["f"]);
+    assert.equal(by["chk-ok"], ["o"]);
+    assert.equal(g.counts.unknown, 0, "AI가 기호 아님이라 본 것은 읽지 못함 칸에 겹쳐 세지 않는다");
+    const cols = LEGEND.map((l) => styleColor(l.style));
+    assert.equal(new Set(cols).size, cols.length, "범례 색이 모두 다르다");
   } },
   { name: "수락했지만 도면에 반영하지 않은 입력 연산이 남으면 알림 줄에 '다시 읽기' 한 줄, 없어지면 지운다(차단 2)", run(assert) {
     store.set({ notices: [] });

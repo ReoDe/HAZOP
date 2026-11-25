@@ -105,6 +105,11 @@ class ResultsPanelTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
         self.assertTrue(wait_for(lambda: "내보냈습니다" in self.text(win) and "exported.xlsx" in self.text(win), 10), "내보냈습니다 · 파일 이름 한 줄")
         self.assertNotIn(os.path.dirname(out), self.text(win), "웹에는 경로를 보이지 않는다")
+        from unittest import mock
+        with mock.patch("hazop.shell.export_folder.open_folder", return_value="x") as op:
+            self.assertTrue(self.click(win, "button[aria-label='내보낸 폴더 열기']"))
+            self.assertTrue(wait_for(lambda: op.called, 10))
+            self.assertEqual(op.call_args[0][1], "excel", "폴더 열기는 방금 내보낸 종류로 부른다")
 
     def open_export_card(self, win):
         self.assertTrue(self.js(win, "(() => { const b = document.querySelector(\"button[aria-label='Excel 내보내기 범위 고르기']\"); b.click(); return true; })()"))

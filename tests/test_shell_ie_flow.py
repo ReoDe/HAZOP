@@ -75,6 +75,7 @@ class IePanelTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
         self.assertTrue(wait_for(lambda: "내보냈습니다" in self.text(win) and "ie-bundle.xlsx" in self.text(win), 10), "내보냈습니다 · 파일 이름 한 줄")
         self.assertNotIn(os.path.dirname(out), self.text(win))
+        self.assertTrue(self.js(win, "!!document.querySelector(\"button[aria-label='내보낸 폴더 열기']\")"), "내보냄 한 줄 끝에 폴더 열기")
 
     def test_human_group_can_be_confirmed_from_the_panel(self):
         doc, fp = ie_store.load(self.project)

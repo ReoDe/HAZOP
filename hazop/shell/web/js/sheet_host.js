@@ -11,7 +11,7 @@ import { NodeOverlay, useNodeCanvas } from "./canvas/nodes_canvas.js";
 import { CleanOverlay, useCleanCanvas } from "./canvas/clean_ui.js";
 import { ScanNote } from "./scan_note.js";
 import { CompareCard, ComparePane, useCmp } from "./compare.js";
-import { ExtractLegend, useExtractCheck } from "./canvas/extract_check.js";
+import { ExtractLegend, sheetFacts, useExtractCheck } from "./canvas/extract_check.js";
 import * as N from "./panels/nodes_state.js";
 
 let SheetComponent = null;
@@ -43,10 +43,15 @@ function ItemBubble() {
   const rev = useStore((s) => s.drawings.rev);
   const row = useStore((s) => s.drawings.drawings.find((d) => b && d.graph_id === b.sheet));
   const [props, setProps] = useState(null);
+  const [ai, setAi] = useState("");          // AI가 이 구성요소에 한 일 한 줄(없으면 빈 글)
   useEffect(() => {
     if (!b) return undefined;
     let alive = true;
-    setProps(null);
+    setProps(null); setAi("");
+    sheetFacts(b.sheet, rev).then((f) => {
+      const ex = (((f && f.clean) || {}).items || {})[b.id] || {};
+      if (alive) setAi(ex.ai_answer === "not_symbol" ? "AI가 기호가 아니라고 봤습니다." : ex.review === "ai_auto" ? "AI가 채운 값이 들어 있습니다." : "");
+    });
     read("props/" + encodeURIComponent(b.sheet) + "/" + encodeURIComponent(b.id)).then((p) => { if (alive) setProps(p); }).catch(() => { if (alive) setProps({ items: [] }); });
     return () => { alive = false; };
   }, [b && b.sheet, b && b.id, rev]);
@@ -58,6 +63,7 @@ function ItemBubble() {
   const src = (x) => !x ? null : x.kind === "document" ? (x.name || "설계 문서") : from;
   return html`<div class="float bubble props" role="dialog" aria-label="구성요소 속성" style=${style}>
     <div><b>${b.tag || "태그 없음"}</b> ${b.kind_label || "종류 미확인"}</div>
+    ${ai ? html`<div class="muted small">${ai}</div>` : null}
     <dl class="props-list">${((props && props.items) || []).map((it) => html`<${Fragment} key=${it.label}>
       <dt>${it.label}</dt><dd>${it.value ? it.value : html`<span class="muted">—</span>`}${src(it.source) ? html` <span class="muted small">${src(it.source)}</span>` : null}</dd><//>`)}</dl>
     <div class="acts-row"><${Btn} sm=${true} label="분석 결과 추적" title="소속 구간, 그 구간의 칸과 권고를 따라갑니다" onClick=${trace}>분석 결과 추적<//>

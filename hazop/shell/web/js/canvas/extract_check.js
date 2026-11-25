@@ -13,6 +13,8 @@ export const LEGEND = [
   { key: "link", style: "chk-link", text: "도면 연결" },
   { key: "unknown", style: "chk-unknown", text: "읽지 못함" },
   { key: "broken", style: "chk-broken", text: "끊긴 연결" },
+  { key: "aifill", style: "chk-ai", text: "AI가 채움" },
+  { key: "notsym", style: "chk-notsym", text: "AI: 기호 아님" },
 ];
 
 const BROKEN_REASONS = new Set(["open_end", "unresolved_connector"]);
@@ -26,14 +28,17 @@ export function extractGroups(sheet, clean, links) {
   const reasons = new Map();
   for (const u of (clean && clean.unconfirmed) || []) { if (!reasons.has(u.id)) reasons.set(u.id, new Set()); reasons.get(u.id).add(u.reason); }
   const any = (set, want) => !!set && [...set].some((r) => want.has(r));
-  const ids = { ok: [], link: [], unknown: [], broken: [] };
+  const ids = { ok: [], link: [], unknown: [], broken: [], aifill: [], notsym: [] };
+  const extras = (clean && clean.items) || {};
   for (const it of items) {
     if (!it || !it.id || it.layer === "tag") continue;
-    const link = linkOf.get(it.id), why = reasons.get(it.id);
+    const link = linkOf.get(it.id), why = reasons.get(it.id), ex = extras[it.id] || {};
     const unread = it.layer !== "pipe" && (it.unknown || any(why, UNREAD_REASONS));      // 무게: 읽지 못함 > 끊긴 연결 > 그 밖
     const broken = (link && link.status !== "linked") || any(why, BROKEN_REASONS) || (it.layer === "pipe" && it.unknown);
-    if (unread) ids.unknown.push(it.id);
+    if (ex.ai_answer === "not_symbol") ids.notsym.push(it.id);      // AI가 기호가 아니라고 본 것: 읽지 못함 대신 따로 보인다(미확인 수에서는 빠지지 않는다)
+    else if (unread) ids.unknown.push(it.id);
     else if (broken) ids.broken.push(it.id);
+    else if (ex.review === "ai_auto") ids.aifill.push(it.id);      // 자동 확정이 AI 답으로 채운 것
     else if (link) ids.link.push(it.id);
     else if (it.layer !== "pipe") ids.ok.push(it.id);
   }

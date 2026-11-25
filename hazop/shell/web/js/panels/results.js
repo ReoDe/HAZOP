@@ -8,6 +8,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { VirtualGrid } from "../ui/table.js";
 import * as R from "./results_state.js";
+import { OpenFolder } from "./open_folder.js";
 import { checkText, lostText } from "./nodes_logic.js";
 import { BasisBlock, CauseCell, ConsequenceCell, EditMore, SafeguardCell, changedFields, editState } from "./results_detail.js";
 
@@ -297,6 +298,7 @@ export function ResultsPanel({ onClose }) {
   const view = R.useResults((x) => x.view);
   const error = R.useResults((x) => x.error);
   const notice = R.useResults((x) => x.notice);
+  const exported = R.useResults((x) => x.exported);
   return html`<section class="panel wide results" aria-label="분석 결과">
     <div class="panel-h"><h2>분석 결과</h2><span class="acts"><${Btn} kind="ghost" icon="x" label="닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
     <div class="panel-b">
@@ -306,7 +308,7 @@ export function ResultsPanel({ onClose }) {
         ${s.read_only ? html`<${Notice} kind="warn" icon="alert-triangle">${s.read_only}<//>` : null}
         ${s.stale ? html`<${Notice} kind="warn" icon="alert-triangle">도면이 다시 읽혀 바뀌었습니다. 그 변경을 반영할 때까지 분석 실행과 Excel 내보내기는 막히고, 분석 결과가 가리키는 위치는 아직 확인하지 않았습니다.
           <div class="acts-row"><${Btn} sm=${true} kind="primary" label="검토구간 패널 열기" onClick=${() => store.set({ panel: "nodes" })}>검토구간 패널에서 도면 변경 반영하기<//></div><//>` : null}
-        ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
+        ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice} ${exported ? html`<${OpenFolder} kind=${exported} />` : null}<//>` : null}
         ${s.check && s.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(s.check)}<//>` : null}
         <${RunState} run=${s.run} /><${PlanCard} />
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${R.dismissError}>닫기<//><//>` : null}
