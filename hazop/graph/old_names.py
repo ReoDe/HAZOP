@@ -1,8 +1,9 @@
-"""원래 값 표시가 종류·태그·글자를 바꾼 노드의 옛 글자(HZ-PLN-22 §6.9.4). 그래프 노드의 read_as 칸만 본다. 칸이 없는 노드는 옛 글자가 없다."""
+"""원래 값 표시가 있는 노드를 파일만 읽은 값(옛 글자, 배관은 흐름)(HZ-PLN-22 §6.9.4). 그래프 노드의 read_as 칸만 본다. 칸이 없는 노드는 옛 글자가 없다.
+옛 글자가 그래프 안에서 하나여도 같은 글자의 다른 설비일 수 있다. 옛 글자로 찾은 것은 쓰는 쪽이 재확인으로 남긴다."""
 
 PLAIN = "read_as"
-FIELDS = ("kind", "tag", "label_text")
-_EDITED = {"set_kind": ("kind",), "set_tag": ("tag", "label_text")}
+FIELDS = ("kind", "tag", "label_text", "flow_direction")
+_EDITED = {"set_kind": ("kind",), "set_tag": ("tag", "label_text"), "set_flow": ("flow_direction",)}
 
 
 def carried(node):

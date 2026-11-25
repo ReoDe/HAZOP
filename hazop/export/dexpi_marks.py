@@ -10,12 +10,12 @@ def marks_of(export, graph):
     """내보낸 결과와 그 그래프 -> {DEXPI id: {칸: 글자}}. 지문은 파일을 되읽은 표준 값에서 셈한다."""
     model = dexpi_import.extract_bytes(export.xml, "marks.dexpi.xml")[1]
     by_id = {n["entity_id"]: n for n in graph["nodes"]}
-    out = {}
+    out, controlled = {}, dexpi_import.controlled_valves(model)
     for row in export.sidecar["entities"]:
         n, item = by_id[row["entity_id"]], model.items.get(row["dexpi_id"])
         if item is None:
             continue
-        mark = {"Kind": n["kind"] or None, "Text": n["label_text"], "Echo": origin.node_echo(item)}
+        mark = {"Kind": n["kind"] or None, "Text": n["label_text"], "Echo": origin.node_echo(item, dexpi_import.drive_of(controlled, row["dexpi_id"]))}
         if item["group"] == "instrument":
             mark["Tag"] = n["tag"] or ""
         out[row["dexpi_id"]] = _writable(mark)

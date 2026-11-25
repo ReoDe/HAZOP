@@ -240,9 +240,14 @@ def plan(node_set, graph):
     names = {e: old_refs[m] for m, e in eid.items() if not idmap.is_tomb(e) and old_refs.get(m)}
     fresh = node_digests(graph, {k: v for k, v in moved.items() if not any(idmap.is_tomb(x) for x in v)}, names)
     # 원래 값 표시로 태그만 바뀐 구간은 옛 태그로 센 지문이 같다(HZ-PLN-22 §6.9.4). 종류·흐름이 바뀐 것은 재확인으로 간다
-    tags = {x["entity_id"]: old_names.plain_node(x).get("tag") for x in graph["nodes"] if old_names.PLAIN in x}
-    renamed = node_digests(dict(graph, nodes=[dict(x, tag=tags[x["entity_id"]]) if x["entity_id"] in tags else x for x in graph["nodes"]]),
-                           {k: v for k, v in moved.items() if k in fresh and tags.keys() & set(v)}, names) if tags else {}
+    marked = {x["entity_id"]: x for x in graph["nodes"] if x.get(old_names.PLAIN)}
+
+    def as_read(fields):
+        """표시가 바꾼 칸(fields)을 파일만 읽은 값으로 되돌려 센 구간 지문."""
+        back = {e: dict(x, **{k: v for k, v in x[old_names.PLAIN].items() if k in fields}) for e, x in marked.items()}
+        return node_digests(dict(graph, nodes=[back.get(x["entity_id"], x) for x in graph["nodes"]]),
+                            {k: v for k, v in moved.items() if k in fresh and marked.keys() & set(v)}, names) if marked else {}
+    renamed, before_marks = as_read(("tag",)), as_read(old_names.FIELDS)
     recheck = {}
     for n in ns["nodes"]:
         nid = n["node_id"]
@@ -260,11 +265,20 @@ def plan(node_set, graph):
         elif rec.startswith("md3-"):
             if rec != fresh.get(nid) and rec != renamed.get(nid):
                 recheck[nid] = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
+                if rec == before_marks.get(nid):  # 원래 값 표시가 바꾼 것뿐임
+                    what = _marked_changes([marked[e] for e in moved[nid] if e in marked])
+                    recheck[nid] += " (원래 값 표시: %s)" % ", ".join(what) if what else ""
         elif not legacy_same and n.get("state") in ("confirmed", "locked"):
             recheck[nid] = "옛 판의 구간 내용 기록이 없음"  # 확정한 적 없는 적용됨 구간은 분석 전이라 판만 옮김
     members = {m for n in ns["nodes"] for m in n["members"]}
     matched = sum(1 for m in members if not idmap.is_tomb(eid.get(m, m)))
     return dict(out, state="kept", matched=matched, table=table, recheck=recheck)
+
+
+def _marked_changes(nodes):
+    kind = any("kind" in n[old_names.PLAIN] and n[old_names.PLAIN]["kind"] != n.get("kind") for n in nodes)
+    flow = any("flow_direction" in n[old_names.PLAIN] and n.get("flow_direction") for n in nodes)
+    return (["종류 바뀜"] if kind else []) + (["흐름 채워짐"] if flow else [])
 
 
 def migrate_set(node_set, graph, at=None):

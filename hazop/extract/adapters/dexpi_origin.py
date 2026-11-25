@@ -25,13 +25,13 @@ _BASIS = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 _HEADING = re.compile(r"\s*(FROM|TO)\b", re.I)
 CHECK = "dexpi_origin_mismatch"
 
-Claim = collections.namedtuple("Claim", "values problems")  # 쓸 값 {칸: 값}(파일만 읽은 값과 다른 것만), [(칸, 까닭)]
+Claim = collections.namedtuple("Claim", "values problems marked")  # 쓸 값 {칸: 값}(파일만 읽은 값과 다른 것만), [(칸, 까닭)], 지문이 맞는 표시인가
 
 
-def node_echo(item):
-    """구성요소의 표준 값 지문."""
+def node_echo(item, drive=None):
+    """구성요소의 표준 값 지문. drive: 밸브의 구동계(없음 None, 있음 "system", 신호선까지 있음 "loop")."""
     ref = item.get("reference") or {}
-    return _hash("node", item["id"], item["cls"], [item["attrs"].get(k) for k in STANDARD], ref.get("drawing"), ref.get("connector"))
+    return _hash("node", item["id"], item["cls"], [item["attrs"].get(k) for k in STANDARD], ref.get("drawing"), ref.get("connector"), drive)
 
 
 def pipe_echo(conn):
@@ -83,28 +83,28 @@ def _fields(obj):
 
 
 # ---------------------------------------------------------------- 검사
-def claim_node(mark, item, plain, actuated):
-    """구성요소의 표시와 파일만 읽은 값 plain {"kind", "tag", "label_text"} -> Claim."""
+def claim_node(mark, item, plain, drive):
+    """구성요소의 표시와 파일만 읽은 값 plain {"kind", "tag", "label_text"}, 구동계(node_echo의 drive) -> Claim."""
     want = {"kind": mark.get("Kind") or None, "label_text": mark.get("Text")}
     want = {k: v for k, v in want.items() if v is not None}
     if "Tag" in mark:
         want["tag"] = mark["Tag"] or None
     values, problems = {}, []
-    stale = mark.get("Echo") != node_echo(item)
+    stale = mark.get("Echo") != node_echo(item, drive)
     for field, value in want.items():
         if value == plain[field]:
             continue
-        why = "표시를 쓴 뒤 파일의 표준 값이 바뀜" if stale else _WHY[field](value, item, actuated)
+        why = "표시를 쓴 뒤 파일의 표준 값이 바뀜" if stale else _WHY[field](value, item, drive)
         if why is None:
             values[field] = value
         else:
             problems.append((field, why))
     if "tag" in values and "label_text" not in want:
         values["label_text"] = values["tag"] or ""
-    return Claim(values, problems)
+    return Claim(values, problems, not stale)
 
 
-def _why_kind(kind, item, actuated):
+def _why_kind(kind, item, drive):
     group = item["group"]
     if group == "instrument":
         fits = kind in dexpi_map.INSTRUMENT_KINDS
@@ -112,11 +112,11 @@ def _why_kind(kind, item, actuated):
         fits = kind == "continuation"
     else:
         fits = kind in dexpi_map.EXPORT_CLASS and dexpi_map.derives_from(item["cls"], dexpi_map.EXPORT_CLASS[kind][0])
-        fits = fits and (actuated or kind not in dexpi_map.ACTUATED_KINDS)
+        fits = fits and (drive or kind not in dexpi_map.ACTUATED_KINDS)
     return None if fits and rules.KIND_CATEGORY.get(kind) else "적힌 종류가 DEXPI 클래스와 맞지 않음"
 
 
-def _why_tag(tag, item, _actuated):
+def _why_tag(tag, item, _drive):
     if item["group"] != "instrument":
         return "계기가 아닌 것의 태그는 표준 값이 먼저임"
     category, number, functions = (item["attrs"].get(k) for k in STANDARD[2:])
@@ -128,7 +128,7 @@ def _why_tag(tag, item, _actuated):
     return None if fits else "적힌 태그가 계측 기능의 문자·번호와 맞지 않음"
 
 
-def _why_text(text, item, _actuated):
+def _why_text(text, item, _drive):
     head = _HEADING.match(text)
     side = {"FlowIn": "FROM", "FlowOut": "TO"}
     if item["group"] == "offpage" and head and any(k in (item["cls"] or "") and head.group(1).upper() != v for k, v in side.items()):
@@ -157,15 +157,15 @@ def claim_pipe(mark, conn, flow, disputed):
             values["flow"] = (want, mark["Basis"] if _BASIS.fullmatch(mark.get("Basis", "")) else UNNAMED_BASIS)
         elif flow is None or flow != want:
             problems.append(("flow_direction", why))
-    return Claim(values, problems)
+    return Claim(values, problems, not stale)
 
 
 # ---------------------------------------------------------------- 표시를 빼고 읽은 값
-PLAIN = "read_as"  # 표시가 값을 바꾼 노드에만 있는 칸: 파일의 표준 값만으로 읽은 {"kind", "tag", "label_text"}
+PLAIN = "read_as"  # 표시를 받아들인 노드에만 있는 칸: 파일의 표준 값만으로 읽은 {"kind", "tag", "label_text"}. 배관은 표시가 흐름을 채웠을 때만
 
 
 def plain_view(extraction):
-    """추출 결과에서 표시가 바꾼 값을 표준 값만으로 읽은 값으로 되돌린 것. 표시가 바꾼 것이 없으면 받은 것 그대로."""
+    """추출 결과에서 표시가 바꾼 값을 표준 값만으로 읽은 값으로 되돌린 것. 받아들인 표시가 없으면 받은 것 그대로."""
     nodes = extraction["nodes"]
     if not any(PLAIN in n for n in nodes):
         return extraction

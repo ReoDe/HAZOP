@@ -29,7 +29,7 @@ ARROW_TIE_MM = 0.5  # 두 길에 이 차이 안으로 가까우면 어느 쪽인
 
 _NAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]")
 TAGGED_CATEGORIES = ("equipment", "valve", "instrument")
-NO_CLAIM = dexpi_origin.Claim({}, [])
+NO_CLAIM = dexpi_origin.Claim({}, [], False)
 UNIT_NAMES = {"Bar": "bar", "MegaPascal": "MPa", "KiloPascal": "kPa", "Pascal": "Pa", "DegreeCelsius": "°C",
               "Kelvin": "K", "DegreeFahrenheit": "°F"}
 # 설비 속성 이름 -> (우리 속성, 챔버 안의 이름). 챔버가 하나일 때만 설비 값으로 올린다(§3.5)
@@ -187,20 +187,8 @@ def _restore_tag(node, tag, unknowns):
     return True
 
 
-def build(model, source, registration=None, page=0, repo_root=None):
-    """Model -> 추출 결과 dict. source: {"file", "sha256", "size_bytes"}. registration: 등록정보(드로이오와 같은 규칙)."""
-    unknowns, blockers = [], []
-    used = set()
-    reg = registration or {}
-    local_of = {}  # 항목 id -> local_id
-    nodes, source_locations = [], []
-
-    for dup in sorted(set(model.duplicate_ids)):
-        _issue(blockers, "duplicate_id", "같은 id가 두 번 이상 나타남(어느 객체인지 정할 수 없음)", dup)
-    for iss in model.issues:
-        _issue(unknowns, iss["check"], iss["reason"], iss.get("target"))
-
-    # ---- 구동계: 밸브 id -> {fail_action, loop} (구동 기능이 신호 흐름의 끝이면 제어 밸브)
+def controlled_valves(model):
+    """밸브 id -> {fail_action, in_loop, number}. 구동계가 가리키는 밸브. in_loop: 구동 기능이 신호 흐름의 끝(제어 밸브)."""
     controlled = {}
     signal_targets = {f["target"] for f in model.info_flows if f["cls"] and "SignalConveyingFunction" in dexpi_map.ancestry(f["cls"])
                       and f["cls"] != "MeasuringLineFunction"}
@@ -215,6 +203,29 @@ def build(model, source, registration=None, page=0, repo_root=None):
     for sid, entry in model.act_systems.items():  # 구동 기능 없이 구동계만 있는 파일(Proteus 일부)
         for valve in entry["valves"]:
             controlled.setdefault(valve, {"fail_action": entry["fail_action"], "in_loop": False, "number": entry["number"]})
+    return controlled
+
+
+def drive_of(controlled, item_id):
+    """밸브의 구동계(dexpi_origin.node_echo의 drive)."""
+    return None if item_id not in controlled else "loop" if controlled[item_id]["in_loop"] else "system"
+
+
+def build(model, source, registration=None, page=0, repo_root=None):
+    """Model -> 추출 결과 dict. source: {"file", "sha256", "size_bytes"}. registration: 등록정보(드로이오와 같은 규칙)."""
+    unknowns, blockers = [], []
+    used = set()
+    reg = registration or {}
+    local_of = {}  # 항목 id -> local_id
+    nodes, source_locations = [], []
+
+    for dup in sorted(set(model.duplicate_ids)):
+        _issue(blockers, "duplicate_id", "같은 id가 두 번 이상 나타남(어느 객체인지 정할 수 없음)", dup)
+    for iss in model.issues:
+        _issue(unknowns, iss["check"], iss["reason"], iss.get("target"))
+
+    # ---- 구동계: 밸브 id -> {fail_action, loop} (구동 기능이 신호 흐름의 끝이면 제어 밸브)
+    controlled = controlled_valves(model)
 
     # ---- 노드
     for item in model.items.values():
@@ -236,7 +247,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 extra_unknown.append(("dexpi_actuator_kind_unknown", "구동계가 있으나 구동 방식을 알 수 없음", "kind"))
         tag, tag_basis = _tag_of(item)
         plain = {"kind": kind, "tag": tag, "label_text": tag or ""}
-        claim = dexpi_origin.claim_node(model.origins[iid], item, plain, iid in controlled) if iid in model.origins else NO_CLAIM
+        claim = dexpi_origin.claim_node(model.origins[iid], item, plain, drive_of(controlled, iid)) if iid in model.origins else NO_CLAIM
         kind, tag, label_text = (claim.values.get(k, plain[k]) for k in ("kind", "tag", "label_text"))
         if "kind" in claim.values:
             extra_unknown = []
@@ -309,7 +320,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 "kind": kind, "tag": tag, "label": tag or "", "label_text": label_text, "label_location": None,
                 "attributes": {k: v for k, v in attrs.items() if v is not None}, "style": "", "parent": None,
                 "geometry": _geometry(model.shapes.get(iid)), "evidence": evidence}
-        if claim.values:
+        if claim.marked:
             node[dexpi_origin.PLAIN] = plain
         if kind == "check_valve":
             node["check_direction"] = None
@@ -430,7 +441,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
                        local_of.get(item_id), "kind")
         flow, basis = _flow_of(model, c, arrow_of.get(idx))
         flow_class = _flow_class(model, c["segment"])
-        claim = NO_CLAIM
+        claim, plain_flow = NO_CLAIM, flow
         if c["id"] in model.origins:
             disputed = flow_class == "dual" or (flow is None and (idx in arrow_of or _flow_of(model, c, None)[0] is not None))
             claim = dexpi_origin.claim_pipe(model.origins[c["id"]], c, flow, disputed)
@@ -449,6 +460,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
         rec = add_relation("physical_connection", "process", c_id, (c["source"], c["source_node"]),
                            (c["target"], c["target_node"]), attrs, flow_dict, path, model.path_nodes.get(c_id, (None, None)), made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
         rec["label_text"] = claim.values.get("label_text", "")
+        if plain_flow is None and flow_dict is not None:
+            rec[dexpi_origin.PLAIN] = {"flow_direction": None}
         for field, why in claim.problems:
             _issue(unknowns, dexpi_origin.CHECK, why, c_id, rec["local_id"], field)
         for end, key in (("source", "source_node_no"), ("target", "target_node_no")):

@@ -23,7 +23,7 @@ HELD_TARGET = "carry-held"  # 남긴 add_* 연산의 target. add_*는 대상이 
 # 잇지 않은 까닭(rows[].why)
 WHY = {"not_of_old_file": "옛 파일에서도 적용되지 않던 고침", "gone": "새 파일에 그 id가 없음", "duplicate_id": "같은 id가 둘 이상",
        "relation": "자리를 모르는 배관·계장선(태그가 없어 확인할 수 없음)", "made_id": "파일에 없어 읽을 때 지은 id", "no_tag": "태그가 없음",
-       "no_kind": "종류를 모름", "kind_changed": "종류가 다름", "tag_changed": "태그가 다름", "tag_not_unique": "같은 태그가 둘 이상",
+       "no_kind": "종류를 모름", "kind_changed": "종류가 다름", "tag_changed": "태그가 다름", "text_changed": "글자가 다름", "tag_not_unique": "같은 태그가 둘 이상",
        "moved": "자리나 내용이 달라짐", "not_alone": "같은 자리에 다른 것이 있고 그 id들이 달라짐",
        "in_file": "사람이 더한 것이 이미 파일에 있음", "needs_left": "남긴 고침이 더한 것에 기댐", "unknown": "까닭을 읽을 수 없음"}
 REFUSALS = {"not_dexpi": "DEXPI 도면끼리만 잇습니다.", "other_project": "프로젝트가 다릅니다.", "other_page": "쪽이 다릅니다.",
@@ -92,6 +92,8 @@ class _Sheet:
 
     def __init__(self, extraction):
         self.fp = corrections._fingerprints(extraction)
+        self.extraction, self.ops, self._final = extraction, [], None
+        self.marks = {n["source_object_id"]: n for n in extraction["nodes"] if dexpi_origin.PLAIN in n}
         self.marked_nodes = extraction["nodes"]
         extraction = dexpi_origin.plain_view(extraction)
         self.plain = corrections._fingerprints(extraction)
@@ -103,6 +105,13 @@ class _Sheet:
         self.nodes = [(n, fp["at"], _tag_key(n.get("tag"))) for n, fp in ((n, self.plain[n["source_object_id"]]) for n in extraction["nodes"])]
         self.lines = collections.Counter((r.get("kind"), frozenset(self.soid.get(e.get("node_local_id")) for e in r["endpoints"]))
                                          for r in extraction["relations"])
+
+    def final(self, sid):
+        """사람 고침을 모두 거친 노드. 없으면 빈 것."""
+        if self._final is None:
+            done = corrections.apply(self.extraction, [o for o in self.ops if not o.get("held")])
+            self._final = {n["source_object_id"]: n for n in done["nodes"]}
+        return self._final.get(sid) or {}
 
     def standing(self, base):
         """같은 자리(반올림)에서 base와 같은 대상으로 보일 수 있는 id들. corrections._same과 같은 관용을 쓴다(모르는 종류·태그가 채워진 것,
@@ -131,6 +140,18 @@ class _Sheet:
                 sum(1 for n, at, _t in rows if at and n.get("kind") == add["kind"] and x - 1 <= at[0] <= x + w + 1 and y - 1 <= at[1] <= y + h + 1))
 
 
+MARKED_WHY = {"kind": "kind_changed", "tag": "tag_changed", "label_text": "text_changed"}
+
+
+def _marks_differ(sid, old, new):
+    """두 파일의 표시가 서로 다른 설비를 말하면 그 까닭, 아니면 None. 새 표시가 사람이 고쳐 놓은 값이면 다른 것이 아니다."""
+    a, b = old.marks.get(sid), new.marks.get(sid)
+    if a is None or b is None:
+        return None
+    return next((why for field, why in MARKED_WHY.items() if (a.get(field) or None) != (b.get(field) or None)
+                 and (old.final(sid).get(field) or None) != (b.get(field) or None)), None)
+
+
 def _judge(sid, base, old, new):
     """고침이 가리키는 대상 하나 → ("same", None) | ("link", None) | ("left", 까닭)."""
     was, now, given = old.fp.get(sid), new.fp.get(sid), base
@@ -143,6 +164,9 @@ def _judge(sid, base, old, new):
         return "left", "gone"
     if sid in old.twice or sid in new.twice:
         return "left", "duplicate_id"
+    differ = _marks_differ(sid, old, new)
+    if differ:
+        return "left", differ
     if base.get("at") is not None:
         if not corrections._same(base, now):
             return "left", "moved"
@@ -243,6 +267,7 @@ class _Moves:
 
     def __init__(self, ops, removed, old, new):
         self.new, self.verdicts, everything = new, {}, list(ops) + list(removed)
+        old.ops = list(ops)
         for op in everything:
             self.verdicts[id(op)] = _judge_op(op, ops, old, new)
         gone = None

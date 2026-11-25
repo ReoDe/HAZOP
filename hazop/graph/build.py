@@ -181,7 +181,7 @@ def build_graph(extraction, extraction_file=None, graph_id=None):
                 "source_object_id": r["source_object_id"], "id_basis": ids.basis(fmt, r["source_object_id"], ids.is_made(r, made)),
                 "bbox": loc["bbox"] if loc else None,
                 "position": _polyline_midpoint(pts),
-                **_origin(r),
+                **_origin(r), **old_names.carried(r),
             })
             mapping.append({"extraction_run_id": run_id, "local_id": r["local_id"], "entity_id": sid})
             for ep, ne in zip(ends, end_entities):

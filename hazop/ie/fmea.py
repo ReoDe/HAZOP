@@ -27,7 +27,7 @@ KIND = "hazop_fmea"
 SCHEMA_VERSION = "0.1"
 ID_FORMAT = "FM-%03d"
 STATUSES = {"imported": "가져옴", "approved": "승인", "excluded": "제외"}
-MATCHES = {"ok": "대응", "none": "대응 실패(없음)", "many": "대응 실패(여럿)", "human": "사람이 고름"}
+MATCHES = {"ok": "대응", "none": "대응 실패(없음)", "many": "대응 실패(여럿)", "old_tag": "대응 실패(옛 글자)", "human": "사람이 고름"}
 MARKS = {"include": "전기·제어 구간에 넣음", "exclude": "전기·제어 구간에서 뺌"}
 SOURCE_PREFIX = "fmea:"
 MAX_ROWS = 5000
@@ -157,6 +157,8 @@ def match_tag(pg, node_set, tag, node_id=None, index=None):
     index = index if index is not None else tag_index(pg)
     hits = index.get(norm_tag(tag)) or []
     hits = hits + [n for n in index.get((old_names.PLAIN, norm_tag(tag))) or [] if n not in hits]
+    if len(hits) == 1 and hits != index.get(norm_tag(tag)):  # 옛 글자로만 맞음: 같은 글자의 다른 설비일 수 있어 사람이 고른다
+        return {"ref": None, "entity_id": None, "equipment_kind": "", "match": "old_tag", "node_id": node_id}
     if len(hits) == 1:
         return _placed(pg, node_set, hits[0], "ok", node_id)
     return {"ref": None, "entity_id": None, "equipment_kind": "", "match": "many" if hits else "none", "node_id": node_id}

@@ -184,8 +184,9 @@ class _PidIndex:
         for g in graphs:
             self.by_id.setdefault(g["graph_id"], []).append(g)
 
-    def resolve(self, ref):
-        """target_ref -> (end dict, 오류 (code, reason) 또는 None)."""
+    def resolve(self, ref, soid=None):
+        """target_ref -> (end dict, 오류 (code, reason) 또는 None). 옛 태그로 찾으면 end["via"]가 "old_tag"이다. soid: 기록에 적힌 원본 객체 ID.
+        옛 태그로 찾은 것이 그 객체가 아니면 잇지 않는다."""
         m = REF_RE.match(ref)
         gid, sep, key = m.group(1), m.group(2), m.group(3)
         end = {"ref": ref, "layer": "pid", "graph_id": gid, "graph_version": None, "entity_id": None,
@@ -205,7 +206,10 @@ class _PidIndex:
             if old and len(hits) + len(old) > 1:
                 return end, ("ambiguous_tag", "태그 %s가 %s에서 옛 태그와 겹침 - graph_id#source_object_id로 지정해야 함(%s)"
                              % (key, gid, ", ".join(sorted(n["source_object_id"] for n in hits + old))))
-            hits = hits or old
+            if old and soid not in (None, old[0]["source_object_id"]):
+                old = []
+            if not hits and old:
+                hits, end["via"] = old, "old_tag"
             if len(hits) > 1:
                 return end, ("ambiguous_tag", "태그 %s가 %s에 %d개 - graph_id#source_object_id로 지정해야 함(%s)"
                              % (key, gid, len(hits), ", ".join(sorted(n["source_object_id"] for n in hits))))
@@ -327,7 +331,7 @@ def build_kg(knowledge, graphs):
             if ref is None:
                 continue
             if REF_RE.match(ref):
-                end, err = pid.resolve(ref)
+                end, err = pid.resolve(ref, m.get("target_source_object_id") if side == "to" else None)
                 if err and kind == "mentions" and side == "to" and err[0] in STALE_TARGET_CODES \
                         and end["graph_version"] is not None and m.get("graph_version") != end["graph_version"]:
                     # §3.2: 확인 당시와 도면 버전이 다르면(재추출 등) 대상이 사라졌어도 차단하지 않고 재확인 대상으로 둔다.
@@ -414,6 +418,15 @@ def build_kg(knowledge, graphs):
             unknowns.append({"check": "recheck_required", "target": l["id"], "field": ",".join(changed),
                              "reason": "재확인 필요: 기록값과 현재 값이 다름(%s). 계산 뷰에서 제외, 행은 유지"
                              % ", ".join(changed)})
+    for l in links:  # 옛 태그로 이은 관계: 같은 글자의 다른 설비일 수 있어 사람이 확인할 때까지 계산에서 뺀다
+        by_old = [s for s in ("from", "to") if l["valid"] and (l["ends"][s] or {}).get("via") == "old_tag"]
+        if by_old:
+            kept = l["recheck"] or {"changed": [], "recorded": {}, "current": {}}
+            l["recheck"] = {"changed": kept["changed"] + ["old_tag"],
+                            "recorded": dict(kept["recorded"], old_tag=", ".join(l["ends"][s]["ref"] for s in by_old)),
+                            "current": dict(kept["current"], old_tag=", ".join(str(l["ends"][s]["tag"]) for s in by_old))}
+            unknowns.append({"check": "recheck_required", "target": l["id"], "field": "old_tag",
+                             "reason": "재확인 필요: 원래 값 표시로 바뀐 노드의 옛 태그로 이음(%s). 계산 뷰에서 제외, 행은 유지" % l["recheck"]["recorded"]["old_tag"]})
 
     # ---- V4 계산 포함 규칙(§4.1). 차단 대상 항목도 제외(blocked 지식그래프는 계산에 쓰지 않지만 표시를 일관되게)
     blocked_ids = {b["target"] for b in blockers}

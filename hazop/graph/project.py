@@ -281,7 +281,7 @@ def match(graphs, manual_ops=(), system_codes=None, moved=None):
     방향을 한쪽도 모르거나 사람이 같은 방향끼리 이었으면 flow_known=False(흐름 방향을 만들지 않음).
     사람 지정의 끝에 지문(fp)이 있으면 지금 연결점의 지문과 견준다. 다르면 같은 도면에서 지문이 같은 연결점을 찾아 하나뿐이면 그쪽으로
     옮겨 붙이고(moved 목록에 {"op_id", "drawing_number", "from", "to"}를 더함), 없거나 여럿이면 붙이지 않고 manual_skipped로 돌린다.
-    지문이 없는 옛 지정은 번호대로 붙이고 그 연결에 "check": "no_fingerprint"를 단다."""
+    지문이 없는 옛 지정은 번호대로 붙이고 그 연결에 "check": "no_fingerprint"를, 옛 글자의 지문으로 붙인 연결에는 "old_label"을 단다."""
     ends, fps, old_fps = [], {}, {}
     by_drawing = {}
     for g in graphs:
@@ -343,6 +343,8 @@ def match(graphs, manual_ops=(), system_codes=None, moved=None):
         found = [x[0] for x in located]
         why = next((x[1] for x in located if x[1]), None)
         check = None if all(isinstance(e.get("fp"), dict) for e in op["ends"]) else "no_fingerprint"
+        if check is None and any(f is not None and fps[id(f)] != e["fp"] for e, f in zip(op["ends"], found)):
+            check = "old_label"
         if why:
             skipped.append({"op_id": op["op_id"], "reason": why})
         elif len({_ref(e) for e in found}) != len(found):
