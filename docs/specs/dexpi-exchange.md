@@ -1,6 +1,6 @@
 ---
 doc_id: HZ-PLN-22
-rev: 3
+rev: 4
 status: review
 author: D-node 세션(2026-11-13)
 reviewed: —
@@ -11,7 +11,7 @@ approved: —
 
 [INTENT §2·§3.1·§3.2·§3.8](../../INTENT.md) · [정보 추출](extraction.md) · [지식그래프 스키마 사전](kg-schema-dictionary.md) · [자료 등록](registration.md) · [새 화면 규격](../design/app-shell-web.md) · 구현 코드 `hazop/extract/`, `hazop/graph/`
 
-- 작성일 2026-11-13, rev 1 2026-11-14, rev 2 2026-11-14(§6.2 '이대로 확인'한 구성요소는 멈추지 않고 빼고 냄, §6.1 확정한 자료로 그래프를 만들어 냄). 상태는 **규격 초안**입니다. 코드는 고치지 않았습니다. 코드 줄 번호는 rev 0이 커밋 `abb7b2a`, rev 1에서 고친 곳이 커밋 `f6ad283` 기준입니다.
+- 작성일 2026-11-13, rev 1 2026-11-14, rev 2 2026-11-14(§6.2 '이대로 확인'한 구성요소는 멈추지 않고 빼고 냄, §6.1 확정한 자료로 그래프를 만들어 냄), rev 4 2026-11-25(§6.1 자동 확정된 쪽도 냄, 쪽별로 뺌). 상태는 **규격 초안**입니다. 코드는 고치지 않았습니다. 코드 줄 번호는 rev 0이 커밋 `abb7b2a`, rev 1에서 고친 곳이 커밋 `f6ad283` 기준입니다.
 - rev 1은 총괄 반려 12건을 고친 판입니다. `c1-tools` 세션이 rev 0으로 구현을 시작했으므로 바뀐 곳을 §12 표에 모았습니다.
 - 사용자 결정(2026-11-13 대화): 어떤 형태로 들어온 도면이든 한 가지 형태로 노드화해 저장합니다. 내부 저장은 지금의 그래프로 하고, 밖과 주고받는 공개 표준은 DEXPI로 합니다. 이 문서는 그 결정의 가져오기·내보내기 규칙입니다. '정리된 보기'(읽은 결과로 다시 그린 도면)는 `d-chat` 세션이 설계하고, 이 문서는 그 보기가 쓸 위치 정보만 정합니다.
 - 용어. 배관 및 계장도(P&ID, piping and instrumentation diagram), 노즐(nozzle), 도면 연결 기호(off-page connector), 배관망 계통(piping network system), 배관망 구간(piping network segment), 계측 기능(process instrumentation function), 고장 시 동작(fail action), 호칭 지름(nominal diameter), 설계 압력·온도(design pressure·temperature), 배관 등급(piping class), 유체 코드(fluid code). 원자력 용어: 가압기(pressurizer, U.S. NRC Glossary), 내진 범주(seismic category, NRC 규제지침 RG 1.29 'Seismic Design Classification'), 안전 등급(safety class, ANSI/ANS-51.1의 용어 [일반지식]), 품질 등급(quality group, NRC 표준심사지침 SRP 3.2.2 [일반지식]). 처음 나올 때만 영문을 함께 적습니다(출처 §1 S13·S14).
@@ -81,7 +81,7 @@ drawio·PDF ───────┘                      ② 추출(인식)    
 ```
 
 - **가져오기는 그래프가 아니라 추출 결과(`extraction.json`)를 만듭니다.** drawio·PDF 추출과 같은 계약([추출 결과의 공통 계약](extraction.md))으로 쓰면 ③ 그래프 변환(`hazop/graph/build.py`), 사람 수정(`corrections.py`), 미확인 목록, 그래프 판(`graph_version`), 구간·결과 쪽이 바뀌지 않습니다. 새 코드는 '읽는 쪽' 하나만 생깁니다.
-- **내보내기는 사람이 확정한 쪽만 합니다.** 화면의 '쪽 확정'과 같은 함수(`sheet_confirmation`, §6.1)가 `confirmed`라고 답한 쪽만 DEXPI 객체로 바꾸고, 구조 검사를 통과해야만 파일을 씁니다.
+- **내보내기는 사람이 확정했거나 자동 확정된 쪽만 합니다(rev 4, 총괄 판정 P14).** `sheet_confirmation`(§6.1)이 확정 수준 `human`·`auto`라고 답한 쪽만 DEXPI 객체로 바꾸고, 구조 검사를 통과해야만 파일을 씁니다.
 - 대응 규칙(우리 `kind` ↔ DEXPI 클래스)은 한 곳(`hazop/extract/dexpi_map.py`, 새 파일)에 두고 가져오기·내보내기가 같이 씁니다. 지식그래프 레지스트리의 `dexpi_class`(`hazop/kg/schema/registry.json`, 23개)는 이 표와 맞춰 고칩니다(§3.6).
 
 ## 3. 대응표
@@ -318,23 +318,24 @@ DEXPI 연결의 Source→Target은 '연결이 시작하고 끝나는 곳'이지 
 
 - 형식은 DEXPI XML 2.0.1 하나입니다(§9 V-1). Proteus 내보내기는 받을 쪽 CAD가 2.0을 못 읽는다는 것이 확인되면 별도 단위로 합니다.
 - 단위는 **도면 하나 = 파일 하나**입니다. 프로젝트 전체는 도면별 파일 여러 개와 묶음 목록(`manifest.json`)으로 냅니다. 도면 사이는 연결 기호의 `PipeOffPageConnectorReferenceByNumber`(상대 도면 번호·연결 번호)로 잇습니다. 프로젝트 그래프가 맞춘 연결점 짝(`hazop/graph/project.py`의 `continuation_key`)을 그대로 씁니다.
-- 내보낼 수 있는 도면은 도면 번호가 사람 확정된 도면뿐입니다. 도면 번호 없이는 도면 간 참조를 쓸 수 없기 때문입니다.
+- 내보낼 수 있는 도면은 등록정보에 도면 번호가 확정된 도면뿐입니다. 번호는 사람이 확정했거나 자동으로 확정된 것이며, 누가 정했는지는 등록 이력의 `by`에 남습니다. 도면 번호 없이는 도면 간 참조를 쓸 수 없기 때문입니다.
 
-**내보내는 조건은 '쪽 확정'과 같은 함수 하나입니다(권장, §9 V-2).** 사용자 결정은 '사람이 확정한 결과를 내보낸다'(INTENT §3.2)이고, 화면 규격은 정리된 보기·'미확인 n곳'·DEXPI 내보내기가 같은 답을 쓰도록 정했습니다([화면 규격 §10.6](../design/app-shell-web.md)).
+**내보내는 조건은 확정 수준(`level`) 하나입니다(rev 4).** `sheet_confirmation`이 돌려주는 `level`이 `human`(사람 확정) 또는 `auto`(자동 확정)인 쪽을 냅니다. `auto`는 스크립트와 AI가 그 읽기에 한 번 다 돌았다는 뜻이고 내용을 보증하지 않습니다(결정 로그 DEC-0322, rev 3까지는 사람 확정만).
 
 - 함수는 화면 규격이 제안한 `sheet_confirmation(extraction, review_log)`이고, 자리도 그 제안대로 엔진 쪽 새 파일 `hazop/extract/confirmation.py`입니다. 이 규격은 자리를 따로 정하지 않습니다. 함수를 만드는 일은 화면 규격의 단위 V3가 하고, 내보내기(X2)는 부르기만 합니다.
-- 그 함수가 `state == "confirmed"`라고 답한 쪽만 내보냅니다. `open`(미확인 있음)과 `ready`(미확인 0, 사람 확정 전)인 쪽은 내보내지 않습니다. 확정 전 쪽을 '확정 전' 표시와 함께 내보내는 길은 두지 않습니다. 받는 CAD가 그 표시를 모른 채 확정 도면으로 읽을 수 있기 때문입니다.
-- 프로젝트 내보내기에서는 확정된 쪽만 파일로 쓰고, 나머지 쪽은 `manifest.json`의 `not_exported`에 쪽과 상태(`open`·`ready`)와 남은 미확인 수를 적습니다. 확정된 쪽이 하나도 없으면 아무 파일도 쓰지 않고 이유를 보입니다.
-- 쪽 확정 뒤 추출 결과가 바뀌면 확정이 풀립니다(화면 규격 §10.7의 지문). 내보내기는 쓰기 직전에 함수를 다시 불러 확인합니다.
+- `level`이 `extracted`(추출만 됨)인 쪽은 내보내지 않습니다. 같은 번호를 다른 파일이 써서 기다리는 쪽(`waiting(taken)`)도 여기에 들며 까닭에 적습니다. 자동 확정된 쪽은 미확정 구성요소를 뺀 채 내므로(§6.2) 파일 안에 확정 전 구성요소가 들어가지 않습니다. 다만 AI가 자동으로 받은 종류·태그는 사람이 보지 않은 값이라, `manifest.json`의 그 쪽에 `level`·`unconfirmed`·`auto_accepted`를 적습니다. 어느 구성요소인지는 곁 파일 `entities[].human_edit.auto`에 있습니다. DEXPI 파일 안에는 이 표시를 넣지 않습니다.
+- 나누기처럼 도면을 다시 읽어야 반영되는 사람 수정이 아직 반영되지 않은 쪽(`inputs.waiting`)은 사람이 고치기 전 내용이 나가지 않게 빼고 `input_waiting`을 적습니다.
+- 프로젝트 내보내기에서는 `human`·`auto`인 쪽을 파일로 쓰고, 나머지 쪽은 `manifest.json`의 `not_exported`에 쪽과 수준(`level`), 남은 미확인 수, 까닭 코드(`extracted_only` 추출만 됨, `number_unconfirmed` 번호 미확정, `check_failed` 검사 실패, `name_clash` 번호(파일 이름) 겹침, `changed` 쓰기 직전에 바뀜, `input_waiting`, `graph_error`, `error`)와 문장을 적습니다. 한 쪽이 실패해도 나머지 쪽은 냅니다. 파일 이름이 겹친 쪽은 어느 쪽이 맞는지 정하지 않고 모두 뺍니다. 낼 쪽이 하나도 없으면 아무 파일도 쓰지 않고 이유를 보입니다.
+- 쓰기 직전에 함수를 다시 불러 `level`과 세 파일의 지문이 읽을 때와 같은지 확인합니다. 사람 확정은 추출 결과가 바뀌면(화면 규격 §10.7의 지문), 자동 확정은 읽은 내용(`read_key`)이 바뀌면 풀립니다.
 - 내보내는 그래프는 확정을 판정한 세 파일(추출 결과·사람 수정 기록·AI 후보 기록)로 내보낼 때 만듭니다. 디스크의 `graph.json`은 AI 후보 수락처럼 그래프를 다시 만들지 않는 저장 뒤에 낡을 수 있어 내용으로 쓰지 않습니다(rev 2, 구현 `dexpi_export.export_names`).
 
 ### 6.2 무엇을 내보내는가
 
 | 대상 | 내보냄 | 뺌 |
 | --- | --- | --- |
-| 추출 노드·관계(`origin: pid_extract`) | 확정된 쪽의 것. 속성 미확인만 남은 것은 그 속성을 빼고 냄 | 아래 '뺌' 조건에 걸린 것 |
+| 추출 노드·관계(`origin: pid_extract`) | 사람 확정·자동 확정된 쪽의 것. 속성 미확인만 남은 것은 그 속성을 빼고 냄 | 아래 '뺌' 조건에 걸린 것 |
 | 사람 수정(`origin: human_edit`) | 모두(사람이 고친 것이 최종 값) | — |
-| AI 후보 | 사람이 수락한 것(`status: accepted`, 노드 `origin: ai` + `accepted_by`) | 기각(`rejected`)인 것. 제안 상태(`proposed`)는 쪽 확정을 막으므로 확정된 쪽에 없음 |
+| AI 후보 | 사람이 수락한 것(`status: accepted`, 노드 `origin: ai` + `accepted_by`)과 자동으로 받은 것(`ai_auto`) | 기각(`rejected`)인 것과 수락 전인 것. 사람 확정된 쪽에는 수락 전 후보가 없고, 자동 확정된 쪽의 수락 전 후보는 고친 추출에 들어 있지 않아 나가지 않음 |
 | 끝이 미확정인 연결(`unresolved_connectors`) | — | 모두. 쪽 확정을 막으므로 확정된 쪽에는 사람이 '이대로 확인'한 것만 남고, 그것은 빼고 냄 |
 | 분류 못 한 노드(`kind` 없음) | DEXPI에서 가져온 미분류 노드를 사람이 '그대로 둠'으로 확정한 것은 원문 조각으로 되살림(§7.2) | 그 밖에는 모두. 확정된 쪽에는 사람이 '이대로 확인'한 것만 남고, 그것과 그 노드에 붙은 연결은 빼고 냄 |
 | 대응이 '없음'인 `kind`(`damper`, `drain`, `test_connection`, `pipe_cap`) | — | 모두. 그 노드에 붙은 연결은 양쪽 이웃을 직접 잇지 않고(없는 연결을 지어내지 않음) 끊긴 채 둠 |
@@ -343,6 +344,7 @@ DEXPI 연결의 Source→Target은 '연결이 시작하고 끝나는 곳'이지 
 **확정된 쪽 안에 남는 것의 처리.** 쪽 확정은 추출 미확인 목록 전체를 막습니다(화면 규격 §10.4). 그래서 확정된 쪽에 남는 불확실한 것은 사람이 값을 고치지 않고 '이대로 확인'한 것뿐입니다(미분류 기호, 끝이 미확정인 연결, 속성 미확인 등).
 
 - '이대로 확인'한 구성요소 단위의 것(미분류 기호, 끝이 미확정인 연결)은 멈추지 않고 빼고 내보냅니다([INTENT §3.2](../../INTENT.md) '미확인이 남은 구성요소는 빼거나 표시한다', 총괄 판정 2026-11-14). 뺀 구성요소 때문에 내지 못한 연결 수를 `excluded.json`의 `cut_by_excluded`(`pipes`·`signal_lines`)와 내보내기 결과 요약(`cut_pipes`)에 적습니다. rev 1의 '남아 있으면 멈춤'은 이것으로 바꿉니다.
+- 자동 확정된 쪽에는 사람이 보지 않은 미확인이 그대로 남습니다. 분류하지 못한 것, 끝이 미확정인 연결에 더해 **종류에 미확인이 남은 구성요소**도 뺍니다(`excluded.json`의 사유 `kind_unconfirmed`). 다만 '구간 안 부품의 길 순서를 가정함'(`dexpi_item_order_assumed`)은 종류가 아니라 순서의 미확인이라 빼지 않습니다. 사람이 아직 확정하지 않은 DEXPI 미분류 객체의 원문 조각(§7.2)은 받은 글자를 그대로 돌려주는 것이라 자동 확정된 쪽에서도 되쓰고 `approximations`에 적습니다(rev 4).
 - 구성요소는 확실하고 속성만 미확인인 것(흐름 방향 미확인, 고장 시 위치 미확인, 노즐 이름 없음 등)은 구성요소를 내보내고 그 속성은 쓰지 않습니다. 추측값을 넣지 않습니다.
 - 대응 클래스가 없는 `kind`는 위 표대로 빼고 목록에 적습니다.
 - 'DEXPI 파일 안에 미확인이라고 표시'하는 방식은 고르지 않습니다. DEXPI에 미확인을 적는 표준 자리가 없어 확장(`ClassExtension`)을 써야 하고, 받는 CAD는 그 표시를 모른 채 값을 확정값으로 읽을 수 있습니다.
@@ -362,11 +364,11 @@ DEXPI 연결의 Source→Target은 '연결이 시작하고 끝나는 곳'이지 
 | `<도면번호>.dexpi.xml` | DEXPI XML 2.0.1 |
 | `<도면번호>.excluded.json` | 뺀 구성요소(`entity_id`, `kind`, `tag`, 사유 코드)와 뺀 속성(`entity_id`, 속성, 사유), '근사'로 바꾼 것(`condenser` → `HeatExchanger` 등). 사유 코드는 미확인 코드를 그대로 씀 |
 | `<도면번호>.hazop.json` | 곁 파일(§6.3) |
-| `manifest.json`(프로젝트 내보내기일 때) | 도면 목록, 앱 판, 내보낸 시각, 그래프 판(`graph_version`), DEXPI 판, 출처 표시 문구(CC BY 4.0: 'DEXPI Specification 2.0.1, DEXPI e.V., CC BY 4.0') |
+| `manifest.json`(프로젝트 내보내기일 때) | 도면 목록, 앱 판, 내보낸 시각, 도면마다 확정 수준(`level`)·미확인 수(`unconfirmed`)·자동 수락 수(`auto_accepted`)·그래프 판(`graph_version`), 내보내지 않은 쪽(`not_exported`: `level`·`unconfirmed`·`code`·`reason`), DEXPI 판, 출처 표시 문구(CC BY 4.0: 'DEXPI Specification 2.0.1, DEXPI e.V., CC BY 4.0') |
 
 ### 6.5 내보내기 검사
 
-파일을 쓰기 전에 아래를 통과해야 합니다. 하나라도 실패하면 아무 파일도 쓰지 않고 실패 이유를 보입니다.
+파일을 쓰기 전에 아래를 통과해야 합니다. 하나라도 실패하면 **그 쪽의 파일을 쓰지 않고** `not_exported`에 이유를 적으며, 나머지 쪽은 냅니다(rev 4). 낼 쪽이 하나도 없으면 아무 파일도 쓰지 않습니다.
 
 1. §5.6의 틀 검사(XSD 규칙을 옮긴 구조 검사) 통과.
 2. 모든 `type`이 2.0.1 클래스 목록(`classes-2-0-1.json`)에 있음. 모든 `id`가 §6.6 글자 규칙에 맞음.
@@ -456,7 +458,7 @@ drawio·PDF에서 읽은 도면을 내보내고 다시 가져왔을 때:
 | # | 정할 것 | 고른 것 | 이유 | 다른 안 |
 | --- | --- | --- | --- | --- |
 | V-1 | 어느 형식으로 주고받나 | 가져오기는 DEXPI XML 2.0.x와 Proteus 4.x(DEXPI 1.2~1.4) 둘 다, 내보내기는 DEXPI XML 2.0.1만 | 2.0부터 Proteus를 쓰지 않는 것이 공식 판(F1·F4). 그러나 지금 CAD 도구는 1.x 파일을 낼 가능성이 커서 받을 때는 둘 다 받아야 함. Proteus 스키마는 이용 조건을 모름(F8) | 내보내기도 Proteus(받는 CAD 호환이 큼, 스키마 검사를 못 함) |
-| V-2 | 무엇을 내보내나 | 화면의 '쪽 확정'과 같은 함수(`sheet_confirmation`)가 `confirmed`라고 답한 쪽만. 그 안의 속성 미확인은 그 속성만 빼고 목록을 함께 냄 | 사용자 결정 '사람이 확정한 결과를 내보낸다'(INTENT §3.2)와 화면 규격 §10.6. 받는 쪽이 표시를 모른 채 확정값으로 읽는 일을 막음 | 확정 전 쪽도 '확정 전' 표시와 함께 냄 |
+| V-2 | 무엇을 내보내나 | `sheet_confirmation`의 확정 수준이 `human`·`auto`인 쪽(rev 4, 총괄 판정 P14로 '사람 확정만'에서 바꿈, §6.1). 그 안의 속성 미확인은 그 속성만 빼고 목록을 함께 냄 | 사용자 결정 '사람이 확정한 결과를 내보낸다'(INTENT §3.2)와 화면 규격 §10.6. 받는 쪽이 표시를 모른 채 확정값으로 읽는 일을 막음 | 확정 전 쪽도 '확정 전' 표시와 함께 냄 |
 | V-3 | 노즐 | 가져올 때 노즐을 노드로 만들지 않고 끝점 `port`로 바꿈 | 지금 그래프 모양·구간 분할·탐색을 그대로 씀. 포트 규칙(A2)과 같은 자리 | 노즐을 노드로 둠(`kind=nozzle`, 탐색 경로가 한 단계 길어짐) |
 | V-4 | 가져온 노드의 `origin` | 새 값을 만들지 않고 `pid_extract`. 도면은 기존 `source.format`에 `dexpi`(§4.1) | 읽은 방법은 도면의 성질. `origin`을 쓰는 곳(지식그래프 상태, ④ 근거, 화면 표시)을 바꾸지 않음 | `origin: dexpi_import` 신설 |
 | V-5 | 스키마 검사 | XSD를 실행 중에 읽지 않고, XSD 규칙을 옮긴 Python 구조 검사. XSD와 같은지는 시험이 확인 | 외부 패키지를 더하지 않음. XSD 자체가 DOCTYPE·개체를 담아 안전 읽기로 못 읽음. XSD 파일 단위 라이선스 미확인(F7) | `xmlschema`(MIT) 또는 `lxml` 추가 |
@@ -494,7 +496,7 @@ drawio·PDF에서 읽은 도면을 내보내고 다시 가져왔을 때:
 | # | 지적 | 바뀐 곳 | 구현에 미치는 것 |
 | ---: | --- | --- | --- |
 | 1 | Proteus 구간 안 밸브가 길에서 빠짐 | §3.1 배관 줄, 새 §5.7, F16 | Proteus는 `FromID` → 구간 안 부품(문서 순서) → `ToID`로 길을 만들고 이웃한 두 점마다 관계 하나. 2.0은 연결 하나 = 관계 하나(예제 23개 구간에서 두 형식이 같음을 대조) |
-| 2 | 확정 안 된 결과가 DEXPI로 나감 | §2, §6.1, §6.2, V-2 | 내보내기는 `hazop/extract/confirmation.py`의 `sheet_confirmation`이 `confirmed`인 쪽만. 확정 전 쪽은 `manifest.json`의 `not_exported` |
+| 2 | 확정 안 된 결과가 DEXPI로 나감 | §2, §6.1, §6.2, V-2 | 내보내기는 `hazop/extract/confirmation.py`의 `sheet_confirmation`이 `confirmed`인 쪽만(rev 4에서 자동 확정된 쪽을 더함). 확정 전 쪽은 `manifest.json`의 `not_exported` |
 | 3 | `ET.XMLParser`에 처리기를 걸 수 없음, XSD에 DOCTYPE | §5.1, §5.6, V-5 | `pyexpat.ParserCreate()` + `ET.TreeBuilder`로 안전 읽기. XSD는 실행 중에 읽지 않고 Python 구조 검사(`check_structure`). `xmlschema`를 더하지 않음 |
 | 4 | 위치 없는 구성요소 | §5.3, V-10 | 미확인 `dexpi_no_position`(field `bbox`). 쪽 확정을 막음 |
 | 5 | '흐름 방향 자리 없음'이 틀림 | F13, §3.1 흐름 줄, §3.6, §5.4, §7.3, V-8 | `PipingNetworkSegment.FlowDirection`(Single/Dual)을 `attributes["flow_class"]`로 받음. 향하는 쪽은 여전히 정하지 않음 |
@@ -507,3 +509,13 @@ drawio·PDF에서 읽은 도면을 내보내고 다시 가져왔을 때:
 | 12 | 경로 이름, 라이선스 표현, 원자력 용어 | 머리말 용어, F7, §5.6, §8.1, §8.3, S13·S14 | 클래스 목록 경로가 `resources/library/dexpi/2-0-1/classes.json`에서 `resources/library/dexpi-schema/classes-2-0-1.json`으로 바뀜. XSD는 앱에 묶지 않고 `resources/references/dexpi-schema/`에만. `licenses/dexpi/` 출처 표시는 그대로 |
 
 그 밖에 바뀐 것: `FailAction` 값(F17)을 확인해 §3.4 고장 시 동작 줄을 '근사'로 고쳤습니다(`FL`은 `FailRetainPosition`으로 내고 곁 파일에 남김).
+
+## 13. rev 4에서 바뀐 곳
+
+2026-11-25, 총괄 판정 P14(`docs/units/2026-11-13-drawing-knowledge/evidence/auto-confirm-dexpi-draft.md`). 상태는 검토(`review`) 그대로입니다.
+
+| 바뀐 곳 | 내용 |
+| --- | --- |
+| §2, §6.1, §6.2, V-2 | 자동 확정된 쪽(`level: auto`)도 냄. 종류에 미확인이 남은 구성요소를 자동 확정된 쪽에서 뺌. 아직 반영되지 않은 사람 수정이 있는 쪽은 냄에서 뺌 |
+| §6.4 | `manifest.json`의 도면 줄에 `state`·`level`·`unconfirmed`·`auto_accepted`, `not_exported` 줄에 `level`·`code`·`reason`. 판(`hazop_dexpi_manifest/1`)은 칸을 더하기만 해 그대로 |
+| §6.5 | 걸린 쪽만 빼고 나머지를 냄 |

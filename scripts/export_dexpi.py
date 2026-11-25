@@ -48,11 +48,11 @@ def main(argv=None):
         return 1
     for d in res["drawings"]:
         s = d["stats"]
-        print("%s: 구성요소 %d, 연결 %d, 뺀 구성요소 %d·연결 %d·속성 %d, 뺀 것 때문에 끊긴 배관 %d, 근사 %d -> %s"
-              % (d["drawing_number"], s["components"], s["connections"], s["excluded_components"], s["excluded_connections"],
+        print("%s(%s, 남은 미확인 %d, 자동 수락 %d): 구성요소 %d, 연결 %d, 뺀 구성요소 %d·연결 %d·속성 %d, 뺀 것 때문에 끊긴 배관 %d, 근사 %d -> %s"
+              % (d["drawing_number"], d["level"], d["unconfirmed"], d["auto_accepted"], s["components"], s["connections"], s["excluded_components"], s["excluded_connections"],
                  s["excluded_attributes"], s["cut_pipes"], s["approximations"], paths.plain_rel(args.out, paths.work_root())))
     for x in res["not_exported"]:
-        print("내보내지 않음: %s(쪽 확정 %s, 남은 미확인 %d)" % (x["name"], x["state"], x["unconfirmed"]))
+        print("내보내지 않음: %s(%s, 남은 미확인 %d) %s" % (x["name"], x["level"], x["unconfirmed"], x["reason"]))
     print("묶음 목록: %s" % res["manifest"])
     return 0
 
