@@ -106,10 +106,10 @@ ul.tight { margin: 0; padding-left: 16px; }
 .extract-legend { left: var(--sp-4); bottom: var(--sp-4); display: flex; gap: 10px; padding: 4px 10px; font-size: var(--fs-sm); align-items: center; z-index: 2; }
 .extract-legend .el-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .extract-legend i { width: 12px; height: 12px; border-radius: 3px; border: 2px solid currentColor; display: inline-block; }
-.extract-legend .focus i { color: var(--hl-focus, #0a5fc2); }
-.extract-legend .path i { color: var(--path, #ea580c); }
-.extract-legend .warn i { color: var(--hl-warn, #a8740d); }
-.extract-legend .cause i { color: var(--hl-cause, #dc2626); }
+.extract-legend .chk-ok i { color: var(--chk-ok, #6f9bd1); border-width: 1px; }
+.extract-legend .chk-link i { color: var(--chk-link, #c98f4d); border-width: 1px; }
+.extract-legend .chk-unknown i { color: var(--chk-unknown, #b59a1e); border-width: 1px; }
+.extract-legend .chk-broken i { color: var(--chk-broken, #cf6679); border-width: 1px; }
 /* 구성요소 속성 카드 */
 .bubble.props { max-width: 320px; }
 .props-list { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0; font-size: var(--fs-sm); }

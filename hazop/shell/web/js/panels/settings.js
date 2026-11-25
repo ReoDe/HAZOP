@@ -135,6 +135,7 @@ export function SettingsPanel({ onClose }) {
   return html`<section class="panel settings" aria-label="설정">
     <div class="panel-h"><h2>설정</h2><span class="acts"><${Btn} kind="ghost" icon="x" label="패널 닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
     <div class="panel-b">
+      <div class="acts-row"><${Btn} sm=${true} kind="ghost" icon="file-text" label="AI가 실행한 일 보기" onClick=${() => store.set({ panel: "actionlog", backTo: null })}>AI가 실행한 일 보기<//></div>
       <div class="card"><h3>검토자</h3>
         <div class="field"><label for="reviewer">검토자 이름</label>
           <input id="reviewer" type="text" maxlength="60" value=${name} style="height:34px" onInput=${(e) => setName(e.target.value)} /></div>

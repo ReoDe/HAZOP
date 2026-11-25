@@ -5,6 +5,7 @@ import { html } from "../ui/html.js";
 import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore, store } from "../store.js";
 import { onChanged, read } from "../bridge.js";
+import { addNotice, clearNotice } from "../notices.js";
 import { Icon } from "../ui/icon.js";
 
 export const next = createStore({ items: [], running: null, open: false, pinned: null });
@@ -26,6 +27,13 @@ export function useNext(selector) {
   return value;
 }
 
+/** 수락했지만 도면에 아직 반영하지 않은 도면이 있으면 알림 줄에 한 줄(자료가 달라지는 알림). 앱을 다시 열면 저절로 짓지 않으므로 이 줄의 '다시 읽기'가 짓는 유일한 화면 길이다. */
+export function syncInputsNotice(items) {
+  const it = (items || []).find((x) => x.kind === "inputs_pending");
+  if (!it) { clearNotice("inputs-pending"); return; }
+  addNotice({ id: "inputs-pending", key: String(it.count), kind: "warn", text: "수락한 내용이 아직 반영되지 않은 도면 " + it.count + "장", action: { label: "다시 읽기", run: () => go(it.action) } });
+}
+
 let seq = 0;
 export async function load() {
   const mine = ++seq;
@@ -34,6 +42,7 @@ export async function load() {
     if (mine !== seq || !d) return;
     const items = d.items || [];
     next.set((s) => ({ items, running: d.running || null, pinned: s.pinned && items.some((x) => x.kind === s.pinned) ? s.pinned : null }));
+    syncInputsNotice(items);
   } catch (e) { /* 안내 한 줄: 읽기 실패는 앞 줄을 그대로 둔다 */ }
 }
 
@@ -90,6 +99,19 @@ export function go(action) {
   if (kind === "queue") return store.set({ panel: name === "ai" ? "aireview" : "nodes" });     // 대기열(U5) 전에는 그 패널로
   if (handlers[kind + ":" + name]) return handlers[kind + ":" + name](action.target || null);
   return undefined;
+}
+
+let noticeWired = false;
+/** 줄은 화면에서 내렸지만 '반영하지 않은 입력 연산' 알림은 이 읽기로 계속 맞춘다(앱을 열 때, 엔진 알림이 올 때, 프로젝트를 바꿀 때). */
+export function wireNotice() {
+  if (noticeWired) return;
+  noticeWired = true;
+  let timer = null;
+  const later = () => { clearTimeout(timer); timer = setTimeout(load, 400); };
+  onChanged((topic) => { if (topic === "next" || topic === "state" || topic === "inputs" || topic === "drawings") later(); });
+  let last = store.get().drawings.project_id;
+  store.subscribe((s) => { if (s.drawings.project_id !== last) { last = s.drawings.project_id; later(); } });
+  load();
 }
 
 let wired = false;

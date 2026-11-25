@@ -14,7 +14,7 @@ import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
 import { Notices, addNotice, demotedNotice, lostNotice, refreshLostNotice } from "./notices.js";
-import { go as nextGo, next as nextStore, setGo } from "./next/next.js";
+import { go as nextGo, next as nextStore, setGo, wireNotice as wireNextNotice } from "./next/next.js";
 import { closeQueue, openQueue, q as queueStore, useQueue, wire as wireQueue } from "./queue/queue.js";
 import { QueueCard, QueueLine } from "./queue/card.js";
 import { ReviewConfirm, setOpeners as setReviewOpeners, startReview, wire as wireReview } from "./review/review.js";
@@ -282,6 +282,7 @@ async function boot() {
   if (!s.reviewer) { store.set({ panel: "settings" }); }   // 처음 실행할 때 묻는 것은 그대로
   if (s.debug) window.__hz = { store, cmd, read, ui, clean, next: nextStore, queue: queueStore, go: nextGo };
   cmd("project.open_check").catch(() => {});      // 앱을 끈 사이 도면이 다시 읽혔으면 검토구간을 뒤에서 맞춘다(잃은 것이 있으면 알림이 온다)
+  wireNextNotice();      // '다음에 할 일' 줄은 내렸지만 수락하고 반영하지 않은 입력 연산 알림은 이어서 맞춘다
   checkLost();        // 다시 추출 뒤 찾지 못한 구성요소가 있으면 한 줄로 알린다(읽기는 뒤에서, 화면을 붙잡지 않는다)
   await loadChat();   // 채팅 예시 질문은 프로젝트 그래프를 읽어 큰 프로젝트에서 수 초 걸린다. 도면 목록이 먼저 보이게 맨 끝에서 읽는다
 }

@@ -7,13 +7,15 @@ export const STYLE_COLORS = {
   focus: "var(--hl-focus, #0a5fc2)", path: "var(--path, #ea580c)", cause: "var(--hl-cause, #dc2626)",
   safeguard: "var(--hl-safeguard, #c026d3)", warn: "var(--hl-warn, #a8740d)", muted: "var(--hl-muted, #6b7280)",
 };
+/** 추출 확인 창(도면 탭)의 가는 테두리 색: 추적·강조·구간 색과 겹치지 않게 옅은 따로의 색을 쓴다. */
+export const CHECK_COLORS = { "chk-ok": "var(--chk-ok, #6f9bd1)", "chk-link": "var(--chk-link, #c98f4d)", "chk-unknown": "var(--chk-unknown, #b59a1e)", "chk-broken": "var(--chk-broken, #cf6679)" };
 export const SEG_COUNT = 5;   // 지금 구간 색은 seg1~seg5를 돌려 쓴다(채팅 규격 §6의 12색은 실제와 다름 — 보고)
 export const DIM_OPACITY = 0.16;   // HL_DIM
 
 export function styleColor(style) {
   const m = /^seg:(\d{1,2})$/.exec(String(style));
   if (m) return `var(--seg${(Number(m[1]) % SEG_COUNT) + 1}, #0b7285)`;
-  return STYLE_COLORS[style] || STYLE_COLORS.focus;
+  return CHECK_COLORS[style] || STYLE_COLORS[style] || STYLE_COLORS.focus;
 }
 
 export function segColor(index) { return `var(--seg${(index % SEG_COUNT) + 1}, #0b7285)`; }
@@ -66,7 +68,7 @@ export function resolveMark(mark, index) {
         const recs = recsOf(index, id);
         if (!recs.length) { out.missing.push(id); continue; }
         for (const rec of recs) {
-          out.items.push({ id, rec, color, dashed: g.style === "warn" && rec.layer === "pipe" });
+          out.items.push({ id, rec, color, dashed: g.style === "warn" && rec.layer === "pipe", thin: !!g.thin });
           if (!first || (first.layer !== "symbol" && rec.layer === "symbol")) first = rec;
         }
       }
@@ -280,7 +282,7 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
         const r = it.rec.rect, pad = 5 / k;
         nodes.push(el("rect", { x: r.x0 - pad, y: r.y0 - pad, width: r.x1 - r.x0 + 2 * pad, height: r.y1 - r.y0 + 2 * pad, rx: 3 / k, fill: "none", stroke: it.color,
           "stroke-width": 2.2, "vector-effect": "non-scaling-stroke", "stroke-dasharray": it.box === "unknown" ? "6 4" : null, "pointer-events": "none" }));
-      } else nodes.push(...mk(it, it.rec.layer === "pipe" ? 4 : 2.6, null));
+      } else nodes.push(...mk(it, it.thin ? 1.1 : it.rec.layer === "pipe" ? 4 : 2.6, null));
     }
     badges.push(...m.badges);
     arrows.push(...m.arrows);

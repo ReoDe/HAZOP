@@ -91,6 +91,7 @@ export function DocsPanel({ onClose }) {
     <div class="panel-b">
       ${running.length ? html`<div class="muted small">진행 중: ${running.map((j) => (j.label || "") + (j.text ? " · " + j.text : "")).join(", ")}</div>` : null}
       ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${D.dismissError}>닫기<//><//>` : null}
+      ${notice ? html`<${Notice} kind="warn" icon="alert-triangle">${notice}<//>` : null}
       <${KgBand} kg=${s.kg} />
       ${!loaded ? html`<div class="muted">불러오는 중…</div>` : s.docs.length ? html`<div class="docs-list">${s.docs.map((d) => html`<${DocRow} d=${d} key=${d.material_id} />`)}</div>`
         : html`<div class="center-empty"><p>설계 설명서 같은 글자 PDF를 고르면 설정치·운전조건·요건을 뽑아 도면과 이어 줍니다. AI는 쓰지 않으며 스캔 PDF는 읽지 못합니다.</p></div>`}

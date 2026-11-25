@@ -9,10 +9,10 @@ import { fetchClean, fetchSheet } from "./sheet.js";
 export const CHECK_ID = "extract-check";
 /** 범례: 칠하는 말(표시 스타일)과 화면 글. 색은 canvas/marks.js의 STYLE_COLORS가 정한다. */
 export const LEGEND = [
-  { key: "ok", style: "focus", text: "읽음" },
-  { key: "link", style: "path", text: "도면 연결" },
-  { key: "unknown", style: "warn", text: "읽지 못함" },
-  { key: "broken", style: "cause", text: "끊긴 연결" },
+  { key: "ok", style: "chk-ok", text: "읽음" },
+  { key: "link", style: "chk-link", text: "도면 연결" },
+  { key: "unknown", style: "chk-unknown", text: "읽지 못함" },
+  { key: "broken", style: "chk-broken", text: "끊긴 연결" },
 ];
 
 const BROKEN_REASONS = new Set(["open_end", "unresolved_connector"]);
@@ -23,17 +23,21 @@ const UNREAD_REASONS = new Set(["unknown_symbol", "ai_candidate", "missing_tag"]
 export function extractGroups(sheet, clean, links) {
   const items = (sheet && sheet.items) || [];
   const linkOf = new Map((links || (sheet && sheet.links) || []).map((l) => [l.id, l]));
-  const reason = new Map(((clean && clean.unconfirmed) || []).map((u) => [u.id, u.reason]));
+  const reasons = new Map();
+  for (const u of (clean && clean.unconfirmed) || []) { if (!reasons.has(u.id)) reasons.set(u.id, new Set()); reasons.get(u.id).add(u.reason); }
+  const any = (set, want) => !!set && [...set].some((r) => want.has(r));
   const ids = { ok: [], link: [], unknown: [], broken: [] };
   for (const it of items) {
     if (!it || !it.id || it.layer === "tag") continue;
-    const link = linkOf.get(it.id), why = reason.get(it.id);
-    if (link) ids[link.status === "linked" ? "link" : "broken"].push(it.id);
-    else if (it.layer === "pipe") { if (it.unknown || BROKEN_REASONS.has(why)) ids.broken.push(it.id); }
-    else if (BROKEN_REASONS.has(why)) ids.broken.push(it.id);
-    else ids[it.unknown || UNREAD_REASONS.has(why) ? "unknown" : "ok"].push(it.id);
+    const link = linkOf.get(it.id), why = reasons.get(it.id);
+    const unread = it.layer !== "pipe" && (it.unknown || any(why, UNREAD_REASONS));      // 무게: 읽지 못함 > 끊긴 연결 > 그 밖
+    const broken = (link && link.status !== "linked") || any(why, BROKEN_REASONS) || (it.layer === "pipe" && it.unknown);
+    if (unread) ids.unknown.push(it.id);
+    else if (broken) ids.broken.push(it.id);
+    else if (link) ids.link.push(it.id);
+    else if (it.layer !== "pipe") ids.ok.push(it.id);
   }
-  const groups = LEGEND.filter((l) => ids[l.key].length).map((l) => ({ ids: ids[l.key], style: l.style, label: null }));
+  const groups = LEGEND.filter((l) => ids[l.key].length).map((l) => ({ ids: ids[l.key], style: l.style, label: null, thin: true }));      // 가는 테두리: 추적·강조 표시와 모양이 다르다
   const counts = Object.fromEntries(LEGEND.map((l) => [l.key, ids[l.key].length]));
   return { groups, counts, mark: groups.length ? { id: CHECK_ID, op: "mark", groups, dim_others: false, center: false } : null };
 }
@@ -42,6 +46,7 @@ export function extractGroups(sheet, clean, links) {
 const cache = new Map();
 function load(gid, rev) {
   const key = gid + "@" + rev;
+  for (const k of [...cache.keys()]) if (k.startsWith(gid + "@") && k !== key) cache.delete(k);      // 도면 판이 바뀌면 옛 자료는 버린다
   if (!cache.has(key)) {
     if (cache.size > 6) cache.delete(cache.keys().next().value);
     cache.set(key, Promise.all([fetchSheet(gid).catch(() => null), fetchClean(gid)]).then(([sheet, clean]) => ({ sheet, clean })));

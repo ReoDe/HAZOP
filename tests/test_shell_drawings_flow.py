@@ -324,7 +324,10 @@ class ItemBubbleFlowTest(W.ShellBase):
         self.js(win, "window.__hz.store.set({panel: 'nodes'})")
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') === null") is True, 10), "구간 탭에는 추출 확인 범례가 없다")
         self.js(win, "window.__hz.store.set({panel: null})")
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') !== null") is True, 10), "패널을 닫아 도면만 볼 때도 추출 확인")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') === null") is True, 10), "패널을 닫고 도면만 볼 때는 켜지 않는다(차단 1)")
+        self.js(win, "window.__hz.store.set({panel: 'drawings', marks: {rid: 'results-basis', bySheet: {[%s]: [{op: 'mark', groups: [{ids: [], style: 'path'}], dim_others: false}]}}})" % json.dumps(gid))
+        pump(1.0)
+        self.assertEqual(self.js(win, "document.querySelector('.extract-legend') === null"), True, "추적·채팅 강조 같은 다른 표시가 있으면 끈다(차단 1)")
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
 
 

@@ -1,5 +1,8 @@
 // 도면 탭의 추출 확인 창(web/js/canvas/extract_check.js, 화면 단순화 B): 무엇을 어떤 색으로 칠할지와 구성요소 속성 글.
 import { LEGEND, extractGroups, neighborsOf, segmentsOf } from "../js/canvas/extract_check.js";
+import { resolveMark, styleColor } from "../js/canvas/marks.js";
+import { syncInputsNotice } from "../js/next/next.js";
+import { store } from "../js/store.js";
 
 const SHEET = {
   items: [
@@ -24,14 +27,40 @@ export const tests = [
     const g = extractGroups(SHEET, CLEAN_REASONS);
     assert.equal(g.counts, { ok: 2, link: 1, unknown: 2, broken: 3 });
     const by = Object.fromEntries(g.mark.groups.map((x) => [x.style, x.ids]));
-    assert.equal(by.focus, ["a", "b"]);
-    assert.equal(by.path, ["d"]);
-    assert.equal(by.warn, ["c", "f"]);
-    assert.equal(by.cause, ["e", "p2", "g"]);
+    assert.equal(by["chk-ok"], ["a", "b"]);
+    assert.equal(by["chk-link"], ["d"]);
+    assert.equal(by["chk-unknown"], ["c", "f"]);
+    assert.equal(by["chk-broken"], ["e", "p2", "g"]);
+    assert(g.mark.groups.every((x) => x.thin === true), "가는 테두리")
     assert.equal(g.mark.op, "mark");
     assert(g.mark.dim_others === false, "다른 것을 흐리게 하지 않는다");
     assert(!JSON.stringify(g).includes("t1"), "글자(태그) 층은 칠하지 않는다");
     assert.equal(LEGEND.map((l) => l.text), ["읽음", "도면 연결", "읽지 못함", "끊긴 연결"]);
+  } },
+  { name: "추출 확인 창: 추적·강조 색(focus·path·cause·warn)과 다른 색, 그리는 쪽은 가는 선(차단 1)", run(assert) {
+    const hl = ["focus", "path", "cause", "warn", "safeguard", "muted"].map(styleColor);
+    for (const l of LEGEND) assert(!hl.includes(styleColor(l.style)), l.style + "가 강조 색과 겹침");
+    const index = { byId: new Map([["a", [{ id: "a", layer: "symbol", rect: { x0: 0, y0: 0, x1: 10, y1: 10 } }]]]) };
+    const r = resolveMark({ id: "extract-check", op: "mark", groups: [{ ids: ["a"], style: "chk-ok", thin: true }] }, index);
+    assert(r.items.length === 1 && r.items[0].thin === true, "가는 선 표시");
+    const r2 = resolveMark({ id: "q", op: "mark", groups: [{ ids: ["a"], style: "focus" }] }, index);
+    assert(!r2.items[0].thin, "채팅 강조는 굵은 선 그대로");
+  } },
+  { name: "추출 확인 창: 한 기호에 사유가 여럿이면 가장 무거운 것(읽지 못함 > 끊긴 연결 > 그 밖)(경미 7)", run(assert) {
+    const sheet = { items: [{ id: "x", layer: "symbol", unknown: false }] };
+    const clean = { unconfirmed: [{ id: "x", reason: "unknown_symbol" }, { id: "x", reason: "open_end" }] };
+    assert.equal(extractGroups(sheet, clean).counts, { ok: 0, link: 0, unknown: 1, broken: 0 });
+    const clean2 = { unconfirmed: [{ id: "x", reason: "open_end" }, { id: "x", reason: "flow_direction" }] };
+    assert.equal(extractGroups(sheet, clean2).counts, { ok: 0, link: 0, unknown: 0, broken: 1 });
+  } },
+  { name: "수락했지만 도면에 반영하지 않은 입력 연산이 남으면 알림 줄에 '다시 읽기' 한 줄, 없어지면 지운다(차단 2)", run(assert) {
+    store.set({ notices: [] });
+    const item = { kind: "inputs_pending", count: 2, action: { label: "다시 읽기", go: "confirm:inputs.build", target: "G1" } };
+    syncInputsNotice([item]);
+    const n = store.get().notices.find((x) => x.id === "inputs-pending");
+    assert(n && n.text === "수락한 내용이 아직 반영되지 않은 도면 2장" && n.action.label === "다시 읽기", JSON.stringify(store.get().notices));
+    syncInputsNotice([]);
+    assert(!store.get().notices.some((x) => x.id === "inputs-pending"), "처리되면 지움");
   } },
   { name: "추출 확인 창: 자료가 비었으면 표시가 없다", run(assert) {
     assert.equal(extractGroups(null).mark, null);
