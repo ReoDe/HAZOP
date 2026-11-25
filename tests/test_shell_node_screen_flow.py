@@ -40,6 +40,10 @@ class DrawingExcludePanelTest(W.ShellBase):
                                              " if (!b || b.disabled) return false; b.click(); return true; })()"
                                         % repr(label).replace("'", '"')), 60)
 
+    def pick_row(self, win, label):
+        """도면 줄 옆 체크 상자를 누른다(체크 상자는 단추가 아니라 click_label로 못 누른다)."""
+        return wait_for(lambda: self.js(win, "(() => { const b = document.querySelector('.panel input[aria-label=\"%s\"]'); if (!b) return false; b.click(); return true; })()" % label), 60)
+
     def capture(self, win, name):
         out = os.environ.get("HAZOP_CAPTURE_DIR")
         if out:
@@ -59,16 +63,17 @@ class DrawingExcludePanelTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: "가압기 범례" in self.text(win), 30))
         self.assertNotIn("분석에서 제외", self.text(win), "구간 카드에는 구간 단위 제외가 없다")
         self.js(win, "window.__hz.store.set({panel: 'drawings', sheet: '%s'})" % S102)
-        self.assertTrue(self.click_label(win, "SNP-M-102 분석에서 빼기"), self.text(win)[-300:])
-        self.assertTrue(self.click_label(win, "빼기 실행"))
+        self.assertTrue(self.pick_row(win, "SNP-M-102 고르기"), self.text(win)[-300:])          # 줄 옆 체크 → 위쪽 한 줄 도구(화면 단순화)
+        self.assertTrue(self.click_label(win, "고른 도면 분석에서 빼기"))
         self.assertTrue(wait_for(lambda: "%s 6개" % nid in self.text(win), 30), self.text(win)[-400:])
         self.assertEqual(nodes.exclusion_for(self.pg)[0], frozenset(), "확인 전에는 저장하지 않음")
         self.capture(win, "drawing-ask.png")
         self.assertTrue(self.click_label(win, "확인하고 빼기"))
         self.assertTrue(wait_for(lambda: nodes.exclusion_for(self.pg)[0] == frozenset({S102}), 30))
-        self.assertTrue(wait_for(lambda: "구간 분석에서 뺌" in self.text(win) and "분석 제외" in self.text(win), 30), self.text(win)[-400:])
+        self.assertTrue(wait_for(lambda: "분석 제외" in self.text(win), 30), self.text(win)[-400:])
         self.capture(win, "drawing-excluded.png")
-        self.assertTrue(self.click_label(win, "SNP-M-102 분석에 다시 넣기"))
+        self.assertTrue(self.pick_row(win, "SNP-M-102 고르기"))
+        self.assertTrue(self.click_label(win, "고른 도면 분석에 다시 넣기"))
         self.assertTrue(wait_for(lambda: nodes.exclusion_for(self.pg)[0] == frozenset(), 30))
 
 

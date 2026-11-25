@@ -1,11 +1,11 @@
-// 채팅 패널(규격 §3.2). 입력(Enter로 보내기, Shift+Enter 줄 바꿈), 예시 질문(누르면 입력칸에 들어가고 바로 보내지 않음), 진행 표시와 멈추기,
+// 채팅 패널(규격 §3.2). 입력(Enter로 보내기, Shift+Enter 줄 바꿈), 진행 표시와 멈추기,
 // 답 카드, 연결 없는 PC의 안내. 막기(한도·초과 사용·인증)는 엔진(hazop/shell/chat.py)이 정하고 여기서는 availability를 따른다.
 import { html } from "../ui/html.js";
 import { useEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { store, useStore } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
-import { Btn, Chip } from "../ui/parts.js";
+import { Btn } from "../ui/parts.js";
 import { AnswerCard } from "./card.js";
 import { ActionItems } from "./actions.js";
 
@@ -65,15 +65,10 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
       ${chat.unread ? html`<span class="dot-new" title="새 답이 있습니다"></span>` : null}</aside>`;
   }
   const blocked = chat.availability.blocked;
-  const empty = chat.msgs.length === 0 && !blocked;
   return html`<aside class="chat" aria-label="채팅">
     <div class="chat-h"><${Icon} name="message-circle" /><b>채팅</b>
-      <span class="acts">
-        <${Btn} kind="ghost" sm=${true} icon="message-plus" label="새 대화" title="지금까지의 대화를 지우고 새로 시작합니다" onClick=${() => cmd("chat.new")} />
-        <${Btn} kind="ghost" sm=${true} icon="file-text" label="AI 실행 기록" title="AI가 실행한 일의 기록" onClick=${() => store.set((s) => ({ panel: s.panel === "actionlog" ? null : "actionlog", backTo: null }))} />
-        <${Btn} kind="ghost" sm=${true} icon="layout-sidebar-right-collapse" label="채팅 접기" title="채팅 접기 (Ctrl+Alt+K)" onClick=${onToggle} /></span></div>
+      <span class="acts"><${Btn} kind="ghost" sm=${true} icon="message-plus" label="새 대화" title="지금까지의 대화를 지우고 새로 시작합니다" onClick=${() => cmd("chat.new")} /></span></div>
     <div class="msgs" ref=${list}>
-      ${empty ? html`<div class="muted">도면과 문서에 대해 물어보세요. 아래 질문을 눌러 시작할 수도 있습니다.</div>` : null}
       ${chat.msgs.map((m) => m.kind === "user" ? html`<div class="q" key=${m.key}>${m.text}</div>`
         : m.kind === "notice" ? html`<div class="muted" key=${m.key} style="font-size:var(--fs-xs)">${m.text}</div>`
         : m.kind === "actions" ? html`<${ActionItems} key=${m.key} items=${m.items} onAsk=${askText} />`
@@ -82,7 +77,6 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
       ${blocked ? html`<${GuideCard} availability=${chat.availability} />` : null}
     </div>
     <div class="composer">
-      ${empty ? html`<div class="examples">${chat.examples.flatMap(([g, qs]) => qs.map((q) => html`<${Chip} key=${q} title=${g} onClick=${() => { setText(q); if (input.current) input.current.focus(); }}>${q}<//>`))}</div>` : null}
       <div class="box">
         <textarea ref=${input} class="chat-input" rows="2" placeholder="도면에 대해 물어보세요 (Enter로 보내기, Shift+Enter로 줄 바꾸기)" aria-label="채팅 질문"
           value=${text} disabled=${blocked} onInput=${onInput} onKeyDown=${onKey}></textarea>

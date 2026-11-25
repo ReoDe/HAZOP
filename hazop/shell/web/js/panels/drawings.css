@@ -8,3 +8,9 @@
 .drow .thumb { display: none; }
 .src-row { flex-wrap: wrap; }
 .src-ask { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--warn-bg); color: var(--ink); font-size: var(--fs-sm); }
+/* 줄 전체가 열기: 번호와 제목만, 위아래 간격은 기본 줄의 절반쯤 */
+.drow { padding-top: 5px; padding-bottom: 5px; cursor: pointer; }
+.drow .drow-open { background: none; border: 0; padding: 0; margin: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.drow .acts-end { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.picks { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 0 8px; }
+.picks .notice { flex-basis: 100%; }

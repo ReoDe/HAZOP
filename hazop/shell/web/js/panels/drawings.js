@@ -1,21 +1,14 @@
-// 도면 패널(규격 §2.1·§2.3 ①등록 줄). 끌어 놓기 자리(파일은 Qt가 받는다), 도면·문서 목록, 작업 줄, 추출 카드의 AI 검토 토글·호출 상한.
+// 도면 패널(규격 §2.1·§2.3 ①등록 줄). 끌어 놓기 자리(파일은 Qt가 받는다), 도면·문서 목록(줄을 누르면 열림, 줄의 체크로 분석에서 빼기·다시 넣기), 작업 줄.
 import { Fragment, html } from "../ui/html.js";
 import { store, useStore } from "../store.js";
 import { useEffect, useState } from "../../vendor/hooks.module.js";
 import { cmd, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
-import { Btn, Chip, Notice, Switch } from "../ui/parts.js";
+import { Btn, Chip, Notice } from "../ui/parts.js";
 import { SourceConflicts, choicesCount, displacedOf } from "./drawings_sources.js";
 import { focusSheet as openTitleblock } from "./titleblock.js";
-import { DrawingExclude, DrawingExcludedChip } from "./nodes_screen.js";
-import { ReviewChip, summaryText as reviewSummary, useReview } from "../review/review.js";      // 도면별 AI 검토 상태·시작(HZ-DSN-06 §3.7)      // 범례·기호표 도면을 분석에서 빼고 다시 넣는 부품(구간 쪽)
-
-/** 도면 번호 상태(시트 정체 U4): 확정된 번호면 칩 없음, 번호 없음·보류면 그 까닭(엔진 notice 글)을 말풍선에. */
-function NumberChip({ d }) {
-  if (!d.number_state || d.number_state === "confirmed") return null;
-  const text = d.number_state === "held" ? "번호 보류" : "번호 미확정";
-  return html`<${Chip} kind="warn" title=${(d.notice && d.notice.text) || text}>${text}<//>`;
-}
+import { DrawingExcludedChip, DrawingPicks } from "./nodes_screen.js";
+import { ReviewChip } from "../review/review.js";      // 도면별 AI 검토 시작(자동 확정이 들어오기 전까지 유일한 길: 별도 커밋에서 뺀다)
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
@@ -64,31 +57,14 @@ function DexpiExport() {
       ${result.not_exported.length ? html`<div class="muted small">내보내지 않은 쪽: <ul class="tight" aria-label="내보내지 않은 쪽">${result.not_exported.map((x) => html`<li key=${x.graph_id || x.drawing_number}>${x.display || x.drawing_number}: ${whyNot(x)}</li>`)}</ul></div>` : null}</div>` : null}</div>`;
 }
 
-/** AI 검토를 켰을 때 도면별 예상 호출 수(엔진이 사람이 고친 자리를 뺀 미확인 항목으로 센다). 꺼져 있으면 읽지 않는다. */
-function useAiEstimate(on, cap) {
-  const [est, setEst] = useState(null);
-  useEffect(() => {
-    if (!on) { setEst(null); return undefined; }
-    let live = true;
-    const load = () => read("aireview/estimate?cap=" + encodeURIComponent(cap)).then((e) => { if (live) setEst(e); }).catch(() => { if (live) setEst(null); });
-    load();
-    const off = onChanged((t) => { if (t === "drawings" || t === "aireview") load(); });
-    return () => { live = false; if (typeof off === "function") off(); };
-  }, [on, cap]);
-  return est;
-}
-
 /** 끝난 작업 카드를 닫는다(작업 기록은 엔진에 그대로). */
 function dismissJob(id) { store.set((s) => { const j = Object.assign({}, s.jobs); delete j[id]; return { jobs: j }; }); }
 
 export function DrawingsPanel({ onOpen, onClose }) {
   const data = useStore((s) => s.drawings);
-  const reviewLine = useReview((s) => reviewSummary(s.rows));
   const sheet = useStore((s) => s.sheet);
-  const app = useStore((s) => s.app);
   const jobs = useStore((s) => s.jobs);
   const over = useStore((s) => s.dropOver);
-  const conn = useStore((s) => s.conn);
   // 작업 카드: 도는 것과 끝난 것 가운데 가장 새 것 둘만(멈춘 것은 알림으로 끝: 카드로 쌓여 도면 줄의 단추를 밀어내지 않게, 실제 창 3차 결함 4)
   // 작업 표시가 도면 줄을 밀지 않게(실제 창 4차 결함 4): AI 검토 작업은 도면 줄의 칩이 진행과 멈추기·취소를 보이므로 따로 그리지 않고,
   // 다른 도는 작업은 한 줄로, 끝난 작업은 접힌 '끝난 작업 n개' 안에 둔다(멈춘 작업은 알림으로 끝)
@@ -96,14 +72,13 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const running = all.filter(([, j]) => j.state === "running");
   const ended = all.filter(([, j]) => j.state !== "running");
   const failedJobs = ended.filter(([, j]) => j.state === "failed");
-  const est = useAiEstimate(!!app.ai_review, app.ai_review_cap);
+  const [picked, setPicked] = useState([]);          // 줄 왼쪽 체크로 고른 도면
+  const toggle = (g) => setPicked((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
   const sources = useStore((s) => s.sources);          // 원본 고르기 카드가 읽어 둔 값(같은 번호의 다른 원본)
   const many = choicesCount(sources), idle = displacedOf(sources);
   const toCard = () => { const el = document.getElementById("src-card"); if (el) el.scrollIntoView({ block: "nearest" }); };
 
   const pick = () => cmd("register.pick").catch(toastError);
-  const setReview = (patch) => cmd("extract.set_ai_review", patch).then((r) => store.set((s) => ({
-    app: Object.assign({}, s.app, { ai_review: r.enabled, ai_review_cap: r.cap || s.app.ai_review_cap }) }))).catch(toastError);
 
   return html`<section class="panel" aria-label="도면">
     <div class="panel-h"><h2>도면</h2><span class="acts"><${Btn} kind="ghost" icon="x" label="패널 닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
@@ -118,28 +93,17 @@ export function DrawingsPanel({ onOpen, onClose }) {
           <b>${j.label}</b><span class="muted small">${j.state === "failed" ? j.message : (j.text || "")}</span>
           ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}
           <${Btn} sm=${true} kind="ghost" icon="x" label=${j.label + " 알림 닫기"} title="닫기" onClick=${() => dismissJob(id)} /></div>`)}</details>` : null}
-      <div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">도면 ${data.drawings.length}장${data.project_id ? " · 프로젝트 " + data.project_id : ""}${reviewLine ? " · " + reviewLine : ""}</div>
+      <div>${picked.length ? html`<${DrawingPicks} ids=${picked} onDone=${() => setPicked([])} />` : null}
         ${data.drawings.length === 0 ? html`<${Notice}>등록된 도면이 없습니다. 위 자리에 도면 파일을 끌어 놓으면 등록하고 읽습니다.<//>` : html`<div class="list">
-          ${data.drawings.map((d) => html`<${Fragment} key=${d.graph_id}><div class=${"row drow" + (d.graph_id === sheet ? " on" : "")}>
-            <div class="thumb" aria-hidden="true"></div>
-            <div class="main"><b>${d.display}</b><span>${d.title || "표제란 확인 전"}</span></div>
-            <${NumberChip} d=${d} />
-            ${many[d.graph_id] ? html`<${Btn} sm=${true} kind="ghost" label=${d.display + " 원본 " + many[d.graph_id] + "개, 고르기 카드로 가기"}
-              title="같은 도면 자리에 원본이 둘 이상 있습니다. 분석에 쓸 원본은 아래 원본 고르기 카드에서 고릅니다." onClick=${toCard}>원본 ${many[d.graph_id]}개<//>` : null}
-            ${d.unknowns ? html`<${Chip} kind="warn" title="추출에서 읽지 못한 항목">미확인 ${d.unknowns}<//>` : html`<${Chip} kind="ok" icon="check">읽음<//>`}
-            <${ReviewChip} gid=${d.graph_id} />
-            <${DrawingExcludedChip} graphId=${d.graph_id} />
-            <${Btn} sm=${true} kind="ghost" label=${d.display + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//>
-            <${Btn} sm=${true} label=${d.display + " 열기"} onClick=${() => onOpen(d.graph_id)}>열기<//></div>
-            ${d.graph_id === sheet ? html`<${DrawingExclude} graphId=${d.graph_id} />` : null}<//>`)}</div>`}</div>
-      <div class="card ai-foot"><h3>추출 설정</h3>
-        <div class="kv"><div class="k" title=${"추출 뒤 AI가 미확인 항목의 후보를 제안합니다(구독 한도를 씁니다). 처음 값은 꺼짐이고, 한 번 실행에 최대 " + app.ai_review_run_cap + "회까지 부릅니다."}><b>AI 검토</b><span>추출 뒤 미확인 항목에 AI 후보(구독 한도, 처음 값 꺼짐)</span></div>
-          <${Switch} on=${app.ai_review} label="AI 검토" onChange=${(v) => setReview({ enabled: v })} /></div>
-        ${app.ai_review ? html`<div class="kv"><div class="k"><b>도면당 호출 상한</b><span>${app.ai_review_cap}회${est ? " · 지금 도면 전체 예상 호출 " + est.calls + "회, 약 " + Math.max(1, Math.round(est.seconds / 60)) + "분" + (est.capped ? "(한 번 실행 상한 " + est.run_cap + "회에 걸림)" : "") : ""}</span></div>
-          <input type="number" min="1" max="200" value=${app.ai_review_cap} aria-label="도면당 호출 상한" style="width:72px;height:30px"
-            onChange=${(e) => setReview({ cap: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 20)) })} /></div>` : null}
-        ${app.ai_review ? html`<div class="muted small ai-send-auto">${app.ai_review_images ? "추출 뒤에는 도면 조각 그림도 보냅니다(구독 연결로만 보냅니다)." : "추출 뒤에는 글만 보냅니다. 도면 조각 그림은 AI 검토 패널에서 켜면 보냅니다."}</div>` : null}
-        ${app.ai_review && !conn.can_start ? html`<${Notice} kind="warn" icon="alert-triangle">AI 연결이 준비되지 않아 검토는 건너뜁니다.<//>` : null}</div>
+          ${data.drawings.map((d) => html`<div key=${d.graph_id} class=${"row drow" + (d.graph_id === sheet ? " on" : "")} onClick=${(e) => { if (!e.target.closest("input,label,.acts-end")) onOpen(d.graph_id); }}>
+            <input type="checkbox" aria-label=${d.display + " 고르기"} checked=${picked.includes(d.graph_id)} onChange=${() => toggle(d.graph_id)} />
+            <button type="button" class="main drow-open" aria-label=${d.display + (d.title ? " " + d.title : "") + " 열기"}><b>${d.display}</b><span>${d.title || ""}</span></button>
+            <span class="acts-end">
+              ${many[d.graph_id] ? html`<${Btn} sm=${true} kind="ghost" label=${d.display + " 원본 " + many[d.graph_id] + "개, 고르기 카드로 가기"}
+                title="같은 도면 자리에 원본이 둘 이상 있습니다. 분석에 쓸 원본은 아래 원본 고르기 카드에서 고릅니다." onClick=${toCard}>원본 ${many[d.graph_id]}개<//>` : null}
+              <${DrawingExcludedChip} graphId=${d.graph_id} />
+              <${ReviewChip} gid=${d.graph_id} />
+              <${Btn} sm=${true} kind="ghost" label=${d.display + " 표제란"} title=${d.title ? "표제란 확정·고치기" : "표제란을 확인해 도면 번호와 제목을 확정합니다"} onClick=${() => openTitleblock(d.graph_id)}>표제란<//></span></div>`)}</div>`}</div>
       <${SourceConflicts} />
       <${DexpiExport} />
       ${data.documents.length ? html`<div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">등록 자료 ${data.documents.length}건</div><div class="list">

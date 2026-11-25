@@ -255,14 +255,12 @@ class ShellWindowTest(ShellBase):
         pump(0.3)
         self.assertEqual(self.js(win, "document.querySelector('.ptabs') === null"), True, "묶음이 아니면 탭이 없다")
 
-    def test_the_action_log_opens_from_the_chat_header_not_the_menu(self):
+    def test_chat_header_keeps_only_the_new_chat_button(self):
+        """화면 단순화(사용자 결정 2026-11-25): 채팅 머리의 아이콘 단추는 맨 왼쪽 하나(새 대화)만 남는다. 실행 기록 패널은 메뉴에도 없다."""
         win = self.window()
         labels = self.jsj(win, "[...document.querySelectorAll('.rail button')].map(b => b.getAttribute('aria-label'))")
         self.assertFalse(any("실행 기록" in x for x in labels), labels)
-        self.assertTrue(self.click(win, ".chat-h button[aria-label='AI 실행 기록']"))
-        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "actionlog", 10))
-        self.assertTrue(self.click(win, ".chat-h button[aria-label='AI 실행 기록']"))
-        self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10))
+        self.assertEqual(self.jsj(win, "[...document.querySelectorAll('.chat-h button')].map(b => b.getAttribute('aria-label'))"), ["새 대화"])
 
     def test_the_connection_dot_sits_on_the_settings_button(self):
         win = self.window()
@@ -438,11 +436,12 @@ class ShellChatTest(ShellBase):
         self.assertTrue(self.js(win, "document.querySelector('.chat-input').disabled"))
         self.assertEqual(self.sessions, [])
 
-    def test_examples_fill_the_input_without_sending(self):
+    def test_chat_shows_no_examples_or_guide_text(self):
+        """화면 단순화(사용자 결정 2026-11-25): 추천 질문과 '물어보세요' 안내 문구가 없고, 입력 칸의 자리표 글은 그대로다."""
         win = self.window()
-        self.assertTrue(self.click(win, ".examples .chip", 0))
-        pump(0.3)
-        self.assertNotEqual(self.js(win, "document.querySelector('.chat-input').value"), "")
+        self.assertEqual(self.js(win, "document.querySelectorAll('.examples').length"), 0)
+        self.assertNotIn("물어보세요.", self.js(win, "document.querySelector('.msgs').textContent"))
+        self.assertIn("도면에 대해 물어보세요", self.js(win, "document.querySelector('.chat-input').placeholder"))
         self.assertEqual(self.sessions, [])
 
     def test_enter_sends_and_shift_enter_does_not(self):

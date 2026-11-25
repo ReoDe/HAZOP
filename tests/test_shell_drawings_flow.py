@@ -140,8 +140,7 @@ class SheetConfirmFlowTest(W.ShellBase):
         self.open_sheet(win)
         self.js(win, "window.__hz.next.set({ running: null, open: false, items: [{ kind: 'sheet_confirm', count: 1, text: '원본과 견주어 확정할 쪽이 1장 있습니다', detail: null,"
                      " action: { label: '쪽 확정', go: 'panel:drawings#sheetconf', target: %s }, tone: '' }] })" % json.dumps(self.gid))
-        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.topbar .next .line .btn')"), 10))
-        self.assertTrue(self.click(win, ".topbar .next .line .btn"))                              # 클릭 1: 다음에 할 일의 '쪽 확정'
+        self.js(win, "window.__hz.go({ go: 'panel:drawings#sheetconf', target: %s })" % json.dumps(self.gid))      # '다음에 할 일' 줄은 화면에서 내렸다: 그 단추가 부르던 길을 바로 부른다
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard') !== null") is True, 15), "조건이 찬 쪽은 견주기 화면이 바로 열린다")
         self.assertTrue(wait_for(lambda: self.js(win, "!document.querySelector('.cmpcard input[type=checkbox]').disabled") is True, 15))
         self.assertEqual(self.js(win, "%s.disabled" % self.btn("견줌 기록하고 이 쪽 확정")), True, "체크 전에는 막힘(견줌을 건너뛰지 않는다)")
@@ -266,16 +265,16 @@ class SheetConfirmFlowTest(W.ShellBase):
 
 
 class AiEstimateFlowTest(W.ShellBase):
-    def test_turning_ai_review_on_shows_the_expected_calls_per_drawing(self):
+    def test_the_drawings_panel_has_no_ai_review_settings_card(self):
+        """화면 단순화(사용자 결정 2026-11-25): 도면 패널의 AI 검토 설정(켜고 끄기·호출 상한)은 화면에서 내린다. 엔진의 상한과 구독 제한은 그대로다."""
         win = self.window()
         self.js(win, "window.__hz.store.set({panel: 'drawings'})")
         pump(0.5)
-        self.assertNotIn("예상 호출", self.text(win), "꺼져 있으면 예상 호출 수를 읽지 않는다")
-        self.assertTrue(win.engine.dispatch("extract.set_ai_review", {"enabled": True, "cap": 20}, project=win.engine.project_id(), via_web=True)["ok"])
-        self.js(win, "window.__hz.store.set((s) => ({app: Object.assign({}, s.app, {ai_review: true, ai_review_cap: 20})}))")
-        self.assertTrue(wait_for(lambda: "예상 호출" in self.text(win), 15), self.text(win)[-300:])
-        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.row .chip.review').length") or 0) >= 1, 10), "도면 행마다 AI 검토 칩(예상 호출 수는 그 칩의 확인 창에)")
-        win.engine.dispatch("extract.set_ai_review", {"enabled": False}, project=win.engine.project_id(), via_web=True)
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.drow').length") or 0) >= 2, 10))
+        text = self.text(win)
+        for word in ("추출 설정", "도면당 호출 상한", "예상 호출"):
+            self.assertNotIn(word, text)
+        self.assertEqual(self.js(win, "document.querySelectorAll('.ai-foot').length"), 0)
 
 
 class TitleblockLinkFlowTest(W.ShellBase):

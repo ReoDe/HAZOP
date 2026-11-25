@@ -14,7 +14,7 @@ import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
 import { Notices, addNotice, demotedNotice, lostNotice, refreshLostNotice } from "./notices.js";
-import { NextLine, next as nextStore, setGo } from "./next/next.js";
+import { go as nextGo, next as nextStore, setGo } from "./next/next.js";
 import { closeQueue, openQueue, q as queueStore, useQueue, wire as wireQueue } from "./queue/queue.js";
 import { QueueCard, QueueLine } from "./queue/card.js";
 import { ReviewConfirm, setOpeners as setReviewOpeners, startReview, wire as wireReview } from "./review/review.js";
@@ -217,7 +217,7 @@ function TopBar() {
   return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
     <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => togglePanel("drawings")}>${row ? (row.display || row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
     ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div>
-    ${queueOpen ? html`<${QueueLine} />` : html`<${NextLine} />`}</header>`;     // 도면 제목은 도면 번호에 마우스를 올리면 보인다(1366 폭에서 다음에 할 일 줄이 잘리지 않게, HZ-DSN-06 §3.1)
+    ${queueOpen ? html`<${QueueLine} />` : null}</header>`;     // 도면 제목은 도면 번호에 마우스를 올리면 보인다. '다음에 할 일' 한 줄은 화면에서 내렸다(화면 단순화, 코드는 next/에 남김)
 }
 
 function Toast() {
@@ -278,7 +278,7 @@ async function boot() {
   else if (d.drawings.length === 1) openSheet(d.drawings[0].graph_id);
   else store.set({ panel: "drawings" });   // 열 도면이 없거나 여럿이면 도면 패널을 먼저 보인다
   if (!s.reviewer) { store.set({ panel: "settings" }); toast("검토자 이름을 입력하세요. 승인·확정 기록에 남습니다."); }   // 처음 실행할 때 묻는 것은 그대로
-  if (s.debug) window.__hz = { store, cmd, read, ui, clean, next: nextStore, queue: queueStore };
+  if (s.debug) window.__hz = { store, cmd, read, ui, clean, next: nextStore, queue: queueStore, go: nextGo };
   cmd("project.open_check").catch(() => {});      // 앱을 끈 사이 도면이 다시 읽혔으면 검토구간을 뒤에서 맞춘다(잃은 것이 있으면 알림이 온다)
   checkLost();        // 다시 추출 뒤 찾지 못한 구성요소가 있으면 한 줄로 알린다(읽기는 뒤에서, 화면을 붙잡지 않는다)
   await loadChat();   // 채팅 예시 질문은 프로젝트 그래프를 읽어 큰 프로젝트에서 수 초 걸린다. 도면 목록이 먼저 보이게 맨 끝에서 읽는다
