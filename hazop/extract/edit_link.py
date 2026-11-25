@@ -24,7 +24,8 @@ HELD_TARGET = "carry-held"  # 남긴 add_* 연산의 target. add_*는 대상이 
 WHY = {"not_of_old_file": "옛 파일에서도 적용되지 않던 고침", "gone": "새 파일에 그 id가 없음", "duplicate_id": "같은 id가 둘 이상",
        "relation": "자리를 모르는 배관·계장선(태그가 없어 확인할 수 없음)", "made_id": "파일에 없어 읽을 때 지은 id", "no_tag": "태그가 없음",
        "no_kind": "종류를 모름", "kind_changed": "종류가 다름", "tag_changed": "태그가 다름", "text_changed": "글자가 다름", "tag_not_unique": "같은 태그가 둘 이상",
-       "moved": "자리나 내용이 달라짐", "not_alone": "같은 자리에 다른 것이 있고 그 id들이 달라짐",
+       "moved": "자리나 내용이 달라짐", "not_for_kind": "표시된 종류에는 할 수 없는 고침",
+       "not_alone": "같은 자리에 다른 것이 있고 그 id들이 달라짐",
        "in_file": "사람이 더한 것이 이미 파일에 있음", "needs_left": "남긴 고침이 더한 것에 기댐", "unknown": "까닭을 읽을 수 없음"}
 REFUSALS = {"not_dexpi": "DEXPI 도면끼리만 잇습니다.", "other_project": "프로젝트가 다릅니다.", "other_page": "쪽이 다릅니다.",
             "number_unknown": "파일에 도면 번호가 없어 같은 도면인지 알 수 없습니다.",
@@ -268,6 +269,7 @@ class _Moves:
     def __init__(self, ops, removed, old, new):
         self.new, self.verdicts, everything = new, {}, list(ops) + list(removed)
         old.ops = list(ops)
+        self.old = old
         for op in everything:
             self.verdicts[id(op)] = _judge_op(op, ops, old, new)
         gone = None
@@ -276,6 +278,21 @@ class _Moves:
             for op in everything:
                 if self.verdicts[id(op)][0] != "left" and any(x in gone for x in _needs(op)):
                     self.verdicts[id(op)] = ("left", "needs_left", ())
+        if new.marks:
+            self._leave_what_the_kind_refuses(list(ops), removed)
+
+    def _leave_what_the_kind_refuses(self, ops, removed):
+        """이은 고침을 실제 순서로 적용해, 옛 파일에서는 되던 것이 표시된 종류 때문에 새 파일에서 안 되면 남긴다."""
+        def done(extraction, seq):
+            return set((corrections.apply(extraction, seq).get("corrections") or {}).get("applied") or ())
+        for seq, asked in [(ops, ops)] + [(ops + [op], [op]) for op in removed]:
+            mine = [op for op in asked if self.verdicts[id(op)][0] != "left" and self.old.fp.get(op.get("target"), {}).get("kind")
+                    != self.new.fp.get(op.get("target"), {}).get("kind")]
+            if mine:
+                was, now = done(self.old.extraction, seq), done(self.new.extraction, self.move(seq))
+                for op in mine:
+                    if op["op_id"] in was and op["op_id"] not in now:
+                        self.verdicts[id(op)] = ("left", "not_for_kind", ())
 
     def move(self, ops):
         return [_moved(o, *self.verdicts[id(o)], self.new) for o in ops]
