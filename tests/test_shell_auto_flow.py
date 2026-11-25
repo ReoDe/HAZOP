@@ -43,6 +43,12 @@ class Page:
         return b"png"
 
 
+def kinds(value, conf=0.95):
+    """모든 항목의 종류를 value라 답한다."""
+    return lambda request: {"answers": [{"item_id": it["item_id"], "field": "kind", "values": [value], "confidence": conf, "reason": "시험", "match": "legend"}
+                                        for it in json.loads(request["context"])["items"]]}
+
+
 def fake_images(*_a, **kw):
     """그림을 그리지 않는 그림 입력(호출 수·흐름만 본다). 프로젝트 도면을 주면 앱처럼 프로젝트 판이 된다."""
     source = "project" if kw.get("drawings") else "symbols"
@@ -93,8 +99,10 @@ class Base(unittest.TestCase):
         self.assertTrue(out["ok"], out)
         return out["data"]
 
+    version = 1
+
     def name(self, i):
-        return "%s__material-%012d-r1-p0" % (PROJECT, i)
+        return "%s__material-%012d-r%d-p0" % (PROJECT, i, self.version)
 
     def upload(self, *pages, outcome="registered", engine=None, number=None):
         """파일 올리기(engine.add_files). 등록과 추출은 대역이고 추출 결과 파일을 실제로 쓴다. pages: (번호, 추출 결과)."""
@@ -187,6 +195,39 @@ class ConsentTest(Base):
             self.assertFalse(self.engine.dispatch("aireview.consent", {"allow": True})["ok"])
         self.assertFalse(auto_flow.consent(self.engine)["allow"])
 
+    def test_a_withdrawal_that_cannot_be_saved_still_stops_sending(self):
+        self.consent()
+        with mock.patch.object(paths, "save_settings", side_effect=OSError("disk")):
+            self.assertFalse(self.engine.dispatch("aireview.consent", {"allow": False})["ok"])
+        self.upload((1, big(1, unread=5)))
+        self.assertEqual((self.calls(), self.state(1)), (0, ("waiting", "no_consent")))
+
+    def test_consent_turns_the_picture_switch_on_and_a_later_off_wins(self):
+        self.engine.settings["ai_review_images"] = False
+        self.consent()
+        self.assertIs(self.engine.settings["ai_review_images"], True)
+        self.engine.dispatch("extract.set_ai_review", {"images": False})
+        self.upload((1, big(1, unread=5)))
+        self.assertEqual((self.calls(), self.state(1)), (0, ("waiting", "images_off")))
+        self.engine.dispatch("extract.set_ai_review", {"images": True})
+        self.assertEqual((self.calls(), self.level(1)), (1, "auto"))
+
+    def test_declining_leaves_the_picture_switch(self):
+        self.engine.settings["ai_review_images"] = False
+        self.consent(False)
+        self.assertIs(self.engine.settings["ai_review_images"], False)
+
+    def test_reserved_name_is_never_a_reviewer(self):
+        self.assertFalse(self.engine.dispatch("settings.set_reviewer", {"name": "HAZOP:auto"})["ok"])
+        self.assertEqual(self.engine.reviewer(), "검토자")
+        path = os.path.join(self.tmp, "settings.json")
+        paths.save_settings({"reviewer_name": "hazop:auto"}, path)
+        e = api.Engine(settings_path=path, emit=Events(), run_jobs=lambda *_a: None)
+        self.assertIsNone(e.reviewer())
+        self.assertIsNone(e.settings["reviewer_name"], "열 때 비운다")
+        e.settings["reviewer_name"] = " hazop:auto "
+        self.assertIsNone(e.reviewer())
+
     def test_other_settings_commands_do_not_set_consent(self):
         self.engine.dispatch("extract.set_ai_review", {"enabled": True, "images": True})
         self.engine.dispatch("settings.set_reviewer", {"name": "다른 사람"})
@@ -278,10 +319,38 @@ class GateTest(Base):
         self.assertTrue(all(q.get("images") for q in self.client.requests))
         self.assertEqual({r["legend_source"] for i in (1, 2) for r in ar.load_doc(self.name(i))["runs"]}, {"symbols"})
 
-    def test_the_picture_setting_does_not_turn_auto_into_text(self):
-        self.engine.settings["ai_review_images"] = False
-        self.upload((1, big(1, unread=5)))
-        self.assertTrue(self.client.requests and all(q.get("images") for q in self.client.requests))
+    def test_pdf_gone_while_waiting_is_never_sent_as_text(self):
+        ex = big(1, unread=5)
+        src = os.path.join(self.tmp, "orig.pdf")
+        open(src, "wb").close()
+        ex["source"]["file"] = src
+        real = ar.estimate_pages
+
+        def est(*a, **k):
+            if os.path.exists(src):
+                os.remove(src)
+            return real(*a, **k)
+        with mock.patch.object(ar, "estimate_pages", side_effect=est):
+            self.upload((1, ex))
+        self.assertEqual((self.calls(), self.state(1)), (0, ("waiting", "no_image")))
+
+    def test_sheet_without_project_follows_the_current_projects_policy(self):
+        self.put(1, big(1, unread=5, project=None))
+        self.assertTrue(self.engine.dispatch("aireview.send_policy", {"send": "deny"})["ok"])
+        AR.run_review(self.engine, ["graph-1"], 20, lambda *a, **k: None)
+        self.assertEqual(self.calls(), 0, "수동도 지금 프로젝트의 정책")
+        cf.record_auto(self.name(1), "waiting", "started")
+        auto_flow.start_resume(self.engine)
+        self.assertEqual((self.calls(), self.state(1)), (0, ("waiting", "ai_off")))
+
+    def test_auto_sends_nothing_when_no_project_is_known(self):
+        with mock.patch.object(self.engine, "project_id", return_value=None):
+            self.assertEqual(auto_flow.gate(self.engine, None), "ai_off")
+
+    def test_deny_during_a_call_stops_every_sheet(self):
+        self.client.answer = lambda q: self.engine.dispatch("aireview.send_policy", {"send": "deny"}) and NONE
+        self.upload((1, big(1)), (2, big(2)))
+        self.assertEqual((self.calls(), self.state(1), self.state(2)), (1, ("waiting", "ai_off"), ("waiting", "ai_off")))
 
     def test_taken_number_is_not_asked(self):
         self.upload((1, big(1)), number="taken")
@@ -390,7 +459,43 @@ class CapTest(Base):
         self.client.errors = ["timeout"] * 9
         self.upload(*[(i, big(i, unread=5)) for i in range(1, 7)])
         self.assertEqual(self.calls(), 3)
-        self.assertEqual({self.state(i) for i in range(1, 7)}, {("waiting", "error")})
+        self.assertEqual([self.state(i)[1] for i in range(1, 7)], ["error"] * 3 + ["stopped"] * 3, "묻지 않은 쪽은 실패가 아니다")
+
+    def test_limit_after_the_last_answer_still_names_the_limit(self):
+        self.client.answer = kinds("manual_valve")
+        self.client.errors = [None, "limit_reached"]         # 첫 묻기는 다 받고 넓혀 묻기에서 한도
+        self.upload((1, big(1, unread=5)), (2, big(2, unread=5)))
+        self.assertEqual((self.state(1), self.state(2), self.calls()), (("confirmed", None), ("waiting", "limit"), 2))
+
+    def test_a_lower_user_cap_is_followed(self):
+        self.engine.settings["extract_ai_cap"] = 5
+        self.upload((1, big(1)))
+        self.assertEqual((self.calls(), self.state(1), self.cell(1)["ai"]["status"]), (5, ("confirmed", None), "capped"))
+        auto_flow.start_resume(self.engine)
+        self.assertEqual(self.calls(), 5)
+
+    def test_a_job_that_cannot_start_gives_its_share_back(self):
+        real, n = self.engine.start_job, []
+
+        def boom(*a, **k):
+            n.append(1)
+            if len(n) == 2:
+                raise RuntimeError("no thread")
+            return real(*a, **k)
+        self.engine.start_job = boom
+        with self.assertRaises(RuntimeError):
+            self.upload((1, big(1, unread=5)), (2, big(2, unread=5)), (3, big(3, unread=5)))
+        self.assertEqual((self.engine.auto_budget._users, self.engine.auto_budget._files), (0, 0))
+
+    def test_calls_of_every_version_of_the_sheet_count(self):
+        self.put(1, big(1))
+        ar.merge_and_save(self.name(1), big(1), {"candidates": [], "stats": {"calls": 15, "left": 9, "errors": 0, "at_id": 1}}, via="fixed")
+        self.version = 2
+        self.put(1, big(1))
+        cf.record_auto(self.name(1), "waiting", "started")
+        auto_flow.start_resume(self.engine)
+        self.assertEqual(self.calls(), 5)
+        self.assertEqual(ar.calls_of(self.name(1)), 20)
 
     def test_a_failed_sheet_is_not_retried_by_its_own_upload(self):
         self.client.errors = ["transient"]
@@ -507,6 +612,95 @@ class FinishTest(Base):
         self.assertTrue(out["ok"], out)
         self.assertEqual((self.calls(), self.level(1)), (1, "auto"))
 
+    def on(self):
+        for p in (mock.patch.object(ar, "AUTO_ACCEPT_ENABLED", True), mock.patch("hazop.shell.api_inputs.note")):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_an_answer_of_not_a_symbol_takes_the_old_proposal_away(self):
+        self.on()
+        self.client.errors, self.client.answer = [None, "transient"], kinds("pump")
+        self.upload((1, big(1, unread=15)))
+        self.assertEqual(self.state(1), ("waiting", "error"))
+        self.client.answer = kinds("not_symbol")
+        auto_flow.start_resume(self.engine)
+        self.assertEqual(self.state(1), ("confirmed", None))
+        self.assertEqual((cf.sheet_confirmation(self.name(1))["auto_accepted"], ar.load_doc(self.name(1))["candidates"]), (0, []))
+
+    def test_old_proposals_are_not_accepted_after_a_new_reading_says_unknown(self):
+        self.client.answer = kinds("pump")
+        self.upload((1, big(1, unread=5)))
+        ex = big(1, unread=5)
+        ex["run"]["rules_version"] = "z"
+        self.put(1, ex)
+        self.client.answer = kinds("unknown")
+        self.on()
+        auto_flow.start_resume(self.engine)
+        self.assertEqual((self.level(1), cf.sheet_confirmation(self.name(1))["auto_accepted"]), ("auto", 0))
+
+    def test_what_a_person_decided_stays_when_the_answer_changes(self):
+        self.client.answer = kinds("pump")
+        ex = big(1, unread=3)
+        self.upload((1, ex))
+        doc = ar.load_doc(self.name(1))
+        ids = [c["cand_id"] for c in doc["candidates"]]
+        ar.reject(doc, ids[:1], "사람")
+        ar.save_doc(doc)
+        doc = ar.load_doc(self.name(1))
+        self.assertEqual(ar.accept(doc, ids[1:2], ex, self.name(1), "사람"), [])
+        doc = ar.load_doc(self.name(1))
+        targets = [c["target"] for c in doc["candidates"]]
+        ar.merge_and_save(self.name(1), ex, {"candidates": [], "answered": [[t, "kind"] for t in targets], "stats": {"calls": 1, "left": 0}}, auto=True)
+        self.assertEqual([c["status"] for c in ar.load_doc(self.name(1))["candidates"]], ["rejected", "accepted"])
+
+    def test_a_manual_run_never_takes_proposals_away(self):
+        ex = big(1, unread=2)
+        self.put(1, ex)
+        c = ar.make_candidate("k", "kind", ex["nodes"][0], "kind", ["pump"], 0.9, "r")
+        ar.merge_and_save(self.name(1), ex, {"candidates": [c], "stats": {"calls": 1, "left": 0}}, via="fixed")
+        ar.merge_and_save(self.name(1), ex, {"candidates": [], "answered": [[c["target"], "kind"]], "stats": {"calls": 1, "left": 0}}, via="fixed")
+        self.assertEqual(len(ar.load_doc(self.name(1))["candidates"]), 1)
+
+    def test_stop_before_the_start_sends_nothing(self):
+        self.put(1, big(1))
+        cf.record_auto(self.name(1), "waiting", "started")
+        self.engine._stop.set()
+        auto_flow.run_budgeted(self.engine, [self.name(1)], lambda *a, **k: None)
+        self.assertEqual((self.calls(), self.state(1)), (0, ("waiting", "stopped")))
+
+    def test_a_batch_mixed_with_a_manually_held_sheet(self):
+        for i in (1, 2):
+            self.put(i, big(i, unread=5))
+            cf.record_auto(self.name(i), "waiting", "started")
+        held = self.engine.reserve_review([self.name(1)])
+        out = auto_flow.run_budgeted(self.engine, [self.name(1), self.name(2)], lambda *a, **k: None)
+        self.assertEqual((out["done"], self.state(1), self.level(2)), ([self.name(2)], ("waiting", "started"), "auto"))
+        self.assertEqual(self.engine._reviewing, set(held), "남이 잡은 도면은 놓지 않는다")
+        self.engine.release_review(held)
+
+    def test_a_next_version_of_an_old_sheet_is_not_new(self):
+        self.put(1, big(1, unread=5))
+        self.version = 2
+        self.upload((1, big(1, unread=5)), outcome="reused")
+        self.assertEqual((self.calls(), self.cell(1)), (0, None), "소급 없음")
+
+    def test_a_next_version_killed_before_the_record_is_not_new_either(self):
+        self.put(1, big(1, unread=5))
+        self.version = 2
+        with mock.patch.object(auto_flow.Intake, "start", side_effect=Killed()), self.assertRaises(Killed):
+            self.upload((1, big(1, unread=5)), outcome="reused")
+        self.engine = self.make_engine()
+        auto_flow.start_resume(self.engine)
+        self.assertEqual((self.calls(), self.cell(1)), (0, None))
+
+    def test_sheets_confirmed_while_off_stay_out_after_turning_on(self):
+        self.client.answer = kinds("pump")
+        self.upload((1, big(1, unread=5)))
+        self.on()
+        auto_flow.start_resume(self.engine)
+        self.assertEqual(auto_flow.restart_names(self.engine, ["graph-1"]), [], "이미 이 읽기로 자동 확정된 쪽은 다시 하기 대상이 아니다")
+        self.assertEqual(cf.sheet_confirmation(self.name(1))["auto_accepted"], 0)
+
     def test_human_fixed_spots_are_not_asked(self):
         ex = big(1, unread=5)
         self.put(1, ex)
@@ -608,6 +802,38 @@ class RestartTest(Base):
             self.reopen()
         self.assertEqual(self.calls(), 20, "죽기 전에 쓴 15회까지 세어 20회를 넘지 않는다")
         self.assertEqual(self.state(1), ("confirmed", None))
+
+    def test_calls_already_in_a_run_are_not_counted_again(self):
+        self.upload((1, big(1, unread=25)))
+        run = ar.load_doc(self.name(1))["runs"][-1]
+        self.assertTrue(run["auto_id"])
+        from hazop import store_io
+        store_io.write_json(auto_flow._call_path(big(1)), {"auto_id": run["auto_id"], "calls": 3, "items": 25})      # 저장 뒤 표지를 지우기 전에 죽음
+        auto_flow._recover(self.name(1), big(1))
+        self.assertEqual((ar.calls_of(self.name(1)), os.path.exists(auto_flow._call_path(big(1)))), (3, False))
+
+    def test_the_same_pdf_in_two_projects_keeps_separate_counts(self):
+        def ask(request):
+            if self.calls() == 15:
+                raise Killed()
+            return NONE
+        self.client.answer = ask
+        with self.assertRaises(Killed):
+            self.upload((1, big(1)))
+        self.client.answer = lambda q: NONE
+        other = "OTHER__material-%012d-r1-p0" % 1
+        d = os.path.join(paths.output_root("extract"), other)
+        os.makedirs(d)
+        with open(os.path.join(d, "extraction.json"), "w", encoding="utf-8") as fh:
+            json.dump(big(1, project="OTHER"), fh)
+        e = self.make_engine()
+        e.settings["project_id"] = "OTHER"
+        e.graph_names = lambda: {"gb": other}
+        cf.record_auto(other, "waiting", "started")
+        auto_flow.start_resume(e)
+        self.assertEqual(self.calls() - 15, 20)
+        self.reopen()
+        self.assertEqual(self.calls(), 40, "A도 죽기 전 15회를 세어 20회까지")
 
     def test_kill_after_saving_the_answers_does_not_call_again(self):
         with mock.patch.object(ar, "auto_finish", side_effect=Killed()), self.assertRaises(Killed):
@@ -807,6 +1033,208 @@ class RealUploadTest(unittest.TestCase):
             auto_flow.start_resume(e)
             self.assertEqual((len(client.requests), cf.sheet_confirmation(new)["level"]), (spent, "auto"), "번호 확정 뒤 새 호출 0")
             e.wait_jobs(20)
+
+
+class NextVersionTest(unittest.TestCase):
+    """등록판이 올라간 뒤 번호 확정 길 밖에서 추출되는 길(대역 없는 등록·추출). 되돌림과 누적 호출이 남아야 한다."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="hazop-autoflow-next-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        for p in (mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": os.path.join(self.tmp, "work"), "HAZOP_STORE_ROOT": os.path.join(self.tmp, "store")}),
+                  mock.patch.object(ar, "AUTO_ACCEPT_ENABLED", True), mock.patch.object(ar, "IMAGE_BATCH", 1), mock.patch("hazop.shell.api_inputs.note")):
+            p.start()
+            self.addCleanup(p.stop)
+        os.makedirs(os.environ["HAZOP_WORK_ROOT"])
+        self.client = StubClient(kinds("pump"))
+        self.e = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=Events(), run_jobs=lambda _i, fn: fn(), ai=FakeAi(self.client))
+        self.e.settings.update(reviewer_name="검토자", project_id="REAL-P")
+        self.addCleanup(self.e.wait_jobs, 20)
+        self.assertTrue(self.e.dispatch("aireview.consent", {"allow": True})["ok"])
+        self.src = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
+        self.e.add_files([self.src])
+        (self.name,) = self.e.graph_names().values()
+        self.assertTrue(cf.sheet_confirmation(self.name)["auto_accepted"])
+        ar.auto_revert(self.name, "검토자")
+        self.spent = len(self.client.requests)
+        from hazop.shell import api_titleblock
+        self.row = api_titleblock.summary(self.e)["rows"][0]
+
+    def check(self):
+        (new,) = self.e.graph_names().values()
+        self.assertNotEqual(new, self.name)
+        st = cf.sheet_confirmation(new)
+        self.assertEqual((st["auto"]["result"], st["auto_accepted"], len(self.client.requests)), ("reverted", 0, self.spent))
+        self.assertEqual(ar.calls_of(new), self.spent)
+        auto_flow.start_resume(self.e)
+        self.assertEqual(len(self.client.requests), self.spent)
+        return new
+
+    def failed_confirm(self):
+        from hazop.app import data
+        with mock.patch.object(data, "extract_and_graph", side_effect=OSError("disk full")):
+            self.e.dispatch("titleblock.confirm", {"material_id": self.row["material_id"], "ver": self.row["ver"], "fields": {"title": "T2"}})
+
+    def test_reupload_after_a_failed_confirm(self):
+        self.failed_confirm()
+        self.e.add_files([self.src])
+        self.check()
+
+    def test_chat_reextract_after_a_failed_confirm(self):
+        from types import SimpleNamespace as NS
+        from hazop.register import registry
+        from hazop.shell import chat_actions
+        self.failed_confirm()
+        _rec, path = registry.latest("REAL-P", self.row["material_id"])
+        regs = {self.row["material_id"]: {"path": path, "has_result": True, "material_id": self.row["material_id"]}}
+        runner = chat_actions.RunExecutors(self.e, lambda: None, lambda: regs, watch=False)
+        self.assertTrue(runner.extract({"registration_id": self.row["material_id"]}, NS(action="register.reextract"))["ok"])
+        self.check()
+
+    def classic_register(self):
+        """이전 화면이 쪽 제목·개정을 적어 다시 등록하면 새 등록판이 된다."""
+        from hazop.register import registry
+        res = registry.register(self.src, "REAL-P", "P&ID", paths.store_root(), {"title": "옛 화면 제목", "design_revision": "1", "by": "사람"}, "사람")
+        self.assertEqual(res["outcome"], "new_version")
+        return res
+
+    def test_classic_registration_then_reupload(self):
+        self.classic_register()
+        self.e.add_files([self.src])
+        self.check()
+
+    def test_classic_registration_and_extraction_then_reupload(self):
+        from hazop.app import data
+        data.extract_and_graph(self.classic_register()["registration_file"])
+        self.e.add_files([self.src])
+        self.check()
+
+    def test_classic_extraction_then_the_person_restarts(self):
+        from hazop.app import data
+        data.extract_and_graph(self.classic_register()["registration_file"])
+        (gid, new), = self.e.graph_names().items()
+        auto_flow.restart(self.e, [gid], "검토자")
+        st = cf.sheet_confirmation(new)
+        self.assertEqual((st["auto_accepted"], ar.calls_of(new) <= 20), (0, True), "사람이 물린 자리는 다시 받지 않고 호출도 이어서 센다")
+        self.assertEqual(ar.calls_of(new), len(self.client.requests))
+
+    def test_a_failed_extraction_leaves_no_copy(self):
+        from hazop.app import data
+        self.failed_confirm()
+        before = {os.path.join(d, f) for d, _s, fs in os.walk(os.path.join(os.environ["HAZOP_WORK_ROOT"], "data")) for f in fs if "-r2-" in f}
+        with mock.patch.object(data, "extract_and_graph", side_effect=OSError("x")), mock.patch.object(register_flow.data, "extract_and_graph", side_effect=OSError("x")):
+            self.e.add_files([self.src])
+        after = {os.path.join(d, f) for d, _s, fs in os.walk(os.path.join(os.environ["HAZOP_WORK_ROOT"], "data")) for f in fs if "-r2-" in f}
+        self.assertEqual(after, before)
+
+
+class OpenFolderTest(unittest.TestCase):
+    """'내보낸 폴더 열기'(export.open_folder): 화면은 종류만 보내고 폴더는 앱이 실제로 내보낸 기록에서 정한다."""
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp(prefix="hazop-openfolder-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        p = mock.patch.dict(os.environ, {"HAZOP_WORK_ROOT": os.path.join(self.tmp, "work"), "HAZOP_STORE_ROOT": os.path.join(self.tmp, "store")})
+        p.start()
+        self.addCleanup(p.stop)
+        os.makedirs(os.environ["HAZOP_WORK_ROOT"])
+        self.e = api.Engine(settings_path=os.path.join(self.tmp, "settings.json"), emit=Events(), run_jobs=lambda _i, fn: fn())
+        self.e.settings["project_id"] = "P"
+        self.opened = []
+        self.e.hooks["explore"] = self.opened.append
+        self.out = os.path.join(self.tmp, "out")
+        os.makedirs(self.out)
+
+    def open(self, kind):
+        return self.e.dispatch("export.open_folder", {"kind": kind}, project="P", via_web=True)
+
+    def exported(self, kind="excel", name="a.xlsx", folder=None):
+        """저장 대화상자가 고른 자리에 앱이 실제로 쓴 것처럼."""
+        folder = folder or self.out
+        path = folder if kind == "dexpi" else os.path.join(folder, name)
+        if kind == "dexpi":
+            self.e.hooks["save_dir"] = lambda k: path
+            self.e.hooks["save_dir"]("dexpi")
+            path = os.path.join(path, "manifest.json")
+        else:
+            self.e.hooks["save_path"] = lambda k, d: path
+            self.e.hooks["save_path"](kind, "x")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("x")
+
+    def test_opens_what_was_exported_per_kind(self):
+        self.exported("excel")
+        self.assertTrue(self.open("excel")["ok"])
+        self.exported("dexpi")
+        self.assertTrue(self.open("dexpi")["ok"])
+        self.assertEqual(self.opened, [self.out, self.out])
+        self.assertFalse(self.open("ie")["ok"])
+
+    def test_chat_exports_folder(self):
+        self.assertFalse(self.open("chat")["ok"])
+        d = os.path.join(os.environ["HAZOP_WORK_ROOT"], "output", "exports")
+        os.makedirs(d)
+        self.assertTrue(self.open("chat")["ok"])
+        self.assertEqual(self.opened, [os.path.realpath(d)])
+
+    def test_the_screen_cannot_name_a_path(self):
+        for args in ({"kind": "excel", "path": self.out}, {"path": self.out}, {"kind": self.out}, {"kind": "..\\.."}, {}):
+            self.assertFalse(self.e.dispatch("export.open_folder", args, project="P", via_web=True)["ok"], args)
+        self.assertEqual(self.opened, [])
+
+    def test_needs_a_real_export(self):
+        self.e.hooks["save_path"] = lambda k, d: os.path.join(self.out, "never.xlsx")
+        self.e.hooks["save_path"]("excel", "x")                 # 자리만 고르고 쓰지 않음
+        self.assertFalse(self.open("excel")["ok"])
+        self.e.hooks["save_path"] = lambda k, d: None           # 취소
+        self.e.hooks["save_path"]("excel", "x")
+        self.assertFalse(self.open("excel")["ok"])
+
+    def test_a_cancel_keeps_the_last_export(self):
+        self.exported("excel")
+        self.e.hooks["save_path"] = lambda k, d: None
+        self.e.hooks["save_path"]("excel", "x")
+        self.assertTrue(self.open("excel")["ok"])
+
+    def test_other_project_and_gone_folder(self):
+        self.exported("excel")
+        self.e.settings["project_id"] = "Q"
+        self.assertFalse(self.e.dispatch("export.open_folder", {"kind": "excel"}, project="Q", via_web=True)["ok"])
+        self.e.settings["project_id"] = "P"
+        shutil.rmtree(self.out)
+        self.assertFalse(self.open("excel")["ok"])
+        with open(self.out, "w", encoding="utf-8") as fh:       # 그 자리에 파일이 들어와도 열지 않는다
+            fh.write("x")
+        self.assertFalse(self.open("excel")["ok"])
+        self.assertEqual(self.opened, [])
+
+    def test_unc_and_links_are_refused(self):
+        self.e.hooks["save_path"] = lambda k, d: r"\\server\share\a.xlsx"
+        self.e.hooks["save_path"]("excel", "x")
+        with mock.patch("os.path.isfile", return_value=True), mock.patch("os.path.getmtime", return_value=9e12), mock.patch("os.path.isdir", return_value=True):
+            self.assertFalse(self.open("excel")["ok"])
+        link = os.path.join(self.tmp, "link")
+        import _winapi
+        _winapi.CreateJunction(self.out, link)
+        self.exported("excel", folder=link)
+        self.assertFalse(self.open("excel")["ok"])
+        os.rmdir(link)
+        self.assertEqual(self.opened, [])
+
+    def test_exports_folder_turned_into_a_link_is_refused(self):
+        import _winapi
+        d = os.path.join(os.environ["HAZOP_WORK_ROOT"], "output", "exports")
+        os.makedirs(os.path.dirname(d))
+        _winapi.CreateJunction(self.out, d)
+        self.assertFalse(self.open("chat")["ok"])
+        os.rmdir(d)
+
+    def test_only_folders_are_explored(self):
+        self.exported("excel")
+        del self.e.hooks["explore"]
+        with mock.patch("os.startfile") as start:
+            self.assertTrue(self.open("excel")["ok"])
+        start.assert_called_once_with(self.out, "explore")
 
 
 if __name__ == "__main__":
