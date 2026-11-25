@@ -20,7 +20,7 @@ sys.path.insert(0, REPO_ROOT)
 from hazop import paths  # noqa: E402
 from hazop.export import dexpi_diagram as dd  # noqa: E402
 from hazop.export import dexpi_export as de  # noqa: E402
-from hazop.extract import corrections, dexpi_map  # noqa: E402
+from hazop.extract import corrections, dexpi_map, drawio  # noqa: E402
 from hazop.extract.adapters import dexpi_import, dexpi_read  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from tests.test_dexpi_export import SNP, dexpi_pair, export, reimport, snp_pair  # noqa: E402
@@ -242,6 +242,30 @@ class EndsTest(unittest.TestCase):
             row = next(p for p in exp.sidecar["pipes"] if p["local_id"] == r["local_id"])
             got = [back(exp, p) for p in line_of(rels[row["dexpi_id"]])]
             self.assertLess(min(math.dist(got[0], e["point"]), math.dist(got[-1], e["point"])), TOL)
+        model = dexpi_read.read(exp.xml)
+        first = next(p for p in exp.sidecar["pipes"] if p["local_id"] in [r["local_id"] for r, _e in self.two])
+        conn = next(c for c in model.connections if c["id"] == first["dexpi_id"])
+        shared = next(n for n in (conn["source_node"], conn["target_node"])
+                      if sum(n in (c["source_node"], c["target_node"]) for c in model.connections) == 2)
+        point = next(e["point"] for r, e in self.two if r["local_id"] == first["local_id"])
+        self.assertLess(math.dist(back(exp, model.node_pos[shared]), point), TOL, "노드의 자리는 먼저 적은 배관의 끝")
+
+    def test_a_piping_node_sits_where_its_pipe_ends_and_not_in_the_middle_of_the_symbol(self):
+        exp = export(snp_pair(SNP[0]))
+        model = dexpi_read.read(exp.xml)
+        for c in model.connections:
+            path = model.conn_paths[c["id"]]
+            for node, at in ((c["source_node"], path[0]), (c["target_node"], path[-1])):
+                self.assertEqual(model.node_pos[node], at)
+
+    def test_a_piping_node_of_a_dexpi_file_keeps_its_place_when_a_person_moves_the_pipe(self):
+        ex, _ = dexpi_pair("small-pid-dexpi2.xml")
+        pipe = next(r for r in ex["relations"] if r["source_object_id"] == "Pipe1")
+        pipe["endpoints"][0]["point"] = [72.0, 125.0]
+        exp, again = exported((ex, build.build_graph(ex)))
+        self.assertEqual(dexpi_read.read(exp.xml).node_pos["Nd2"], (70.0, 120.0))
+        got = line_of(by_id(again, "relations")["Pipe1"])
+        self.assertIn([72.0, 125.0], got)
 
     def test_a_symbol_inside_a_parent_shape_is_drawn_at_its_place_on_the_sheet(self):
         def change(ex):
@@ -256,6 +280,7 @@ class EndsTest(unittest.TestCase):
 class OrientationTest(unittest.TestCase):
 
     def turned(self, style, box=(400.0, 300.0, 60.0, 20.0)):
+        """(되읽은 상자, 되읽은 모양) 또는 그리지 않은 까닭."""
         def change(ex):
             v = next(n for n in ex["nodes"] if n["kind"] == "manual_valve" or n["category"] == "valve")
             v["style"] = style
@@ -263,6 +288,10 @@ class OrientationTest(unittest.TestCase):
             next(l for l in ex["source_locations"] if l["local_id"] == v["local_id"])["bbox"] = list(box)
             self.local = v["local_id"]
         exp, again = exported(pair_of(change))
+        for row in exp.sidecar["picture"]["not_drawn"]:
+            if row["local_id"] == self.local:
+                self.assertEqual(row["box"], list(box))
+                return None, row["reason"]
         node = by_id(again)[entity(exp, self.local)["dexpi_id"]]
         return [round(v, 1) for v in box_of(exp, node)], node["geometry"]["shape"]
 
@@ -278,9 +307,48 @@ class OrientationTest(unittest.TestCase):
 
     def test_mirrors_come_back(self):
         for style, want in (("flipH=1;", (0.0, True)), ("flipV=1;", (180.0, True)), ("flipH=1;flipV=1;", (180.0, False)),
-                            ("direction=south;flipH=1;", (90.0, True)), ("rotation=270;flipH=1;", (270.0, True))):
+                            ("rotation=270;flipH=1;", (270.0, True))):
             _box, shape = self.turned(style)
             self.assertEqual((shape["rotation"], shape["mirrored"]), want, style)
+
+    def test_every_combination_points_where_the_drawio_reader_says_or_is_not_drawn(self):
+        """방향을 아는 기호(체크밸브)로 drawio 읽기(_symbol_direction)의 규칙과 맞댄다. 읽기가 모른다고 한 조합은 그리지 않는다."""
+        from hazop.extract import rules
+        (shape_name, valve), d0 = next(iter(rules.CHECK_VALVE_SYMBOL_DIRECTIONS.items()))
+        drawn = skipped = 0
+        for direction in ("", "east", "south", "west", "north", "up"):
+            for flip_h in ("", "0", "1", "true"):
+                for flip_v in ("", "1"):
+                    for rot in ("", "90", "180", "270", "-90", "450"):
+                        pairs = (("direction", direction), ("flipH", flip_h), ("flipV", flip_v), ("rotation", rot))
+                        style = "".join("%s=%s;" % kv for kv in pairs if kv[1])
+                        cell = mock.Mock(cell_id="c", parent="1", style_map=drawio.parse_style("shape=%s;valveType=%s;%s" % (shape_name, valve, style)))
+                        want = drawio._symbol_direction(cell, {"c": {"bbox": [0, 0, 1, 1], "approximate": False}}, {"1"})
+                        node = {"style": style, "geometry": {"x": 0.0, "y": 0.0, "width": 60.0, "height": 20.0}}
+                        try:
+                            p = dd.source_placement(node, {"bbox": [0.0, 0.0, 60.0, 20.0]}, "drawio")
+                        except dd.Undrawable as why:
+                            self.assertEqual((want, str(why)), (None, "orientation_unknown"), style)
+                            skipped += 1
+                            continue
+                        self.assertIsNotNone(want, style)
+                        x, y = (-d0[0] if p.mirrored else d0[0]), d0[1]
+                        t = math.radians(p.rotation)
+                        got = (x * math.cos(t) - y * math.sin(t), x * math.sin(t) + y * math.cos(t))
+                        self.assertLess(math.dist(got, want), 1e-9, style)
+                        drawn += 1
+        self.assertEqual((drawn, skipped), (72, 216))
+
+    def test_a_turn_the_reader_does_not_know_goes_to_the_sidecar(self):
+        for direction in ("south", "west", "north"):
+            for flips in ("flipH=1;", "flipV=1;", "flipH=1;flipV=1;"):
+                self.assertEqual(self.turned("direction=%s;%s" % (direction, flips)), (None, "orientation_unknown"), direction + flips)
+
+    def test_an_angle_just_short_of_a_full_turn_does_not_stop_the_export(self):
+        for rot in ("-1e-9", "-0.0000001", "359.9999999", "719.9999999999", "-1e-17", "360", "-360", "359.9996"):
+            box, shape = self.turned("rotation=%s;" % rot)
+            self.assertEqual(box, [400.0, 300.0, 460.0, 320.0], rot)
+            self.assertTrue(0.0 <= shape["rotation"] < 360.0, (rot, shape["rotation"]))
 
     def test_a_turned_symbol_of_a_dexpi_file_keeps_its_turn_when_written_again(self):
         ex, _ = dexpi_pair("small-pid-dexpi2.xml")
@@ -326,6 +394,10 @@ class NotDrawnTest(unittest.TestCase):
         self.assertEqual(row["box"], [5000.0, 100.0, 20.0, 20.0])
         self.check(self.boxed([-300.0, 100.0, 20.0, 20.0]), "symbol", "off_sheet")
 
+    def test_a_box_that_crosses_an_edge_of_the_sheet_goes_to_the_sidecar(self):
+        for box in ([1600.0, 100.0, 400.0, 20.0], [100.0, 1100.0, 20.0, 400.0], [-300.0, 100.0, 400.0, 20.0], [100.0, -300.0, 20.0, 400.0]):
+            self.check(self.boxed(box), "symbol", "off_sheet")
+
     def test_a_box_that_is_not_a_number_goes_to_the_sidecar(self):
         self.check(self.boxed([math.nan, 100.0, 20.0, 20.0]), "symbol", "bad_number")
         self.check(self.boxed([100.0, math.inf, 20.0, 20.0]), "symbol", "bad_number")
@@ -355,6 +427,16 @@ class NotDrawnTest(unittest.TestCase):
             r["waypoints"] = []
             r["endpoints"][1]["point"] = list(r["endpoints"][0]["point"])
         self.check(self.lined(edit), "line", "one_point")
+
+    def test_a_line_that_shrinks_to_one_point_goes_to_the_sidecar(self):
+        def edit(r):
+            x, y = r["endpoints"][0]["point"]
+            r["waypoints"], r["endpoints"][1]["point"] = [], [x + 1e-4, y]
+        self.check(self.lined(edit), "line", "one_point")
+
+    def test_a_line_that_leaves_the_sheet_goes_to_the_sidecar(self):
+        for p in ([3000.0, 100.0], [100.0, 3000.0], [-300.0, 100.0], [100.0, -300.0]):
+            self.check(self.lined(lambda r: r.update(waypoints=[p])), "line", "off_sheet")
 
     def test_a_line_whose_end_is_unknown_or_strange_goes_to_the_sidecar(self):
         self.check(self.lined(lambda r: r["endpoints"][0].update(point=None)), "line", "end_unknown")
@@ -397,6 +479,24 @@ class NotDrawnTest(unittest.TestCase):
         before = export(snp_pair(SNP[0])).stats["excluded_by_reason"]["no_dexpi_class"]
         self.assertEqual(exp.stats["excluded_by_reason"], {"no_dexpi_class": before + 2})
         self.assertEqual(exp.excluded["excluded_by_reason"], exp.stats["excluded_by_reason"])
+
+    def test_a_place_the_reader_called_approximate_is_drawn_but_marked(self):
+        def change(ex):
+            v = next(n for n in ex["nodes"] if n["category"] == "valve")
+            r = next(r for r in ex["relations"] if r["kind"] == "physical_connection")
+            for loc in ex["source_locations"]:
+                if loc["local_id"] == v["local_id"]:
+                    loc["approximate"] = True
+                if loc["local_id"] == r["local_id"]:
+                    loc["method"] += "; parent_offset_approx"
+            self.two = [("line", r["local_id"]), ("symbol", v["local_id"])]
+        exp, _ = exported(pair_of(change))
+        rows = exp.sidecar["picture"]["approximate"]
+        self.assertEqual(sorted((r["what"], r["local_id"]) for r in rows), self.two)
+        drawn = {e["dexpi_id"] for e in exp.sidecar["entities"]} | {p["dexpi_id"] for p in exp.sidecar["pipes"]}
+        self.assertTrue(all(r["dexpi_id"] in drawn for r in rows))
+        self.assertEqual(exp.stats["picture"]["approximate"], 2)
+        self.assertEqual(export(snp_pair(SNP[0])).sidecar["picture"]["approximate"], [])
 
     def test_text_without_an_owner_is_kept_in_the_sidecar_only(self):
         def change(ex):
@@ -459,6 +559,15 @@ class SheetTest(unittest.TestCase):
             with self.subTest(prop), mock.patch.object(dd.dx, "points", moved), self.assertRaises(de.ExportError) as caught:
                 export(snp_pair(SNP[0]))
             self.assertIn("그림", str(caught.exception))
+
+    def test_a_wrong_turn_or_mirror_in_the_file_is_caught_before_writing(self):
+        number, value = dd.dx.number, dd.dx.value
+        for name, wrong in (("number", lambda parent, prop, v: number(parent, prop, v + 180.0 if prop == "Rotation" else v)),
+                            ("value", lambda parent, prop, kind, text: value(parent, prop, kind, {"false": "true"}.get(text, text)
+                                                                             if prop == "IsMirrored" else text))):
+            with self.subTest(name), mock.patch.object(dd.dx, name, wrong), self.assertRaises(de.ExportError) as caught:
+                export(snp_pair(SNP[0]))
+            self.assertIn("자리나 방향이 다름", str(caught.exception))
 
 
 class ConfirmedPictureTest(unittest.TestCase):

@@ -4,6 +4,7 @@
 실행: python -m unittest tests.test_dexpi_picture
 """
 
+import json
 import os
 import re
 import sys
@@ -122,6 +123,28 @@ class ReadBoxTest(unittest.TestCase):
             "</Object>", '<Data property="StartAngle"><Double>270.0</Double></Data><Data property="EndAngle"><Double>90.0</Double></Data></Object>')
         self.assertEqual(box(pump(with_pump(usage(), arc))), [60.0, 116.0, 4.0, 8.0])
 
+    def test_arcs_with_strange_angles(self):
+        def arc(start, end):
+            return ellipse(0, 0, 4, 4).replace("Ellipse", "EllipseArc").replace("</Object>", (
+                '<Data property="StartAngle"><Double>%s</Double></Data><Data property="EndAngle"><Double>%s</Double></Data></Object>' % (start, end)))
+        whole = [56.0, 116.0, 8.0, 8.0]
+        for angles, want in (((10.0, -350.0), whole), ((0.0, 720.0), whole), ((630.0, 810.0), [60.0, 116.0, 4.0, 8.0]),
+                             ((-90.0, 90.0), [60.0, 116.0, 4.0, 8.0]), ((45.0, 45.0), None), ((1e308, -1e308), None), ((-1e308, 1e308), None),
+                             (("nan", 90.0), None), (("inf", 90.0), None), (("x", 90.0), None)):
+            self.assertEqual(box(pump(with_pump(usage(), arc(*angles)))), want, angles)
+
+    def test_no_strange_number_in_the_picture_stops_the_file_from_being_read(self):
+        arc = ellipse(0, 0, 4, 4).replace("Ellipse", "EllipseArc").replace(
+            "</Object>", '<Data property="StartAngle"><Double>270.0</Double></Data><Data property="EndAngle"><Double>90.0</Double></Data></Object>')
+        text = swap(PIPE1_LINE, points("InnerPoints", (70.0, 90.0)) + PIPE1_LINE, with_pump(usage(rot=30.0), arc + polyline((0, 0), (2, 1), stroke=0.3)))
+        spots = [m.span(1) for m in re.finditer(r"<Double>([^<]*)</Double>", text) if m.start() > text.index("Core/Diagram.Diagram")]
+        self.assertGreater(len(spots), 40)
+        for a, b in spots:
+            for odd in ("1e308", "-1e308", "nan", "inf", "x", "", "5e-324", "1e20"):
+                ex = extract(text[:a] + odd + text[b:])
+                self.assertEqual(len(ex["nodes"]), 7)
+                json.dumps([n["geometry"] for n in ex["nodes"]] + [line(ex, "Pipe1")], allow_nan=False)
+
     def test_a_symbol_drawn_as_one_stroke_is_as_thick_as_the_stroke(self):
         self.assertEqual(box(pump(with_pump(usage(rot=270.0), polyline((0, -2), (0, 2), stroke=0.4)))), [58.0, 119.8, 4.0, 0.4])
 
@@ -173,10 +196,20 @@ class ReadLineTest(unittest.TestCase):
         self.assertEqual(line(extract(swap(PIPE1_LINE, back)), "Pipe1"), [[70.0, 120.0], [70.0, 90.0], [95.0, 90.0], [95.0, 120.0]])
 
     def test_the_marks_of_the_line_decide_which_way_it_runs_before_the_distances(self):
-        """밸브 쪽 자리가 펌프 쪽보다 펌프에 가깝게 그려져도(자리를 옮긴 파일) 자리가 가리키는 노드를 따른다."""
-        text = swap('<Object id="Pos1"', '<Object id="PosFar" type="Plant/Diagram.PipingNodePosition"><References objects="#Nd2" property="Node"/>%s'
-                    '</Object><Object id="Pos1"' % points("Position", (300.0, 120.0)), swap(PIPE1_LINE, PIPE1_LINE.replace("#Pos2", "#PosFar")))
-        self.assertEqual(line(extract(text), "Pipe1"), [[300.0, 120.0], [95.0, 120.0]])
+        """두 끝의 자리가 서로 반대쪽 부품에 더 가깝게 그려져도(거리만 보면 거꾸로) 자리가 가리키는 노드를 따른다."""
+        marks = "".join('<Object id="%s" type="Plant/Diagram.PipingNodePosition"><References objects="#%s" property="Node"/>%s</Object>'
+                        % (i, n, points("Position", (x, 120.0))) for i, n, x in (("PosA", "Nd2", 94.0), ("PosB", "NV1", 71.0)))
+        for a, b in (("#PosA", "#PosB"), ("#PosB", "#PosA")):
+            text = swap('<Object id="Pos1"', marks + '<Object id="Pos1"', swap(PIPE1_LINE, PIPE1_LINE.replace("#Pos2", a).replace("#Pos3", b)))
+            self.assertEqual(line(extract(text), "Pipe1"), [[94.0, 120.0], [71.0, 120.0]])
+
+    def test_a_drawn_pipe_between_parts_without_a_place_is_not_called_placeless(self):
+        text = re.sub(r'<References objects="#\w+" property="Node"/>', "", swap(PUMP_SHAPE, ""))
+        ex = extract(text)
+        missing = [u["source_object_id"] for u in ex["validation"]["unknowns"] if u["check"] == "dexpi_no_position"]
+        self.assertEqual(line(ex, "Pipe1"), [[70.0, 120.0], [95.0, 120.0]])
+        self.assertNotIn("Pipe1", missing)
+        self.assertIn("Pipe2", missing)
 
     def test_an_open_end_is_where_the_line_stops(self):
         text = swap(PIPE1_LINE, PIPE1_LINE.replace("#Pos3", "#PosOpen"))
