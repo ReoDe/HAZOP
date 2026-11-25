@@ -167,14 +167,14 @@ class WrittenTest(unittest.TestCase):
             pair = edited(pair, ("set_flow", rel["source_object_id"], {"from": by[fd["to"]]["source_object_id"], "to": by[fd["from"]]["source_object_id"]}, False))
             x = export(pair)
             pipe = next(p["dexpi_id"] for p in x.sidecar["pipes"] if p["local_id"] == rel["local_id"])
-            self.assertEqual(marks_in(x.xml)[pipe]["Basis"], "human")
+            self.assertEqual(marks_in(x.xml)[pipe]["Basis"], "human_elsewhere")
             self.assertEqual(self.refused(read(x.xml)), [(pipe, "flow_direction")])
             self.assertIn("origin_mark_not_accepted", {a["reason"] for a in x.excluded["approximations"]})
             side = dexpi_import.extract_bytes(x.xml, "x.xml", sidecar=x.sidecar)[0]
             so = {n["local_id"]: n["source_object_id"] for n in side["nodes"]}
             dx = {e["local_id"]: e["dexpi_id"] for e in x.sidecar["entities"]}
             f = next(r for r in side["relations"] if r["source_object_id"] == pipe)["flow_direction"]
-            self.assertEqual((so[f["from"]], so[f["to"]], f["basis"], self.refused(side)), (dx[fd["to"]], dx[fd["from"]], "human", []))
+            self.assertEqual((so[f["from"]], so[f["to"]], f["basis"], self.refused(side)), (dx[fd["to"]], dx[fd["from"]], "human_elsewhere", []))
 
     def test_a_sidecar_does_not_turn_a_flow_in_a_file_without_marks(self):
         pair = snp_pair(SNP[0])
@@ -207,10 +207,9 @@ class PersonAndAutoTest(unittest.TestCase):
         _x, of = self.back(pair)
         (m, n), (mi, ni) = of(self.sg), of(self.inst)
         self.assertEqual((m["Kind"], n["kind"], mi["Tag"], ni["tag"]), ("condenser", "condenser", "RC-LT777", "RC-LT777"))
-        for mark, node in ((m, n), (mi, ni)):
-            self.assertNotIn("Auto", mark)
-            self.assertNotIn("dexpi_origin", node["evidence"])
-            self.assertNotIn("human_edit", node)        # 되읽은 값은 사람이 고친 것이 아니라 파일에서 읽은 값이다
+        for mark, node, name in ((m, n, "kind"), (mi, ni, "tag")):
+            self.assertEqual((mark.get("Auto"), mark["Edited"], node["evidence"]["dexpi_origin"]), (None, name, {"edited": [name]}))
+            self.assertNotIn("human_edit", node)        # 되읽은 값은 이 프로젝트의 사람이 고친 것이 아니다
 
     def test_automatic_confirmation(self):
         pair = edited(self.pair, ("set_kind", self.sg["source_object_id"], {"kind": "condenser", "category": "equipment"}, True),
@@ -219,21 +218,24 @@ class PersonAndAutoTest(unittest.TestCase):
         (m, n), (mi, ni) = of(self.sg), of(self.inst)
         self.assertEqual((m["Kind"], m["Auto"], n["kind"], n["evidence"]["dexpi_origin"]), ("condenser", "kind", "condenser", {"auto": ["kind"]}))
         self.assertNotIn("TagBasis", m)
-        self.assertEqual((mi["Auto"], ni["tag"], ni["evidence"]["tag_basis"]), ("tag", "RC-LT777", "ai_auto"))
+        self.assertEqual((mi["Auto"], ni["tag"]), ("tag", "RC-LT777"))
         g = build.build_graph(read(x.xml))
         got = next(a for a in g["nodes"] if a["tag"] == "RC-LT777")
-        self.assertEqual((got["tag_basis"], got["origin"]), ("ai_auto [추론]", "pid_extract"))        # ③ 자동 연결이 추정 태그로 다룬다
+        self.assertEqual((got["auto"], got["origin"]), (["tag"], "pid_extract"))
+        (c,) = [c for c in claims.drawing_claims(g) if c["value"] == "RC-LT777"]
+        self.assertEqual((c["knowledge_status"], c["origin"]), ("hypothesis", "ai_auto"))
 
     def test_an_automatic_value_a_person_then_set_is_a_persons(self):
         pair = edited(self.pair, ("set_kind", self.sg["source_object_id"], {"kind": "condenser", "category": "equipment"}, True),
                       ("set_kind", self.sg["source_object_id"], {"kind": "condenser", "category": "equipment"}, False))
-        self.assertNotIn("Auto", self.back(pair)[1](self.sg)[0])
+        mark = self.back(pair)[1](self.sg)[0]
+        self.assertEqual((mark.get("Auto"), mark["Edited"]), (None, "kind"))
 
     def test_an_automatic_flow_does_not_say_human(self):
         rel = next(r for r in self.pair[0]["relations"] if r["flow_direction"] and r["flow_direction"]["basis"] == "source_to_target"
                    and not any(n["kind"] == "continuation" for n in self.pair[0]["nodes"] if n["local_id"] in (r["flow_direction"]["from"], r["flow_direction"]["to"])))
         a, b = (e["source_object_id"] for e in rel["endpoints"])
-        for auto, basis in ((True, "ai_auto"), (False, "human")):
+        for auto, basis in ((True, "ai_auto"), (False, "human_elsewhere")):
             pair = edited(self.pair, ("set_flow", rel["source_object_id"], {"from": a, "to": b}, auto))
             x = export(pair)
             oid = next(p["dexpi_id"] for p in x.sidecar["pipes"] if p["local_id"] == rel["local_id"])
@@ -241,14 +243,18 @@ class PersonAndAutoTest(unittest.TestCase):
             self.assertEqual(next(r for r in read(x.xml)["relations"] if r["source_object_id"] == oid)["flow_direction"]["basis"], basis)
 
     def test_names_that_are_not_ours_in_the_cell(self):
-        self.assertEqual(origin.auto_of({"Auto": "kind human tag kind x"}), ["kind", "tag"])
-        self.assertEqual(origin.auto_of({}), [])
+        self.assertEqual(origin.grades_of({"Auto": "kind human tag kind x", "Edited": "tag flow y"}), {"auto": ["kind", "tag"], "edited": ["flow"]})
+        self.assertEqual(origin.grades_of({}), {})
 
-    def test_a_stale_mark_says_nothing_about_auto(self):
+    def test_a_stale_mark_still_lowers_the_standing(self):
         pair = edited(self.pair, ("set_kind", self.sg["source_object_id"], {"kind": "condenser", "category": "equipment"}, True))
         xml = export(pair).xml.replace(b"<String>RC-SG01</String>", b"<String>RC-SG99</String>", 1)
         n = next(n for n in read(xml)["nodes"] if n["tag"] == "RC-SG99")
-        self.assertNotIn("dexpi_origin", n["evidence"])
+        self.assertEqual((n["kind"], n["evidence"].get("dexpi_origin")), ("heat_exchanger", None))      # 버린 종류의 등급은 지금 종류의 것이 아니다
+        pair = edited(self.pair, ("set_tag", self.sg["source_object_id"], {"tag": "RC-SG98"}, True))
+        xml = export(pair).xml.replace(b"<String>RC-SG98</String>", b"<String>RC-SG99</String>", 1)
+        n = next(n for n in read(xml)["nodes"] if n["tag"] == "RC-SG99")
+        self.assertEqual(n["evidence"]["dexpi_origin"], {"auto": ["tag"]})
 
 
 class ProvenanceTest(unittest.TestCase):
@@ -295,7 +301,7 @@ class ProvenanceTest(unittest.TestCase):
         x = export(self.inferred())
         side = copy.deepcopy(x.sidecar)
         for e in side["entities"]:
-            e.pop("tag_basis", None)
+            e.pop("grade", None)
         with off():
             plain = export(self.inferred())
         old = dict(side, dexpi_sha256=plain.sidecar["dexpi_sha256"])
@@ -305,17 +311,33 @@ class ProvenanceTest(unittest.TestCase):
     def test_a_confirmed_tag_is_not_made_a_hypothesis(self):
         for _x, (_ex, g) in self.trips(self.pair):
             self.assertEqual(self.status(g, "RC-LT101"), {"confirmed"})
-        for basis in ("isa_label", "human"):
+        for basis, want in (("isa_label", "confirmed"), ("human", "hypothesis")):
             for _x, (_ex, g) in self.trips(self.inferred(basis)):
-                self.assertEqual(self.status(g, "RC-LT101"), {"confirmed"})
+                self.assertEqual(self.status(g, "RC-LT101"), {want})
 
     def test_a_person_settles_an_inferred_tag_that_came_back(self):
         _x, pair = next(self.trips(self.inferred()))
         oid = next(n["source_object_id"] for n in pair[0]["nodes"] if n["tag"] == "RC-LT101")
         pair = edited(pair, ("set_tag", oid, {"tag": "RC-LT101"}, False))
         self.assertEqual(self.status(pair[1], "RC-LT101"), {"confirmed"})
-        for _x, (_ex, g) in self.trips(pair):
-            self.assertEqual(self.status(g, "RC-LT101"), {"confirmed"})
+        for sidecar in (False, True):
+            for _x, (_ex, g) in self.trips(pair, sidecar):      # 다른 프로젝트의 사람이 정한 값은 여기서 확정이 아니다
+                n = next(n for n in g["nodes"] if n["tag"] == "RC-LT101")
+                self.assertEqual((self.status(g, "RC-LT101"), n["edited_elsewhere"], "human_edit" in n), ({"hypothesis"}, ["tag"], False))
+                doc = {"nodes": [{"id": "d", "node_type": next(iter(auto.APPLY_KIND))}], "tag_mentions": [{"node_id": "d", "tags": ["RC-LT101"]}]}
+                self.assertIn("들여온 파일에서", auto.tag_links([doc], [g])[0][0]["reason"])
+
+    def test_a_position_keeps_its_standing(self):
+        valve = next(n for n in self.pair[1]["nodes"] if n["kind"] == "motor_operated_valve")
+        for by_auto, origin_, key in ((True, "ai_auto", "auto"), (False, "pid_extract", "edited_elsewhere")):
+            pair = edited(self.pair, ("set_fail_position", valve["source_object_id"], {"value": "FO"}, by_auto),
+                          ("set_normal_position", valve["source_object_id"], {"value": "NC"}, by_auto))
+            for sidecar in (False, True):
+                for _x, (_ex, g) in self.trips(pair, sidecar):
+                    n = next(n for n in g["nodes"] if n["tag"] == valve["tag"])
+                    self.assertEqual(n[key], ["normal_position", "fail_position"])
+                    got = {c["property"]: (c["knowledge_status"], c["origin"]) for c in claims.drawing_claims(g) if c["value"] in ("FO", "NC") and c["source"]["source_object_id"] == n["source_object_id"]}
+                    self.assertEqual(got, dict({"fail_position": ("hypothesis", origin_)}, **({"normal_position": ("hypothesis", origin_)} if sidecar else {})))
 
     def automatic(self):
         rel = next(r for r in self.pair[0]["relations"] if r["line_no"] and r["flow_direction"] and r["flow_direction"]["basis"] == "source_to_target"
@@ -332,6 +354,7 @@ class ProvenanceTest(unittest.TestCase):
                     self.assertEqual(self.status(g, tag), {"hypothesis"}, (tag, sidecar))
                 marks = marks_in(x.xml)
                 oid = {n["tag"]: n["source_object_id"] for n in ex["nodes"]}
+                self.assertFalse(any(m.get("Edited") for m in marks.values()))
                 self.assertEqual((marks[oid["RC-ZZ99"]]["Auto"], marks[oid["RC-LT777"]]["Auto"]), ("kind tag", "tag"))
                 pipe = next(m for m in marks.values() if m.get("Basis") == "ai_auto")
                 self.assertEqual(pipe["Auto"], "tag flow")
@@ -347,14 +370,16 @@ class ProvenanceTest(unittest.TestCase):
                       ("set_flow", rel["source_object_id"], {"from": ends[fd["from"]], "to": ends[fd["to"]]}, False))
         for x, (ex2, g2) in self.trips(pair):
             marks = marks_in(x.xml)
-            self.assertNotIn("Auto", marks[oid])
-            self.assertEqual((marks[rel["source_object_id"]].get("Auto"), marks[rel["source_object_id"]]["Basis"]), (None, "human"))
-            self.assertEqual((self.status(g2, "RC-ZZ99"), self.status(g2, "LINE-9")), ({"confirmed"}, {"confirmed"}))
+            self.assertEqual((marks[oid].get("Auto"), marks[oid]["Edited"]), (None, "kind tag"))
+            m = marks[rel["source_object_id"]]
+            self.assertEqual((m.get("Auto"), m["Edited"], m["Basis"]), (None, "tag flow", "human_elsewhere"))
+            self.assertEqual((self.status(g2, "RC-ZZ99"), self.status(g2, "LINE-9")), ({"hypothesis"}, {"hypothesis"}))
+        self.assertEqual((self.status(pair[1], "RC-ZZ99"), self.status(pair[1], "LINE-9")), ({"confirmed"}, {"confirmed"}))
 
     def test_a_basis_cell_can_only_lower_the_standing(self):
         self.assertEqual([origin.tag_basis_of({"TagBasis": x}) for x in ("human", "x [추론]", "ai_auto [추론]", "", "y" * 300 + "[추론]")],
                          [None, "x [추론]", "ai_auto", None, "[추론]"])
-        self.assertEqual((origin.tag_basis_of({"Auto": "tag"}), origin.tag_basis_of({})), ("ai_auto", None))
+        self.assertIsNone(origin.tag_basis_of({}))
 
 
 class ThreeWaysTest(unittest.TestCase):
