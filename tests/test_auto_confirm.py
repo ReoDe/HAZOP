@@ -190,7 +190,7 @@ class OffTest(Base):
     def test_number_stays_unconfirmed_while_off(self):
         src = os.path.join(self.tmp, "a.drawio")
         shutil.copy(sample("SNP-M-101", "drawio"), src)
-        res = registry.register(src, P, actor=BY)
+        res = registry.register(src, P, store_root=paths.store_root(), actor=BY)
         out = tb.auto_confirm_number(P, res["record"]["material_id"])
         self.assertEqual((out["confirmed"], out["why"]), (False, "off"))
         self.assertTrue(os.path.samefile(out["registration_file"], res["registration_file"]))
@@ -235,7 +235,7 @@ class LevelTest(Base):
         from hazop.app import data
         src = os.path.join(self.tmp, "in.pdf")
         shutil.copy(sample("SNP-M-101", "pdf"), src)
-        res = registry.register(src, P, actor=BY)
+        res = registry.register(src, P, store_root=paths.store_root(), actor=BY)
         data.extract_and_graph(res["registration_file"])
         mid = res["record"]["material_id"]
         old = tb.row(P, mid)["sheets"][0]["name"]
@@ -285,7 +285,8 @@ class LevelTest(Base):
         cf.record_auto(NEXT, "confirmed")
         cf.carry_auto(NAME, NEXT)
         self.assertEqual(self.status(NEXT)["auto"]["result"], "reverted")
-        cf.record_auto(NAME, "confirmed", by=BY, restart=True)
+        with mock.patch.object(cf, "now_utc", lambda: "2999-01-01T00:00:00+00:00"):
+            cf.record_auto(NAME, "confirmed", by=BY, restart=True)
         cf.carry_auto(NAME, NEXT)
         self.assertEqual(self.status(NEXT)["auto"]["result"], "reverted", "옮길 곳의 되돌림도 지지 않음")
 
@@ -387,6 +388,7 @@ class LevelTest(Base):
                 cf.record_auto(NAME, *bad)
         with self.assertRaises(ValueError):
             cf.record_auto(NAME, "reverted", by=AUTO)
+        cf.record_auto(NAME, "confirmed")
         with open(cf.store_path(NAME), "w", encoding="utf-8") as fh:
             fh.write("{깨짐")
         with self.assertRaises(ValueError):
@@ -623,17 +625,59 @@ class RuleTest(Base):
 
     def test_edit_between_choosing_and_writing_is_not_overwritten(self):
         self.on()
-        ex = self.simple()
+        ex = pdf_extraction()
+        by_sid(ex)[sid(14)]["tag"] = None
+        self.put(ex)
+        self.asked(ex, cand(ex, sid(14), "V-777", field="tag"))
         real, hit = ar.accept, []
 
         def racing(*a, **k):
             if not hit:
                 hit.append(1)
-                self.edit(ex, "set_tag", sid(8), {"tag": "X-8"})
+                self.edit(ex, "set_tag", sid(9), {"tag": "V777"})       # 고른 뒤 쓰기 전에 사람이 같은 태그를 다른 자리에 씀
             return real(*a, **k)
         with mock.patch.object(ar, "accept", racing):
             out = ar.auto_accept(NAME, ex)
-        self.assertEqual((out["accepted"], [o["op"] for o in self.ops()]), ([], ["set_tag"]))
+        self.assertEqual((out, [o["target"] for o in self.ops()]), ({"accepted": [], "blocked": {"tag_taken": 1}}, [sid(9)]))
+
+    def test_rules_live_in_one_place_and_ship_as_designed(self):
+        r = ar.AUTO_RULES
+        self.assertEqual((r.min_confidence, r.inputs, r.legends), ({("kind", "kind"): 0.70, ("tag", "tag"): 0.70}, ("image",), ("symbols",)))
+
+    def test_rules_can_open_values_but_never_the_safety_checks(self):
+        wide = ar.AutoRules(version="test", min_confidence={(t, f): 0.0 for t in ("kind", "tag", "recheck", "connection", "split")
+                                                            for f in ("kind", "tag", "normal_position", "fail_position", "connection", "split")},
+                            inputs=("image", "text", None), legends=("symbols", "project+symbols", "none", None))
+        ex = self.ex
+        ex2 = pdf_extraction()
+        by_sid(ex2)[sid(20)]["attributes"]["fail_position"] = "FO"
+        block = lambda c, protected=(), e=ex: ar.auto_block(c, e, set(protected), [c], wide)  # noqa: E731
+        low = cand(ex, sid(8), "check_valve", 0.1, input="text", legend_source=None)
+        self.assertIsNone(block(low), "여는 값은 열린다")
+        self.assertIsNone(block(cand(ex2, sid(23), "FC", 0.1, field="fail_position", task="tag"), e=ex2))
+        rows = (("status", dict(low, status="rejected"), (), ex), ("human", dict(low, decided_at="t", decided_by=BY), (), ex),
+                ("protected", low, [sid(8)], ex), ("moved", dict(low, bbox=[0, 0, 1, 1]), (), ex),
+                ("moved", dict(low, target="pdf-p0-sym-9999"), (), ex), ("conflict", cand(ex, sid(14), "pump", 1.0, task="recheck"), (), ex),
+                ("conflict", cand(ex2, sid(20), "FC", 1.0, field="fail_position", task="tag"), (), ex2),
+                ("tag_taken", cand(ex, sid(8), "RC-V030", 1.0, field="tag"), (), ex),
+                ("letter_circle", cand(ex, sid(8), "transmitter", 1.0), (), ex),
+                ("wide", cand(ex, sid(8), "manual_valve", 1.0, wide=None), (), ex),
+                ("moved", dict(low, target="pdf-p0-conn-0004", field="connection", task="connection", values=[sid(9)]), (), ex),
+                ("task", dict(low, field="to_system", task="connection"), (), ex))
+        for want, c, protected, e in rows:
+            with self.subTest(want):
+                self.assertEqual(block(c, protected, e), want)
+
+    def test_auto_run_replaces_only_undecided_candidates(self):
+        ex = self.put(self.ex)
+        self.asked(ex, cand(ex, sid(8), "pump", legend_source="project+symbols"), cand(ex, sid(9), "pump"), auto=False)
+        doc = ar.load_doc(NAME)
+        ar.reject(doc, [doc["candidates"][1]["cand_id"]], BY)
+        self.asked(ex, cand(ex, sid(8), "check_valve"), cand(ex, sid(9), "check_valve"))
+        self.assertEqual(sorted((c["target"], c["values"], c["status"]) for c in ar.load_doc(NAME)["candidates"]),
+                         [(sid(8), ["check_valve"], "proposed"), (sid(9), ["pump"], "rejected")])
+        self.asked(ex, cand(ex, sid(8), "pump"), auto=False)
+        self.assertEqual([c["values"] for c in ar.load_doc(NAME)["candidates"] if c["target"] == sid(8)], [["check_valve"]], "사람이 시킨 실행은 지금처럼 덮지 않음")
 
     def test_run_marks_input_and_legend(self):
         from tests.test_ai_review import StubClient, ex_fixture, good_answers
@@ -769,7 +813,7 @@ class NumberTest(Base):
             body = fh.read()
         with open(src, "wb") as fh:
             fh.write(body + tail)
-        res = registry.register(src, P, actor=BY)
+        res = registry.register(src, P, store_root=paths.store_root(), actor=BY)
         self.assertEqual(res["outcome"], "registered", res.get("notes"))
         return res["record"]["material_id"]
 
@@ -839,7 +883,8 @@ class NumberTest(Base):
 
     def test_other_format_and_other_letters_are_taken(self):
         first = self.add()
-        registry.register(os.path.join(self.tmp, "SNP-M-101.drawio"), P, metadata={"drawing_number": "snp-m-101", "by": BY}, number_checked=True)
+        registry.register(os.path.join(self.tmp, "SNP-M-101.drawio"), P, store_root=paths.store_root(),
+                          metadata={"drawing_number": "snp-m-101", "by": BY}, number_checked=True)
         self.assertEqual(self.number(first), "snp-m-101", "시험 전제")
         second = self.add("pdf")
         self.assertEqual((tb.auto_confirm_number(P, second)["why"], self.number(second)), ("taken", None))
@@ -901,7 +946,7 @@ class ReservedNameTest(Base):
             self.assertEqual(tb.confirm(P, "material-x", {"title": "T"}, who)["refused"][0]["code"], "bad_actor")
             self.assertEqual(tb.unconfirm(P, "material-x", ["title"], who)["refused"][0]["code"], "bad_actor")
             for kw in ({"actor": who}, {"metadata": {"title": "T", "by": who}, "actor": BY}):
-                self.assertEqual(registry.register(src, P, **kw)["outcome"], "on_hold")
+                self.assertEqual(registry.register(src, P, store_root=paths.store_root(), **kw)["outcome"], "on_hold")
         self.assertEqual((self.ops(), ar.load_doc(NAME)["candidates"][0]["status"]), ([], "proposed"))
         self.assertTrue(cf.execute(NAME, "status", by=AUTO)["ok"], "읽기는 이름을 보지 않음")
 
