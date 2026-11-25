@@ -5,7 +5,7 @@ import { useEffect, useState } from "../../vendor/hooks.module.js";
 import { cmd, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
-import { SourceConflicts, choicesCount, displacedOf } from "./drawings_sources.js";
+import { SourceConflicts, choicesCount } from "./drawings_sources.js";
 import { DrawingExcludedChip, DrawingPicks } from "./nodes_screen.js";
 import { OpenFolder } from "./open_folder.js";
 import { ConsentAsk, useAuto, waitsOf } from "./auto_state.js";
@@ -59,7 +59,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const [picked, setPicked] = useState([]);          // 줄 왼쪽 체크로 고른 도면
   const toggle = (g) => setPicked((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
   const sources = useStore((s) => s.sources);          // 원본 고르기 카드가 읽어 둔 값(같은 번호의 다른 원본)
-  const many = choicesCount(sources), idle = displacedOf(sources);
+  const many = choicesCount(sources);
   const auto = useAuto();
   const waits = waitsOf(auto);
   const toCard = () => { const el = document.getElementById("src-card"); if (el) el.scrollIntoView({ block: "nearest" }); };
@@ -93,10 +93,5 @@ export function DrawingsPanel({ onOpen, onClose }) {
       <${ConsentAsk} auto=${auto} />
       <${SourceConflicts} />
       <${DexpiExport} />
-      ${data.documents.length ? html`<div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">등록 자료 ${data.documents.length}건</div><div class="list">
-        ${data.documents.map((d) => html`<div class="row" key=${d.material_id + ":" + d.version}><div class="main"><b>${d.name || d.material_id}</b><span>버전 ${d.version} · ${d.type}</span></div>
-          <${Chip} kind=${d.status === "registered" ? "ok" : "warn"}>${d.status === "registered" ? "등록됨" : d.status}<//>${idle[d.material_id]
-            ? html`<${Chip} kind="warn" title=${idle[d.material_id]}>쓰이지 않음<//>`
-            : d.graphed ? html`<${Chip} kind="accent">그래프<//>` : null}</div>`)}</div></div>` : null}
     </div></section>`;
 }

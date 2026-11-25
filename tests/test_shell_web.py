@@ -494,7 +494,7 @@ class ShellDropTest(ShellBase):
         self.assertTrue(r["ok"], r)
         self.assertTrue(wait_for(lambda: self.js(win, "Object.values(window.__hz.store.get().jobs).some(j => j.state === 'done')"), 60), self.text(win)[:400])
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().drawings.documents.length") >= 1, 20))
-        self.assertIn("등록됨", self.text(win))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow').length") >= 1, 20), "올린 도면이 도면 줄로 보인다")
 
     def test_non_drawing_files_are_refused_with_a_message(self):
         win = self.window()
