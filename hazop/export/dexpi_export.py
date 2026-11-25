@@ -211,6 +211,7 @@ class _Builder:
         self.noz = {}  # entity_id -> {port: (nozzle id, node id)}
         self.positions = {}  # PipingNode id -> (x, y) mm
         self.pending_conn = []
+        self.instrument_text = {}  # 계기 entity_id -> DEXPI에 쓴 조각을 되읽으면 나올 태그
         self.sc = self._scale()
 
     # ----- 좌표
@@ -699,6 +700,7 @@ class _Builder:
             self.approx.append({"entity_id": eid, "reason": "instrument_tag_not_isa_form", "tag": n["tag"]})
             if n["tag"]:
                 _data(o, "ProcessInstrumentationFunctionNumber", n["tag"])
+        self.instrument_text[eid] = dexpi_import.instrument_tag(cat, num or n["tag"])
         if sensing:
             comp = _components(o, "ProcessSignalGeneratingFunctions")
             for e, loc in sensing:
@@ -794,8 +796,9 @@ class _Builder:
                 problems.append(("되읽기", "배관 연결 수 %d != 내보낸 %d" % (n_phys, len(pipes))))
             if want_tags != got_tags:
                 problems.append(("되읽기", "태그 목록이 다름"))
-        if problems:
-            raise ExportError(["%s: %s" % p for p in problems[:20]])
+            read_tags = {n["source_object_id"]: n["tag"] for n in re_ex["nodes"]}
+            problems += [("되읽기", "계기 태그 %s가 쓴 조각과 다름(%s != %s)" % (self.nodes[e]["tag"], read_tags.get(self.plan[e]["id"]), t))
+                         for e, t in self.instrument_text.items() if read_tags.get(self.plan[e]["id"]) != t]
         sha = hashlib.sha256(xml).hexdigest()
         entities = []
         for eid, p in self.plan.items():
@@ -815,6 +818,13 @@ class _Builder:
                    "extraction_run_id": self.g["source"].get("extraction_run_id"), "scale": self.sc,
                    "entities": entities, "pipes": flows, "check_directions": self.check_dirs,
                    "unknowns": self.g["validation"]["unknowns"]}
+        if re_ex is not None:  # 곁 파일을 붙여 되읽으면 모든 태그가 원래대로여야 한다
+            dexpi_import.apply_sidecar(re_ex, sidecar, sha)
+            side_tags = {n["source_object_id"]: n["tag"] for n in re_ex["nodes"]}
+            problems += [("되읽기", "곁 파일을 붙여도 태그가 다름(%s != %s)" % (side_tags.get(x["dexpi_id"]), x["tag"])) for x in entities
+                         if (side_tags.get(x["dexpi_id"]) or None) != (x["tag"] or None)]
+        if problems:
+            raise ExportError(["%s: %s" % p for p in problems[:20]])
         flow_n = sum(1 for f in flows if f["flow_direction"])
         # '이대로 확인'으로 확정한 미분류 기호처럼 뺀 구성요소 때문에 끊긴 배관·계장선(INTENT §3.2: 빼고 내보내며 수를 적는다)
         cut = {"pipes": sum(1 for c in self.excl_conn if c["reason"] == "endpoint_excluded" and "excluded_ends" in c),
