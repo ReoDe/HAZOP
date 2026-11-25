@@ -125,7 +125,7 @@ def _geometry(shapes):
     out = {"x": _clean(x0), "y": _clean(y0), "width": _clean(x1 - x0), "height": _clean(y1 - y0)}
     if len(shapes) == 1:
         s = shapes[0]
-        out["shape"] = {"name": s["name"], "width": _clean(s["size"][0]), "height": _clean(s["size"][1]), "rotation": _clean(s["rotation"]),
+        out["shape"] = {"name": s["name"], "width": _clean(s["size"][0]), "height": _clean(s["size"][1]), "rotation": s["rotation"],
                         "mirrored": s["mirrored"]}
     return out
 

@@ -5,12 +5,14 @@
 """
 
 import copy
+import itertools
 import json
 import math
 import os
 import shutil
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -312,32 +314,31 @@ class OrientationTest(unittest.TestCase):
             self.assertEqual((shape["rotation"], shape["mirrored"]), want, style)
 
     def test_every_combination_points_where_the_drawio_reader_says_or_is_not_drawn(self):
-        """방향을 아는 기호(체크밸브)로 drawio 읽기(_symbol_direction)의 규칙과 맞댄다. 읽기가 모른다고 한 조합은 그리지 않는다."""
+        """도형 좌표의 두 축을 drawio 읽기(_symbol_direction)와 놓임이 같은 곳으로 보내는지 288가지 조합으로 맞댄다. 읽기가 모른다고 한 조합은
+        그리지 않는다."""
         from hazop.extract import rules
-        (shape_name, valve), d0 = next(iter(rules.CHECK_VALVE_SYMBOL_DIRECTIONS.items()))
         drawn = skipped = 0
-        for direction in ("", "east", "south", "west", "north", "up"):
-            for flip_h in ("", "0", "1", "true"):
-                for flip_v in ("", "1"):
-                    for rot in ("", "90", "180", "270", "-90", "450"):
-                        pairs = (("direction", direction), ("flipH", flip_h), ("flipV", flip_v), ("rotation", rot))
-                        style = "".join("%s=%s;" % kv for kv in pairs if kv[1])
-                        cell = mock.Mock(cell_id="c", parent="1", style_map=drawio.parse_style("shape=%s;valveType=%s;%s" % (shape_name, valve, style)))
-                        want = drawio._symbol_direction(cell, {"c": {"bbox": [0, 0, 1, 1], "approximate": False}}, {"1"})
-                        node = {"style": style, "geometry": {"x": 0.0, "y": 0.0, "width": 60.0, "height": 20.0}}
-                        try:
-                            p = dd.source_placement(node, {"bbox": [0.0, 0.0, 60.0, 20.0]}, "drawio")
-                        except dd.Undrawable as why:
-                            self.assertEqual((want, str(why)), (None, "orientation_unknown"), style)
-                            skipped += 1
-                            continue
-                        self.assertIsNotNone(want, style)
-                        x, y = (-d0[0] if p.mirrored else d0[0]), d0[1]
-                        t = math.radians(p.rotation)
-                        got = (x * math.cos(t) - y * math.sin(t), x * math.sin(t) + y * math.cos(t))
-                        self.assertLess(math.dist(got, want), 1e-9, style)
-                        drawn += 1
-        self.assertEqual((drawn, skipped), (72, 216))
+        for combo in itertools.product(("", "east", "south", "west", "north", "up"), ("", "0", "1", "true"), ("", "1"),
+                                       ("", "90", "180", "270", "-90", "450")):
+            style = "".join("%s=%s;" % kv for kv in zip(("direction", "flipH", "flipV", "rotation"), combo) if kv[1])
+            want = []
+            for axis in ((1.0, 0.0), (0.0, 1.0)):
+                cell = types.SimpleNamespace(cell_id="c", parent="1", style_map=drawio.parse_style("shape=s;valveType=v;" + style))
+                with mock.patch.dict(rules.CHECK_VALVE_SYMBOL_DIRECTIONS, {("s", "v"): axis}):
+                    want.append(drawio._symbol_direction(cell, {"c": {"bbox": [0, 0, 1, 1], "approximate": False}}, {"1"}))
+            node = {"style": style, "geometry": {"x": 0.0, "y": 0.0, "width": 60.0, "height": 20.0}}
+            try:
+                p = dd.source_placement(node, {"bbox": [0.0, 0.0, 60.0, 20.0]}, "drawio")
+            except dd.Undrawable as why:
+                self.assertEqual((want, str(why)), ([None, None], "orientation_unknown"), style)
+                skipped += 1
+                continue
+            t = math.radians(p.rotation)
+            for (x, y), goal in zip(((-1.0 if p.mirrored else 1.0, 0.0), (0.0, 1.0)), want):
+                self.assertIsNotNone(goal, style)
+                self.assertLess(math.dist((x * math.cos(t) - y * math.sin(t), x * math.sin(t) + y * math.cos(t)), goal), 1e-9, style)
+            drawn += 1
+        self.assertEqual((drawn, skipped), (108, 180))
 
     def test_a_turn_the_reader_does_not_know_goes_to_the_sidecar(self):
         for direction in ("south", "west", "north"):

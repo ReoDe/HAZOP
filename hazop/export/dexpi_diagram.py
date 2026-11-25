@@ -24,7 +24,7 @@ BOX_KEYS = ("x", "y", "width", "height")
 
 
 class Undrawable(Exception):
-    """그릴 수 없는 까닭 코드: no_box · bad_number · zero_size · off_sheet · one_point · end_unknown."""
+    """그릴 수 없는 까닭 코드: no_box · bad_number · zero_size · off_sheet · orientation_unknown · one_point · end_unknown."""
 
 
 def _ok(values):
@@ -52,6 +52,21 @@ def source_box(node, location, fmt):
     return [g.get(k) for k in BOX_KEYS] if any(g.get(k) is not None for k in BOX_KEYS) else None
 
 
+def drawio_turn(style):
+    """drawio 스타일 -> (direction의 각도, 회전, 뒤집힘). drawio 읽기(drawio._symbol_direction)가 모른다고 하는 조합(동쪽이 아닌 direction과
+    뒤집기가 함께, 처음 보는 값, 수가 아닌 회전)은 방향을 지어내지 않고 Undrawable."""
+    direction = DIRECTION.get(style.get("direction", "east"))
+    flips = [style.get(k, "0") for k in ("flipH", "flipV")]
+    try:
+        turn = float(style.get("rotation") or 0.0)
+    except (TypeError, ValueError):
+        turn = math.nan
+    if direction is None or any(f not in ("0", "1") for f in flips) or (direction and "1" in flips) or not math.isfinite(turn):
+        raise Undrawable("orientation_unknown")
+    # 위아래 뒤집기는 좌우 뒤집고 180도 돌린 것과 같다
+    return direction, direction + turn + (180.0 if flips[1] == "1" else 0.0), flips[0] != flips[1]
+
+
 def source_placement(node, location, fmt):
     """추출한 노드 -> 1 × 1 모양의 놓임(원래 단위). 쓸 수 없으면 Undrawable."""
     box = source_box(node, location, fmt)
@@ -64,21 +79,20 @@ def source_placement(node, location, fmt):
         size = (shape.get("width"), shape.get("height"), shape.get("rotation"))
         if not _ok(size):
             raise Undrawable("bad_number")
-        return Placement(box[0] + box[2] / 2.0, box[1] + box[3] / 2.0, size[0], size[1], size[2] % 360.0, bool(shape.get("mirrored")))
+        return Placement(box[0] + box[2] / 2.0, box[1] + box[3] / 2.0, size[0], size[1], size[2], bool(shape.get("mirrored")))
     if fmt != "drawio":
         return unit_placement(box)
-    style = drawio.parse_style(node.get("style"))
-    try:
-        turn = float(style.get("rotation") or 0.0)
-    except (TypeError, ValueError):
-        turn = math.nan
-    if not math.isfinite(turn):
-        raise Undrawable("bad_number")
-    direction = DIRECTION.get(style.get("direction"), 0.0)  # direction은 상자 안에서 도형만 돌고, rotation은 상자째 가운데를 두고 돈다
-    flip_h, flip_v = style.get("flipH") == "1", style.get("flipV") == "1"
-    p = unit_placement(box, direction)
-    # 위아래 뒤집기는 좌우 뒤집고 180도 돌린 것과 같다
-    return p._replace(rotation=(direction + turn + (180.0 if flip_v else 0.0)) % 360.0, mirrored=flip_h != flip_v)
+    direction, rotation, mirrored = drawio_turn(drawio.parse_style(node.get("style")))
+    # direction은 상자 안에서 도형만 돌고(배율의 가로세로가 바뀜), rotation은 상자째 가운데를 두고 돈다
+    return unit_placement(box, direction)._replace(rotation=rotation, mirrored=mirrored)
+
+
+def is_approximate(node, location, fmt):
+    """drawio 읽기가 자리를 근사로 본 도형(돌아간 부모 안, 부모 크기 비율)이거나, 부모 도형 안이라 부모의 회전·뒤집기를 알 수 없는 도형인가."""
+    if fmt != "drawio" or not location:
+        return False
+    g = node.get("geometry") or {}
+    return bool(location.get("approximate")) or [g.get("x", 0), g.get("y", 0)] != list(location["bbox"][:2])
 
 
 def source_path(rel):
@@ -116,7 +130,7 @@ class Canvas:
     def place(self, p):
         x, y = self.xy((p.x, p.y))
         f = self.scale["factor"]
-        out = Placement(x, y, round(p.scale_x * f, 6), round(p.scale_y * f, 6), round(p.rotation, 6), p.mirrored)
+        out = Placement(x, y, round(p.scale_x * f, 6), round(p.scale_y * f, 6), dexpi_shape.angle(p.rotation, 6), p.mirrored)
         box = dexpi_shape.placed(dexpi_shape.UNIT, out)
         if box is None:
             raise Undrawable("zero_size")
@@ -151,6 +165,7 @@ class Picture:
         self.joins = {}  # DEXPI id -> ((구성요소 id, 배관 노드 id 또는 None), …) 선의 시작과 끝이 닿는 곳
         self.texts = {}  # DEXPI id -> [(글자, x, y)]
         self.not_drawn = []
+        self.approximate = []  # 그렸으나 자리가 근사인 것
 
     def _skip(self, what, reason, ent, dexpi_id, **more):
         self.not_drawn.append(dict({"what": what, "reason": reason, "entity_id": ent.get("entity_id"), "local_id": ent.get("local_id"),
@@ -161,6 +176,9 @@ class Picture:
         """그래프의 대상에 맞는 추출 결과의 대상. 순번 local_id가 같아도 원본 객체가 다르면(그래프를 지은 추출 결과가 아님) None."""
         hit = table.get(ent["local_id"])
         return hit if hit is not None and hit.get("source_object_id") == ent.get("source_object_id") else None
+
+    def _mark(self, what, ent, dexpi_id):
+        self.approximate.append({"what": what, "entity_id": ent["entity_id"], "local_id": ent["local_id"], "dexpi_id": dexpi_id})
 
     def leave_symbol(self, ent, reason, dexpi_id=None):
         """그리지 않는 구성요소를 곁 파일에 적는다(자리를 알면 함께)."""
@@ -186,6 +204,8 @@ class Picture:
             self.leave_symbol(ent, str(why), dexpi_id)
             return
         self.symbols[dexpi_id] = (shape_name, p)
+        if is_approximate(node, self.locations.get(ent["local_id"]), self.format):
+            self._mark("symbol", ent, dexpi_id)
         box = dexpi_shape.placed(dexpi_shape.UNIT, p)
         if ent["kind"] == "continuation":
             a = ent.get("attributes") or {}
@@ -221,6 +241,8 @@ class Picture:
         except Undrawable as why:
             self.leave_line("signal" if signal else "line", ent, str(why), dexpi_id)
             return
+        if "parent_offset_approx" in str((self.locations.get(ent["local_id"]) or {}).get("method")):
+            self._mark("line", ent, dexpi_id)
         if signal:
             start = next((e.get("node_local_id") for e in rel["endpoints"] if e.get("end") == "source"), None)
             backward = start != first
@@ -258,11 +280,11 @@ class Picture:
     def counts(self):
         return {"symbols": len(self.symbols), "lines": sum(1 for _p, s in self.lines.values() if not s),
                 "signals": sum(1 for _p, s in self.lines.values() if s), "texts": sum(len(t) for t in self.texts.values()),
-                "not_drawn": len(self.not_drawn)}
+                "not_drawn": len(self.not_drawn), "approximate": len(self.approximate)}
 
     def sidecar(self):
         sheet = self.canvas.sheet
-        return {"sheet": list(sheet) if sheet else None, "not_drawn": self.not_drawn, "texts": self.free_texts}
+        return {"sheet": list(sheet) if sheet else None, "not_drawn": self.not_drawn, "approximate": self.approximate, "texts": self.free_texts}
 
     # ----- 되읽기 검사
     def problems(self, again):
@@ -273,8 +295,8 @@ class Picture:
         for oid, (_name, p) in self.symbols.items():
             g = (nodes.get(oid) or {}).get("geometry") or {}
             want, shape = dexpi_shape.placed(dexpi_shape.UNIT, p), g.get("shape") or {}
-            if not g or any(abs(a - g[k]) > MATCH_MM for a, k in zip(want, BOX_KEYS)) or shape.get("mirrored") != p.mirrored \
-                    or abs(shape.get("rotation", -1.0) - p.rotation) > MATCH_MM:
+            if not shape or any(abs(a - g[k]) > MATCH_MM for a, k in zip(want, BOX_KEYS)) or shape.get("mirrored") != p.mirrored \
+                    or dexpi_shape.angle_gap(shape["rotation"], p.rotation) > MATCH_MM:
                 out.append("기호 %s의 자리나 방향이 다름" % oid)
         for oid, (pts, _signal) in self.lines.items():
             r = rels.get(oid)

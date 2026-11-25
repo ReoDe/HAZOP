@@ -16,6 +16,17 @@ _RIGHT = {0.0: (1.0, 0.0), 90.0: (0.0, 1.0), 180.0: (-1.0, 0.0), 270.0: (0.0, -1
 THIN = 1e-9
 
 
+def angle(rotation, digits):
+    """0 이상 360 미만의 각도. 반올림해 360이 되는 값(359.9999999, 아주 작은 음수)은 0이다."""
+    return round(rotation % 360.0, digits) % 360.0
+
+
+def angle_gap(a, b):
+    """두 각도의 차이(0~180)."""
+    d = abs(a - b) % 360.0
+    return min(d, 360.0 - d)
+
+
 def quarter(rotation):
     """가로와 세로가 바뀌는 회전(90·270도)인가."""
     return rotation % 360.0 in (90.0, 270.0)
@@ -35,7 +46,7 @@ def placed(bounds, p):
     """놓인 상자 (x, y, 너비, 높이). 배율이 0 이하이거나 값이 수가 아니거나 점 하나짜리 모양이면 None."""
     if not _finite((p.x, p.y, p.scale_x, p.scale_y, p.rotation)) or p.scale_x <= 0 or p.scale_y <= 0:
         return None
-    if (bounds.x1 - bounds.x0) * p.scale_x <= THIN and (bounds.y1 - bounds.y0) * p.scale_y <= THIN:
+    if not _finite(local_size(bounds, p)) or ((bounds.x1 - bounds.x0) * p.scale_x <= THIN and (bounds.y1 - bounds.y0) * p.scale_y <= THIN):
         return None
     turn = p.rotation % 360.0
     c, s = _RIGHT.get(turn) or (math.cos(math.radians(turn)), math.sin(math.radians(turn)))
@@ -52,10 +63,13 @@ def placed(bounds, p):
 
 def ellipse_points(center, a, b, rotation, start, end):
     """타원호(start에서 end까지 각도가 커지는 쪽)의 두 끝과 그 사이 축 끝점. 점은 가운데 + (a cos, b sin)이고 y는 아래로 커진다(2.0.1 Reference
-    P&ID의 접시형 머리와 계기 풍선의 호가 이어진 직선과 만나는 것으로 확인). 값이 수가 아니면 빈 목록."""
-    if not _finite((center[0], center[1], a, b, rotation, start, end)):
+    P&ID의 접시형 머리와 계기 풍선의 호가 이어진 직선과 만나는 것으로 확인). 한 바퀴의 배수(10도에서 -350도)는 온 타원이다. 두 각도가 같거나
+    (그린 것이 없음) 값이 수가 아니거나 잴 수 없이 크면 빈 목록."""
+    span = end - start
+    if not _finite((center[0], center[1], a, b, rotation, start, end, span)) or span == 0.0:
         return []
-    sweep = end - start if 0.0 <= end - start <= 360.0 else (end - start) % 360.0
+    sweep = span if 0.0 < span <= 360.0 else span % 360.0 or 360.0
+    start %= 360.0
     angles = [start, start + sweep] + [90.0 * k for k in range(math.ceil(start / 90.0), math.floor((start + sweep) / 90.0) + 1)]
     turn = math.radians(rotation)
     out = []
@@ -69,4 +83,4 @@ def unit_placement(box, rotation=0.0, mirrored=False):
     """도면의 상자 (x, y, 너비, 높이)를 1 × 1 모양으로 채우는 놓임. 90·270도면 배율의 가로세로를 바꾼다."""
     x, y, w, h = box
     sx, sy = (h, w) if quarter(rotation) else (w, h)
-    return Placement(x + w / 2.0, y + h / 2.0, sx, sy, rotation % 360.0, bool(mirrored))
+    return Placement(x + w / 2.0, y + h / 2.0, sx, sy, rotation, bool(mirrored))

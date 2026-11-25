@@ -604,7 +604,7 @@ def _placed_shape(usage, objects, cache):
     box = dexpi_shape.placed(bounds, p) if bounds is not None else None
     if box is None:
         return None
-    return {"name": _prop(shape, "Name"), "box": box, "size": dexpi_shape.local_size(bounds, p), "rotation": p.rotation % 360.0,
+    return {"name": _prop(shape, "Name"), "box": box, "size": dexpi_shape.local_size(bounds, p), "rotation": dexpi_shape.angle(p.rotation, 3),
             "mirrored": mirrored}
 
 
