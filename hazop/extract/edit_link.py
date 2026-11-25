@@ -18,7 +18,7 @@ from hazop.extract import ai_review, corrections, ids
 WHY = {"not_of_old_file": "옛 파일에서도 적용되지 않던 고침", "gone": "새 파일에 그 id가 없음", "duplicate_id": "같은 id가 둘 이상",
        "relation": "자리를 모르는 배관·계장선(태그가 없어 확인할 수 없음)", "made_id": "파일에 없어 읽을 때 지은 id", "no_tag": "태그가 없음",
        "no_kind": "종류를 모름", "kind_changed": "종류가 다름", "tag_changed": "태그가 다름", "tag_not_unique": "같은 태그가 둘 이상",
-       "moved": "자리나 내용이 달라짐"}
+       "moved": "자리나 내용이 달라짐", "not_alone": "같은 자리에 똑같이 보이는 것이 있고 그 id들이 달라짐"}
 REFUSALS = {"not_dexpi": "DEXPI 도면끼리만 잇습니다.", "other_project": "프로젝트가 다릅니다.", "other_page": "쪽이 다릅니다.",
             "number_unknown": "파일에 도면 번호가 없어 같은 도면인지 알 수 없습니다.",
             "other_drawing": "도면 번호나 제목, 구성요소가 달라 같은 도면으로 볼 수 없습니다.",
@@ -78,6 +78,10 @@ def check_same_drawing(old, new):
 
 
 # ---------------------------------------------------------------- 고침 하나하나
+def _look(fp):
+    return fp.get("kind"), _tag_key(fp.get("tag")), tuple(fp["at"] or ()), "ends" in fp
+
+
 class _Sheet:
     def __init__(self, extraction):
         self.fp = corrections._fingerprints(extraction)
@@ -85,6 +89,9 @@ class _Sheet:
         everything = [x for key in ("nodes", "relations", "unresolved_connectors") for x in extraction[key]]
         self.twice = {k for k, n in collections.Counter(x["source_object_id"] for x in everything).items() if n > 1}
         self.tags = collections.Counter(_tag_key(n.get("tag")) for n in extraction["nodes"])
+        self.alike = {}     # 겉모습(종류·태그·자리, 관계인지) -> 그 id들
+        for sid, fp in self.fp.items():
+            self.alike.setdefault(_look(fp), set()).add(sid)
 
 
 def _judge(sid, base, old, new):
@@ -97,7 +104,10 @@ def _judge(sid, base, old, new):
     if sid in old.twice or sid in new.twice:
         return "left", "duplicate_id"
     if base.get("at") is not None:
-        return ("same", None) if corrections._same(base, now) else ("left", "moved")
+        if not corrections._same(base, now):
+            return "left", "moved"
+        a, b = old.alike[_look(was)], new.alike[_look(now)]
+        return ("left", "not_alone") if a != b and max(len(a), len(b)) > 1 else ("same", None)
     if "ends" in was or "ends" in now:
         return "left", "relation"
     if sid in old.made or sid in new.made:
