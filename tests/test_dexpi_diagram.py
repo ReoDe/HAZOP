@@ -20,7 +20,7 @@ sys.path.insert(0, REPO_ROOT)
 from hazop import paths  # noqa: E402
 from hazop.export import dexpi_diagram as dd  # noqa: E402
 from hazop.export import dexpi_export as de  # noqa: E402
-from hazop.extract import dexpi_map  # noqa: E402
+from hazop.extract import corrections, dexpi_map  # noqa: E402
 from hazop.extract.adapters import dexpi_import, dexpi_read  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from tests.test_dexpi_export import SNP, dexpi_pair, export, reimport, snp_pair  # noqa: E402
@@ -153,6 +153,20 @@ class RoundtripTest(unittest.TestCase):
                     self.assertIn(e["tag"], texts)
             for no in {p["line_no"] for p in exp.sidecar["pipes"] if p["line_no"]}:
                 self.assertEqual(texts.count(no), 1, no)
+
+    def test_the_place_used_to_find_a_target_again_is_the_middle_of_the_symbol_as_before(self):
+        """그림이 없던 옛 내보내기는 모든 노드를 구성요소 가운데에 적었다. 새 내보내기로 바꿔 등록해도 사람 수정의 열쇠(at)가 같아야 한다."""
+        for ex, exp, again in self.each():
+            at = {k: v["at"] for k, v in corrections._fingerprints(again).items()}
+            s, middle = exp.sidecar["scale"], {}
+            for e in exp.sidecar["entities"]:
+                g = next(n["geometry"] for n in ex["nodes"] if n["local_id"] == e["local_id"])
+                middle[e["local_id"]] = [(g["x"] + g["width"] / 2) * s["factor"] + s["dx"], (g["y"] + g["height"] / 2) * s["factor"] + s["dy"]]
+                self.assertLess(math.dist(at[e["dexpi_id"]], middle[e["local_id"]]), 0.8, e["tag"])
+            rels = {r["local_id"]: r for r in ex["relations"]}
+            for p in exp.sidecar["pipes"]:
+                a, b = (middle[x["node_local_id"]] for x in rels[p["local_id"]]["endpoints"])
+                self.assertLess(math.dist(at[p["dexpi_id"]], [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]), 0.8)
 
     def test_the_sidecar_keeps_its_old_columns_and_version(self):
         for _, exp, _ in self.each():
