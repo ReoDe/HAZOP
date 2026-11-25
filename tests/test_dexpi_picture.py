@@ -5,6 +5,7 @@
 """
 
 import os
+import re
 import sys
 import unittest
 
@@ -223,6 +224,15 @@ class PlaceKeyTest(unittest.TestCase):
         at = {k: v["at"] for k, v in corrections._fingerprints(extract(text)).items()}
         self.assertEqual((at["Pump1"], at["Valve1"], at["Tank1"], at["Pipe1"], at["Pipe2"]),
                          ([60, 120], [100, 120], [190, 120], [82, 120], [120, 120]))
+
+
+    def test_a_file_this_app_wrote_before_it_drew_symbols_keeps_its_places(self):
+        """기호 없이 낸 옛 파일(Model uri가 이 앱의 것)은 가운데 규칙이 닿지 않아 다시 읽어도 자리가 같다."""
+        plain = swap(PUMP_SHAPE, '')
+        text = re.sub(r'uri="[^"]*"', 'uri="urn:hazop:dexpi-export:TEST"', plain, count=1)
+        before, after = (corrections._fingerprints(extract(x)) for x in (plain, text))
+        self.assertEqual(after["Tee1"]["at"], [140, 110])
+        self.assertEqual(before, after)
 
 
 @unittest.skipUnless(SAMPLES and os.path.isdir(SAMPLES), "HAZOP_DEXPI_SAMPLES(공개 예제 폴더)가 없어 건너뜀")
