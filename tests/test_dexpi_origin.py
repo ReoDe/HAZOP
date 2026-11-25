@@ -300,6 +300,7 @@ class RefusedTest(unittest.TestCase):
         for change in (lambda m: m[oid].pop("Echo"), lambda m: m[oid].update(Echo="0" * 16)):
             ex = read(sheet().with_marks(change))
             self.assertEqual({o for o, _f in sheet().differing(ex)}, {oid})
+            self.assertNotIn(origin.PLAIN, next(n for n in ex["nodes"] if n["source_object_id"] == oid))
 
     def test_an_object_whose_id_is_used_twice(self):
         s = sheet()
