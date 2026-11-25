@@ -726,6 +726,11 @@ class LinkTest(unittest.TestCase):
         place(self.new, "ML1", [82, 120, 0, 0])
         self.assertEqual(self.outcomes(), [(oid, "same", None)])
 
+    def test_a_measuring_line_that_moved_away_from_a_pipe_is_not_the_pipe(self):
+        place(self.old, "ML1", [82, 120, 0, 0])
+        oid = self.edit("confirm", "Pipe1", CONFIRM)
+        self.assertEqual(self.outcomes(), [(oid, "same", None)])
+
     def test_a_pipe_that_may_have_become_another_measuring_line(self):
         oid = self.edit("confirm", "Pipe1", CONFIRM)
         place(self.new, "ML1", [82, 120, 0, 0])
