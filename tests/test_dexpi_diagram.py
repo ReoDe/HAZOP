@@ -350,6 +350,17 @@ class SheetTest(unittest.TestCase):
         exp = de.export_drawing(g, None, require_confirmed_number=False)
         self.assertEqual(exp.stats["picture"]["symbols"], 0)
 
+    def test_an_extraction_that_is_not_the_one_the_graph_was_built_from_is_not_drawn(self):
+        """나누기로 번호가 밀린 그래프에 나누기 전 추출 결과를 넘기면 남의 자리에 그리지 않는다."""
+        ex, g = snp_pair(SNP[0])
+        shifted = copy.deepcopy(ex)
+        ids = [n["source_object_id"] for n in shifted["nodes"]]
+        for n, sid in zip(shifted["nodes"], ids[1:] + ids[:1]):
+            n["source_object_id"] = sid
+        exp = export((shifted, g))
+        self.assertEqual(exp.stats["picture"]["symbols"], 0)
+        self.assertEqual(exp.stats["components"], export((ex, g)).stats["components"])
+
     def test_a_picture_that_does_not_come_back_is_caught_before_writing(self):
         real = dd.dx.points
         for prop, shift in (("Position", 0.5), ("InnerPoints", 0.5)):

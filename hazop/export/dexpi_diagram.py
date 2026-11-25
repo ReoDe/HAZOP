@@ -158,22 +158,28 @@ class Picture:
         self.not_drawn.append(dict({"what": what, "reason": reason, "entity_id": ent.get("entity_id"), "local_id": ent.get("local_id"),
                                     "dexpi_id": dexpi_id}, **more))
 
+    @staticmethod
+    def _of(table, ent):
+        """그래프의 대상에 맞는 추출 결과의 대상. 순번 local_id가 같아도 원본 객체가 다르면(그래프를 지은 추출 결과가 아님) None."""
+        hit = table.get(ent["local_id"])
+        return hit if hit is not None and hit.get("source_object_id") == ent.get("source_object_id") else None
+
     def leave_symbol(self, ent, reason, dexpi_id=None):
         """그리지 않는 구성요소를 곁 파일에 적는다(자리를 알면 함께)."""
-        node = self.nodes.get(ent["local_id"])
+        node = self._of(self.nodes, ent)
         box = source_box(node, self.locations.get(ent["local_id"]), self.format) if node else None
         more = {"lines": label_lines(ent.get("label_text") or ent.get("tag"))} if ent.get("kind") == "continuation" else {}
         self._skip("symbol", reason, ent, dexpi_id, box=_plain(box), **more)
 
     def leave_line(self, what, ent, reason, dexpi_id=None):
-        rel = self.relations.get(ent["local_id"])
+        rel = self._of(self.relations, ent)
         self._skip(what, reason, ent, dexpi_id, points=raw_points(rel) if rel else None)
 
     def symbol(self, ent, dexpi_id, shape_name):
         """구성요소의 기호와 글자."""
         if not self.known:
             return
-        node = self.nodes.get(ent["local_id"])
+        node = self._of(self.nodes, ent)
         try:
             if node is None:
                 raise Undrawable("no_box")
@@ -209,7 +215,7 @@ class Picture:
         """배관(backward면 거꾸로 쓴다)이나 신호선(first 구성요소의 끝에서 시작하게 쓴다)의 길."""
         if not self.known:
             return
-        rel = self.relations.get(ent["local_id"])
+        rel = self._of(self.relations, ent)
         try:
             if rel is None:
                 raise Undrawable("end_unknown")

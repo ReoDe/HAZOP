@@ -146,6 +146,9 @@ class ReadBoxTest(unittest.TestCase):
     def test_two_shapes_of_one_component_share_one_box(self):
         self.assertEqual(box(pump(with_pump(usage() + usage(x=70.0)))), [56.0, 119.0, 15.0, 3.0])
 
+    def test_two_shapes_too_far_apart_to_measure_leave_no_box(self):
+        self.assertIsNone(box(pump(with_pump(usage(x=-1.5e308) + usage(x=1.5e308)))))
+
     def test_a_component_without_a_shape_keeps_no_box(self):
         tank = next(n for n in extract(fixture())["nodes"] if n["source_object_id"] == "Tank1")
         self.assertIsNone(tank["geometry"])

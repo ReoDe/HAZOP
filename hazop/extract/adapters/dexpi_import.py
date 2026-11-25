@@ -119,6 +119,8 @@ def _geometry(shapes):
         return None
     x0, y0 = min(s["box"][0] for s in shapes), min(s["box"][1] for s in shapes)
     x1, y1 = max(s["box"][0] + s["box"][2] for s in shapes), max(s["box"][1] + s["box"][3] for s in shapes)
+    if not (math.isfinite(x1 - x0) and math.isfinite(y1 - y0)):
+        return None
     out = {"x": _clean(x0), "y": _clean(y0), "width": _clean(x1 - x0), "height": _clean(y1 - y0)}
     if len(shapes) == 1:
         s = shapes[0]

@@ -216,7 +216,7 @@ class _Builder:
         if (self.g.get("coordinate_system") or {}).get("coordinate_space") != "dexpi_diagram":
             return A3
         size = [(self.ex or {}).get("drawing", {}).get(k) for k in ("page_width", "page_height")]
-        return tuple(float(v) for v in size) if all(isinstance(v, (int, float)) and v > 0 for v in size) else None
+        return tuple(float(v) for v in size) if all(isinstance(v, (int, float)) and 0 < v < 1e6 for v in size) else None
 
     def _xy(self, p):
         return (round(p[0] * self.sc["factor"] + self.sc["dx"], 3), round(p[1] * self.sc["factor"] + self.sc["dy"], 3))
