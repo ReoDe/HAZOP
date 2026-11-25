@@ -632,6 +632,18 @@ class WriteTest(unittest.TestCase):
         self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-102"])
         self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-101", "error")])
 
+    def test_a_page_with_malformed_data_or_listed_twice_does_not_stop_the_others(self):
+        def gate(name):
+            if name == "SNP-M-102":
+                raise TypeError("list indices must be integers")
+            return {"state": "confirmed", "unconfirmed": [], "unplaced": []}
+        res = de.export_names(["SNP-M-101", "SNP-M-102", "SNP-M-101"], self.out, graph_root=self.graph_root, extract_root=self.extract_root,
+                              confirmation=gate, require_confirmed_number=False)
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-102", "error")])
+        rows = de.list_exportable(self.graph_root, self.extract_root, confirmation=gate)
+        self.assertEqual([(r["name"], r["state"]) for r in rows], [("SNP-M-101", "confirmed"), ("SNP-M-102", "error")])
+
     def test_a_page_without_a_confirmed_number_does_not_stop_the_others(self):
         path = os.path.join(self.extract_root, "SNP-M-101", "extraction.json")
         with open(path, encoding="utf-8") as fh:
