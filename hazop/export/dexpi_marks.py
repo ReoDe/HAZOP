@@ -44,10 +44,10 @@ def marks(model, entities, pipes, by_id):
 _CELLS = {"kind": ("Kind",), "tag": ("Tag",), "label_text": ("Text",), "flow_direction": ("Flow", "Basis")}
 
 
-def write(xml, entities, pipes, by_id):
-    """표시 없는 DEXPI 바이트에 표시를 얹어 (바이트, 되읽은 추출 결과). 되읽을 때 쓰이지 않을 칸(사람이 태그를 바꿔 계측 기능의 조각과 어긋난 것
+def write(xml, model, entities, pipes, by_id):
+    """표시 없는 DEXPI 바이트(와 그것을 되읽은 Model)에 표시를 얹어 (바이트, 되읽은 추출 결과). 되읽을 때 쓰이지 않을 칸(사람이 태그를 바꿔 계측 기능의 조각과 어긋난 것
     등)은 싣지 않는다."""
-    rows = marks(dexpi_import.extract_bytes(xml, "marks.dexpi.xml")[1], entities, pipes, by_id)
+    rows = marks(model, entities, pipes, by_id)
     out = add(xml, rows)
     again = dexpi_import.extract_bytes(out, "marks.dexpi.xml")[0]
     useless = [(u["source_object_id"], u["field"]) for u in again["validation"]["unknowns"] if u["check"] == origin.CHECK]

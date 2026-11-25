@@ -763,9 +763,9 @@ class _Builder:
                 centers += [(nid, self._xy(self.nodes[eid]["position"])) for nid in ids]
         pic.write(em, pm.get("id"), self.name, self.ids, owners, pic.node_positions(self.positions, centers))
 
-    def _mark(self, xml, plain, entities, flows, problems):
+    def _mark(self, xml, model, plain, entities, flows, problems):
         """검사를 통과한 파일에 원래 값 표시를 얹고 다시 검사한다(§6.5-6) -> (바이트, 되읽은 추출 결과)."""
-        xml, again = dexpi_marks.write(xml, entities, flows, {n["entity_id"]: n for n in self.g["nodes"]})
+        xml, again = dexpi_marks.write(xml, model, entities, flows, {n["entity_id"]: n for n in self.g["nodes"]})
         root = dexpi_read.parse_safely(xml)
         problems += [("표시", x) for x in dexpi_read.check_structure(root, definitions=True) + dexpi_read.check_references(root)]
         problems += [("표시", u["reason"]) for u in again["validation"]["unknowns"] if u["check"] == dexpi_origin.CHECK]
@@ -785,7 +785,7 @@ class _Builder:
         problems += [("참조", x) for x in dexpi_read.check_references(root)]
         exported = [e for e, p in self.plan.items()]
         try:
-            re_ex, _ = dexpi_import.extract_bytes(xml, self.name + ".dexpi.xml")
+            re_ex, model = dexpi_import.extract_bytes(xml, self.name + ".dexpi.xml")
         except dexpi_read.DexpiError as exc:
             problems.append(("되읽기", exc.reason))
             re_ex = None
@@ -818,7 +818,7 @@ class _Builder:
                           "line_no": seg.get("line_no"), "swapped": pipe["swapped"], "flow_direction": seg.get("flow_direction"),
                           "auto": list(seg.get("auto") or []), "attributes": seg.get("attributes")})
         if WRITE_MARKS and not problems:
-            xml, re_ex = self._mark(xml, re_ex, entities, flows, problems)
+            xml, re_ex = self._mark(xml, model, re_ex, entities, flows, problems)
         sha = hashlib.sha256(xml).hexdigest()
         sidecar = {"schema": SIDECAR_SCHEMA, "exporter_version": EXPORTER_VERSION, "dexpi_version": dexpi_map.DEXPI_VERSION,
                    "attribution": dexpi_map.ATTRIBUTION, "dexpi_sha256": sha, "graph_id": self.g["graph_id"],
