@@ -464,7 +464,9 @@ class CapTest(Base):
     def test_limit_after_the_last_answer_still_names_the_limit(self):
         self.client.answer = kinds("manual_valve")
         self.client.errors = [None, "limit_reached"]         # 첫 묻기는 다 받고 넓혀 묻기에서 한도
-        self.upload((1, big(1, unread=5)), (2, big(2, unread=5)))
+        wide = ai_images.ImageInput(Page(), [b"legend"], legend_source="symbols", wide=True)
+        with mock.patch.object(ai_images, "image_input_for", return_value=wide):
+            self.upload((1, big(1, unread=5)), (2, big(2, unread=5)))
         self.assertEqual((self.state(1), self.state(2), self.calls()), (("confirmed", None), ("waiting", "limit"), 2))
 
     def test_a_lower_user_cap_is_followed(self):
@@ -1054,7 +1056,8 @@ class NextVersionTest(unittest.TestCase):
         self.src = glob.glob(os.path.join(paths.folder("references", "pid-samples"), "SNP-M-102*", "*.pdf"))[0]
         self.e.add_files([self.src])
         (self.name,) = self.e.graph_names().values()
-        self.assertTrue(cf.sheet_confirmation(self.name)["auto_accepted"])
+        self.assertEqual(cf.sheet_confirmation(self.name)["level"], "auto")
+        self.assertTrue(self.client.requests)
         ar.auto_revert(self.name, "검토자")
         self.spent = len(self.client.requests)
         from hazop.shell import api_titleblock
