@@ -79,7 +79,7 @@ class SnpTest(unittest.TestCase):
             self.assertEqual({i["id"] for i in items}, set(extra), d)          # 같은 ID로 잇는다
             for it in items:
                 x = extra[it["id"]]
-                self.assertIn(x["review"], ("script", "human", "ai_candidate", "ai_accepted"))
+                self.assertIn(x["review"], ("script", "human", "ai_candidate", "ai_accepted", "ai_auto"))
                 if it["layer"] == "symbol":
                     self.assertEqual(set(x["orient"]), {"rot", "flip_h", "flip_v", "basis"})
                 else:
@@ -155,7 +155,7 @@ class RuleTest(unittest.TestCase):
                         node("tee", "tee", 200, 300, 2, 2, tag="", cat="piping_element"),   # 태그 없는 tee는 세지 않는다
                         node("a", "pump", 10, 400, 30, 30, tag="P2", cat="equipment")],
                        [rel("open", ("ok", [40, 25]), ("a", [100, 100]), status="unknown")])
-        with mock.patch.object(clean_items, "_ai_pending", lambda name: {"a": ["c1"]}):
+        with mock.patch.object(clean_items, "_ai_doc", lambda name: {"candidates": [{"target": "a", "cand_id": "c1"}]}):
             b = clean_items.build(e, "x")
         self.assertEqual([(u["id"], u["reason"]) for u in b["unconfirmed"]],
                          [("open", "open_end"), ("u", "unknown_symbol"), ("t", "missing_tag"), ("a", "ai_candidate")])   # 위→아래, 왼→오른

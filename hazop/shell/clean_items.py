@@ -4,7 +4,7 @@
 읽어 `items`와 같은 `id`로 잇는다. 좌표는 `items`와 같은 SVG 사용자 단위다(추출 좌표에서 svg_alignment.offset을 뺌). 엔진은 자료를 바꾸지 않고 읽기만 한다.
 
 기호(symbol)마다: `orient`{rot, flip_h, flip_v, basis}, `review`(ai_candidate 수락 전 AI 후보 · ai_auto 자동 확정이 정한 값 · human 사람 고침이나
-사람이 수락한 값 · script), 다른 도면 연결이면 `label`(원본 글자 두 줄 안), 종류를 못 읽은 기호에 AI가 '기호 아님'·'모름'이라고 답했으면
+사람이 수락한 값 · ai_accepted 추출 결과가 AI 값이라 적은 것 · script), 다른 도면 연결이면 `label`(원본 글자 두 줄 안), 종류를 못 읽은 기호에 AI가 '기호 아님'·'모름'이라고 답했으면
 `ai_answer`(not_symbol · unknown). ai_answer는 보이기만 하며 미확인 수에서 빼지 않는다.
 배관(pipe)마다: `line_type`, `flow`(source_to_target·target_to_source·None), `ends`[{point, status, node}], `review`.
 도면마다: `source_format`(drawio·dexpi·pdf_vector·raster·unknown), `text_items`, `unconfirmed`, `counts`, `unplaced`, `leftovers`.
@@ -138,7 +138,7 @@ def _review(n, pending):
         return "ai_candidate"
     if edit:
         return "ai_auto" if edit.get("auto") else "human"
-    return "script"
+    return "ai_accepted" if n.get("origin") == "ai" else "script"
 
 
 def _leftovers(extraction, fmt, ox, oy):

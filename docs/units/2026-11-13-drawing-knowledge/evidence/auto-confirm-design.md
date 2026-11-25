@@ -635,7 +635,7 @@ git grep -nE "sheetconf" -- "hazop/*.py" "hazop/*.js" "scripts/*.py"
 | --- | --- |
 | 읽기 `aireview/auto` | `consent {allow, asked, at}`, `connected`, `ask`(지금 물어야 함: 연결돼 있고 아직 묻지 않았고 동의를 기다리는 쪽이 있음), `send`(deny·allow·null), `gate`(지금 막힌 까닭 또는 null), `accept_on`, `sheets [{graph_id, display, result, why, at, ai, accepted, unconfirmed}]` |
 | 읽기 `sheetconf/<도면>` | `level`, `auto`, `unconfirmed_targets`, `auto_accepted`(C1 칸 그대로) |
-| 읽기 `clean/<도면>` | 기호의 `review`에 `ai_auto`, 종류를 못 읽은 기호에 `ai_answer`(not_symbol·unknown). `ai_accepted`는 없앰(나온 적이 없음) |
+| 읽기 `clean/<도면>` | 기호의 `review`에 `ai_auto`, 종류를 못 읽은 기호에 `ai_answer`(not_symbol·unknown). |
 | 명령 `aireview.consent {allow}` | 동의·거절을 사용자 설정에 적음. 동의하면 기다리던 쪽을 이어 함 |
 | 명령 `aireview.send_policy {send, reason?}` | 이 프로젝트를 AI로 보내지 않음(deny)·보내도 됨(allow). 검토자 이름이 있어야 함. allow면 이어 함 |
 | 채팅 `aireview.auto_run {graph_ids}`, `aireview.auto_revert {graph_id}` | AI로 확정, 도면 단위 되돌리기. 둘 다 확인 상자를 거침 |
