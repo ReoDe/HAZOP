@@ -265,10 +265,10 @@ DEXPI 파일은 밖에서 온 파일입니다. 읽기 전에 아래를 모두 �
 - 좌표계는 `coordinate_system = {"coordinate_space": "dexpi_diagram", "unit": "mm", "origin": "top_left", "source_origin": …}`로 적습니다.
 - **Y축 방향(2026-11-14 구현에서 확인).** 사양 문장은 찾지 못했고 예제 파일로 정했습니다. (가) 2.0.1 Reference P&ID에서 표제란 글자(도면 번호)는 y 291, 칸 글자 A는 y 21, H는 y 274에 있어(도면 높이 297) 위가 0이고 아래로 커집니다. (나) 같은 도면의 Proteus 판(TrainingTestCases C01)에서 같은 노드의 y는 2.0 판과 합이 297(예 154 ↔ 143)이라 **Proteus는 y가 위로 커집니다**. (다) 2.0.1의 흐름 화살표(회전 θ)는 방향이 (cos θ, sin θ)일 때 연결의 Source→Target 방향과 맞는 연결에서 흐름 방향이 일관됩니다. 그래서 가져올 때 2.0은 그대로, Proteus는 `y' = 도면 높이 − y`로 뒤집고(`source_origin`에 `top_left`·`bottom_left`를 적음), 화면은 위가 0인 좌표를 그대로 씁니다. 원래 값은 되돌릴 수 있으므로 따로 두지 않습니다. 확인에 쓴 근거는 `docs/units/2026-11-13-drawing-knowledge/evidence/dexpi-commands.md`에 있습니다.
 - 위치 정보가 없는 객체(그림 없이 모델만 있는 파일, 그림 쪽에서 `Represents`가 가리키지 않는 객체)는 버리지 않고 `bbox: null`로 둡니다. 그리고 미확인 `dexpi_no_position`(target=그 노드나 관계, field=`bbox`, reason '그림 위치 없음(DEXPI 파일에 그림 정보가 없음)')을 남깁니다. 이 미확인은 사람이 위치를 정하거나(사람 수정의 이동) '위치 없이 둠'으로 확정해야 풀립니다. 그래서 위치 없는 구성요소가 남은 쪽은 '쪽 확정'을 할 수 없고 내보내지도 않습니다(§6.1). 화면이 이 미확인을 어떻게 세고 그리는지는 `d-chat`이 화면 규격에서 고칩니다(`sheet_confirmation`의 `unconfirmed` 사유에 `no_position`을 더하는 것을 권장).
-- **노드 상자(rev 5).** `ShapeUsage`가 쓰는 `Shape`의 크기(꺾은선의 점, 타원의 반지름, 타원호의 그려진 부분) × `ScaleX`·`ScaleY`에 좌우 뒤집기(`IsMirrored`)를 먼저, 회전(`Rotation`, 도, 화면에서 시계 방향)을 나중에 해 도면에서 차지하는 상자를 `geometry` `{x, y, width, height}`에 둡니다. 차례와 방향은 2.0.1 Reference P&ID에서 뒤집힌 각형 안전밸브의 출구 노드, 270도로 놓인 구동부의 끝, 접시형 머리의 호가 직선과 만나는 점으로 확인했습니다.
+- **노드 상자(rev 5).** `ShapeUsage`가 쓰는 `Shape`의 크기(꺾은선의 점, 타원의 반지름, 타원호의 그려진 부분, 한 바퀴의 배수는 온 타원) × `ScaleX`·`ScaleY`에 좌우 뒤집기(`IsMirrored`)를 먼저, 회전(`Rotation`, 도, 화면에서 시계 방향)을 나중에 해 도면에서 차지하는 상자를 `geometry` `{x, y, width, height}`에 둡니다. 차례와 방향은 2.0.1 Reference P&ID에서 뒤집힌 각형 안전밸브의 출구 노드, 270도로 놓인 구동부의 끝, 접시형 머리의 호가 직선과 만나는 점으로 확인했습니다.
   - 모양 이름, 돌리기 전 크기, 회전, 뒤집힘은 `geometry.shape`에 둡니다. 정리된 보기는 아직 이 방향을 읽지 않고 배관 끝의 축으로 방향을 정합니다(화면 쪽 다음 단위의 몫).
   - 한 구성요소의 기호가 여럿이면 모두를 감싼 상자이고 `shape`는 없습니다. 글자표(`…Label`)·흐름 화살표 묶음의 기호와 노즐의 기호는 구성요소의 것으로 보지 않습니다. 선 하나로 그린 기호(막음 플랜지 등)는 선 굵기를 두께로 봅니다.
-  - 모양이 없거나 배율이 0 이하이거나 수가 아니면 `geometry`는 비워 둡니다(점 위치는 그대로).
+  - 모양이 없거나, 배율이 0 이하이거나, 수가 아니거나, 잴 수 없이 크면 그 기호의 `geometry`만 비워 둡니다(점 위치는 그대로, 나머지는 읽음).
 - **선 점(rev 5).** 연결이나 신호 흐름을 나타내는 `ConnectorLine`의 시작·`InnerPoints`·끝이 관계의 끝점과 `waypoints`입니다. 선이 연결과 거꾸로 그려져 있으면 선의 자리가 가리키는 배관 노드로, 노드를 가리키지 않으면 두 끝의 자리로 가려 뒤집습니다. 아무것에도 붙지 않은 끝도 선이 멈춘 자리를 끝점으로 씁니다. 부품 앞뒤로 나뉜 연결(§5.7)은 선 하나를 나눌 수 없어 선 점을 주지 않습니다.
 - **`source_locations`는 그림을 읽기 전과 같습니다(rev 5).** 노드는 배관 노드·기호의 점들, 관계는 두 끝의 자리로 셈합니다. 사람 수정이 대상을 다시 찾는 열쇠(`at`), 판 이전의 표시, 도면 연결점의 지문이 이 자리를 쓰므로, 이미 들여온 도면을 다시 읽어도 그것들이 달라지지 않게 합니다. 상자와 선 점이 생기는 만큼 `graph_version`은 바뀝니다(그림에 기호나 선이 있는 파일만). 이 앱이 낸 파일(`Model`의 `uri`가 `urn:hazop:dexpi-export:`로 시작)이고 기호가 있는 구성요소는 배관 끝이 아니라 기호 가운데를 자리로 씁니다. 그림이 없던 옛 내보내기가 모든 노드를 가운데에 적었으므로, 같은 도면을 새로 내보낸 파일로 바꿔 등록해도 밸브·설비·배관의 자리가 이어집니다.
 
@@ -402,7 +402,7 @@ DEXPI XML의 `id`는 `[A-Za-z_][A-Za-z_0-9]*`만 됩니다(XSD `id-pattern`). �
 | --- | --- | --- |
 | 도면 크기 | `Diagram`의 `MinX`·`MinY`·`MaxX`·`MaxY`, `Border` | DEXPI에서 온 도면은 원래 크기, 그 밖에는 A3에 줄여 담음(여백 10mm). 줄인 배율은 자르지 않은 값을 쓰고 곁 파일 `scale`에 그대로 둠. XML의 좌표는 소수 셋째 자리 |
 | 기호 모양 | `ShapeCatalogues` > `ShapeCatalogue` > `Shape` | 종류마다 하나. 이름(`MANUAL_VALVE_SHAPE` 등, 등록 번호 칸에도 같은 이름)과 1 × 1 상자만. 도형 선은 싣지 않음 |
-| 기호 | 구성요소를 나타내는 묶음의 `Static` > `ShapeUsage` | 가운데, 배율(=상자 크기 mm), 회전, 좌우 뒤집기. drawio의 `direction`은 상자 안에서 도형만 돌고 `rotation`은 상자째 돎. 위아래 뒤집기는 좌우 뒤집기 + 180도. PDF는 방향을 모르므로 0도 |
+| 기호 | 구성요소를 나타내는 묶음의 `Static` > `ShapeUsage` | 가운데, 배율(=상자 크기 mm), 회전, 좌우 뒤집기. drawio의 `direction`은 상자 안에서 도형만 돌고 `rotation`은 상자째 돎. 위아래 뒤집기는 좌우 뒤집기 + 180도. drawio 읽기가 방향을 모른다고 하는 조합(동쪽이 아닌 `direction`과 뒤집기가 함께, 처음 보는 값)은 방향을 지어내지 않고 그리지 않음. 360도에 닿는 각도는 0. PDF는 방향을 모르므로 0도 |
 | 배관 | 배관을 나타내는 묶음의 `Static` > `ConnectorLine` | 양 끝 `PipingNodePosition`과 `InnerPoints`. 배관 노드의 자리는 배관이 닿는 끝. 한 노드에 선이 둘 이상 다른 자리로 닿으면 뒤의 선은 노드를 가리키지 않는 자리를 따로 가짐(공개 예제의 열린 끝과 같은 꼴) |
 | 신호선·측정선 | 같은 꼴, 점선(`DashStyle.Dash`) | 양 끝 `InstrumentationNodePosition`(노드 참조 없음, 닿는 구성요소의 묶음 안). 2.0.1 Reference P&ID의 쓰임을 따름 |
 | 글자 | `Core/Diagram.Label` > `Text` | 태그(원본 글자 자리, 모르면 상자 아래), 배관 번호(계통마다 한 번, 가장 긴 배관의 중점 위), 도면 연결의 원본 글자 두 줄(없으면 상대 도면 번호와 연결 번호) |
@@ -410,7 +410,8 @@ DEXPI XML의 `id`는 `[A-Za-z_][A-Za-z_0-9]*`만 됩니다(XSD `id-pattern`). �
 
 쓰지 않는 것은 곁 파일 `hazop_dexpi_sidecar/1`의 새 칸 `picture`에 둡니다(판 번호는 그대로, 칸을 더하기만 함).
 
-- `not_drawn[]`: `{what(symbol·line·signal), reason, entity_id, local_id, dexpi_id(파일에 없으면 null), box 또는 points(원래 단위), lines(도면 연결의 두 줄)}`. 까닭은 상자를 모름(`no_box`), 수가 아님(`bad_number`), 크기 0(`zero_size`), 도면 밖(`off_sheet`), 점 하나짜리 선(`one_point`), 끝을 모름(`end_unknown`)과, 파일에 나가지 않는 것 가운데 방향을 모르는 도면 연결(`direction_unknown`), 끝은 멀쩡하나 신호선 끝 규칙에 맞지 않는 계장선(`sensing_location_not_piping_component`, `signal_end_not_instrument_or_actuator`)입니다. 분류하지 못했거나 클래스가 없는 구성요소와 거기 붙은 연결은 전처럼 뺀 목록에만 있습니다.
+- `not_drawn[]`: `{what(symbol·line·signal), reason, entity_id, local_id, dexpi_id(파일에 없으면 null), box 또는 points(원래 단위), lines(도면 연결의 두 줄)}`. 까닭은 상자를 모름(`no_box`), 수가 아님(`bad_number`), 크기 0(`zero_size`), 도면 밖(`off_sheet`), 방향을 모름(`orientation_unknown`), 점 하나짜리 선(`one_point`), 끝을 모름(`end_unknown`)과, 파일에 나가지 않는 것 가운데 방향을 모르는 도면 연결(`direction_unknown`), 끝은 멀쩡하나 신호선 끝 규칙에 맞지 않는 계장선(`sensing_location_not_piping_component`, `signal_end_not_instrument_or_actuator`)입니다. 분류하지 못했거나 클래스가 없는 구성요소와 거기 붙은 연결은 전처럼 뺀 목록에만 있습니다.
+- `approximate[]`: 그렸으나 자리가 근사인 것 `{what(symbol·line), entity_id, local_id, dexpi_id}`. drawio 읽기가 자리를 근사로 본 도형(돌아간 부모 안, 부모 크기 비율), 부모 도형 안이라 부모의 회전·뒤집기를 알 수 없는 도형, 그런 부모 안의 선입니다. DEXPI 파일 안에는 이 표시를 넣지 않습니다.
 - `texts[]`: 주인 없는 도면 글자 `{text, bbox}`. `sheet`: 도면 크기(mm).
 - 뺀 까닭별 수는 `excluded.json`과 결과 요약(`stats`)의 `excluded_by_reason`, 그린 수는 `stats.picture`에 있습니다.
 
