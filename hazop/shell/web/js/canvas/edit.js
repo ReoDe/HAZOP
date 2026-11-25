@@ -133,6 +133,9 @@ export function setOn(on) {
 }
 export function setTool(tool) { edit.set({ tool, first: null, end: tool === "endpoint" ? edit.get().end : null, points: [], origPoints: [], error: null }); }
 export function cancelTool() { edit.set({ tool: "select", first: null, end: null, points: [], origPoints: [] }); }
+/** 흐름 방향 한 줄. 이 프로젝트의 사람이 정한 것(근거 human)만 '(사람이 정함)'을 붙인다. 되읽은 흐름의 human_elsewhere(다른 프로젝트에서 정한 값)·
+ *  AI·파일에서 읽은 근거는 붙이지 않는다: 여기서 사람이 정한 것처럼 보이지 않게 한다. */
+export function flowText(flow) { return flow ? flow.from + " → " + flow.to + (flow.basis === "human" ? " (사람이 정함)" : "") : "정하지 않음"; }
 export function closeItem() { edit.set({ item: null, ask: null, error: null }); }
 export function setField(patch) { edit.set(patch); }
 
@@ -339,7 +342,7 @@ function ItemCard() {
         <select aria-label=${p.label} value=${p.value || ""} disabled=${s.busy} onChange=${(e) => e.target.value && apply(p.op, it.local_id, { value: e.target.value })}>
           <option value="">(미확인)</option>${p.values.map((v) => html`<option value=${v}>${v}</option>`)}</select></div>`)}` : null}
     ${!node ? html`<div class="field"><label>흐름 방향</label><div class="acts-row">
-        <span class="muted small">${it.flow ? it.flow.from + " → " + it.flow.to + (it.flow.basis === "human" ? " (사람이 정함)" : "") : "정하지 않음"}</span>
+        <span class="muted small">${flowText(it.flow)}</span>
         <${Btn} sm=${true} icon="arrow-back-up" label="흐름 방향 뒤집기" disabled=${s.busy || !it.flow_allowed} title=${it.flow_allowed ? (it.flow ? "흐름 방향 뒤집기" : "끝(target) → 끝(source)로 정하기") : "물리 배관에만 흐름 방향을 정합니다"}
           onClick=${() => apply("set_flow", it.local_id, { flip: true })}>${it.flow ? "뒤집기" : "방향 정하기"}<//></div></div>
       <div class="field"><label>끝</label>${["source", "target"].map((end) => html`<div class="acts-row">
