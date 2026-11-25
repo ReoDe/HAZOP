@@ -24,7 +24,7 @@ import export_dexpi  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.export import dexpi_export as de  # noqa: E402
 from hazop.extract import dexpi_map, drawio  # noqa: E402
-from hazop.extract.adapters import dexpi_import, dexpi_read  # noqa: E402
+from hazop.extract.adapters import dexpi_import, dexpi_origin, dexpi_read  # noqa: E402
 from hazop.graph import build  # noqa: E402
 
 FIXTURES = os.path.join(REPO_ROOT, "tests", "fixtures", "dexpi")
@@ -84,7 +84,7 @@ class SnpExportTest(unittest.TestCase):
             root = dexpi_read.parse_safely(exp.xml)
             self.assertEqual(dexpi_read.check_structure(root), [])
             self.assertEqual(dexpi_read.check_references(root), [])
-            self.assertTrue(all(dexpi_map.type_is_known(o.get("type")) for o in root.iter("Object")))
+            self.assertTrue(all(dexpi_map.type_is_known(o.get("type")) for o in root.iter("Object") if o.get("type") != dexpi_origin.TYPE))
 
     def test_counts_match_an_independent_count_of_the_graph(self):
         for _, (ex, g), exp in self.each():
@@ -199,10 +199,11 @@ class SnpExportTest(unittest.TestCase):
             self.assertEqual(len(valves_after), len(valves_before))
 
     def test_without_the_sidecar_the_file_stands_alone(self):
-        """곁 파일 없이도 DEXPI 파일만으로 온전하다. 근사로 낸 kind는 DEXPI 쪽 이름으로, 흐름 방향은 미확인으로 돌아온다."""
+        """곁 파일과 원래 값 표시가 없어도 DEXPI 파일만으로 온전하다. 근사로 낸 kind는 DEXPI 쪽 이름으로, 흐름 방향은 미확인으로 돌아온다."""
         key = "SNP-M-201"
         ex, g = self.pairs[key]
-        back = reimport(self.exports[key], with_sidecar=False)
+        with mock.patch.object(de, "WRITE_MARKS", False):
+            back = reimport(export((ex, g)), with_sidecar=False)
         self.assertEqual(back["validation"]["status"], "passed")
         # 곁 파일이 없으면 흐름은 파일에 근거가 있는 것(도면 연결 기호)만 남고 나머지는 미확인이다
         self.assertEqual({r["flow_direction"]["basis"] for r in back["relations"] if r["flow_direction"]}, {"dexpi_off_page_connector"})
@@ -466,7 +467,8 @@ class InstrumentRoundtripTest(unittest.TestCase):
         n["tag"] = n["label"] = n["label_text"] = n["attributes"]["tag"] = "LOCAL PANEL"
         for k in [k for k in n["attributes"] if k.startswith("dexpi:ProcessInstrumentation")]:
             del n["attributes"][k]
-        exp = export((ex, build.build_graph(ex)))
+        with mock.patch.object(de, "WRITE_MARKS", False):
+            exp = export((ex, build.build_graph(ex)))
 
         def missing(back):
             lid = next(x["local_id"] for x in back["nodes"] if x["source_object_id"] == n["source_object_id"])
@@ -497,7 +499,7 @@ class InstrumentRoundtripTest(unittest.TestCase):
             self.assertIn("계기 태그", " ".join(cm.exception.reasons))
 
     def test_a_sidecar_that_does_not_give_the_tag_back_is_caught_before_writing(self):
-        with mock.patch.object(dexpi_import, "apply_sidecar", lambda *a, **k: {}):
+        with mock.patch.object(dexpi_import, "apply_sidecar", lambda *a, **k: {}), mock.patch.object(de, "WRITE_MARKS", False):
             with self.assertRaises(de.ExportError) as cm:
                 export(snp_pair([p for p in SNP if "SNP-M-101" in p][0]))
         self.assertIn("곁 파일", " ".join(cm.exception.reasons))

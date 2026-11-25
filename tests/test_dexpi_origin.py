@@ -43,7 +43,8 @@ class Sheet:
 
     def __init__(self, pair):
         self.ex, self.g = pair
-        self.export = export(pair)
+        with mock.patch.object(dexpi_export, "WRITE_MARKS", False):
+            self.export = export(pair)
         self.plain = self.export.xml
         self.marks = dexpi_marks.marks_of(self.export, self.g)
         self.marked = dexpi_marks.add(self.plain, self.marks)
@@ -168,8 +169,9 @@ class NothingElseChangesTest(unittest.TestCase):
             x.pop("extraction_run_id")
         self.assertEqual(canon(a), canon(b))
 
-    def test_the_exporter_does_not_write_marks_yet(self):
+    def test_the_switch_turns_the_marks_off(self):
         self.assertNotIn(origin.CLASS.encode(), sheet().plain)
+        self.assertTrue(dexpi_export.WRITE_MARKS)
 
     def test_a_file_without_marks_has_no_new_cells(self):
         for xml in (sheet().plain, fixture("small-pid-dexpi2.xml"), fixture("small-pid-proteus.xml")):

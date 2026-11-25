@@ -23,7 +23,7 @@ from hazop import paths  # noqa: E402
 from hazop.export import dexpi_diagram as dd  # noqa: E402
 from hazop.export import dexpi_export as de  # noqa: E402
 from hazop.extract import corrections, dexpi_map, drawio  # noqa: E402
-from hazop.extract.adapters import dexpi_import, dexpi_read  # noqa: E402
+from hazop.extract.adapters import dexpi_import, dexpi_origin, dexpi_read  # noqa: E402
 from hazop.graph import build  # noqa: E402
 from tests.test_dexpi_export import SNP, dexpi_pair, export, reimport, snp_pair  # noqa: E402
 
@@ -127,7 +127,7 @@ class RoundtripTest(unittest.TestCase):
             exp = self.exports[key]
             root = dexpi_read.parse_safely(exp.xml)
             self.assertEqual((dexpi_read.check_structure(root), dexpi_read.check_references(root)), ([], []))
-            self.assertTrue(all(dexpi_map.type_is_known(o.get("type")) for o in root.iter("Object")))
+            self.assertTrue(all(dexpi_map.type_is_known(o.get("type")) for o in root.iter("Object") if o.get("type") != dexpi_origin.TYPE))
             self.assertEqual({k: v for k, v in export(copy.deepcopy(pair)).files.items()}, exp.files)
 
     def test_one_unit_shape_for_each_kind_and_every_usage_points_at_one(self):

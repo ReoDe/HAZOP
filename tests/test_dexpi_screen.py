@@ -321,7 +321,7 @@ class FallBackTest(Base):
     def test_a_changed_value_of_the_sidecar_is_caught(self):
         for change in (lambda d: d["solid_extra"]["nodes"]["local-node-002"].update(kind="manual_valve"),
                        lambda d: d["solid_extra"]["nodes"]["local-node-002"].pop("human_edit"),
-                       lambda d: d["solid_extra"]["relations"]["local-rel-001"].pop("flow"),
+                       lambda d: d["solid_extra"]["relations"]["local-rel-001"].update(flow="target"),
                        lambda d: d["dashed"]["nodes"]["local-node-004"]["value"].update(box=[0, 0, 1, 1]),
                        lambda d: d["dashed"]["unresolved"]["local-rel-007"]["value"].update(line_no="X"),
                        lambda d: d["scale"].update(dx=12.0), lambda d: d["rest"].update(texts=[]), lambda d: d["rest"].update(unknowns=[])):
