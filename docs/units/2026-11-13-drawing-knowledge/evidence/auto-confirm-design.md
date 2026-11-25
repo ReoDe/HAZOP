@@ -624,3 +624,40 @@ git grep -nE "sheetconf" -- "hazop/*.py" "hazop/*.js" "scripts/*.py"
 - 한 호출에 더 많은 조각을 묻는 꼴은 잰 적이 없다. 묻는 꼴이 바뀌면 확신도 눈금과 정확도가 달라지고 저장 응답도 다시 쓸 수 없어, 4장의 문턱 근거가 사라진다.
 
 **권고.** 상한 20과 묶음 10을 그대로 둔다. 남는 220개는 호출이 모자라서가 아니라 답의 내용 때문이다.
+
+## 15. C2에서 만든 것(2026-11-25, 브랜치 feat/auto-flow)
+
+흐름은 `hazop/shell/auto_flow.py` 한 모듈에 있다. 결과를 정하고 수락하는 일은 엔진(`ai_review.auto_finish`)이 하고, 이 모듈은 언제·무엇을 보낼지만 정한다. 자동 수락·자동 번호는 꺼진 채다. 꺼져 있어도 동의·연결이 있으면 AI에 묻고 후보를 저장한 뒤 자동 확정(수락 0건, 미확인 n곳)까지 간다. 4.5의 "후보만 남김"이다. 그때 확정된 쪽은 나중에 켜도 소급해 수락하지 않는다.
+
+### 15.1 화면(s-viewer)이 쓸 것
+
+| 이름 | 하는 일 |
+| --- | --- |
+| 읽기 `aireview/auto` | `consent {allow, asked, at}`, `connected`, `ask`(지금 물어야 함: 연결돼 있고 아직 묻지 않았고 동의를 기다리는 쪽이 있음), `send`(deny·allow·null), `gate`(지금 막힌 까닭 또는 null), `accept_on`, `sheets [{graph_id, display, result, why, at, ai, accepted, unconfirmed}]` |
+| 읽기 `sheetconf/<도면>` | `level`, `auto`, `unconfirmed_targets`, `auto_accepted`(C1 칸 그대로) |
+| 읽기 `clean/<도면>` | 기호의 `review`에 `ai_auto`, 종류를 못 읽은 기호에 `ai_answer`(not_symbol·unknown). `ai_accepted`는 없앰(나온 적이 없음) |
+| 명령 `aireview.consent {allow}` | 동의·거절을 사용자 설정에 적음. 동의하면 기다리던 쪽을 이어 함 |
+| 명령 `aireview.send_policy {send, reason?}` | 이 프로젝트를 AI로 보내지 않음(deny)·보내도 됨(allow). 검토자 이름이 있어야 함. allow면 이어 함 |
+| 채팅 `aireview.auto_run {graph_ids}`, `aireview.auto_revert {graph_id}` | AI로 확정, 도면 단위 되돌리기. 둘 다 확인 상자를 거침 |
+
+### 15.2 저장 꼴
+
+- 동의: 사용자 설정 파일의 `auto_send_consent` = `{"allow": bool, "notice": "auto-send-1", "at", "by"}`. 네 칸의 꼴이 온전하지 않거나 `notice`가 다르면 묻지 않은 것으로 본다. 쓰는 곳은 명령 하나뿐이고 채팅은 쓰지 못한다. 옛 토글 `extract_ai_review`는 이 흐름이 보지 않는다.
+- 보내지 않음: C1의 `send-policy` 파일 그대로.
+- 까닭 코드(`auto.why`): `no_consent`, `ai_off`(보내지 않음), `no_connection`, `limit`, `error`·`error_final`(실패), `stopped`, `run_cap`, `taken`, `scan`, `no_image`, `started`(도는 중이거나 끊김).
+- `data/ai-review/auto/calls-<원본>-p<쪽>.json`: 지금 도는 실행이 쓴 호출 수. 끝나면 지운다. 남아 있으면 호출 중에 죽은 것이라 다음 실행이 실행 기록으로 옮긴다(`auto_id`로 한 번만). `intent-<프로젝트>-<자료>.json`: 추출하는 동안의 표지. 쪽 기록을 적기 전에 죽은 쪽을 이어 하기가 거둔다.
+- 실행 기록 `runs[].no_kind`: AI가 "기호 아님"·"모름"이라고 답한 자리. 후보가 아니므로 수락·견본·미확인 수에 들지 않는다.
+
+### 15.3 설계와 달라진 것
+
+| 자리 | 달라진 것 | 까닭 |
+| --- | --- | --- |
+| 8장 한도·같은 오류 | 파일마다 작업이 달라도 묶음(Budget)이 멈춘 까닭을 나눠 가짐 | 143파일이면 한도가 온 뒤에도 파일마다 한 번씩 부르게 된다 |
+| 8장 누적 20 | 호출하기 전에 수를 파일에 적음 | 앱이 호출 중에 죽으면 실행 기록이 없어 다시 20회를 쓴다 |
+| 2.3 상한 | 다시 추출로 읽기가 바뀌었는데 이미 20회를 다 쓴 쪽은 `capped`로 확정(엔진 한 줄) | C1에서는 `started`로 영영 남았다 |
+| 3장 | 번호를 바꾸는 동안 그 자료의 쪽을 잡고, AI가 도는 쪽의 번호 확정은 `busy`로 거절 | 새 이름으로 다시 추출하면 받던 답이 옛 이름에 남아 다시 묻게 된다 |
+| 8장 이어 하기 | 다음 올리기 때의 이어 하기는 그 묶음의 마지막 파일 뒤에 남은 예산으로 돎. 묶음이 다룬 쪽은 다시 잡지 않음 | 실패한 쪽이 한 번의 올리기에서 시도 3번을 다 쓰지 않게 |
+| 10.2 파일 | `hazop/shell/auto_flow.py`(새 파일), `window.py` 한 줄(연결 알림), `hazop/chat/card.py`·`chat_edits.py` 한 줄씩, 엔진 `confirmation.auto_record`·`ai_review`의 `no_kind` | 흐름을 한 곳에 모음 |
+| 7.2 채팅 추출 | `register.extract`·`register.reextract`도 이 흐름을 탐 | 올리다 멈춘 자료를 채팅으로 추출하면 자동 확정 밖에 남는다 |
+| P11 | 채팅 쪽 확정이 견줌을 함께 적는 일은 하지 않음 | 벡터 PDF는 지금 확정할 수 없어 쓸 쪽이 drawio·DEXPI뿐이다(backlog 제안) |
+
