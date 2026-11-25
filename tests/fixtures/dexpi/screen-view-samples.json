@@ -1377,7 +1377,8 @@
    "moved": 4.72,
    "reverted": 0,
    "flow_unknown": 2
-  }
+  },
+  "scale": 1.0
  },
  "verdict": {
   "source": "dexpi",

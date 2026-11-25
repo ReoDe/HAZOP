@@ -45,10 +45,28 @@ def _box(b, ox, oy):
     return None
 
 
+_ROTATION = re.compile(r"(?:^|;)rotation=(-?[0-9.]+)(?:;|$)")
+
+
+def _quarter_turn(style):
+    """도형 스타일의 rotation이 90도·270도(그 홀수 배)인가. drawio의 geometry는 돌리기 전 상자라, 이때 눈에 보이는 자리는 가로세로를 바꾼 상자다."""
+    m = _ROTATION.search(style) if isinstance(style, str) else None
+    if not m:
+        return False
+    try:
+        return round(float(m.group(1))) % 180 == 90
+    except ValueError:
+        return False
+
+
 def _node_bbox(n, ox, oy):
+    """도면에서 눈에 보이는 상자. drawio에서 rotation이 90·270도인 도형은 geometry(돌리기 전 상자)의 가로세로를 가운데를 두고 바꾼다.
+    그 밖(direction·DEXPI의 geometry는 이미 돌린 뒤의 상자)은 geometry 그대로다."""
     g = n.get("geometry") or {}
     x, y, w, h = _num(g.get("x")), _num(g.get("y")), _num(g.get("width")), _num(g.get("height"))
     if None not in (x, y, w, h):
+        if _quarter_turn(n.get("style")) and not isinstance(g.get("shape"), dict):
+            x, y, w, h = x + (w - h) / 2, y + (h - w) / 2, h, w
         return [x - ox, y - oy, x + w - ox, y + h - oy]
     return _box((n.get("label_location") or {}).get("bbox"), ox, oy)
 

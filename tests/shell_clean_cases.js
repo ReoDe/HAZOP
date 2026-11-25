@@ -173,6 +173,23 @@ async function body({ CV, MK, SheetCore }, data) {
   const cond = [L({ size: 6, fixed: true, showFrom: 1 }), L({ hideFrom: 1 })];
   t("글자 자리: 확대 값 조건(원 안 글자는 크게 보일 때만, 옆 글자는 작게 보일 때만)", CV.layoutLabels(cond, 0.5, []).map((l) => l.visible).join() === "false,true" && CV.layoutLabels(cond, 2, []).map((l) => l.visible).join() === "true,false");
 
+  // ---- 도면 단위 배율(mm 단위 DEXPI 도면): 글자와 선 사이 간격·글자 크기가 도면 단위에 맞춰 줄어, 배관 번호가 자리 다툼에 져 빠지지 않는다
+  {
+    const band = (y0, y1) => ({ x0: 40, y0, x1: 90, y1, owner: "q" });          // 선 위·아래에 나란한 다른 선·기호의 가장자리(선 y=100에서 6.5~8 떨어짐)
+    const pipeSpec = (g) => ({ x: 65, y: 100, text: "RC-L001", anchor: "middle", size: 9 * g, k: g, rotate: 0, pri: 3, owner: "p", place: { t: "pipe", mx: 65, my: 100, vertical: false } });
+    const walls = [band(92, 93.5), band(106.5, 108)];
+    const k = 2.25;                                                                // 도면이 화면에 2.25배로 보일 때(420mm 폭 도면)
+    const old = CV.layoutLabels([pipeSpec(1)], k, walls)[0], now = CV.layoutLabels([pipeSpec(0.2375)], k, walls)[0];
+    t("작은 단위 도면: 배관 번호가 선 가까이(간격이 도면 단위에 맞게) 자리를 잡아 빠지지 않는다", now.visible && !old.visible, JSON.stringify({ old: old.visible, now }));
+    const base = CV.buildBase({ symbols: { generic: { vb: [10, 10], fit: "keep", shapes: [["rect", { x: 0, y: 0, width: 10, height: 10 }]] } }, width: 420, height: 297, scale: 0.2375,
+      items: [{ id: "u", layer: "symbol", kind: "valve", category: "valve", tag: null, unknown: false, rect: { x0: 100, y0: 100, x1: 110, y1: 110 } }], extras: {}, unconfirmed: [], textItems: [], hops: [], tidyMap: null });
+    const tagless = base.labels.find((l) => l.text === "태그 없음");
+    t("작은 단위 도면: '태그 없음' 같은 글자의 크기도 도면 단위 배율만큼 줄어든다", !!tagless && Math.abs(tagless.size - 7 * 0.2375) < 1e-9 && tagless.k === 0.2375, JSON.stringify(tagless));
+    const std = CV.buildBase({ symbols: { generic: { vb: [10, 10], fit: "keep", shapes: [["rect", { x: 0, y: 0, width: 10, height: 10 }]] } }, width: 1617, height: 1132,
+      items: [{ id: "u", layer: "symbol", kind: "valve", category: "valve", tag: null, unknown: false, rect: { x0: 100, y0: 100, x1: 140, y1: 140 } }], extras: {}, unconfirmed: [], textItems: [], hops: [], tidyMap: null });
+    t("기준 단위 도면(scale 없음)은 그대로: '태그 없음' 크기 7", std.labels.find((l) => l.text === "태그 없음").size === 7);
+  }
+
   // ---- 글자 자리: 기호·배관 선과 겹치지 않는 후보를 고르고, 계기 글자는 원 크기에 따라 나뉨, 배관 번호는 선에서 띄움
   const bbT = [100, 100, 130, 130];
   const tagL = { x: 0, y: 0, text: "RC-V1", anchor: "middle", size: 9, rotate: 0, pri: 1, owner: "v", fixed: false, showFrom: 0, hideFrom: 0, place: { t: "tag", bb: bbT, order: ["below", "above", "right", "left"] } };

@@ -183,7 +183,7 @@ export class SheetCore {
       const index = new SpatialIndex(raw), tidyMap = new Map();
       for (const rec of index.items) tidyMap.set(rec.layer + ":" + rec.id, rec);
       this._ctx = { symbols: this.symbols, extras, width: this.size[0], height: this.size[1], textItems: (this.clean && this.clean.text_items) || [],
-        items: index.items, index, tidyMap, hops: (this.clean && this.clean.hops) || [], unconfirmed: (this.clean && this.clean.unconfirmed) || [] };
+        items: index.items, index, tidyMap, hops: (this.clean && this.clean.hops) || [], unconfirmed: (this.clean && this.clean.unconfirmed) || [], scale: (this.clean && this.clean.scale) || 1 };
     }
     return this._ctx;
   }

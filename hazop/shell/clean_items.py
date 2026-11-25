@@ -268,10 +268,12 @@ def build(extraction, name=None):
         counts.setdefault(r, 0)
     counts["total"] = len(unconfirmed)
     counts["unplaced"] = len(unplaced)
+    built = sheet_items.build_items(extraction)["items"]
     out = {"source_format": fmt, "items": items, "text_items": texts, "unconfirmed": unconfirmed, "counts": counts, "unplaced": unplaced,
-           "leftovers": _leftovers(extraction, fmt, ox, oy), "hops": [], "layout_lint": None}
+           "leftovers": _leftovers(extraction, fmt, ox, oy), "hops": [], "layout_lint": None,
+           "scale": clean_layout.drawing_scale(built)}      # 도면 단위 배율: 기호가 기준보다 아주 작거나 큰 도면(mm 단위 DEXPI 등)에서 웹의 글자·간격도 이만큼 줄인다. 보통 1.0
     try:                                                 # 정돈(clean_layout.py): 원본과 같은 자리에서 작은 어긋남만 바로잡은 좌표를 더한다(위상은 그대로)
-        t = clean_layout.tidy(sheet_items.build_items(extraction)["items"], items, _symbols())
+        t = clean_layout.tidy(built, items, _symbols())
     except Exception:  # noqa: BLE001 - 정돈이 실패해도 원본 좌표 그대로 그린다
         t = None
     if t:

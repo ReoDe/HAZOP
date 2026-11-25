@@ -131,6 +131,30 @@ class SnpTest(unittest.TestCase):
         self.assertEqual(sheet_items.build_items(e), items)
 
 
+class VisibleBoxTest(unittest.TestCase):
+    """drawio에서 rotation=90·270인 도형의 보이는 상자는 geometry(돌리기 전)의 가로세로를 가운데를 두고 바꾼 것이다. 그 밖은 그대로."""
+
+    def box(self, style, geometry=None):
+        n = node("v", "manual_valve", 100, 100, 30, 50, style=style)
+        if geometry:
+            n["geometry"] = geometry
+        return sheet_items.build_items(extraction([n], []))["items"][0]["bbox"]
+
+    def test_a_quarter_turn_swaps_width_and_height_around_the_center(self):
+        self.assertEqual(self.box(""), [100, 100, 130, 150])
+        self.assertEqual(self.box("rotation=90;"), [90, 110, 140, 140])
+        self.assertEqual(self.box("html=1;rotation=270;fillColor=#fff"), [90, 110, 140, 140])
+        self.assertEqual(self.box("rotation=-90;"), [90, 110, 140, 140])
+
+    def test_other_angles_and_directions_keep_the_geometry(self):
+        for style in ("rotation=180;", "rotation=45;", "rotation=0;", "direction=south;", "rotation=90x;"):
+            self.assertEqual(self.box(style), [100, 100, 130, 150], style)
+
+    def test_a_dexpi_geometry_with_a_shape_is_already_the_turned_box(self):
+        g = {"x": 58.0, "y": 116.0, "width": 3.0, "height": 5.0, "shape": {"name": None, "width": 5.0, "height": 3.0, "rotation": 90.0, "mirrored": False}}
+        self.assertEqual(self.box("rotation=90;", g), [58.0, 116.0, 61.0, 121.0])
+
+
 class ShapeTest(unittest.TestCase):
     """DEXPI에서 읽은 기호의 geometry.shape(규격 docs/specs/dexpi-exchange.md §5.3.1)가 정리 보기의 회전·뒤집힘이 된다.
     shape.rotation은 시계 방향 도, mirrored는 좌우 뒤집기(뒤집기 먼저, 그다음 회전). geometry 상자는 돌린 뒤의 상자라 그림을 맞추는 상자로 그대로 쓴다."""
