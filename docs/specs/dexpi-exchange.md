@@ -163,7 +163,7 @@ DEXPI는 배관이 설비에 직접 붙지 않고 설비가 가진 노즐에 붙
 | --- | --- | --- | --- |
 | 설비 `tag` | `TagName`(또는 `TagNamePrefix`+`TagNameSequenceNumber`+`TagNameSuffix`) | 맞음 | `TagName`을 먼저 씀. 없으면 세 조각을 이어 붙이고 `tag_basis`에 '조각 결합'을 남김 |
 | 밸브·부품 `tag` | `PipingComponentNumber`, 없으면 `SubTagName` | 근사 | DEXPI는 부품 번호가 태그가 아닐 수 있음. 가져온 `tag`에 근거 이름을 남김 |
-| 계기 `tag` | `ProcessInstrumentationFunctionCategory` + `ProcessInstrumentationFunctionNumber` | 근사 | 예제 `P`·`4712.02` 같은 표기. 우리 태그 모양(`PT-4712`)과 다름. 가져올 때 두 값을 공백 없이 이은 값을 `tag`로, 원래 조각은 `attributes`에 둠 |
+| 계기 `tag` | `ProcessInstrumentationFunctionCategory` + `ProcessInstrumentationFunctionNumber` | 근사 | 예제 `P`·`4712.02` 같은 표기. 우리 태그 모양(`PT-4712`)과 다름. 가져올 때 두 값을 공백 없이 이은 값을 `tag`로, 원래 조각은 `attributes`에 둠. 곁 파일이 있으면 원래 태그를 되붙임(rev 4). 곁 파일이 없으면 `RC-TE101`·`RC-TT101`·`RC-TI101`이 모두 `T101`이 되고 `dexpi_tag_not_unique`로 남음. 기능 문자까지 잇는 규칙(`TE101`)은 이미 들여온 도면의 사람 수정이 떨어져 나가 넣지 않음(`docs/units/2026-11-13-drawing-knowledge/evidence/dexpi-core-review.md` 8장) |
 | `line_no` | `PipingNetworkSystem.LineNumber` | 맞음 | |
 | `fluid_code` | `FluidCode`(구간·계통) | 맞음 | |
 | `pipe_class` | `PipingClassCode` | 맞음 | |
@@ -373,7 +373,7 @@ DEXPI 연결의 Source→Target은 '연결이 시작하고 끝나는 곳'이지 
 1. §5.6의 틀 검사(XSD 규칙을 옮긴 구조 검사) 통과.
 2. 모든 `type`이 2.0.1 클래스 목록(`classes-2-0-1.json`)에 있음. 모든 `id`가 §6.6 글자 규칙에 맞음.
 3. 모든 `#ID` 참조가 파일 안에 있음, `id`가 겹치지 않음.
-4. 되읽기: 쓴 내용을 §5 가져오기로 다시 읽어, 내보낸 구성요소 수·연결 수·태그 목록이 같음.
+4. 되읽기: 쓴 내용을 §5 가져오기로 다시 읽어, 내보낸 구성요소 수·연결 수·태그 목록이 같음. 계기는 쓴 조각대로 읽히는지를 하나씩 보고, 곁 파일을 붙인 되읽기에서 모든 구성요소의 태그가 원래대로인지를 봄(rev 4).
 
 받은 CAD에서 실제로 열리는지는 이 앱이 검사할 수 없습니다. 공개 검증 도구(DEXPI 검증기 `dexpi/dexpi-verificator`)는 저장소에 README만 있어 쓸 수 있는지 **확인 못 함**입니다.
 
@@ -415,7 +415,7 @@ drawio·PDF에서 읽은 도면을 내보내고 다시 가져왔을 때:
 
 - 같아야 함: 내보낸 노드 수와 `kind`(근사 대응은 곁 파일로 되돌림), 연결의 양 끝, 태그, 라인 속성, 도면 간 연결.
 - 달라도 됨: 엔터티 ID 번호(③이 다시 매김), `origin`(원래 `human_edit`였어도 다시 가져오면 `pid_extract`, 대신 곁 파일의 수정 이력이 남음), 흐름이 향하는 쪽(DEXPI에는 한 방향·양방향 구분만 있음. 내보낼 때 확인된 흐름이 있는 구간은 `FlowDirection=SingleFlowPipingNetworkSegment`로 쓰고 연결을 흐름 순서로 적지만, 다시 가져오면 §5.4대로 향하는 쪽이 미확인으로 돌아옴. 이 차이는 뺀 목록에 적고, 곁 파일이 있으면 되붙임).
-- 곁 파일이 있으면 가져오기가 `entity_id` 대응표로 원래 노드에 근거와 수정 이력을 되붙입니다. 곁 파일의 그래프 판이 다르면 되붙이지 않고 알립니다.
+- 곁 파일이 있으면 가져오기가 `entity_id` 대응표로 원래 노드에 태그와 근거, 수정 이력을 되붙입니다. 곁 파일의 그래프 판이 다르면 되붙이지 않고 알립니다.
 
 ### 7.4 구간 경계
 
@@ -518,4 +518,5 @@ drawio·PDF에서 읽은 도면을 내보내고 다시 가져왔을 때:
 | --- | --- |
 | §2, §6.1, §6.2, V-2 | 자동 확정된 쪽(`level: auto`)도 냄. 종류에 미확인이 남은 구성요소를 자동 확정된 쪽에서 뺌. 아직 반영되지 않은 사람 수정이 있는 쪽은 냄에서 뺌 |
 | §6.4 | `manifest.json`의 도면 줄에 `state`·`level`·`unconfirmed`·`auto_accepted`, `not_exported` 줄에 `level`·`code`·`reason`. 판(`hazop_dexpi_manifest/1`)은 칸을 더하기만 해 그대로 |
-| §6.5 | 걸린 쪽만 빼고 나머지를 냄 |
+| §6.5 | 걸린 쪽만 빼고 나머지를 냄. 되읽기 검사에 계기 태그를 더함 |
+| §3.5, §7.3 | 곁 파일이 태그를 되붙임. 파일에 쓰지 않는 계기 노드의 위치는 내지 않음 |
