@@ -361,6 +361,8 @@ class _Builder:
                 self._allocate_raw(eid, p)
                 continue
             self.node_ids[eid] = []
+            if p["group"] == "instrument":  # 계측 기능의 노드는 파일에 쓰지 않으므로 위치도 내지 않는다
+                continue
             for x in _loads(n["attributes"].get("dexpi:nodes")):
                 nid = self.ids.take(x.get("id"), "Node", keep=True)
                 self.node_ids[eid].append(nid)
