@@ -480,8 +480,8 @@ DEXPI XML의 `id`는 `[A-Za-z_][A-Za-z_0-9]*`만 됩니다(XSD `id-pattern`). �
 | `/api/sheet`의 `width`·`height`·`items` | `sheet_items.build_items(추출)` | 판정이 통과면 `View.extraction`, 아니면 고친 추출 |
 | `/api/clean`의 `items`·`text_items`·`unconfirmed`·`counts`·`unplaced`·`leftovers`·`hops`·`layout_lint`·`source_format` | `clean_items.build(추출, name)` | 같음 |
 
-- 두 API는 같은 판정을 써야 합니다. 한쪽만 되읽은 그림이면 좌표가 소수 둘째 자리에서 어긋날 수 있습니다.
-- 좌표는 지금과 같은 SVG 단위입니다. 되읽은 좌표는 mm를 원래 단위로 되돌린 것입니다.
+- 두 API는 같은 판정을 써야 합니다. 서로 다른 판을 그리지 않게 하려는 것입니다.
+- 좌표는 지금과 같은 SVG 단위입니다. 되읽은 좌표는 mm를 원래 단위로 되돌린 것이고, 고친 추출과 똑같을 때만 씁니다.
 - 미확인·AI 후보·자동 값(`ai_auto`)·사람 고침 표시는 `clean_items.build`가 지금과 같은 규칙으로 셉니다. `View.extraction`에 `human_edit`·`origin`·`validation.unknowns`가 들어 있습니다.
 - `View.extraction`에는 그리는 데 쓰는 칸만 있습니다. 그래프·고침·확정·채팅은 지금처럼 고친 추출을 씁니다.
 
@@ -512,21 +512,33 @@ DEXPI XML의 `id`는 `[A-Za-z_][A-Za-z_0-9]*`만 됩니다(XSD `id-pattern`). �
 | `build_failed` | 짓지 못함(§6.5 검사에 걸린 것 포함) |
 | `missing_part`·`extra_part` | 되읽은 파일에 있어야 할 것이 없음, 없어야 할 것이 있음 |
 | `ledger` | 실선·점선·위치 없음의 id 집합이 고친 추출의 id 집합과 다르거나 겹침 |
-| `differs` | 되돌린 값이 고친 추출과 다름(글자·종류는 똑같아야 하고 좌표는 0.05단위 안) |
+| `differs` | 되돌린 값이 고친 추출과 하나라도 다름(자리 포함) |
 
-화면이 지킬 것: `source`가 `extraction`이면 지금 길로 그립니다(빈 화면을 내지 않음). 실선(`solid`)은 '파일로 나가는 것'이며 '확정'이라고 부르지 않습니다. `dashed`에 있는 것을 빼고 그리지 않습니다.
+화면이 지킬 것:
+
+- `source`가 `extraction`이면 아무 표시 없이 지금 정리 보기를 그립니다. `why`는 화면에 글로 보이지 않고 기록과 채팅 답에서만 씁니다.
+- 점선(`dashed`)과 끝 미확정 연결은 지금 정리 보기가 그리는 꼴 그대로입니다. 새 표시를 만들지 않습니다. 지금 그리는 구성요소와 선은 `dashed`여도 모두 `View.extraction`에 남아 있어 그대로 그려지고, 지금 화면이 그리지 않는 끝 미확정 연결의 선은 앞으로도 그리지 않습니다.
+- `ledger`·`dashed`·`unplaced`는 검사와 기록에 쓰는 값입니다. 실선(`solid`)은 '파일로 나가는 것'이며 '확정'이라고 부르지 않습니다.
 
 #### 6.8.3 짓는 시점과 열쇠
 
 - 열쇠는 `{ver, symbols, writer, input_sha256}`입니다. `ver`는 `sheet_refresh.ver_of(name)`, `symbols`는 화면이 넘기는 기호 자료의 판, `writer`는 쓰기·읽기 코드의 판, `input_sha256`은 고친 추출에서 그리는 데 쓰는 칸의 지문입니다. `ver`와 `symbols`는 화면이 정하며, 짓는 쪽과 여는 쪽이 같은 값을 넘겨야 합니다.
 - 캐시는 작업 루트의 `paths.folder("cache", "dexpi-screen")` 아래 도면마다 두 파일(`.dexpi.xml`, `.screen.json`)입니다. 지워도 다시 짓습니다. 내보내기 폴더와 `manifest.json`은 건드리지 않고, 추출 결과·사람 수정·확정 기록을 바꾸지 않습니다.
+- `prepare`를 부르는 자리와 `symbols`의 값은 화면 쪽이 정합니다. 조건은 하나입니다. 도면을 여는 길을 막지 않아야 하며, 실패하거나 느리면 지금 길로 그립니다.
+- 짓지 못한 것은 까닭을 캐시에 남기고, 열쇠가 그대로인 동안 다시 짓지 않습니다(`build_failed`). 디스크에 쓰지 못한 것은 남지 않아 다음에 다시 짓습니다.
+- 두 파일은 DEXPI, 곁 파일 차례로 각각 임시 파일에 쓰고 바꿔 넣습니다. 사이에 끊기면 지문이나 열쇠가 어긋나 쓰이지 않습니다.
 - `open_view(name, extraction, ver, symbols)`는 읽고 검사하기만 합니다. `prepare(name, extraction, ver, symbols)`는 없거나 낡았으면 짓습니다. 둘 다 예외를 올리지 않고 `View`를 돌려줍니다.
 
-#### 6.8.4 정할 것
+#### 6.8.4 곁 파일과 셈
 
-- 화면이 `prepare`를 부르는 자리(그래프를 다시 지을 때와 열었는데 `no_cache`·`stale`일 때를 권함. 자동 확정이 도는 동안에는 묶음 끝에 한 번)와 `symbols`에 넣을 값.
-- 점선을 화면에서 어떻게 그릴지, 끝 미확정 연결의 선(`dashed[].points`)을 새로 그릴지, `why`를 어디에 보일지.
-- 벡터 PDF를 켤지.
+화면 곁 파일 `hazop_dexpi_screen/1`은 내보내는 곁 파일(`hazop_dexpi_sidecar/1`)과 다른 파일이고 밖으로 나가지 않습니다. 칸은 `key`·`dexpi_sha256`·`scale`(도면 mm와 원래 단위), `ids`(DEXPI id ↔ `local_id`), `in_file`(되읽으면 나와야 할 DEXPI id), `solid_extra`(실선마다 DEXPI에서 읽은 값과 다른 칸만: 원래 종류, 계기 태그, 원본 글자와 그 자리, 흐름, 고침 표시 등), `dashed`·`unplaced`(값 전부), `order`, `rest`(쪽 크기, 좌표계, 주인 없는 글자, 남은 것, 미확인 목록), `ledger`입니다.
+
+- 되읽은 자리가 고친 추출과 똑같지 않으면 `solid_extra`에 `box`·`points`를 두어 곁 파일의 자리를 씁니다. 파일의 좌표(소수 셋째 자리 mm)로 되돌릴 수 없는 소수 좌표이거나, drawio의 `rotation`처럼 지금 정리 보기의 상자가 놓인 상자와 다른 경우입니다. 소수 둘째 자리의 차이가 정돈의 묶음을 바꿔 그림이 수십 단위 달라질 수 있어 어림을 두지 않습니다.
+- drawio의 방향은 스타일 그대로(`style`의 `rotation`·`direction`·`flipH`·`flipV`) 곁 파일에 두어, 방향을 적지 않은 기호와 0도를 가립니다.
+- `ledger`의 `total`은 열 때마다 고친 추출에서 새로 세고 나머지 셋은 곁 파일에서 셉니다. 수만이 아니라 id 집합으로 견줍니다.
+- 점선은 분류하지 못했거나 DEXPI 클래스가 없거나 방향을 모르는 구성요소, 그런 구성요소에 붙은 배관, 끝 규칙에 맞지 않는 계장선, 그릴 수 없는 방향·자리, 끝 미확정 연결입니다.
+
+벡터 PDF는 켜지 않습니다(`format`).
 
 ## 7. 왕복에서 지켜야 할 것
 
@@ -665,7 +677,7 @@ drawio·PDF에서 읽은 도면을 내보내고 다시 가져왔을 때:
 
 rev 5(2026-11-25, 그림을 표준 자리에 쓰고 되읽기, `docs/units/2026-11-13-drawing-knowledge/evidence/dexpi-core-review.md` 9장): §5.3(상자·선 점 되읽기, `source_locations`를 그대로 두는 까닭), §6.5의 다섯째 검사, 새 §6.7, §7.1·§7.3의 그림 줄. 내보내기는 원본 추출 결과가 아니라 사람 수정을 얹은 추출 결과로 그립니다.
 
-rev 6(2026-11-25, 정리된 보기를 DEXPI에서 그리기): 새 §6.8(화면이 받는 자료와 판정값). 구현은 이 판에 이어 들어갑니다.
+rev 6(2026-11-25, 정리된 보기를 DEXPI에서 그리기): 새 §6.8(화면이 받는 자료와 판정값). 구현은 `hazop/export/dexpi_screen.py`, 시험은 `tests/test_dexpi_screen.py`입니다.
 
 ## 14. 알려진 한계
 

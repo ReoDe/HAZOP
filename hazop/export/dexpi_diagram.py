@@ -161,6 +161,7 @@ class Picture:
         self.free_texts = [{"text": dx.clean_text(t["text"]), "bbox": _plain(t.get("bbox") or [(t.get("geometry") or {}).get(k) for k in BOX_KEYS])}
                            for t in ex.get("texts") or [] if isinstance(t, dict) and t.get("text") and not t.get("owner")]
         self.symbols = {}  # DEXPI id -> (모양 이름, Placement)
+        self.local = {}  # DEXPI id -> 추출 결과의 local_id(그린 기호와 선만)
         self.lines = {}  # DEXPI id -> ([(x, y) mm], 신호선인가)
         self.joins = {}  # DEXPI id -> ((구성요소 id, 배관 노드 id 또는 None), …) 선의 시작과 끝이 닿는 곳
         self.texts = {}  # DEXPI id -> [(글자, x, y)]
@@ -203,7 +204,7 @@ class Picture:
         except Undrawable as why:
             self.leave_symbol(ent, str(why), dexpi_id)
             return
-        self.symbols[dexpi_id] = (shape_name, p)
+        self.symbols[dexpi_id], self.local[dexpi_id] = (shape_name, p), ent["local_id"]
         if is_approximate(node, self.locations.get(ent["local_id"]), self.format):
             self._mark("symbol", ent, dexpi_id)
         box = dexpi_shape.placed(dexpi_shape.UNIT, p)
@@ -247,6 +248,7 @@ class Picture:
             start = next((e.get("node_local_id") for e in rel["endpoints"] if e.get("end") == "source"), None)
             backward = start != first
         self.lines[dexpi_id], self.joins[dexpi_id] = (pts[::-1] if backward else pts, signal), joins
+        self.local[dexpi_id] = ent["local_id"]
 
     def middle(self, dexpi_ids):
         """선들 가운데 가장 긴 것의 중점(글자 자리). 그린 선이 없으면 None."""

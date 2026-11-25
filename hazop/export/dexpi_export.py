@@ -57,10 +57,11 @@ class ExportError(ValueError):
 
 
 class Export:
-    """한 도면의 내보내기 결과."""
+    """한 도면의 내보내기 결과. drawn은 파일에 쓰지 않는 대응표다(화면용 짓기 hazop.export.dexpi_screen): {"nodes"|"symbols"|"lines": {DEXPI id: local_id},
+    "in_file": {"nodes"|"relations": [되읽으면 나올 DEXPI id]}}. symbols·lines는 그림이 있는 것만."""
 
-    def __init__(self, name, xml, excluded, sidecar, stats):
-        self.name, self.xml, self.excluded, self.sidecar, self.stats = name, xml, excluded, sidecar, stats
+    def __init__(self, name, xml, excluded, sidecar, stats, drawn):
+        self.name, self.xml, self.excluded, self.sidecar, self.stats, self.drawn = name, xml, excluded, sidecar, stats, drawn
 
     @property
     def files(self):
@@ -832,7 +833,12 @@ class _Builder:
                  "excluded_connections": len(self.excl_conn), "excluded_attributes": len(self.excl_attrs),
                  "approximations": len(self.approx), "cut_pipes": cut["pipes"], "cut_signal_lines": cut["signal_lines"],
                  "excluded_by_reason": by_reason, "picture": self.picture.counts(), "bytes": len(xml), "dexpi_sha256": sha}
-        return Export(self.name, xml, excluded, sidecar, stats)
+        pic = self.picture
+        drawn = {"nodes": {p["id"]: self.nodes[e]["local_id"] for e, p in self.plan.items()},
+                 "symbols": {o: pic.local[o] for o in pic.symbols}, "lines": {o: pic.local[o] for o in pic.lines},
+                 "in_file": {"nodes": [p["id"] for p in self.plan.values()],
+                             "relations": [x["id"] for x in pipes] + [oid for _e, oid, _a, _b in self.signals]}}
+        return Export(self.name, xml, excluded, sidecar, stats, drawn)
 
 
 _PREFIX = {"equipment": "Equipment", "piping": "Piping", "offpage": "OffPage", "instrument": "ProcessInstrumentationFunction"}
