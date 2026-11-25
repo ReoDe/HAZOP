@@ -407,6 +407,78 @@ class DexpiRoundtripTest(unittest.TestCase):
         self.assertTrue(all("hazop_sidecar" not in n.get("evidence", {}) for n in ex2["nodes"]))
 
 
+class InstrumentRoundtripTest(unittest.TestCase):
+    """V2-1: 계기의 노드 위치와 계기 태그가 왕복에서 어긋나지 않는다."""
+
+    def test_instrument_with_nodes_in_a_proteus_file_is_exported(self):
+        """공개 1.3 예제(저장소 밖)와 같은 꼴: 계측 기능에 ConnectionPoints가 있다. 계기의 노드는 DEXPI에 쓰지 않으므로 위치도 쓰지 않는다."""
+        node = (b'<ConnectionPoints NumPoints="1"><Node ID="NI1"><Position><Location X="150" Y="232" Z="0"/></Position></Node>'
+                b'</ConnectionPoints>')
+        head = b'<ProcessInstrumentationFunction ID="PIF-1" ComponentClass="ProcessInstrumentationFunction">'
+        raw = fixture("small-pid-proteus.xml")
+        self.assertEqual(raw.count(head), 1)
+        ex = dexpi_import.extract_bytes(raw.replace(head, head + node), "x.xml")[0]
+        pif = next(n for n in ex["nodes"] if n["source_object_id"] == "PIF-1")
+        self.assertIn("NI1", pif["attributes"]["dexpi:nodes"])
+        exp = export((ex, build.build_graph(ex)))
+        self.assertEqual(dexpi_read.check_references(dexpi_read.parse_safely(exp.xml)), [])
+        plain = export(dexpi_pair("small-pid-proteus.xml"))
+        self.assertEqual(exp.xml, plain.xml)
+
+    def test_every_tag_comes_back_through_the_sidecar(self):
+        for path in SNP:
+            with self.subTest(os.path.basename(path)):
+                exp = export(snp_pair(path))
+                back = {n["source_object_id"]: n for n in reimport(exp)["nodes"]}
+                for e in exp.sidecar["entities"]:
+                    n = back[e["dexpi_id"]]
+                    self.assertEqual((n["tag"], n["label"], n["attributes"].get("tag")), (e["tag"], e["tag"] or "", e["tag"]))
+
+    def test_three_instruments_of_one_loop_stay_three(self):
+        exp = export(snp_pair([p for p in SNP if "SNP-M-101" in p][0]))
+        back = reimport(exp)
+        tags = [n["tag"] for n in back["nodes"] if n["category"] == "instrument"]
+        self.assertTrue({"RC-TE101", "RC-TT101", "RC-TI101"} <= set(tags), tags)
+        self.assertEqual(len(tags), len(set(tags)))
+        self.assertFalse([u for u in back["validation"]["unknowns"] if u["check"] == "dexpi_tag_not_unique"])
+        again = export((back, build.build_graph(back)))  # 한 번 더 내보내도 태그가 그대로
+        self.assertEqual(sorted(str(e["tag"]) for e in again.sidecar["entities"]), sorted(str(e["tag"]) for e in exp.sidecar["entities"]))
+
+    def test_sidecar_restores_a_tag_the_person_changed_or_removed(self):
+        for tag in ("PIC-101A", None):
+            with self.subTest(tag):
+                ex, _ = dexpi_pair("small-pid-dexpi2.xml")
+                n = next(n for n in ex["nodes"] if n["category"] == "instrument")
+                oid = n["source_object_id"]
+                n["tag"], n["label"], n["label_text"] = tag, tag or "", tag or ""
+                n["attributes"].pop("tag", None)
+                if tag:
+                    n["attributes"]["tag"] = tag
+                back = reimport(export((ex, build.build_graph(ex))))
+                got = next(x for x in back["nodes"] if x["source_object_id"] == oid)
+                self.assertEqual((got["tag"], got["attributes"].get("tag")), (tag, tag))
+                missing = [u for u in back["validation"]["unknowns"] if u["check"] == "missing_tag" and u["target"] == got["local_id"]]
+                self.assertEqual(len(missing), 0 if tag else 1)
+
+    def test_a_wrong_instrument_tag_in_the_file_is_caught_before_writing(self):
+        real = de._Builder._finish
+        pair = snp_pair([p for p in SNP if "SNP-M-101" in p][0])
+        for old, new in ((b"<String>101</String>", b"<String>109</String>"),):
+            def broken(self, xml, *a):
+                assert old in xml
+                return real(self, xml.replace(old, new, 1), *a)
+            with mock.patch.object(de._Builder, "_finish", broken):
+                with self.assertRaises(de.ExportError) as cm:
+                    export(pair)
+            self.assertIn("계기 태그", " ".join(cm.exception.reasons))
+
+    def test_a_sidecar_that_does_not_give_the_tag_back_is_caught_before_writing(self):
+        with mock.patch.object(dexpi_import, "apply_sidecar", lambda *a, **k: {}):
+            with self.assertRaises(de.ExportError) as cm:
+                export(snp_pair([p for p in SNP if "SNP-M-101" in p][0]))
+        self.assertIn("곁 파일", " ".join(cm.exception.reasons))
+
+
 class WriteTest(unittest.TestCase):
 
     def setUp(self):
