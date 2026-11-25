@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import unittest
+from unittest import mock
 import xml.etree.ElementTree as ET
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -99,6 +100,17 @@ class RoundTripTest(unittest.TestCase):
                 self.assertEqual(s.differing(ex), [])
                 self.assertEqual(s.mismatches(ex), [])
                 self.assertEqual(ex["validation"]["blockers"], [])
+                self.assertNotIn("dexpi_actuator_kind_unknown", {u["check"] for u in ex["validation"]["unknowns"]})
+
+    def test_a_flow_against_the_order_of_the_drawing(self):
+        ex = copy.deepcopy(sheet().ex)
+        r = next(r for r in ex["relations"] if r["flow_direction"] and r["flow_direction"]["basis"] == "source_to_target"
+                 and not any(n["kind"] in ("continuation", "check_valve") for n in ex["nodes"] if n["local_id"] in (r["flow_direction"]["from"], r["flow_direction"]["to"])))
+        f = r["flow_direction"]
+        r["flow_direction"] = {"from": f["to"], "to": f["from"], "from_end": f["to_end"], "to_end": f["from_end"], "basis": f["basis"]}
+        s = Sheet((ex, build.build_graph(ex)))
+        self.assertTrue(any(p["swapped"] for p in s.export.sidecar["pipes"]))
+        self.assertEqual(s.differing(read(s.marked)), [])
 
     def test_a_marked_file_passes_the_checks(self):
         root = dexpi_read.parse_safely(sheet().marked)
@@ -221,6 +233,7 @@ class RefusedTest(unittest.TestCase):
         oid = self.node("steam_generator")
         ex = read(s.with_marks(lambda m: m[oid].update(Tag="ZZ-9")))
         self.assertEqual((s.differing(ex), [u["field"] for u in s.mismatches(ex)]), ([], ["tag"]))
+        self.assertIn("계기가 아닌", s.mismatches(ex)[0]["reason"])
 
     def test_a_text_whose_direction_is_not_that_of_the_connector(self):
         oid, n = next((o, n) for o, n in sheet().want.items() if n["kind"] == "continuation")
@@ -246,6 +259,39 @@ class RefusedTest(unittest.TestCase):
         self.assertEqual(next(n for n in ex["nodes"] if n["source_object_id"] == oid)["kind"], "tank")
         self.assertEqual({u["source_object_id"] for u in s.mismatches(ex)}, {oid})
 
+    def test_a_class_changed_to_a_narrower_one(self):
+        s = sheet()
+        oid = self.node("steam_generator")
+        narrow = next(c for c in sorted(dexpi_map.classes()) if c != "HeatExchanger" and dexpi_map.derives_from(c, "HeatExchanger")
+                      and not dexpi_map.classes()[c].get("abstract"))
+        head = re.search(rb'<Object [^>]*id="%s"[^>]*>' % oid.encode(), s.marked).group(0)
+        ex = read(s.marked.replace(head, head.replace(b"HeatExchanger", narrow.encode())))
+        self.assertEqual(next(n for n in ex["nodes"] if n["source_object_id"] == oid)["kind"], "heat_exchanger")
+
+    def test_a_flow_where_the_grounds_in_the_file_disagree(self):
+        s = sheet()
+        conns = dexpi_import.extract_bytes(s.marked, "x.xml")[1].connections
+        idx, oid = next((i, r["source_object_id"]) for r in read(s.plain)["relations"] if r["flow_direction"]
+                        for i, c in enumerate(conns) if c["id"] == r["source_object_id"])
+        for arrow in ("forward", "backward"):
+            with mock.patch.object(dexpi_import, "_arrow_flows", return_value=({idx: arrow}, [])):
+                ex = read(s.marked)
+            got = next(r for r in ex["relations"] if r["source_object_id"] == oid)["flow_direction"]
+            self.assertEqual(got is None, bool(s.mismatches(ex)))
+            if got is None:
+                return
+        self.fail("어긋난 화살표가 없음")
+
+    def test_a_flow_where_two_arrows_disagree(self):
+        s = sheet()
+        conns = dexpi_import.extract_bytes(s.marked, "x.xml")[1].connections
+        idx, oid = next((i, c["id"]) for i, c in enumerate(conns) if s.pipes[c["id"]]["flow_direction"]
+                        and next(r for r in read(s.plain)["relations"] if r["source_object_id"] == c["id"])["flow_direction"] is None)
+        with mock.patch.object(dexpi_import, "_arrow_flows", return_value=({idx: None}, [])):
+            ex = read(s.marked)
+        self.assertIsNone(next(r for r in ex["relations"] if r["source_object_id"] == oid)["flow_direction"])
+        self.assertEqual([u["source_object_id"] for u in s.mismatches(ex)], [oid])
+
     def test_a_missing_or_wrong_echo(self):
         oid = self.node(instrument=True)
         for change in (lambda m: m[oid].pop("Echo"), lambda m: m[oid].update(Echo="0" * 16)):
@@ -267,6 +313,7 @@ class RefusedTest(unittest.TestCase):
         xml = xml.replace(b"<String>@@</String></Data>", b"<String>steam_generator</String></Data><Data property=\"Kind\"><String>condenser</String></Data>")
         ex = read(xml)
         self.assertEqual(sheet().differing(ex), [(oid, "kind")])
+        self.assertEqual(next(n for n in ex["nodes"] if n["source_object_id"] == oid)["kind"], "heat_exchanger")
 
     def test_marks_whose_object_is_gone_are_counted(self):
         s = sheet()

@@ -118,6 +118,16 @@ class NotTheSameTest(unittest.TestCase):
         mark(self.new, "PIF1", tag="PIC-101")
         self.assertEqual(self.move(), ("linked", None, True))
 
+    def test_a_drawing_most_of_whose_tags_the_marks_changed_is_the_same_drawing(self):
+        for n in self.new["nodes"]:
+            mark(self.new, n["source_object_id"], tag="X-" + n["source_object_id"])
+        edit_link.check_same_drawing(self.old, self.new)
+        edit_link.check_same_drawing(self.new, self.old)
+        for n in self.new["nodes"]:
+            n.pop(origin.PLAIN)
+        with self.assertRaises(edit_link.Refused):
+            edit_link.check_same_drawing(self.old, self.new)
+
     def test_the_value_of_the_file_itself_changed(self):
         mark(self.new, "PIF1", tag="PIC-101")
         node(self.new, "PIF1")[origin.PLAIN]["tag"] = "T101"
