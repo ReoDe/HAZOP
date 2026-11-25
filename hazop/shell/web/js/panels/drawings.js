@@ -8,6 +8,7 @@ import { Btn, Chip, Notice } from "../ui/parts.js";
 import { SourceConflicts, choicesCount, displacedOf } from "./drawings_sources.js";
 import { DrawingExcludedChip, DrawingPicks } from "./nodes_screen.js";
 import { OpenFolder } from "./open_folder.js";
+import { ConsentAsk, useAuto, waitsOf } from "./auto_state.js";
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
@@ -40,35 +41,6 @@ function DexpiExport() {
     ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">${error}</span><//>` : null}</div>`;
 }
 
-/** 자동 확정이 '추출만 됨'으로 멈춘 도면의 까닭(사람 말). 여기에 없는 까닭(started·error·stopped)은 표시하지 않는다: 곧 이어지거나 사람이 멈춘 것이다. */
-export const WAIT_TEXT = {
-  no_connection: "AI에 연결되지 않아 추출만 됐습니다. 설정에서 연결하세요.",
-  no_consent: "AI로 보내는 것을 허락하지 않아 추출만 됐습니다.",
-  images_off: "도면 조각 그림을 AI로 보내지 않게 해 두어 추출만 됐습니다.",
-  ai_off: "이 프로젝트는 AI로 보내지 않게 해 두어 추출만 됐습니다.",
-  limit: "AI 사용 한도에 닿아 추출만 됐습니다. 한도가 풀리면 이어 합니다.",
-  error_final: "AI가 여러 번 답하지 못해 추출만 됐습니다.",
-  run_cap: "한 번에 보낼 호출 수에 닿아 나머지는 추출만 됐습니다.",
-  taken: "같은 번호의 도면이 이미 있어 번호를 확정하지 못했습니다.",
-  scan: "스캔 도면이라 자동으로 메우지 못했습니다.",
-  no_image: "도면 그림이 없어 AI가 보지 못했습니다.",
-};
-
-/** 도면별 자동 확정 까닭 {graph_id: 글}. 잘 끝난 도면은 없다. */
-function useAutoWaits() {
-  const [waits, setWaits] = useState({});
-  useEffect(() => {
-    const load = () => read("aireview/auto").then((d) => {
-      const out = {};
-      for (const r of (d && d.sheets) || []) if (r.result === "waiting" && WAIT_TEXT[r.why]) out[r.graph_id] = WAIT_TEXT[r.why];
-      setWaits(out);
-    }).catch(() => setWaits({}));
-    load();
-    return onChanged((t) => { if (t === "aireview" || t === "sheetconf" || t === "drawings") load(); });
-  }, []);
-  return waits;
-}
-
 /** 끝난 작업 카드를 닫는다(작업 기록은 엔진에 그대로). */
 function dismissJob(id) { store.set((s) => { const j = Object.assign({}, s.jobs); delete j[id]; return { jobs: j }; }); }
 
@@ -88,7 +60,8 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const toggle = (g) => setPicked((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
   const sources = useStore((s) => s.sources);          // 원본 고르기 카드가 읽어 둔 값(같은 번호의 다른 원본)
   const many = choicesCount(sources), idle = displacedOf(sources);
-  const waits = useAutoWaits();
+  const auto = useAuto();
+  const waits = waitsOf(auto);
   const toCard = () => { const el = document.getElementById("src-card"); if (el) el.scrollIntoView({ block: "nearest" }); };
 
   const pick = () => cmd("register.pick").catch(toastError);
@@ -117,6 +90,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
               ${waits[d.graph_id] ? html`<span class="drow-dot" role="img" tabindex="0" title=${waits[d.graph_id]} aria-label=${d.display + ": " + waits[d.graph_id]}></span>` : null}
               <${DrawingExcludedChip} graphId=${d.graph_id} />
               </span></div>`)}</div>`}</div>
+      <${ConsentAsk} auto=${auto} />
       <${SourceConflicts} />
       <${DexpiExport} />
       ${data.documents.length ? html`<div><div class="muted" style="font-size:var(--fs-sm);margin-bottom:6px">등록 자료 ${data.documents.length}건</div><div class="list">

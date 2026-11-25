@@ -307,6 +307,28 @@ class AutoWaitDotTest(W.ShellBase):
         self.assertEqual(self.js(win, "document.querySelectorAll('.ptabs').length"), 0, "표제란·AI 검토 탭이 없다")
 
 
+class AutoConsentTest(W.ShellBase):
+    def test_the_send_question_is_asked_once_with_two_buttons_and_the_answer_goes_to_the_engine(self):
+        """엔진이 ask를 주면 도면 패널에 한 문장과 단추 둘이 뜨고, 누르면 aireview.consent로 간다. 묻지 않을 때는 카드가 없고 설정에 같은 선택 한 줄이 있다."""
+        from unittest import mock
+        from hazop.shell import auto_flow
+        calls = []
+        fake = {"ask": True, "consent": {"allow": False, "asked": False, "at": None}, "sheets": []}
+        real_consent = auto_flow.set_consent
+        with mock.patch.object(auto_flow, "summary", lambda engine: fake),                 mock.patch.object(auto_flow, "set_consent", lambda engine, allow: (calls.append(allow), {"allow": allow})[1]):
+            win = self.window()
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('[aria-label=\"도면 조각 전송 동의\"]').length") == 1, 15))
+            text = self.js(win, "document.querySelector('[aria-label=\"도면 조각 전송 동의\"]').textContent")
+            self.assertIn("올린 도면의 조각을 AI에 보내 읽기를 돕게 할까요?", text)
+            self.assertEqual(self.jsj(win, "[...document.querySelectorAll('[aria-label=\"도면 조각 전송 동의\"] button')].map((b) => b.textContent)"), ["보냄", "보내지 않음"])
+            self.assertTrue(self.click(win, "[aria-label='도면 조각 전송 동의'] button[aria-label='보내지 않음']"))
+            self.assertTrue(wait_for(lambda: calls == [False], 10), calls)
+            fake.update(ask=False)
+            self.js(win, "window.__hz.store.set({panel: 'settings'})")
+            self.assertTrue(wait_for(lambda: "도면 조각을 AI에 보내 읽기 돕기" in self.text(win), 15))
+            self.assertEqual(self.js(win, "document.querySelectorAll('[aria-label=\"도면 조각 전송 동의\"]').length"), 0)
+
+
 class ItemBubbleFlowTest(W.ShellBase):
     def test_the_component_card_shows_its_own_specification_items_without_links_or_english(self):
         """속성 카드(사용자 결정 2026-11-25): 머리는 '태그 한글 종류', 아래는 그 구성요소 자체의 사양 항목(값이 없으면 '—'). 이어진 곳·든 구간·

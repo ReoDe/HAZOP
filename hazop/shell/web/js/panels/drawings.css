@@ -15,3 +15,5 @@
 .picks { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 0 8px; }
 .picks .notice { flex-basis: 100%; }
 .drow .drow-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn-line, #c98f4d); flex: none; }
+.panel-b > .set-ask { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--warn-line); border-radius: 8px; background: var(--warn-bg); font-size: var(--fs-sm); }
+.panel-b > .set-ask .set-ask-b { display: flex; gap: var(--sp-1); }
