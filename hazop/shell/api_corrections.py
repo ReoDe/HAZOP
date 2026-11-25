@@ -111,7 +111,8 @@ def _sources(name):
 
 def _ai_ops(ops):
     """AI 검토에서 수락한 연산 번호: 수정 기록의 연산이 origin ai·ai_candidate를 가진 것(후보 파일이 늦게 맞춰져도 판정이 흔들리지 않는다).
-    되돌리기는 AI 검토 패널의 되돌리기로만 뺀다(후보 상태를 함께 되돌려 그 자리를 다시 물을 수 있게)."""
+    되돌리기는 채팅의 AI 후보 되돌리기(aireview.revert)나 자동 수락 되돌리기(aireview.auto_revert)로만 뺀다(후보 상태를 함께 되돌려
+    그 자리를 다시 물을 수 있게)."""
     return {o["op_id"] for o in ops if o.get("origin") == "ai" and o.get("ai_candidate")}
 
 
@@ -135,6 +136,11 @@ def _index(corrected):
 def _offset(extraction):
     from hazop.shell import sheet_items
     return sheet_items._offset(extraction)
+
+
+AI_UNDO_TEXT = "AI 후보를 수락한 고침입니다. 채팅에서 이 AI 후보의 수락을 되돌려 달라고 하세요(후보를 다시 물을 수 있게 함께 되돌립니다)."
+AUTO_UNDO_TEXT = ("AI가 자동으로 받은 값입니다. 채팅에서 이 도면의 자동 수락을 되돌려 달라고 하세요(도면 한 장을 한 번에 되돌립니다). "
+                  "값 하나만 다르면 채팅에서 그 값을 고치면 됩니다.")
 
 
 def _redo_stack(doc):
@@ -206,17 +212,22 @@ def _sid_local(corrected):
             yield r["source_object_id"], r["local_id"]
 
 
+def _sheet_state(name):
+    """고치면 풀릴 사람의 쪽 확정: confirmed · compared(견줌만) · None. 자동 확정은 고쳐도 풀리지 않아 여기 들지 않는다."""
+    from hazop.extract import confirmation
+    try:
+        st = confirmation.sheet_confirmation(name)
+    except (OSError, ValueError):
+        return None
+    return "confirmed" if st["level"] == "human" else "compared" if st["compared"] else None
+
+
 def _impact(engine, graph_id, name, local_ids):
     """고침이 걸리는 것: 쪽 확정 상태, 그 구성요소가 든 검토구간(확정·잠금 여부)."""
     from hazop.app import project_ctx
     from hazop.chat import view as chatview
-    from hazop.extract import confirmation
     from hazop.study import nodes as study_nodes
-    out = {"sheet": None, "nodes": []}
-    try:
-        out["sheet"] = (confirmation.sheet_confirmation(name) or {}).get("status")
-    except (OSError, ValueError):
-        out["sheet"] = None
+    out = {"sheet": _sheet_state(name), "nodes": []}
     try:
         pg = project_ctx.project_graph(engine.project_id())
         ns = study_nodes.read_as_is(pg)
@@ -396,14 +407,7 @@ def _write(engine, graph_id, name, ops, by, src, action, note=None, defer=False)
     """연산 목록을 저장하고 그래프를 다시 만든다(도면 잠금 안에서 부른다). 저장 전 쪽 확정 상태를 보아 풀리면 알린다. → 답의 공통 부분.
     defer=True(웹)면 그래프·지식그래프 다시 만들기를 작업(job)으로 넘기고 바로 답한다: 큰 프로젝트(143쪽)에서 그 일이 10초 넘게 걸려 누른 뒤 반응이 멈추지 않게.
     그동안 낡은 그래프 표시가 서 있고, 끝나면 changed 알림이 간다. 작업이 못 끝나도 표시가 남아 다음 동작·프로젝트 그래프를 지을 때 다시 만든다."""
-    from hazop.extract import confirmation
-
-    def status():
-        try:
-            return (confirmation.sheet_confirmation(name) or {}).get("status")
-        except (OSError, ValueError):
-            return None
-    before = status()
+    before = _sheet_state(name)
     corrections.save_fp(name, ops, by, drawing_number=(src["original"].get("drawing") or {}).get("drawing_number"), expect=src["fp"],
                         action=action, note=note)
     # 여기부터는 저장이 끝났다. 어떤 예외도 '저장 안 됨'으로 알리지 않는다
@@ -413,7 +417,7 @@ def _write(engine, graph_id, name, ops, by, src, action, note=None, defer=False)
         reconciled = ai_review.reconcile(name)
     except Exception:  # noqa: BLE001
         LOG.exception("AI 후보를 수정 기록에 맞추지 못함")
-    after = status()                      # 쪽 확정 판정은 파일 지문만 본다(그래프가 필요 없다)
+    after = _sheet_state(name)                      # 쪽 확정 판정은 파일 지문만 본다(그래프가 필요 없다)
     released = before in ("compared", "confirmed") and after not in ("compared", "confirmed")
     notes = ["이 쪽의 %s이 풀렸습니다. 다시 견주고 확정하세요." % ("확정" if before == "confirmed" else "견줌")] if released else []
     if defer:
@@ -509,7 +513,7 @@ def apply_edit(engine, graph_id, op, local_id, value, ver, confirm=None, by=None
 
 
 def undo(engine, graph_id, op_id, ver, by=None, confirm=None, defer=False):
-    """연산 하나를 뺀다. 그 연산이 만든 기기·연결을 뒤 연산이 쓰면 빼지 않는다. AI 검토 패널에서 수락한 연산은 그 패널의 되돌리기로만 뺀다.
+    """연산 하나를 뺀다. 그 연산이 만든 기기·연결을 뒤 연산이 쓰면 빼지 않는다. AI 후보를 수락한 연산은 채팅의 AI 되돌리기로만 뺀다.
     기기·연결을 사라지게 하는 되돌리기(추가를 되돌림)는 지우기와 같은 확인을 받는다. 뺀 연산은 다시 하기로 원래 자리에 되살린다."""
     def go():
         name = _name(engine, graph_id)
@@ -522,7 +526,7 @@ def undo(engine, graph_id, op_id, ver, by=None, confirm=None, defer=False):
             if pos is None:
                 raise Refused("not_found", "없는 고침입니다(이미 되돌렸을 수 있습니다).")
             if op_id in _ai_ops(src["ops"]):
-                raise Refused("bad_args", "AI 검토에서 수락한 고침입니다. AI 검토 패널에서 되돌리세요(후보를 다시 물을 수 있게 함께 되돌립니다).")
+                raise Refused("bad_args", AUTO_UNDO_TEXT if corrections.is_auto(ops[pos]) else AI_UNDO_TEXT)
             later = _depends(ops[pos + 1:], op_id)
             if later:
                 raise Refused("bad_args", "이 고침이 만든 것을 뒤 고침(%s)이 씁니다. 뒤 고침부터 되돌리세요." % ", ".join(later[:5]))
