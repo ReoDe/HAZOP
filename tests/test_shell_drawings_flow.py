@@ -290,6 +290,22 @@ class TitleblockLinkFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: "표제란" in self.text(win), 10))
 
 
+class AutoWaitDotTest(W.ShellBase):
+    def test_only_sheets_stopped_at_extraction_only_get_a_dot_with_the_reason_and_the_tabs_are_gone(self):
+        """자동 확정이 멈춘 도면(할 일이 있는 까닭)만 도면 줄에 점 하나와 말풍선 한 줄. 잘 끝난 도면·진행 중(started)은 표시가 없다."""
+        from unittest import mock
+        from hazop.shell import auto_flow
+        fake = {"sheets": [{"graph_id": "graph-SNP-M-101", "result": "waiting", "why": "no_consent"},
+                           {"graph_id": "graph-SNP-M-102", "result": "waiting", "why": "started"}]}
+        with mock.patch.object(auto_flow, "summary", lambda engine: fake):
+            win = self.window()          # 도면 패널은 시작 때 열려 있어 읽기가 창을 만들 때 나간다
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow .drow-dot').length") == 1, 15))
+            self.assertIn("허락하지 않아", self.js(win, "document.querySelectorAll('.drow')[0].querySelector('.drow-dot').title"))
+            self.assertEqual(self.js(win, "document.querySelectorAll('.drow')[1].querySelectorAll('.drow-dot').length"), 0)
+            self.assertNotIn("no_consent", self.js(win, "document.querySelector('.drow').textContent"))
+        self.assertEqual(self.js(win, "document.querySelectorAll('.ptabs').length"), 0, "표제란·AI 검토 탭이 없다")
+
+
 class ItemBubbleFlowTest(W.ShellBase):
     def test_the_component_card_shows_its_own_specification_items_without_links_or_english(self):
         """속성 카드(사용자 결정 2026-11-25): 머리는 '태그 한글 종류', 아래는 그 구성요소 자체의 사양 항목(값이 없으면 '—'). 이어진 곳·든 구간·

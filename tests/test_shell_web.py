@@ -239,21 +239,19 @@ class ShellWindowTest(ShellBase):
         self.assertFalse(self.jsj(win, "!!document.querySelector(\"button[aria-label$='돌아가기']\")"), "이 표시가 없으면 칩도 없다")
 
     def test_related_panels_are_tabs_under_one_menu_button(self):
+        """지식그래프와 설계 문서는 한 메뉴의 탭이다. 도면 패널은 탭이 없다(표제란·AI 검토는 자동 확정으로 화면 진입을 내렸고 열려 있어도 탭이 안 뜬다)."""
         win = self.window()
-        for name, lead, tabs in (("aireview", "도면", ["도면", "표제란", "AI 검토"]), ("docs", "지식그래프", ["지식그래프", "설계 문서"])):
-            self.js(win, "window.__hz.store.set({panel: %s})" % json.dumps(name))
-            self.assertTrue(wait_for(lambda: self.jsj(win, "[...document.querySelectorAll('.ptabs button')].map(b => b.textContent)") == tabs, 10), name)
-            self.assertEqual(self.jsj(win, "document.querySelector('.rail button.on').getAttribute('aria-label')").split(" (")[0], lead, "묶음의 메뉴 단추가 켜진다")
-        self.js(win, "window.__hz.store.set({panel: 'aireview'})")
-        pump(0.4)
-        self.assertTrue(self.click(win, ".ptabs button", 1))
-        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "titleblock", 10))
-        self.assertEqual(self.js(win, "document.querySelector('.ptabs button.on').textContent"), "표제란")
+        self.js(win, "window.__hz.store.set({panel: 'docs'})")
+        self.assertTrue(wait_for(lambda: self.jsj(win, "[...document.querySelectorAll('.ptabs button')].map(b => b.textContent)") == ["지식그래프", "설계 문서"], 10))
+        self.assertEqual(self.jsj(win, "document.querySelector('.rail button.on').getAttribute('aria-label')").split(" (")[0], "지식그래프", "묶음의 메뉴 단추가 켜진다")
         self.assertTrue(self.click(win, ".rail button.on"))
         self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10), "켜진 메뉴 단추를 누르면 닫힌다")
-        self.js(win, "window.__hz.store.set({panel: 'results'})")
-        pump(0.3)
-        self.assertEqual(self.js(win, "document.querySelector('.ptabs') === null"), True, "묶음이 아니면 탭이 없다")
+        for name in ("drawings", "titleblock", "aireview", "results"):
+            self.js(win, "window.__hz.store.set({panel: %s})" % json.dumps(name))
+            pump(0.4)
+            self.assertEqual(self.js(win, "document.querySelector('.ptabs') === null"), True, name + ": 탭이 없다")
+        labels = self.jsj(win, "[...document.querySelectorAll('.rail button')].map((b) => b.getAttribute('aria-label'))")
+        self.assertFalse(any("표제란" in x or "AI 검토" in x for x in labels), labels)
 
     def test_chat_header_keeps_only_the_new_chat_button(self):
         """화면 단순화(사용자 결정 2026-11-25): 채팅 머리의 아이콘 단추는 맨 왼쪽 하나(새 대화)만 남는다. 실행 기록 패널은 메뉴에도 없다."""

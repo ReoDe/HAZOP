@@ -24,8 +24,8 @@ export const PANELS = [
   { name: "ie", icon: "route", label: "초기사건", key: "4", component: IePanel, css: "ie.css" },
   { name: "kg", icon: "topology-star-3", label: "지식그래프", key: "5", component: KgPanel },
   { name: "docs", group: "kg", label: "설계 문서", key: "6", component: DocsPanel },
-  { name: "titleblock", group: "drawings", label: "표제란", component: TitleblockPanel, css: "titleblock.css" },
-  { name: "aireview", group: "drawings", label: "AI 검토", key: "7", component: AiReviewPanel, css: "aireview.css" },
+  { name: "titleblock", hidden: true, label: "표제란", component: TitleblockPanel, css: "titleblock.css" },      // 화면 진입은 내렸다(자동 확정): 채팅 명령·시험이 연다
+  { name: "aireview", hidden: true, label: "AI 검토", component: AiReviewPanel, css: "aireview.css" },
   { name: "actionlog", hidden: true, label: "AI 실행 기록", component: ActionLogPanel, css: "actionlog.css" },
   { name: "settings", icon: "settings", label: "설정", component: SettingsPanel, css: "settings.css", place: "bottom",
     hint: (s) => "AI 연결: " + (s.conn.chip || s.conn.label), dot: (s) => s.conn.tone || "plain" },

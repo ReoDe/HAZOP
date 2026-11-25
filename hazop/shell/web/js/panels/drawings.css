@@ -14,3 +14,4 @@
 .drow .acts-end { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .picks { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 0 8px; }
 .picks .notice { flex-basis: 100%; }
+.drow .drow-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn-line, #c98f4d); flex: none; }
