@@ -9,6 +9,7 @@
 같은 입력이면 같은 바이트가 나온다(시각은 묶음 목록에만 둔다).
 """
 
+import collections
 import copy
 import hashlib
 import json
@@ -19,6 +20,8 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 from hazop import paths, store_io
+from hazop.export import dexpi_diagram, dexpi_xml
+from hazop.export.dexpi_xml import components as _components, el as _el, obj as _obj, refs as _refs
 from hazop.extract import dexpi_map
 from hazop.extract.adapters import dexpi_import, dexpi_read
 
@@ -27,7 +30,7 @@ EXCLUDED_SCHEMA = "hazop_dexpi_excluded/1"
 MANIFEST_SCHEMA = "hazop_dexpi_manifest/1"
 EXPORTER_VERSION = "0.1.0"
 MODEL_SOURCE = {"Core": "https://data.dexpi.org/models/2.0.1/Core.xml", "Plant": "https://data.dexpi.org/models/2.0.1/Plant.xml"}
-A3 = (420.0, 297.0)
+A3 = dexpi_diagram.A3
 MARGIN = 10.0
 _NAME = re.compile(r"[A-Za-z_][A-Za-z_0-9]*\Z")
 _QUANTITY = re.compile(r"(\S+) ((?:Pressure\w+|Temperature|Length|VolumeFlowRate|\w+)Unit)\.(\w+)\Z")
@@ -108,13 +111,6 @@ def _num(text):
 
 
 # ---------------------------------------------------------------- XML 조립
-def _el(parent, tag, **attrs):
-    e = ET.SubElement(parent, tag)
-    for k, v in attrs.items():
-        e.set(k, v)
-    return e
-
-
 def _data(parent, prop, value):
     """Data 요소 하나. value: 문자열(수량·열거 참조는 알맞은 요소로), bool·숫자 아님(DEXPI가 문자열로 받는 속성만 옮긴다)."""
     d = _el(parent, "Data", property=prop)
@@ -130,21 +126,6 @@ def _data(parent, prop, value):
     else:
         _el(d, "String").text = value
     return d
-
-
-def _refs(parent, prop, target):
-    _el(parent, "References", objects="#" + target, property=prop)
-
-
-def _components(parent, prop):
-    return _el(parent, "Components", property=prop)
-
-
-def _obj(parent, typ, oid=None):
-    o = _el(parent, "Object", type=typ)
-    if oid:
-        o.set("id", oid)
-    return o
 
 
 class _Ids:
@@ -178,7 +159,7 @@ class _Ids:
 # ---------------------------------------------------------------- 본체
 def export_drawing(graph, extraction=None, require_confirmed_number=True, name=None, drop_kind_unconfirmed=False):
     """그래프 하나 -> Export. graph는 build_graph 결과(사람 수정·수락한 AI 후보가 이미 반영됨). extraction은 있으면 도면 크기·번호
-    확정 여부·가져온 원문 조각을 읽는 데 쓴다. drop_kind_unconfirmed: 종류에 미확인이 남은 구성요소도 뺀다(자동 확정된 쪽. 사람이
+    확정 여부·가져온 원문 조각과 그림(기호 상자·방향·선 점·글자 자리)을 읽는 데 쓴다. 그래프를 지은 바로 그 추출 결과여야 그림이 맞는다. drop_kind_unconfirmed: 종류에 미확인이 남은 구성요소도 뺀다(자동 확정된 쪽. 사람이
     확정한 쪽의 미확인은 사람이 본 것이라 남아 있지 않다). 내보낼 수 없으면 ExportError."""
     dwg = graph["source"].get("drawing_number")
     reasons = []
@@ -212,7 +193,10 @@ class _Builder:
         self.positions = {}  # PipingNode id -> (x, y) mm
         self.pending_conn = []
         self.instrument_text = {}  # 계기 entity_id -> DEXPI에 쓴 조각을 되읽으면 나올 태그
+        self.signals = []  # [(계장 연결, DEXPI id, 시작 구성요소, 끝 구성요소)]
+        self.systems = []  # [(배관망 계통 id, 배관 번호, [배관 id])]
         self.sc = self._scale()
+        self.picture = dexpi_diagram.Picture(extraction, dexpi_diagram.Canvas(self.sc, self._sheet()))
 
     # ----- 좌표
     def _scale(self):
@@ -225,8 +209,14 @@ class _Builder:
             xs = [n["position"][0] for n in self.nodes.values() if n.get("position")] or [1.0]
             ys = [n["position"][1] for n in self.nodes.values() if n.get("position")] or [1.0]
             w, h = max(xs) * 1.05 or 1.0, max(ys) * 1.05 or 1.0
-        factor = round(min((A3[0] - 2 * MARGIN) / w, (A3[1] - 2 * MARGIN) / h), 6)
-        return {"factor": factor, "dx": MARGIN, "dy": MARGIN}
+        return {"factor": min((A3[0] - 2 * MARGIN) / w, (A3[1] - 2 * MARGIN) / h), "dx": MARGIN, "dy": MARGIN}
+
+    def _sheet(self):
+        """쓸 도면의 크기(mm). DEXPI에서 온 도면은 원래 크기(모르면 None), 그 밖에는 줄여 담는 A3."""
+        if (self.g.get("coordinate_system") or {}).get("coordinate_space") != "dexpi_diagram":
+            return A3
+        size = [(self.ex or {}).get("drawing", {}).get(k) for k in ("page_width", "page_height")]
+        return tuple(float(v) for v in size) if all(isinstance(v, (int, float)) and v > 0 for v in size) else None
 
     def _xy(self, p):
         return (round(p[0] * self.sc["factor"] + self.sc["dx"], 3), round(p[1] * self.sc["factor"] + self.sc["dy"], 3))
@@ -451,8 +441,9 @@ class _Builder:
             self._equipment(tagged, eid)
         self._piping(pm, pipes)
         instr = self._instrumentation(pm)
-        self._diagram(em, pm)
+        self._diagram(em, pm, pipes)
         ET.indent(root, space="  ")
+        dexpi_xml.join_values(root)
         body = ET.tostring(root, encoding="unicode")
         xml = ('<?xml version="1.0" encoding="UTF-8"?>\n' + body + "\n").encode("utf-8")
         return self._finish(xml, pipes, instr)
@@ -555,6 +546,7 @@ class _Builder:
             first = keys[0]
             if sysk:
                 _data(so, "LineNumber", sysk)
+                self.systems.append((so.get("id"), sysk, [pipe["id"] for key in keys for pipe in groups[key]]))
             fluid, klass = first[2], first[3]
             if fluid and all(k[2] == fluid for k in keys):
                 _data(so, "FluidCode", fluid)
@@ -712,10 +704,12 @@ class _Builder:
             mo = _obj(flows, "Plant/Instrumentation.MeasuringLineFunction", self.ids.take(e.get("source_object_id"), "MeasuringLine"))
             _refs(mo, "Source", self.psgf_of[e["entity_id"]])
             _refs(mo, "Target", p["id"])
+            self.signals.append((e, mo.get("id"), loc, eid))
         for e, src, dst, asid in signals:
             so = _obj(flows, "Plant/Instrumentation.SignalConveyingFunction", self.ids.take(e.get("source_object_id"), "SignalLine"))
             _refs(so, "Source", p["id"])
             _refs(so, "Target", self.plan[dst]["id"] if asid is None else self._af_id(asid))
+            self.signals.append((e, so.get("id"), eid, dst))
         self._extra_attributes(o, n, skip={"set_pressure"})
 
     def _actuating_system(self, parent, eid, asid):
@@ -738,37 +732,34 @@ class _Builder:
         ref = _obj(_components(o, "OperatedValveReference"), "Plant/Instrumentation.OperatedValveReference")
         _refs(ref, "Valve", p["id"])
 
-    # ----- 그림 위치
-    def _diagram(self, em, pm):
-        for eid, n in self.nodes.items():
-            if eid not in self.plan or not n.get("position"):
-                continue
+    # ----- 그림
+    def _diagram(self, em, pm, pipes):
+        pic, edges = self.picture, {e["entity_id"]: e for e in self.g["edges"]}
+        for eid, p in self.plan.items():
+            n = self.nodes[eid]
+            pic.symbol(n, p["id"], (n["kind"] or p["cls"]).upper() + "_SHAPE")
+        for x in self.excl_nodes:  # 방향을 모르는 도면 연결은 쓸 클래스가 없어 나가지 않는다. 자리와 글자를 곁 파일에 남긴다
+            if x["reason"] == "direction_unknown":
+                pic.leave_symbol(self.nodes[x["entity_id"]], x["reason"])
+        for pipe in pipes:
+            joins = tuple((self.plan[e]["id"], node) for e, (_item, node) in ((pipe["src_e"], pipe["src"]), (pipe["dst_e"], pipe["dst"])))
+            pic.line(pipe["seg"], pipe["id"], joins, backward=pipe["swapped"])
+        for e, oid, start, end in self.signals:
+            pic.line(e, oid, ((self.plan[start]["id"], None), (self.plan[end]["id"], None)), first=self.nodes[start]["local_id"], signal=True)
+        for x in self.excl_conn:  # 양 끝은 멀쩡한데 DEXPI의 신호선 끝 규칙에 맞지 않는 계장선
+            if x["reason"] in ("sensing_location_not_piping_component", "signal_end_not_instrument_or_actuator"):
+                pic.leave_line("signal", edges[x["entity_id"]], x["reason"])
+        for oid, line_no, pipe_ids in self.systems:
+            at = pic.middle(pipe_ids)
+            if at is not None:
+                pic.text(oid, line_no, (at[0], at[1] - dexpi_diagram.TEXT_MM))
+        owners, centers = [], []
+        for eid, p in self.plan.items():
             ids = [z["node"] for z in (self.noz.get(eid) or {}).values()] + self.node_ids.get(eid, [])
-            for nid in ids:
-                self.positions.setdefault(nid, self._xy(n["position"]))
-        if not self.positions:
-            return
-        diag = _obj(_components(em, "Diagram"), "Core/Diagram.Diagram")
-        groups = _components(diag, "Groups")
-        border = _obj(groups, "Core/Diagram.Border")
-        elements = _components(border, "Elements")
-        line = _obj(elements, "Core/Diagram.PolyLine")
-        pts = _el(line, "Data", property="Points")
-        for x, y in ((1.0, 1.0), (A3[0] - 1.0, A3[1] - 1.0)):
-            agg = _el(pts, "AggregatedDataValue", type="Core/Diagram.Point")
-            for prop, v in (("X", x), ("Y", y)):
-                _el(_el(agg, "Data", property=prop), "Double").text = repr(v)
-        group = _obj(groups, "Core/Diagram.RepresentationGroup")
-        node_pos = _components(group, "NodePositions")
-        for nid in sorted(self.positions, key=lambda x: (len(x), x)):
-            po = _obj(node_pos, "Plant/Diagram.PipingNodePosition", self.ids.take("Pos_" + (nid[3:] if nid.startswith("HZ_") else nid), "NodePosition"))
-            _refs(po, "Node", nid)
-            d = _el(po, "Data", property="Position")
-            agg = _el(d, "AggregatedDataValue", type="Core/Diagram.Point")
-            for prop, v in (("X", self.positions[nid][0]), ("Y", self.positions[nid][1])):
-                _el(_el(agg, "Data", property=prop), "Double").text = repr(float(v))
-        _refs(group, "Represents", pm.get("id"))
-        _refs(diag, "Represents", pm.get("id"))
+            owners.append((p["id"], ids))
+            if self.nodes[eid].get("position"):
+                centers += [(nid, self._xy(self.nodes[eid]["position"])) for nid in ids]
+        pic.write(em, pm.get("id"), self.name, self.ids, owners, pic.node_positions(self.positions, centers))
 
     # ----- 5. 검사·곁 파일
     def _finish(self, xml, pipes, instr):
@@ -799,6 +790,7 @@ class _Builder:
             read_tags = {n["source_object_id"]: n["tag"] for n in re_ex["nodes"]}
             problems += [("되읽기", "계기 태그 %s가 쓴 조각과 다름(%s != %s)" % (self.nodes[e]["tag"], read_tags.get(self.plan[e]["id"]), t))
                          for e, t in self.instrument_text.items() if read_tags.get(self.plan[e]["id"]) != t]
+            problems += [("그림", x) for x in self.picture.problems(re_ex)]
         sha = hashlib.sha256(xml).hexdigest()
         entities = []
         for eid, p in self.plan.items():
@@ -817,7 +809,7 @@ class _Builder:
                    "graph_version": self.g["graph_version"], "drawing_number": self.g["source"]["drawing_number"],
                    "extraction_run_id": self.g["source"].get("extraction_run_id"), "scale": self.sc,
                    "entities": entities, "pipes": flows, "check_directions": self.check_dirs,
-                   "unknowns": self.g["validation"]["unknowns"]}
+                   "unknowns": self.g["validation"]["unknowns"], "picture": self.picture.sidecar()}
         if re_ex is not None:  # 곁 파일을 붙여 되읽으면 모든 태그가 원래대로여야 한다
             dexpi_import.apply_sidecar(re_ex, sidecar, sha)
             side_tags = {n["source_object_id"]: n["tag"] for n in re_ex["nodes"]}
@@ -829,15 +821,17 @@ class _Builder:
         # '이대로 확인'으로 확정한 미분류 기호처럼 뺀 구성요소 때문에 끊긴 배관·계장선(INTENT §3.2: 빼고 내보내며 수를 적는다)
         cut = {"pipes": sum(1 for c in self.excl_conn if c["reason"] == "endpoint_excluded" and "excluded_ends" in c),
                "signal_lines": sum(1 for c in self.excl_conn if c["reason"] == "endpoint_excluded" and "excluded_ends" not in c)}
+        by_reason = dict(sorted(collections.Counter(x["reason"] for x in self.excl_nodes).items()))
         excluded = {"schema": EXCLUDED_SCHEMA, "drawing_number": self.g["source"]["drawing_number"],
                     "graph_version": self.g["graph_version"], "dexpi_version": dexpi_map.DEXPI_VERSION,
                     "excluded_components": self.excl_nodes, "excluded_connections": self.excl_conn,
                     "excluded_attributes": self.excl_attrs, "approximations": self.approx, "cut_by_excluded": cut,
+                    "excluded_by_reason": by_reason,
                     "notes": ([{"reason": "flow_direction_has_no_dexpi_slot", "count": flow_n}] if flow_n else [])}
         stats = {"components": len(exported), "connections": len(pipes), "excluded_components": len(self.excl_nodes),
                  "excluded_connections": len(self.excl_conn), "excluded_attributes": len(self.excl_attrs),
                  "approximations": len(self.approx), "cut_pipes": cut["pipes"], "cut_signal_lines": cut["signal_lines"],
-                 "bytes": len(xml), "dexpi_sha256": sha}
+                 "excluded_by_reason": by_reason, "picture": self.picture.counts(), "bytes": len(xml), "dexpi_sha256": sha}
         return Export(self.name, xml, excluded, sidecar, stats)
 
 
@@ -1001,7 +995,7 @@ def _load(page, gate, cf, graph_root, extract_root):
     except Exception as exc:  # noqa: BLE001 - 어떤 이유로든 다시 만들 수 없으면 그 쪽만 내보내지 않고 사유를 적는다
         raise _Skip("graph_error", "확정한 자료로 그래프를 다시 만들 수 없음(%s)" % exc, "graph_error")
     page.rebuilt = disk is None or disk.get("graph_version") != graph.get("graph_version")
-    return graph, original
+    return graph, corrected  # 그림은 사람이 더하고 옮긴 자리로 그린다
 
 
 def _export_page(page, graph, extraction, require_confirmed_number):

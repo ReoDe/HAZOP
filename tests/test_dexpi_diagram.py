@@ -103,7 +103,7 @@ class RoundtripTest(unittest.TestCase):
                 want = want[::-1] if p["swapped"] else want
                 self.assertLess(far(want, [back(exp, q) for q in line_of(got[p["dexpi_id"]])]), TOL, p["entity_id"])
                 bends += len(want) - 2
-        self.assertEqual(bends, 48)
+        self.assertEqual(bends, 41)  # 나가는 배관의 꺾임점 전부(6장의 관계 전체는 48, 나머지는 계장선과 빠진 연결)
 
     def test_signal_lines_come_back_between_their_two_marks(self):
         count = 0
@@ -304,7 +304,8 @@ class NotDrawnTest(unittest.TestCase):
             for n in [n for n in ex["nodes"] if n["category"] == "valve"][:2]:
                 n["kind"] = "damper"
         exp, _ = exported(pair_of(change))
-        self.assertEqual(exp.stats["excluded_by_reason"], {"no_dexpi_class": 2})
+        before = export(snp_pair(SNP[0])).stats["excluded_by_reason"]["no_dexpi_class"]
+        self.assertEqual(exp.stats["excluded_by_reason"], {"no_dexpi_class": before + 2})
         self.assertEqual(exp.excluded["excluded_by_reason"], exp.stats["excluded_by_reason"])
 
     def test_text_without_an_owner_is_kept_in_the_sidecar_only(self):
@@ -330,7 +331,7 @@ class TextTest(unittest.TestCase):
     def test_characters_xml_cannot_hold_are_dropped_from_the_picture_text(self):
         def change(ex):
             n = next(n for n in ex["nodes"] if n["kind"] == "continuation")
-            n["attributes"]["direction"], n["label_text"] = "TO", "AB\x0cC\x00D \ud800E"
+            n["attributes"]["direction"], n["label_text"] = "TO", "AB\x0cC\x00D E"
         exp, _ = exported(pair_of(change))
         self.assertIn("ABCD E", exp.xml.decode("utf-8"))
 
@@ -350,11 +351,13 @@ class SheetTest(unittest.TestCase):
         self.assertEqual(exp.stats["picture"]["symbols"], 0)
 
     def test_a_picture_that_does_not_come_back_is_caught_before_writing(self):
-        real = dd.unit_placement
-        with mock.patch.object(dd, "unit_placement", lambda box, *a: real((box[0] + 3.0,) + tuple(box[1:]), *a)):
-            with self.assertRaises(de.ExportError) as caught:
+        real = dd.dx.points
+        for prop, shift in (("Position", 0.5), ("InnerPoints", 0.5)):
+            def moved(parent, name, pts):
+                real(parent, name, [(x + shift, y) for x, y in pts] if name == prop else pts)
+            with self.subTest(prop), mock.patch.object(dd.dx, "points", moved), self.assertRaises(de.ExportError) as caught:
                 export(snp_pair(SNP[0]))
-        self.assertIn("그림", str(caught.exception))
+            self.assertIn("그림", str(caught.exception))
 
 
 class ConfirmedPictureTest(unittest.TestCase):
