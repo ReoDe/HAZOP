@@ -67,9 +67,13 @@ def drawing_claims(graph):
             continue
         target = stable_ref(gid, soid)
         src = {"graph_id": gid, "graph_version": gver, "source_object_id": soid}
-        ops = set(((n.get("human_edit") or {}).get("ops")) or [])
+        auto = {"set_" + p for p in n.get("auto") or []}     # 자동 확정이 정한 값: 사람 값이 아니라 가설(설계 auto-confirm-design.md 5장)
+        ops = set(((n.get("human_edit") or {}).get("ops")) or []) - auto
 
-        def meta(edited, status="confirmed"):
+        def meta(edited, status="confirmed", by_auto=False):
+            if by_auto:
+                return {"origin": "ai_auto", "method": "ai", "source": dict(src), "knowledge_status": "hypothesis",
+                        "display": "inline", "link": None}
             return {"origin": "human_edit" if edited else "pid_extract", "method": "manual" if edited else "extractor",
                     "source": dict(src), "knowledge_status": status, "display": "inline", "link": None}
         tag_prop = "line_no" if n.get("node_type") == "pipe_segment" else "tag"
@@ -78,7 +82,7 @@ def drawing_claims(graph):
             edited = basis == "human" or "set_tag" in ops
             # PDF에서 계통 접두를 추정한 태그: 노드는 그대로 두고 이 주장만 가설(설계안 §3)
             status = "hypothesis" if INFERRED_MARK in basis else "confirmed"
-            out.append(_record(target, tag_prop, None, n["tag"], **meta(edited, status)))
+            out.append(_record(target, tag_prop, None, n["tag"], **meta(edited, status, "set_tag" in auto)))
         for name in sorted(n.get("attributes") or {}):
             value = n["attributes"][name]
             spec = REGISTRY.properties.get(name)
@@ -87,7 +91,7 @@ def drawing_claims(graph):
             unit = basis = None
             if spec["type"] == "quantity":
                 value, unit, basis = parse_quantity(value)
-            out.append(_record(target, name, None, str(value), unit, basis, **meta("set_" + name in ops)))
+            out.append(_record(target, name, None, str(value), unit, basis, **meta("set_" + name in ops, by_auto="set_" + name in auto)))
     return out
 
 

@@ -11,6 +11,9 @@ docs/units/2026-11-13-drawing-knowledge/evidence/sheet-commands.md.
 - execute(name, command, args, by=…, fingerprint=…, rev=…): 상태 읽기·견줌·확정·확정 해제. 기록은 세 파일 밖
   <작업 루트>/data/sheet-confirmations/<이름>.json에 둔다(확정을 써도 지문이 바뀌지 않게).
 - default_view(read_method, state): 처음 열 때 원본·정리 가운데 무엇을 보일지.
+- 확정 수준 level: human(사람 확정)·auto(자동 확정)·extracted(추출만 됨). 자동 확정은 '이 읽기에 스크립트와 AI가 한 번 다 돌았다'는
+  뜻이고 내용을 보증하지 않는다. 기록의 auto 칸에 따로 두어(record_auto) 사람 확정(compared·confirmed)을 묻는 코드는 그 칸을 보지 않는다.
+  설계는 docs/units/2026-11-13-drawing-knowledge/evidence/auto-confirm-design.md 2장.
 
 세 파일 가운데 하나라도 바뀌면(다시 추출, 사람 수정, 후보 수락·거절) 견줌·확정이 함께 풀린다. 풀린 기록은 지우지 않고
 상태 읽기의 released에 무엇이 바뀌었는지와 함께 보이며, 다음에 쓰는 명령이 기록의 log에 'released'로 남긴다.
@@ -40,6 +43,14 @@ COMPARE_MODES = ("side_by_side", "overlay", "dexpi_list")
 COMMANDS = ("status", "compare", "confirm", "unconfirm")
 # 거절 사유 코드(구간·결과 명령과 같은 갈래)
 CODES = ("unknown_command", "bad_actor", "stale", "conflict", "unreadable", "rule", "io")
+
+AUTO_BY = corrections.AUTO_BY
+AUTO_RESULTS = ("confirmed", "waiting", "reverted")
+# waiting의 까닭. started: 아직 끝나지 않음(앱이 꺼져도 이것으로 알아봄), taken: 번호가 다른 자료와 겹침, scan·no_image: 그림으로 물을 수 없음,
+# error: 일부 호출 실패(이어 하기 대상), error_final: 같은 실패가 이어져 저절로 다시 부르지 않음, no_consent·ai_off: 보내기 동의 없음·보내지 않는 프로젝트
+AUTO_WAITS = ("started", "error", "error_final", "no_connection", "limit", "stopped", "run_cap", "taken", "scan", "no_image",
+              "no_consent", "ai_off")
+AUTO_NOT_RESUMED = ("taken", "scan", "error_final")   # 이어 하기가 저절로 다시 잡지 않는 까닭
 
 
 # ---------------------------------------------------------------- 읽은 방법과 기본 보기
@@ -163,7 +174,9 @@ def check(extraction, ai_doc=None, ops=()):
     태그 없음(missing_tag), 열린 끝(open_end), 수락 전 AI 후보(ai_candidate), 위치 없음(unplaced).
     위치가 없어도 다른 사유는 함께 센다. ops(저장된 사람 수정 연산)의 '이대로 확인'은 그 사유를 뺀다.
     counts: 사유별 수, total, 그리고 unknowns(추출의 미확인 기록 수)·unplaced·open_ends(열린 끝 + 끝 미확정 연결)·
-    ai_pending(수락 전 후보 수)."""
+    ai_pending(수락 전 후보 수).
+    unconfirmed_targets: 자동 확정 옆에 보이는 미확인 n = 서로 다른 대상 수 + 대상 없는 줄 수. 한 기호의 '종류 미정'과 'AI 후보 남음'은
+    한 곳이고(후보의 source_object_id를 local_id로 맞춤), 대상 없는 줄은 같은 사유라도 원래 줄 수로 센다."""
     acked = _acknowledged(extraction, ops)
     pending = ai_pending(ai_doc)
     boxes, rows, unplaced = {}, [], []
@@ -212,6 +225,10 @@ def check(extraction, ai_doc=None, ops=()):
     for oid in ((extraction.get("corrections") or {}).get("inputs") or {}).get("waiting") or []:
         add(None, "input_waiting", oid)
 
+    local = {o.get("source_object_id"): o.get("local_id") for key in ("nodes", "relations", "unresolved_connectors")
+             for o in extraction.get(key) or [] if isinstance(o, dict)}
+    targets = {local.get(u["id"]) or u["id"] for u in rows if u["id"] is not None}
+    n_targets = len(targets) + sum(1 for u in rows if u["id"] is None)
     seen, out = set(), []
     for u in rows:
         key = (u["id"], u["reason"], u["detail"] if u["id"] is None and u["reason"] in ("ai_candidate", "input_waiting") else None)
@@ -231,7 +248,7 @@ def check(extraction, ai_doc=None, ops=()):
     counts.update(total=len(out), unknowns=len(unknowns), unplaced=len(unplaced),
                   open_ends=counts["open_end"] + counts["unresolved_connector"], ai_pending=len(pending))
     return {"read_method": source_format(extraction), "unconfirmed": out, "unplaced": unplaced, "counts": counts,
-            "leftovers": leftovers(extraction)}
+            "leftovers": leftovers(extraction), "unconfirmed_targets": n_targets}
 
 
 # ---------------------------------------------------------------- 세 파일과 기록
@@ -323,8 +340,54 @@ def _read_record(name):
     problem = _record_problem(doc)
     if problem:
         log = doc.get("log") if isinstance(doc.get("log"), list) else []
-        return dict(_empty_record(name), log=log), fp, "쪽 확정 기록의 값이 틀림(%s)" % problem
+        keep = {"auto": doc["auto"]} if "auto" in doc else {}     # 사람이 되돌린 표시를 잃지 않게
+        return dict(_empty_record(name), log=log, **keep), fp, "쪽 확정 기록의 값이 틀림(%s)" % problem
     return doc, fp, None
+
+
+def read_key(extraction):
+    """읽은 내용의 열쇠: 원본 sha256, 쪽, 추출기 판, 규칙 판, 기호마다 (source_object_id, 반올림한 상자, 종류, 태그). 번호를 확정해 다시
+    추출하면 추출 파일의 지문과 extraction_run_id는 바뀌지만 읽은 내용은 같으므로 그 둘은 쓰지 않는다."""
+    src, run = extraction.get("source") or {}, extraction.get("run") or {}
+    rows = []
+    for n in extraction.get("nodes") or []:
+        if isinstance(n, dict):
+            box = _node_box(n)
+            rows.append([str(n.get("source_object_id")), [round(v, 1) for v in box] if box else None, n.get("kind"), n.get("tag")])
+    body = [src.get("sha256"), (run.get("settings") or {}).get("page_index"), run.get("script_version"), run.get("rules_version"),
+            sorted(rows, key=lambda r: json.dumps(r, ensure_ascii=False))]
+    return "rk-" + hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+
+
+def _auto_cell(record):
+    """기록의 자동 확정 칸. 모양이 틀리면 None(그 쪽은 추출만 된 것으로 본다. 사람 칸에는 영향이 없다)."""
+    a = record.get("auto")
+    if not isinstance(a, dict) or a.get("result") not in AUTO_RESULTS or not isinstance(a.get("read_key"), str) \
+            or not isinstance(a.get("at"), str):
+        return None
+    return a
+
+
+def level(status):
+    """확정 수준. 사람 확정이 이긴다. 자동은 기록이 confirmed이고 지금 읽은 내용의 것이며, 추출 검증을 통과했고 구성요소가 있을 때만."""
+    if status.get("state") == "confirmed":
+        return "human"
+    a = status.get("auto")
+    if a and a["result"] == "confirmed" and a["read_key"] == status.get("read_key") \
+            and status.get("validation_status") == "passed" and status.get("components"):
+        return "auto"
+    return "extracted"
+
+
+def auto_resumable(status):
+    """이어 하기가 저절로 다시 잡을 쪽인가. 자동 기록이 없는 옛 쪽(소급 없음)과 사람이 되돌리거나 확정한 쪽은 아니다.
+    자동 확정된 쪽은 읽은 내용이 바뀌었을 때(규칙·추출기가 바뀐 다시 추출)만이다."""
+    a = status.get("auto")
+    if not a or a["result"] == "reverted" or status.get("state") == "confirmed":
+        return False
+    if a["read_key"] != status.get("read_key"):
+        return a.get("why") not in ("taken", "scan")
+    return a["result"] == "waiting" and a.get("why") not in AUTO_NOT_RESUMED
 
 
 def _changed(record_files, files):
@@ -350,12 +413,18 @@ def _status(name, record, sources, problem=None):
     out.update(name=name, state=state, fingerprint=fp, files=files, compared=valid["compared"],
                confirmed=valid["confirmed"] if state == "confirmed" else None, released=released,
                rev=record.get("rev", 0), default_view=default_view(out["read_method"], state), record_error=problem)
+    out.update(auto=_auto_cell(record), read_key=read_key(sources[4]), components=len(ex.get("nodes") or []),
+               validation_status=(ex.get("validation") or {}).get("status"),
+               auto_accepted=sum(len((o.get("human_edit") or {}).get("auto") or ()) for key in ("nodes", "relations")
+                                 for o in ex.get(key) or [] if isinstance(o, dict)))
+    out["level"] = level(out)
     return out
 
 
 def sheet_confirmation(name):
     """쪽 이름(추출 폴더 이름) → check의 답 + {name, state, fingerprint, files, compared, confirmed, released, rev,
-    default_view}. state: open(미확인·위치 없음이 있거나 원본에 남은 것을 세지 못함), ready(그 셋은 되었으나 원본과 견줌·
+    default_view, level, auto(자동 확정 기록 또는 None), read_key, auto_accepted(자동으로 받아 지금 남은 값의 수), unconfirmed_targets,
+    components, validation_status}. level은 level(), state: open(미확인·위치 없음이 있거나 원본에 남은 것을 세지 못함), ready(그 셋은 되었으나 원본과 견줌·
     사람의 확정이 아직), confirmed. compared·confirmed는 지금 지문과 같은 기록만, released는 세 파일이 바뀌어 풀린 기록
     (changed: 바뀐 파일), record_error(확정 기록이 깨졌으면 그 사유. 그 쪽은 확정되지 않은 것으로 봄). 파일을 쓰지 않는다.
     추출 결과가 없으면 FileNotFoundError, 파일이 깨졌으면 ValueError."""
@@ -363,11 +432,71 @@ def sheet_confirmation(name):
 
 
 def load_sheet(name):
-    """(sheet_confirmation의 답, 원본 추출 결과, 사람 수정을 반영한 추출 결과). 판정과 두 추출 결과가 같은 바이트에서 나온다.
+    """(sheet_confirmation의 답, 원본 추출 결과, 사람 수정·자동 수락을 반영한 추출 결과). 판정과 두 추출 결과가 같은 바이트에서 나온다.
     내보내기는 이 추출 결과로 그래프를 만들어, 확정한 지문과 내보내는 내용이 어긋나지 않게 한다."""
     record, _fp, problem = _read_record(name)
     src = _read_sources(name)
     return _status(name, record, src, problem), src[4], src[0]
+
+
+# ---------------------------------------------------------------- 자동 확정 기록
+
+class AutoReverted(ValueError):
+    """사람이 되돌린 쪽에 사람이 다시 시키지 않았는데 자동 확정을 적으려 함."""
+
+
+def record_auto(name, result, why=None, ai=None, accepted=0, unconfirmed=None, attempts=0, by=AUTO_BY, key=None, restart=False):
+    """자동 확정의 결과를 기록의 auto 칸에 적는다(사람 칸은 그대로). → 적힌 auto 칸. 시각을 뺀 값이 같으면 쓰지 않는다.
+    result waiting에는 why(AUTO_WAITS)가 있어야 한다. reverted는 사람 이름으로만 적고, 되돌린 쪽은 restart(사람이 다시 시킴, by는 사람)가
+    아니면 AutoReverted. key: 이 결과가 나온 읽기의 read_key(없으면 지금 추출 결과). 기록 파일이 깨졌거나 모르는 판이면 덮지 않고
+    ValueError. 읽은 뒤 다른 쪽이 기록을 바꿨으면 store_io.Conflict."""
+    if result not in AUTO_RESULTS or (result == "waiting") != (why is not None) or (why is not None and why not in AUTO_WAITS):
+        raise ValueError("모르는 자동 확정 결과: %r(%r)" % (result, why))
+    person = result == "reverted" or restart
+    corrections.check_person(by, auto=not person)
+    if person and not str(by or "").strip():
+        raise ValueError("되돌리거나 다시 시킨 사람 이름이 있어야 함")
+    record, fp, problem = _read_record(name)
+    if problem:
+        raise ValueError("%s. 자동 확정을 적지 않음" % problem)
+    prev = _auto_cell(record)
+    if prev and prev["result"] == "reverted" and result != "reverted" and not restart:
+        raise AutoReverted("사람이 이 도면의 자동 수락을 되돌려 저절로 다시 하지 않음: %s" % name)
+    from hazop.extract import ai_review
+    if key is None:
+        with open(extraction_path(name), encoding="utf-8-sig") as fh:
+            key = read_key(json.load(fh))
+    cell = {"result": result, "by": by, "at": now_utc(), "policy": ai_review.AUTO_RULES.version, "read_key": key, "why": why, "attempts": attempts,
+            "ai": ai, "accepted": accepted, "unconfirmed": unconfirmed}
+    if prev and dict(prev, at=None) == dict(cell, at=None):
+        return prev
+    return _write_auto(name, record, fp, cell, {"by": by, "action": "auto", "result": result, "why": why})
+
+
+def _write_auto(name, record, fp, cell, entry):
+    log = list(record.get("log") or []) + [dict({"at": now_utc()}, **entry)]
+    new = dict(record, auto=cell, rev=record.get("rev", 0) + 1, log=log)
+    store_io.write_json(store_path(name), new, expect=fp)
+    return cell
+
+
+def carry_auto(old_name, new_name):
+    """번호 확정으로 새 이름에 다시 추출할 때 자동 확정 칸을 옮긴다(사람 확정 칸은 옮기지 않는다). 새 이름에 이미 있으면 되돌림이 이기고,
+    아니면 나중 것이 이긴다. → 새 기록 파일을 만들었으면 True. 옮길 것이 없거나 읽을 수 없는 기록이면 False(없는 쪽은 저절로 돌지 않는다)."""
+    try:
+        src = _auto_cell(_read_record(old_name)[0])
+        record, fp, problem = _read_record(new_name)
+    except (OSError, ValueError):
+        return False
+    have = _auto_cell(record)
+    if src is None or problem:
+        return False
+    if have and (have["result"] == "reverted" or (src["result"] != "reverted" and have["at"] >= src["at"])):
+        return False
+    if have == src:
+        return False
+    _write_auto(new_name, record, fp, src, {"by": None, "action": "auto_carried", "from": old_name})
+    return fp is None
 
 
 # ---------------------------------------------------------------- 명령
@@ -409,6 +538,8 @@ def execute(name, command, args=None, by=None, fingerprint=None, rev=None):
         return _refused(command, [("command", "unknown_command", "모르는 명령(%s 가운데 하나)" % ", ".join(COMMANDS))])
     a = dict(args or {})
     who = (by or "").strip()
+    if command != "status" and corrections.reserved_name(who):
+        return _refused(command, [("by", "bad_actor", "앱이 쓰는 예약 이름(hazop:…)은 사람 이름으로 쓸 수 없음")])
     if command != "status" and not who:
         return _refused(command, [("by", "bad_actor", "사람 이름이 있어야 함(확정 기록에 남음)")])
     try:

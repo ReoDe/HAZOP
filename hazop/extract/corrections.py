@@ -39,6 +39,28 @@ RELATION_KINDS = ("physical_connection", "signal_connection", "measurement_conne
 ENDS = ("source", "target")
 
 
+AUTO_BY = "hazop:auto"      # 자동 확정이 쓰는 이름(연산의 by·accepted_by, 쪽 확정 기록의 auto, 등록 이력)
+RESERVED_PREFIX = "hazop:"   # 사람 이름으로 쓸 수 없는 머리. 자동 표시를 사람 값과 섞지 않게 한다
+
+
+def reserved_name(by):
+    """사람 이름으로 쓸 수 없는 예약 이름인가."""
+    return str(by or "").strip().casefold().startswith(RESERVED_PREFIX)
+
+
+def check_person(by, auto=False):
+    """by가 예약 이름이면 ValueError. auto(자동 확정 엔진의 호출)면 AUTO_BY만 받는다."""
+    if auto and by != AUTO_BY:
+        raise ValueError("자동 확정은 예약 이름 %s로만 적음" % AUTO_BY)
+    if not auto and reserved_name(by):
+        raise ValueError("%r은(는) 앱이 쓰는 예약 이름이라 사람 이름으로 쓸 수 없음" % (by,))
+
+
+def is_auto(op):
+    """자동 확정이 수락한 연산인가. 사람이 되돌려 다시 수락하면 누가·언제(PROVENANCE)가 사람으로 바뀌어 아니게 된다."""
+    return op.get("accepted_by") == AUTO_BY
+
+
 class _Skip(Exception):
     """적용 불가(not_applicable) 사유."""
 
@@ -76,11 +98,14 @@ def save(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY):
 SAVE_ACTIONS = ("save", "edit", "undo", "redo", "ai_accept", "ai_revert")
 
 
-def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, action="save", note=None):
+def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, action="save", note=None, auto=False):
     """ops 전체를 저장하고 이전 파일과 비교한 op_id 증감을 log에 덧붙인다. (쓴 경로, 새 지문)을 돌려준다.
     지운 연산은 내용까지 log의 removed_ops에 남긴다(지운 사람 수정도 기록에서 찾을 수 있게).
     expect(ops를 읽을 때의 load_fp 지문)를 주면 그 뒤 파일이 바뀌었을 때 쓰지 않고 store_io.Conflict를 낸다.
-    op_id 하나는 연산 하나만 가리킨다. 저장된 연산이나 지운 연산의 번호를 다른 내용에 쓰면 ValueError다."""
+    op_id 하나는 연산 하나만 가리킨다. 저장된 연산이나 지운 연산의 번호를 다른 내용에 쓰면 ValueError다.
+    by와 새로 들어오는 연산의 by·accepted_by에 예약 이름(hazop:…)을 쓰면 ValueError다. auto(자동 확정 엔진)만 쓴다.
+    저장돼 있던 자동 연산을 그대로 두거나, 지운 자동 연산을 그대로 되살리는 것(실행 취소·다시 하기)은 된다."""
+    check_person(by, auto)
     prev, fp = load_fp(name)
     if expect is not store_io.ANY and fp != expect:
         raise store_io.Conflict("읽은 뒤 저장 파일이 바뀜: %s" % store_path(name))
@@ -95,6 +120,11 @@ def save_fp(name, ops, by, drawing_number=None, at=None, expect=store_io.ANY, ac
     reused = [o["op_id"] for o in ops if o["op_id"] in gone and _content(o) not in kept]
     reused += [i for i, o in zip(after, ops) if i in saved and o != saved[i]]
     reused += [i for n, i in enumerate(after) if i in after[:n]]
+    removed_before = [o for e in prev.get("log") or [] for o in e.get("removed_ops") or []]
+    smuggled = [o["op_id"] for o in ops if not auto and o != saved.get(o["op_id"]) and o not in removed_before
+                and (reserved_name(o.get("by")) or reserved_name(o.get("accepted_by")))]
+    if smuggled:
+        raise ValueError("예약 이름으로 만든 연산은 저장하지 않음: %s" % ", ".join(smuggled))
     if action not in SAVE_ACTIONS:
         raise ValueError("모르는 저장 동작: %r" % (action,))
     if reused:
@@ -376,7 +406,9 @@ def _apply_set_tag(st, kind, obj, op):
     if kind == "node":
         obj["tag"] = tag
         obj.setdefault("attributes", {})["tag"] = tag
-        if isinstance(obj.get("evidence"), dict) and "tag_basis" in obj["evidence"]:
+        if is_auto(op):
+            obj["evidence"] = dict(obj.get("evidence") or {}, tag_basis="ai_auto")  # 사람이 보지 않은 태그(③ 주장은 가설로 둔다)
+        elif isinstance(obj.get("evidence"), dict) and "tag_basis" in obj["evidence"]:
             obj["evidence"]["tag_basis"] = "human"  # ③ 자동 연결이 추정 태그로 다루지 않게
     else:
         obj["line_no"] = tag
@@ -672,6 +704,9 @@ def _apply_one(st, original_fp, op):
         ops = mark.setdefault("ops", [])
         if op["op"] not in ops:
             ops.append(op["op"])
+        auto = [o for o in mark.pop("auto", ()) if o != op["op"]] + ([op["op"]] if is_auto(op) else [])
+        if auto:    # 자동 확정이 정한 값의 연산 이름. 사람이 같은 값을 정하면 빠진다. 없으면 칸을 두지 않아 다른 쪽의 그래프 판이 그대로다
+            mark["auto"] = auto
         mark.update(by=op.get("by"), at=op.get("at"))
 
 
@@ -805,13 +840,14 @@ def _saved_original(name):
         return None
 
 
-def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=(), used_ids=(), name=None):
+def make_op(original_extraction, op, target, value, by, at=None, op_id=None, existing_ops=(), used_ids=(), name=None, auto=False):
     """검사를 마친 Op dict. base는 기준 추출(입력 연산을 넣어 다시 추출한 것, 없으면 원본)에서 계산하고 manual 대상이면
     None. 대상이나 참조가 입력 연산이 만든 것에 기대면 via에 그 op_id를 적는다(되돌리기·적용 불가 사유가 쓴다).
     새 op_id는 existing_ops, used_ids, name(추출 이름)의 저장 기록에 나온 번호(issued_op_ids)보다 크게 발급한다.
     지운 연산의 번호를 다시 쓰면 manual- ID가 다른 기기를 가리키게 되기 때문이다. 저장할 기록이 있는 호출은 name을 넘긴다
     (넘기지 않아 겹친 번호는 save가 거절한다).
-    existing_ops 뒤에 붙여 적용해 볼 때 적용 불가면 ValueError(사유)."""
+    existing_ops 뒤에 붙여 적용해 볼 때 적용 불가면 ValueError(사유). 예약 이름은 auto(자동 확정 엔진)만 쓴다(check_person)."""
+    check_person(by, auto)
     if op not in OPS:
         raise ValueError("알 수 없는 수정 연산: %r" % (op,))
     if OPS[op].stage == "input" and (original_extraction.get("source") or {}).get("format") != "pdf_vector":

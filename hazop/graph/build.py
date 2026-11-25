@@ -9,7 +9,8 @@
 - 체크밸브 check_direction은 입구·출구 local_id를 구간 엔터티 ID로 바꿔 그대로 전달, 끝점 port는 has_endpoint·unresolved에 전달
   (기획서/정보추출.md #check-valve-direction, #port-rule)
 - 관계 대상 제약·자기 루프 등 [가정] 기반 점검은 unknowns가 아니라 review_items로 분리한다.
-- 노드·엣지마다 생성 주체 origin(pid_extract, ② 사람 수정이 닿은 대상은 human_edit와 수정 표시 human_edit{op_ids, ops, by, at})
+- 노드·엣지마다 생성 주체 origin(pid_extract, ② 사람 수정이 닿은 대상은 human_edit와 수정 표시 human_edit{op_ids, ops, by, at},
+  자동 확정만 닿은 대상은 ai_auto). 자동 확정이 정한 값이 남아 있으면 auto에 그 이름(kind·tag)을 적는다
   (기획서/지식그래프-스키마.md §3). 둘 다 추출 결과(graph_version 입력)에서 정해지므로 BUILDER_VERSION은 올리지 않는다.
   올리면 수정이 없는 도면까지 판이 바뀌어 구간 JSON·mentions 기록이 모두 재확인으로 간다.
 - 계기 노드의 isa(태그에서 읽은 ISA-5.1 식 문자, hazop.extract.isa)도 태그에서만 정해지므로 같은 이유로 올리지 않는다.
@@ -70,9 +71,12 @@ def _origin(rec):
     mark = rec.get("human_edit")
     if not mark:
         return {"origin": "pid_extract"}
-    return {"origin": "human_edit", "human_edit": {"op_ids": list(mark.get("op_ids") or []),
-                                                   "ops": list(mark.get("ops") or []),
-                                                   "by": mark.get("by"), "at": mark.get("at")}}
+    ops, auto = list(mark.get("ops") or []), list(mark.get("auto") or [])
+    out = {"origin": "ai_auto" if auto and set(ops) == set(auto) else "human_edit",
+           "human_edit": {"op_ids": list(mark.get("op_ids") or []), "ops": ops, "by": mark.get("by"), "at": mark.get("at")}}
+    if auto:
+        out["auto"] = [o[len("set_"):] if o.startswith("set_") else o for o in auto]
+    return out
 
 
 def node_origin(n):
@@ -143,7 +147,8 @@ def build_graph(extraction, extraction_file=None, graph_id=None):
             nodes[-1]["isa"] = isa.parse_tag(n["tag"])
         basis = (n.get("evidence") or {}).get("tag_basis")
         if basis:  # PDF 추출: 태그 근거(추정 접두는 [추론])를 ③ 자동 연결까지 넘긴다. drawio 그래프는 그대로
-            nodes[-1]["tag_basis"] = basis
+            # 자동 확정이 정한 태그는 사람이 보지 않은 값이라 ③ 자동 연결이 추정 태그([추론])로 다루게 한다
+            nodes[-1]["tag_basis"] = basis + " [추론]" if basis == "ai_auto" else basis
         mapping.append({"extraction_run_id": run_id, "local_id": n["local_id"], "entity_id": eid})
 
     seg_no = rel_no = 0

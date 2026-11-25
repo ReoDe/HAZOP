@@ -24,6 +24,7 @@ import json
 import math
 import random
 import time
+from dataclasses import dataclass
 
 from hazop import paths, store_io
 from hazop.extract import ai_connect, corrections, rules
@@ -40,6 +41,27 @@ DEFAULT_CAP = 20          # 도면당 호출 수 기본 상한(규격 'AI 검토
 DEFAULT_BATCH = 20        # 호출 하나에 넣는 항목 수(b)
 DEFAULT_RECHECK = 5       # 다시 확인 표본 수
 DEFAULT_THRESHOLD = 0.85  # 묶어 수락하는 확신도 하한
+# 자동 확정(설계 docs/units/2026-11-13-drawing-knowledge/evidence/auto-confirm-design.md 4장). 켜는 것은 총괄이 처음 보는 쪽에서 통과를
+# 판정한 뒤다(4.5). 끄면 후보만 남는다
+AUTO_ACCEPT_ENABLED = False
+AUTO_LEGEND = "symbols"   # 자동 경로가 고정해 묻는 범례판(ai_images.image_input_for의 drawings=())
+
+
+@dataclass(frozen=True)
+class AutoRules:
+    """자동으로 받을 후보를 정하는 값. 바꿀 곳은 AUTO_RULES 하나다. 사람 값 보호·추출과의 모순·상자 견줌·태그 겹침·글자로 정하는 원·
+    넓혀 묻기는 여기 없고 auto_block에 박혀 있어 이 값으로 풀 수 없다. 값을 바꾸면 version도 바꾼다(쪽 확정 기록의 policy에 남음)."""
+    version: str
+    min_confidence: dict       # (과제, 필드) → 확신도 하한. 없는 과제·필드는 받지 않는다
+    inputs: tuple              # 받는 입력 꼴(image·text)
+    legends: tuple             # 받는 범례판 출처(글 입력이면 None)
+
+
+AUTO_RULES = AutoRules(version="auto-1", min_confidence={("kind", "kind"): 0.70, ("tag", "tag"): 0.70},
+                       inputs=("image",), legends=(AUTO_LEGEND,))
+AUTO_CAP = 20             # 같은 원본에 대해 실행을 넘어 누적하는 호출 상한
+AUTO_ATTEMPTS = 3         # 호출 오류로 끝난 자동 실행의 상한
+BOX_TOL = 0.5             # pt. 후보를 만들 때의 상자와 지금 대상의 상자가 같다고 보는 차
 NEAR_PART = 8.0           # 이 거리(pt) 안에 종류가 정해진 기호가 있으면 그 기호의 일부(구동부 머리·번호 원·태그판)일 수 있다
 NOT_SYMBOL = "not_symbol"  # 종류 답 가운데 '기호가 아님(다른 기호의 일부·글자 상자·선 조각)'. 후보를 만들지 않는다
 UNKNOWN = "unknown"        # 종류 답 가운데 '기호인지조차 모름' 또는 '기호지만 그 종류가 목록에 없음'. 후보를 만들지 않는다
@@ -493,6 +515,33 @@ def _call(client, request):
 REVIEW_VIA = ("subscription", "fixed")
 
 
+SEND_POLICY_KIND = "hazop_ai_send_policy"
+SEND_DENY_TEXT = "이 프로젝트는 도면을 AI로 보내지 않도록 정해져 있습니다."
+
+
+def send_policy_path(project_id):
+    """<작업 루트>/data/ai-review/send-policy/<프로젝트>.json. 꼴은 send_policy를 본다."""
+    return paths.folder("ai-review", "send-policy", paths.safe_name(project_id) + ".json")
+
+
+def send_policy(project_id):
+    """프로젝트의 'AI로 보내지 않음' → "deny", "allow", None(정하지 않음 = 지금까지의 동작). 파일 꼴은
+    {"kind": SEND_POLICY_KIND, "schema_version": "0.1", "project_id", "send": "deny"|"allow", "by", "at", "reason"}.
+    파일이 있는데 읽을 수 없거나 꼴이 다르면 "deny"(보안 자료가 나가지 않는 쪽)."""
+    if not project_id:
+        return None
+    data, _fp = store_io.read_bytes(send_policy_path(project_id))
+    if data is None:
+        return None
+    try:
+        doc = json.loads(data.decode("utf-8"))
+    except ValueError:
+        return "deny"
+    ok = isinstance(doc, dict) and doc.get("kind") == SEND_POLICY_KIND and doc.get("schema_version") == "0.1" \
+        and doc.get("project_id") == project_id and doc.get("send") in ("deny", "allow")
+    return doc["send"] if ok else "deny"
+
+
 def refuse_reason(client):
     """AI 검토를 돌리지 않을 까닭(사용자 결정: 구독제 연결로 돈다). 구독·고정 응답 연결임이 분명하지 않으면 안내 글, 아니면 None.
     describe()가 없거나 via가 REVIEW_VIA 밖이거나 type이 API 클라이언트(anthropic_http)면 거절한다."""
@@ -590,7 +639,8 @@ def _ask(ex, client, call, images, answer_kinds, stats, kinds, wide=False):
 
 def _wide_pass(ex, client, cands, items, images, answer_kinds, stats, kinds, limit, batch, should_stop):
     """종류 답이 WIDE_KINDS인 후보를 넓힌 조각으로 다시 묻는다. 다시 받은 종류로 바꾸고, 'not_symbol'·'unknown'이나 답이 없으면
-    후보를 버린다(틀린 것보다 미확인). 호출이 실패한 묶음은 첫 답을 그대로 둔다. → 바꾼 후보 목록."""
+    후보를 버린다(틀린 것보다 미확인). 호출이 실패한 묶음은 첫 답을 그대로 둔다. 다시 받은 후보에는 wide "done"을 적는다(첫 답만 남은
+    밸브를 자동 수락이 가른다). → 바꾼 후보 목록."""
     by_item = {c["item_id"]: c for c in cands if c["field"] == "kind" and c["values"][0] in WIDE_KINDS}
     again = [i for i in items if i["item_id"] in by_item]
     out = {c["cand_id"]: c for c in cands}
@@ -606,7 +656,7 @@ def _wide_pass(ex, client, cands, items, images, answer_kinds, stats, kinds, lim
         for i in call:
             old = by_item[i["item_id"]]
             if i["item_id"] in got:
-                c = dict(got[i["item_id"]], first_values=old["values"])
+                c = dict(got[i["item_id"]], first_values=old["values"], wide="done")
                 stats["wide_changed"] += c["values"][0] != old["values"][0]
                 out[old["cand_id"]] = c
             else:
@@ -664,6 +714,8 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
              "recheck_asked": 0, "recheck_no_kind": 0, "recheck_rules": {}, "retries": 0,
              "legend_source": getattr(images, "legend_source", None),
              "legend_boards": len(getattr(images, "legend", None) or ())}
+    if not stats["refused"] and send_policy(ex.get("project_id")) == "deny":
+        stats.update(refused=SEND_DENY_TEXT, ai_off=True)
     if stats["refused"]:
         return {"candidates": [], "stats": stats}
     ex = copy.deepcopy(ex)
@@ -723,7 +775,8 @@ def run(ex, client, cap=DEFAULT_CAP, batch=None, recheck=DEFAULT_RECHECK, on_pro
         cands += ai_split.run(ex, client, images, stats, kinds, limit, should_stop, exclude)
         stats["halted"] = providers.halts(kinds)
     stats.pop(_RETRY, None)
-    return {"candidates": _dedupe(cands), "stats": stats}
+    mark = {"input": "image" if images is not None else "text", "legend_source": stats["legend_source"]}
+    return {"candidates": [dict(c, **mark) for c in _dedupe(cands)], "stats": stats}
 
 
 def _dedupe(cands):
@@ -924,10 +977,15 @@ def save_doc(doc):
     return doc["_fp"]
 
 
-def merge_run(doc, result, via=None, model=None, at=None):
+def merge_run(doc, result, via=None, model=None, at=None, read_key=None, auto=False):
     """run 결과를 문서에 더한다. 이미 있는 후보(같은 cand_id)는 사람이 정한 상태를 지키고 덮지 않는다.
     split 후보는 덩어리가 나뉘어 id가 바뀌어도 개체 집합으로 가린다. 이미 있는 split 후보와 개체가 같은 새 후보는 넣지 않고,
-    새 split 후보와 개체가 겹치는 오래된 제안 후보(stale_candidates)는 뺀다."""
+    새 split 후보와 개체가 겹치는 오래된 제안 후보(stale_candidates)는 뺀다.
+    실행 기록에는 물은 읽기의 read_key(confirmation.read_key)와, 자동 확정이 돌린 실행이면 auto를 적는다."""
+    if auto:    # 아직 아무도 정하지 않은 옛 후보(다른 범례판·밀린 번호)는 새 답으로 갈아 끼운다. 사람이 한 번이라도 정한 후보는 그대로 둔다
+        fresh = {c["cand_id"] for c in result["candidates"]}
+        doc["candidates"] = [c for c in doc["candidates"] if c["cand_id"] not in fresh or c["status"] != "proposed"
+                             or c.get("decided_at") or c.get("op_id")]
     have = {c["cand_id"] for c in doc["candidates"]}
     known = {_objs(c) for c in doc["candidates"] if c.get("field") == "split"}
     new = [c for c in result["candidates"]
@@ -935,7 +993,7 @@ def merge_run(doc, result, via=None, model=None, at=None):
     taken = frozenset().union(*[_objs(c) for c in new if c.get("field") == "split"])
     stale = stale_candidates(doc)
     doc["candidates"] = [c for c in doc["candidates"] if not (c["cand_id"] in stale and _objs(c) & taken)] + new
-    doc["runs"].append(dict(result["stats"], at=at or now_utc(), via=via, model=model))
+    doc["runs"].append(dict(result["stats"], at=at or now_utc(), via=via, model=model, read_key=read_key, **({"auto": True} if auto else {})))
     return doc
 
 
@@ -943,11 +1001,14 @@ def _objs(c):
     return frozenset(c.get("pdf_objects") or ())
 
 
-def merge_and_save(name, ex, result, via=None, model=None, tries=3):
-    """새로 읽어 합치고 저장한다. 그새 바뀌면(Conflict) 다시 읽어 합친다(합치기는 같은 결과를 두 번 넣지 않는다)."""
+def merge_and_save(name, ex, result, via=None, model=None, tries=3, auto=False):
+    """새로 읽어 합치고 저장한다. 그새 바뀌면(Conflict) 다시 읽어 합친다(합치기는 같은 결과를 두 번 넣지 않는다).
+    auto: 자동 확정이 돌린 실행(auto_finish가 이 실행만 센다)."""
+    from hazop.extract import confirmation
+    key = confirmation.read_key(ex)
     for n in range(tries):
         doc = load_doc(name) or new_doc(name, ex)
-        merge_run(doc, result, via=via, model=model)
+        merge_run(doc, result, via=via, model=model, read_key=key, auto=auto)
         try:
             save_doc(doc)
             return doc
@@ -974,7 +1035,7 @@ def _op_for(c, ex):
     return None, None  # to_system: 맞는 수정 연산이 없다(후보 문서에만 남긴다)
 
 
-def _commit(doc, work, name, ops, fp, by, at, action="save"):
+def _commit(doc, work, name, ops, fp, by, at, action="save", auto=False):
     """수정 기록(ops가 None이면 쓰지 않음)과 후보 문서를 함께 쓴다. 후보 문서를 못 쓰면 수정 기록을 되돌린다.
     work는 바꾼 후보 문서 사본. 성공하면 doc을 work로 바꾼다."""
     new_fp = None
@@ -983,13 +1044,13 @@ def _commit(doc, work, name, ops, fp, by, at, action="save"):
     if ops is not None:
         rec_before = (corrections.load_fp(name)[0] or {}).get("ops") or []
         _, new_fp = corrections.save_fp(name, ops, by, drawing_number=doc.get("drawing_number"), at=at, expect=fp,
-                                        action=action)
+                                        action=action, auto=auto)
     try:
         save_doc(work)
     except Exception:
         if ops is not None:
             corrections.save_fp(name, rec_before, by, drawing_number=doc.get("drawing_number"), at=at, expect=new_fp,
-                                action=action)
+                                action=action, auto=auto)
         raise
     doc.clear()
     doc.update(work)
@@ -1024,15 +1085,19 @@ def _claimed(ops, doc):
     return out
 
 
-def accept(doc, cand_ids, original_ex, name, by, at=None):
+def accept(doc, cand_ids, original_ex, name, by, at=None, auto=False, expect=store_io.ANY):
     """후보를 수락한다. 사람 수정 기록에 연산(origin ai, 수락한 사람·시각)을 더하고 후보에 op_id를 적는다.
     연산은 기준 추출(corrections.resolve의 base, 없으면 원본)에 대고 만든다. split 후보는 나누기 입력 연산이고 대상은 덩어리다
     (원본에 있는 덩어리면 원본에 댄다. 나뉜 뒤 기준 추출에서는 덩어리 번호가 바뀐다). 이미 나눈 개체와 겹치면 받지 않는다.
     되돌렸던 후보를 다시 수락하면 지운 연산을 그대로 되살린다(_restorable).
     사람이 고친 자리(human_targets)는 덮지 않는다(사람의 나누기는 다른 묶음이라 막지 않는다). 연산이 없는 필드(to_system)는 상태만 바꾼다.
+    auto: 자동 확정(auto_accept)이 예약 이름으로 부름. expect: 고를 때 본 수정 기록의 지문(그새 사람이 고쳤으면 Conflict).
     → 적용하지 못한 후보 [(cand_id, 사유)]. 후보 문서나 수정 기록이 읽은 뒤 바뀌었으면 store_io.Conflict(아무것도 쓰지 않음)."""
+    corrections.check_person(by, auto)
     at = at or now_utc()
     rec, fp = corrections.load_fp(name)
+    if expect is not store_io.ANY and fp != expect:
+        raise store_io.Conflict("고른 뒤 도면 수정 기록이 바뀜: %s" % corrections.store_path(name))
     ops = list((rec or {}).get("ops") or [])
     base = corrections.resolve(name, original_ex, ops)["base"] if any(corrections.is_input(o) for o in ops) else original_ex
     in_original = {n["source_object_id"] for n in original_ex.get("nodes") or []}
@@ -1059,7 +1124,7 @@ def accept(doc, cand_ids, original_ex, name, by, at=None):
                     raise ValueError("이미 나눈 부분과 겹침(%s)" % ", ".join(hit))
             if op:
                 target = None if op in ("add_node", "add_relation") else c["target"]
-                new = corrections.make_op(ex, op, target, value, by, at=at, existing_ops=ops, name=name)
+                new = corrections.make_op(ex, op, target, value, by, at=at, existing_ops=ops, name=name, auto=auto)
         except ValueError as exc:
             failed.append((c["cand_id"], str(exc)))
             continue
@@ -1071,11 +1136,12 @@ def accept(doc, cand_ids, original_ex, name, by, at=None):
             c["op_id"] = new["op_id"]
             wrote = True
         c.update(status="accepted", decided_at=at, decided_by=by)
-    _commit(doc, work, name, ops if wrote else None, fp, by, at, action="ai_accept")
+    _commit(doc, work, name, ops if wrote else None, fp, by, at, action="ai_accept", auto=auto)
     return failed
 
 
 def reject(doc, cand_ids, by, at=None):
+    corrections.check_person(by)
     work = copy.deepcopy(doc)
     for c in work["candidates"]:
         if c["cand_id"] in cand_ids and c["status"] == "proposed":
@@ -1114,10 +1180,10 @@ def reconcile(name, at=None):
     return changed
 
 
-def _revert_plan(doc, cand_ids, ops):
-    """(되돌릴 후보의 수락 연산 op_id, 그 연산에 기댄 연산 op_id(corrections.dependents, 이어서)). 둘 다 기록 차례."""
+def _revert_plan(doc, cand_ids, ops, also=()):
+    """(되돌릴 후보의 수락 연산 op_id(also를 더함), 그 연산에 기댄 연산 op_id(corrections.dependents, 이어서)). 둘 다 기록 차례."""
     own = {c["op_id"] for c in doc["candidates"]
-           if c["cand_id"] in cand_ids and c["status"] == "accepted" and c.get("op_id")}
+           if c["cand_id"] in cand_ids and c["status"] == "accepted" and c.get("op_id")} | set(also)
     deps = set()
     for oid in own:
         deps.update(corrections.dependents(ops, oid))
@@ -1144,15 +1210,17 @@ class RevertNeedsConfirm(ValueError):
         self.dependents = dependents
 
 
-def revert(doc, cand_ids, name, by, at=None, confirm=None):
+def revert(doc, cand_ids, name, by, at=None, confirm=None, also=()):
     """수락·거절을 되돌린다. 수락으로 넣은 연산과 그 연산에 기댄 고침(revert_preview의 dependents)을 사람 수정 기록에서
     한 번에 지우고(후보 문서와 함께), 기댄 고침이 AI 후보 수락이면 그 후보도 제안으로 돌린다. → 지운 op_id 목록(기록 차례).
     기댄 고침 가운데 사람이 한 것이 있으면 confirm(revert_preview의 dependents op_id 목록)이 그것을 모두 담아야 한다.
-    아니면 아무것도 지우지 않고 RevertNeedsConfirm(부르는 쪽이 미리 알림을 빠뜨려도 사람 고침이 조용히 지워지지 않게)."""
+    아니면 아무것도 지우지 않고 RevertNeedsConfirm(부르는 쪽이 미리 알림을 빠뜨려도 사람 고침이 조용히 지워지지 않게).
+    also: 후보가 없어진 수락 연산 op_id(auto_revert가 넘김)."""
+    corrections.check_person(by)
     at = at or now_utc()
     rec, fp = corrections.load_fp(name)
     ops = list((rec or {}).get("ops") or [])
-    own, deps = _revert_plan(doc, cand_ids, ops)
+    own, deps = _revert_plan(doc, cand_ids, ops, also)
     by_id = {o["op_id"]: o for o in ops}
     human = [i for i in deps if by_id[i].get("origin") != "ai"]
     if human and not set(human) <= set(confirm or ()):
@@ -1165,3 +1233,257 @@ def revert(doc, cand_ids, name, by, at=None, confirm=None):
             c.update(status="proposed", op_id=None, decided_at=at, decided_by=by)
     _commit(doc, work, name, [o for o in ops if o["op_id"] not in drop] if drop else None, fp, by, at, action="ai_revert")
     return [o["op_id"] for o in ops if o["op_id"] in drop]
+
+# ---------------------------------------------------------------- 자동 확정
+# 고르기는 auto_block 한 곳, 쓰기는 accept 한 곳이다(수락 규칙이 두 벌이 되지 않게). 도면 잠금(sheet_refresh.lock) 안에서 부른다.
+
+def calls_used(doc):
+    """이 원본에 지금까지 쓴 호출 수(사람이 시킨 실행 포함). 번호를 확정하면 실행 기록이 새 이름으로 함께 옮겨진다."""
+    return sum(r.get("calls") or 0 for r in (doc or {}).get("runs") or [] if isinstance(r, dict))
+
+
+def auto_calls_left(doc):
+    """자동 경로가 이 원본에 더 쓸 수 있는 호출 수(누적 AUTO_CAP. 설정값과 관계없음)."""
+    return max(0, AUTO_CAP - calls_used(doc))
+
+
+def _auto_runs(doc):
+    return [r for r in (doc or {}).get("runs") or [] if isinstance(r, dict) and r.get("auto")]
+
+
+def _run_done(r):
+    return not r.get("refused") and r.get("legend_source") == AUTO_LEGEND and r.get("left") == 0
+
+
+def auto_asked(doc, key):
+    """read_key가 key인 읽기에 물을 곳을 모두 물은 자동 실행이 있는가. 있으면 다시 부르지 않고 수락만 한다."""
+    return any(r.get("read_key") == key and _run_done(r) for r in _auto_runs(doc))
+
+
+def _failed_run(r):
+    """호출 오류로 끝난 실행인가(한도·연결 없음·멈춤은 오류가 아니다)."""
+    return _stop_why(r) is None and bool(r.get("left")) and bool(r.get("errors"))
+
+
+def _stop_why(r):
+    """오류가 아닌 까닭으로 멈춘 실행의 waiting 까닭. 없으면 None."""
+    if r.get("refused"):
+        return "ai_off" if r.get("ai_off") else "no_connection"
+    if r.get("legend_source") != AUTO_LEGEND:
+        return "no_image"
+    kinds = set(r.get("error_kinds") or ())
+    for why, hit in (("limit", {"limit_reached", "overage"}), ("no_connection", {"not_ready", "auth_mismatch"}), ("stopped", {"cancelled"})):
+        if kinds & hit:
+            return why
+    return "stopped" if r.get("stopped") else None
+
+
+def auto_outcome(ex, doc):
+    """추출 결과와 후보 문서(실행 기록)만 보고 정한 자동 확정의 결과 {"result", "why", "attempts", "ai"}(설계 2.3 전이 표). 순수 함수."""
+    from hazop.extract import confirmation
+    fmt = confirmation.source_format(ex)
+    none = {"calls": 0, "left": 0, "status": "none"}
+    if fmt in confirmation.CLEAN_FIRST:     # 글 입력만 되는 도면(drawio·DEXPI): AI를 부르지 않는다(P6)
+        return {"result": "confirmed", "why": None, "attempts": 0, "ai": none}
+    if fmt != "pdf_vector":
+        return {"result": "waiting", "why": "scan", "attempts": 0, "ai": none}
+    key = confirmation.read_key(ex)
+    auto = _auto_runs(doc)
+    runs = [r for r in auto if r.get("read_key") == key]
+    attempts = sum(1 for r in auto if _failed_run(r))
+    calls = calls_used(doc)
+    last = runs[-1] if runs else None
+    ai = {"calls": calls, "left": (last or {}).get("left"), "status": "none"}
+
+    def out(result, why=None, **more):
+        return {"result": result, "why": why, "attempts": attempts, "ai": dict(ai, **more)}
+    if last is None:
+        return out("waiting", "started")
+    if any(_run_done(r) for r in runs):
+        return out("confirmed", left=0, status="done")
+    stop = _stop_why(last)
+    if stop in ("no_image", "ai_off"):
+        return out("waiting", stop)
+    if calls >= AUTO_CAP:
+        return out("confirmed", status="capped")
+    if stop:
+        return out("waiting", stop)
+    if _failed_run(last):
+        return out("waiting", "error_final" if attempts >= AUTO_ATTEMPTS else "error")
+    return out("waiting", "run_cap")
+
+
+def _revoked(c):
+    """사람이 되돌린 후보인가(제안으로 돌아갔지만 사람이 한 번 정한 것)."""
+    return c.get("status") == "proposed" and bool(c.get("decided_at")) and c.get("decided_by") != corrections.AUTO_BY
+
+
+def _close(a, b):
+    return bool(a) and bool(b) and all(abs(x - y) <= BOX_TOL for x, y in zip(a, b))
+
+
+def _at_place(nodes, box):
+    """상자와 같은 자리의 기호 id(한쪽 중심이 다른 쪽 안에 있음)."""
+    out = set()
+    for n in nodes:
+        b = _box(n)
+        if b and (_dist_to_box(_center(b), box) <= 0 or _dist_to_box(_center(box), b) <= 0):
+            out.add(n["source_object_id"])
+    return out
+
+
+def protected_targets(name, resolved, doc=None):
+    """자동 수락이 닿지 않을 기호 id(지금 추출의 id). 저장된 연산·후보의 id는 다시 추출로 번호가 밀릴 수 있어 지금 id로 옮긴다.
+    - 사람 연산의 대상: 옮겨 적용됐으면 옮긴 id, 적용하지 못했으면 만들 때의 자리(base.at)에 있는 기호와 원래 id
+    - 사람이 지운 AI 연산(되돌리기)의 자리
+    - 사람이 정한 후보(수락·거절·되돌림)의 상자와 같은 자리의 기호
+    자동 연산은 넣지 않는다(수락이 중간에 끊겨 다시 돌 때 같은 끝이 되게)."""
+    nodes = [n for n in resolved["corrected"].get("nodes") or [] if n.get("source_object_id")]
+    info = resolved["corrected"].get("corrections") or {}
+    applied = set(info.get("applied") or ())
+    moved = {(m["op_id"], m["from"]): m["to"] for m in info.get("retargeted") or ()}
+    out = set()
+
+    def place(op):
+        at = (op.get("base") or {}).get("at")
+        if at:
+            out.update(_at_place(nodes, [at[0] - 1, at[1] - 1, at[0] + 1, at[1] + 1]))
+    for o in resolved["ops"]:
+        if corrections.is_auto(o) or not o.get("target"):
+            continue
+        out.add(moved.get((o.get("op_id"), o["target"]), o["target"]))
+        if o.get("op_id") not in applied:
+            place(o)
+    for e in (corrections.load(name) or {}).get("log") or []:
+        if not corrections.reserved_name(e.get("by")):
+            for o in e.get("removed_ops") or []:
+                if o.get("origin") == "ai":
+                    place(o)
+    for c in (load_doc(name) if doc is None else doc or {"candidates": []})["candidates"]:
+        decided = c.get("status") in ("accepted", "rejected") and c.get("decided_by") != corrections.AUTO_BY
+        if (decided or _revoked(c)) and c.get("bbox"):
+            out.update(_at_place(nodes, c["bbox"]))
+    return out
+
+
+def auto_block(c, corrected, protected, pending, ruleset=None):
+    """자동으로 받지 않을 까닭(코드) 또는 None. 순수 함수. 설계 4.3 표의 차례대로 처음 걸린 것을 낸다. ruleset(없으면 AUTO_RULES)이 정하는
+    것은 task·input·confidence뿐이고 나머지는 늘 건다.
+    corrected: 사람 수정·수락을 반영한 추출 결과, protected: protected_targets, pending: 수락 전 후보 전부."""
+    ruleset = ruleset or AUTO_RULES
+    if c.get("status") != "proposed":
+        return "status"
+    if _revoked(c):
+        return "human"
+    if c.get("target") in protected:
+        return "protected"
+    field = c.get("field")
+    value = (c.get("values") or [None])[0]
+    floor = ruleset.min_confidence.get((c.get("task"), field))
+    if floor is None or (field == "kind" and value not in rules.KIND_CATEGORY):
+        return "task"
+    if c.get("input") not in ruleset.inputs or c.get("legend_source") not in ruleset.legends:
+        return "input"
+    if (_confidence(c.get("confidence")) or 0) < floor:
+        return "confidence"
+    node = next((n for n in corrected.get("nodes") or [] if n.get("source_object_id") == c.get("target")), None)
+    if node is None or not _close(c.get("bbox"), _box(node)):
+        return "moved"
+    if node.get(field) or (node.get("attributes") or {}).get(field) or (field == "kind" and node.get("classification") == "classified"):
+        return "conflict"
+    if field == "kind" and value in LETTER_CIRCLE_KINDS:
+        return "letter_circle"
+    if field == "tag":
+        want = norm(value)
+        used = any(norm(n.get("tag")) == want for n in corrected.get("nodes") or [] if n is not node and n.get("tag"))
+        also = any(x.get("field") == "tag" and x.get("target") != c["target"] and norm((x.get("values") or [""])[0]) == want
+                   for x in pending)
+        if not want or used or also:
+            return "tag_taken"
+    if field == "kind" and value in WIDE_KINDS and c.get("wide") != "done":
+        return "wide"
+    return None
+
+
+def auto_accept(name, original_ex, tries=3):
+    """자동 수락(도면 한 장). 후보 상태를 수정 기록에 맞춘 뒤(reconcile: 앞 수락이 중간에 끊긴 흔적) auto_block을 지난 후보를 한 번에
+    수락한다. 사람이 되돌렸거나 확정한 쪽은 손대지 않는다. → {"accepted": [cand_id], "blocked": {까닭: 수}}. 까닭은 auto_block의 코드와
+    off(상수로 끔)·reverted·human(쪽 전체)·failed(accept가 받지 않음)."""
+    from hazop.extract import confirmation
+    for n in range(tries):
+        try:
+            return _auto_accept(name, original_ex, confirmation.sheet_confirmation(name))
+        except store_io.Conflict:
+            if n == tries - 1:
+                raise
+
+
+def _auto_accept(name, original_ex, status):
+    if AUTO_ACCEPT_ENABLED:
+        reconcile(name)
+    doc = load_doc(name)
+    pending = [c for c in (doc or {}).get("candidates") or [] if c["status"] == "proposed"]
+    whole = "off" if not AUTO_ACCEPT_ENABLED else "human" if status["state"] == "confirmed" else \
+        "reverted" if (status["auto"] or {}).get("result") == "reverted" else None
+    if doc is None or whole:
+        return {"accepted": [], "blocked": {whole: len(pending)} if whole and pending else {}}
+    rec, fp = corrections.load_fp(name)
+    resolved = corrections.resolve(name, original_ex, (rec or {}).get("ops") or [])
+    protected = protected_targets(name, resolved, doc)
+    blocked, pick = {}, []
+    for c in doc["candidates"]:
+        why = auto_block(c, resolved["corrected"], protected, pending)
+        if why is None:
+            pick.append(c["cand_id"])
+        elif not (why == "status" and c.get("decided_by") == corrections.AUTO_BY):
+            blocked[why] = blocked.get(why, 0) + 1
+    failed = accept(doc, set(pick), original_ex, name, corrections.AUTO_BY, auto=True, expect=fp) if pick else []
+    if failed:
+        blocked["failed"] = len(failed)
+    lost = {i for i, _why in failed}
+    return {"accepted": [i for i in pick if i not in lost], "blocked": blocked}
+
+
+def auto_finish(name, original_ex):
+    """도면 한 장의 자동 확정을 지금 있는 자료에서 마무리한다: 결과 정하기(auto_outcome) → 확정이면 자동 수락 → 기록(confirmation.record_auto).
+    어디서 끊겨도 다시 부르면 같은 끝이다. 이미 이 읽기로 자동 확정된 쪽은 다시 수락하지 않고, 사람이 확정하거나 되돌린 쪽은 손대지 않는다.
+    → {"result": confirmed|waiting|reverted|human, "why", "accepted": [cand_id], "blocked": {까닭: 수}}."""
+    from hazop.extract import confirmation
+    status = confirmation.sheet_confirmation(name)
+    key = confirmation.read_key(original_ex)
+    cell = status["auto"]
+    if status["state"] == "confirmed":
+        return {"result": "human", "why": None, "accepted": [], "blocked": {}}
+    if cell and (cell["result"] == "reverted" or (cell["result"] == "confirmed" and cell["read_key"] == key)):
+        return {"result": cell["result"], "why": None, "accepted": [], "blocked": {}}
+    got = auto_outcome(original_ex, load_doc(name))
+    done = {"accepted": [], "blocked": {}}
+    if got["result"] == "confirmed":
+        done = auto_accept(name, original_ex)
+        status = confirmation.sheet_confirmation(name)
+    confirmation.record_auto(name, got["result"], got["why"], ai=got["ai"], accepted=status["auto_accepted"],
+                             unconfirmed=status["unconfirmed_targets"], attempts=got["attempts"], key=key)
+    return dict(done, result=got["result"], why=got["why"])
+
+
+def auto_revert(name, by, confirm=None, at=None):
+    """이 도면의 자동 수락을 한 번에 되돌린다(도면 한 장 단위). 사람이 수락한 것과 사람 고침은 그대로다. → 지운 op_id 목록.
+    기댄 사람 고침이 있는데 confirm에 없으면 아무것도 바꾸지 않고 RevertNeedsConfirm. '되돌림'을 먼저 적으므로 중간에 끊겨도 이어 하기가
+    다시 넣지 않고, 다시 부르면 마저 되돌린다."""
+    from hazop.extract import confirmation
+    corrections.check_person(by)
+    if not str(by or "").strip():
+        raise ValueError("되돌린 사람 이름이 있어야 함")
+    ops = (corrections.load(name) or {}).get("ops") or []
+    own = [o["op_id"] for o in ops if corrections.is_auto(o)]
+    deps = set()
+    for oid in own:
+        deps.update(corrections.dependents(ops, oid))
+    human = [o["op_id"] for o in ops if o["op_id"] in deps and o["op_id"] not in own and o.get("origin") != "ai"]
+    if human and not set(human) <= set(confirm or ()):
+        raise RevertNeedsConfirm(human)
+    confirmation.record_auto(name, "reverted", by=by)
+    reconcile(name)
+    doc = load_doc(name) or new_doc(name, {})
+    ids = {c["cand_id"] for c in doc["candidates"] if c["status"] == "accepted" and c.get("op_id") in own}
+    return revert(doc, ids, name, by, at=at, confirm=confirm, also=own) if own else []

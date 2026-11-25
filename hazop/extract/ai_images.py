@@ -273,11 +273,12 @@ def symbol_cells():
 
 def confirmed_samples(ex):
     """추출 결과(사람 수정 기록을 적용한 것)에서 종류를 믿을 수 있는 노드의 견본 자리 [(kind, bbox)].
-    사람이 종류를 정한 노드(human_edit.ops에 set_kind, AI 후보 수락도 이 연산으로 들어간다)와 스크립트가 기호 사전 견본에 맞춘
-    노드(classification_basis가 'symbol:'로 시작)만. 순서는 source_object_id 순."""
+    사람이 종류를 정한 노드(human_edit.ops에 set_kind, 사람이 수락한 AI 후보도 이 연산으로 들어간다)와 스크립트가 기호 사전 견본에
+    맞춘 노드(classification_basis가 'symbol:'로 시작)만. 자동 확정이 정한 종류(human_edit.auto)는 사람이 보지 않아 뺀다. 순서는 source_object_id 순."""
     out = []
     for n in sorted(ex.get("nodes") or [], key=lambda n: str(n.get("source_object_id"))):
-        human = "set_kind" in ((n.get("human_edit") or {}).get("ops") or [])
+        mark = n.get("human_edit") or {}
+        human = "set_kind" in (mark.get("ops") or []) and "set_kind" not in (mark.get("auto") or [])
         basis = str((n.get("evidence") or {}).get("classification_basis") or "")
         b = _box(n)
         if n.get("kind") and b and (human or basis.startswith("symbol:")):
