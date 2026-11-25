@@ -103,7 +103,8 @@ class ResultsPanelTest(W.ShellBase):
         self.open_export_card(win)
         self.assertTrue(self.js(win, "(() => { const b = document.querySelector(\".exportcard button[aria-label='Excel로 내보내기']\"); b.click(); return true; })()"))
         self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
-        self.assertTrue(wait_for(lambda: "exported.xlsx" in self.text(win), 10))
+        pump(0.5)
+        self.assertNotIn("exported.xlsx", self.text(win), "내보냈다는 확인 글은 없다(화면 단순화)")
         self.assertNotIn(os.path.dirname(out), self.text(win), "웹에는 경로를 보이지 않는다")
 
     def open_export_card(self, win):
@@ -152,7 +153,6 @@ class ResultsPanelTest(W.ShellBase):
         self.assertIn("승인", self.js(win, "document.querySelector('.exportcard').textContent"))
         self.js(win, "document.querySelector(\".exportcard button[aria-label='Excel로 내보내기']\").click()")
         self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
-        self.assertTrue(wait_for(lambda: "승인 항목만" in self.text(win), 10))
         got = rows()
         self.assertTrue(got and {r["상태"] for r in got} == {"승인"}, got)
         os.remove(out)

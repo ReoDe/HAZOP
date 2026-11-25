@@ -328,7 +328,7 @@ class ShellWindowTest(ShellBase):
     def test_first_run_without_reviewer_opens_settings(self):
         win = self.window(reviewer=None)
         self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "settings")
-        self.assertIn("검토자 이름을 입력하세요", self.text(win))
+        self.assertIn("검토자 이름", self.text(win))      # 설정 패널의 입력 칸이 보인다(따로 띄우는 안내 글은 없다)
 
     def test_project_box_changes_the_project_from_the_top_bar(self):
         win = self.window()

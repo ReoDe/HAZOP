@@ -457,7 +457,7 @@ export const tests = [
     assert.equal(N.nodes.get().selection, []);
     assert.equal(N.nodes.get().focus, "S4");
     const card = host.querySelector(".newnode");
-    assert(card && card.textContent.includes("구간 S4을 만들었습니다") && card.textContent.includes("S1 구간과 1개가 겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
+    assert(card && card.textContent.includes("구간 S4을 만들었습니다") && !card.textContent.includes("겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
     const intent = card.querySelector("#nn-intent");
     intent.value = "원자로 출구를 증기발생기로 보냄";
     intent.dispatchEvent(new Event("input", { bubbles: true }));
@@ -495,9 +495,9 @@ export const tests = [
     const host = mount(html`<${Probe} />`);
     await tick();
     assert.equal([props.segments, props.outside], [[], []], "도면 탭에는 구간 색 강조가 없다(화면 단순화)");
-    await new Promise((r) => setTimeout(r, 80));      // 숨은 페이지는 구독 효과가 늦다
+    await new Promise((r) => setTimeout(r, 300));      // 구독이 붙을 때까지
     store.set({ panel: "nodes" });
-    await new Promise((r) => setTimeout(r, 80)); await tick();
+    for (let i = 0; i < 40 && !props.segments.length; i++) await new Promise((r) => setTimeout(r, 50));      // 숨은 페이지는 구독 효과가 늦다
     assert.equal(props.segments.map((s) => [s.node_id, s.ids, s.active]), [["S1", ["n1", "n2"], false], ["S2", ["n2", "n3"], false]]);
     assert.equal(props.outside, ["n4", "n5"]);
     assert.equal(props.mode, "pan");

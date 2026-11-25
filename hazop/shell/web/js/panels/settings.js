@@ -131,7 +131,7 @@ export function SettingsPanel({ onClose }) {
   const data = useStore((s) => s.drawings);
   const [name, setName] = useState(app.reviewer || "");
   const fail = (e) => store.set({ toast: { text: e.message, kind: "err" } });
-  const saveName = () => cmd("settings.set_reviewer", { name }).then(() => store.set({ toast: { text: "검토자 이름을 저장했습니다." } })).catch(fail);
+  const saveName = () => cmd("settings.set_reviewer", { name }).then(() => {}).catch(fail);
   return html`<section class="panel settings" aria-label="설정">
     <div class="panel-h"><h2>설정</h2><span class="acts"><${Btn} kind="ghost" icon="x" label="패널 닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
     <div class="panel-b">

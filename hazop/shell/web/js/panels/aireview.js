@@ -82,10 +82,8 @@ export function AiReviewPanel({ onClose }) {
           ${ov.drawings.map((d) => html`<option key=${d.graph_id} value=${d.graph_id}>${d.drawing_number}${d.proposed ? " · 남은 후보 " + d.proposed : ""}</option>`)}</select>
         ${v.available ? html`<${Chip} kind="ai">남은 ${c.proposed || 0}<//><${Chip} kind="ok">수락 ${c.accepted || 0}<//><${Chip}>거절 ${c.rejected || 0}<//>` : null}</div>
       ${last ? html`<div class="muted small">마지막 실행: 호출 ${last.calls ?? "-"}회 · 묻지 못한 곳 ${last.left ?? "-"}${last.not_symbol ? " · 기호 아님 " + last.not_symbol : ""}${last.halted ? " · 오류로 멈춤" : last.stopped ? " · 중지함" : ""}${last.legend ? html` · <span class="ai-legend">${last.legend}</span>` : ""}</div>` : null}
-      <div class="muted small">후보는 추출 결과를 바꾸지 않습니다. 수락한 것만 도면 수정 기록에 들어가 그래프에 바로 반영되고, 되돌릴 수 있습니다.</div>
       ${v.graph_stale ? html`<${Notice} kind="warn" icon="alert-triangle">수락·되돌리기는 저장됐지만 도면 반영을 아직 끝내지 못해 도면 연결 정보가 고치기 전 상태입니다. 패널을 다시 열거나 다음 결정을 하면 다시 반영합니다.<//>` : null}
       ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${A.dismiss}>닫기<//><//>` : null}
-      ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
       <${Estimate} />
       ${!v.available ? html`<${Notice}>${v.reason || "AI 후보가 없습니다."}<//>` : html`
         <${Bulk} v=${v} />

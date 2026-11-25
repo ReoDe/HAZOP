@@ -71,7 +71,6 @@ class KgPanelFlowTest(ShellBase):
         self.js(win, "import(new URL('js/panels/kg_state.js', document.baseURI).href).then((K) => K.focus(%s))" % json.dumps(item["id"]))
         self.assertTrue(wait_for(lambda: "후보 확인" in (self.js(win, "document.querySelector('.kg-side').innerText") or ""), 10))
         self.click(win, ".kg-judge .btn.primary")
-        self.assertTrue(wait_for(lambda: "판단을 저장했습니다" in self.text(win), 10), self.text(win)[-400:])
         self.assertTrue(wait_for(lambda: "판단 되돌리기" in (self.js(win, "document.querySelector('.kg-side').innerText") or ""), 10))
         pid = win.engine.project_id()
         rec = expect.load_judgements(expect.store_path(pid), pid)[item["key"]]

@@ -308,7 +308,6 @@ export function ResultsPanel({ onClose }) {
         ${s.check && s.check.needs_check ? html`<${Notice} kind="warn" icon="alert-triangle">${checkText(s.check)}<//>` : null}
         <${RunState} run=${s.run} /><${PlanCard} />
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${R.dismissError}>닫기<//><//>` : null}
-        ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
         ${view === "recs" ? html`<${Recs} />` : html`<${Matrix} s=${s} />`}
         ${view === "recs" ? null : html`<${Legend} />`}
         ${view === "recs" ? null : html`<${Worksheet} />`}

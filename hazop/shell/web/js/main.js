@@ -143,7 +143,7 @@ function wireEvents() {
     if (dup && dup.length) toast("같은 도면 번호 " + dup.join(", ") + "의 원본이 다른 형식으로 이미 있습니다. 도면 패널에서 쓸 쪽을 고르세요(고르기 전에는 먼저 있던 쪽을 씁니다).");
     loadDrawings().then((x) => { if (!store.get().sheet && x.drawings.length === 1) openSheet(x.drawings[0].graph_id); }); });
   on("job.failed", (d) => {       // 사람이 한 멈춤·취소(stopped)는 실패가 아니다: 빨간 표시를 하지 않고 조용히 알린다(실제 창 3차 결함 3)
-    if (d.stopped) { job("stopped")(d); toast(d.label + ": 멈췄습니다."); return; }
+    if (d.stopped) { job("stopped")(d); return; }
     job("failed")(d); toast(d.label + ": " + d.message, "err");
   });
   onChanged((topic) => {
@@ -277,7 +277,7 @@ async function boot() {
   if (ui0.sheet && d.drawings.some((x) => x.graph_id === ui0.sheet)) openSheet(ui0.sheet);
   else if (d.drawings.length === 1) openSheet(d.drawings[0].graph_id);
   else store.set({ panel: "drawings" });   // 열 도면이 없거나 여럿이면 도면 패널을 먼저 보인다
-  if (!s.reviewer) { store.set({ panel: "settings" }); toast("검토자 이름을 입력하세요. 승인·확정 기록에 남습니다."); }   // 처음 실행할 때 묻는 것은 그대로
+  if (!s.reviewer) { store.set({ panel: "settings" }); }   // 처음 실행할 때 묻는 것은 그대로
   if (s.debug) window.__hz = { store, cmd, read, ui, clean, next: nextStore, queue: queueStore, go: nextGo };
   cmd("project.open_check").catch(() => {});      // 앱을 끈 사이 도면이 다시 읽혔으면 검토구간을 뒤에서 맞춘다(잃은 것이 있으면 알림이 온다)
   checkLost();        // 다시 추출 뒤 찾지 못한 구성요소가 있으면 한 줄로 알린다(읽기는 뒤에서, 화면을 붙잡지 않는다)

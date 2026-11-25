@@ -102,8 +102,7 @@ async function estimate(cap) {
 /** 묻는 중이면 지금 호출 뒤 멈추고, 기다리는 중이면 빠진다(aireview.stop: 그 도면만, 다른 작업은 그대로). 창을 닫지 않고 멈출 수 있다. */
 export async function stopReview(gid) {
   try {
-    const r = await cmd("aireview.stop", { graph_id: gid });
-    store.set({ toast: { text: r && r.was === "waiting" ? "AI 검토를 취소했습니다." : "AI 검토를 멈추는 중입니다. 지금 묻는 것 하나를 마치고 멈춥니다." } });
+    await cmd("aireview.stop", { graph_id: gid });      // 멈춤은 도면 줄의 상태 칩이 보인다
   } catch (e) { store.set({ toast: { text: (e && e.message) || "멈추지 못했습니다.", kind: "err" } }); }
   soon(0);
 }
@@ -136,7 +135,7 @@ function finished(result) {
     if (d.candidates > 0) {
       addNotice({ id: "review:" + d.graph_id, key: String(Date.now()), kind: "info", text: num + " AI 검토가 끝났습니다 · 후보 " + d.candidates + "건",
         action: { label: "검토하기", run: () => { clearNotice("review:" + d.graph_id); if (openQueue) openQueue("ai", d.graph_id); } } });
-    } else store.set({ toast: { text: num + " AI 검토가 끝났습니다. 새 후보는 없습니다." } });
+    }
   }
 }
 

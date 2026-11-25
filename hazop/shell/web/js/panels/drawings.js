@@ -42,7 +42,6 @@ function DexpiExport() {
   if (!info) return null;
   const label = (d) => d.display || d.drawing_number || d.name;
   return html`<div class="card dexpi-card"><h3>DEXPI로 내보내기</h3>
-    <div class="muted small">사람이 '쪽 확정'을 마친 쪽만 DEXPI XML로 냅니다. 확정 전 쪽과 옮기지 못한 항목은 아래 요약에 나옵니다.</div>
     ${info.drawings.length === 0 ? html`<${Notice}>내보낼 도면이 없습니다.<//>` : html`<div class="list" role="list" aria-label="내보내기 대상">${info.drawings.map((d) => html`<div class="row" role="listitem" key=${d.graph_id}>
       <div class="main"><b>${label(d)}</b><span>${d.exportable ? "내보낼 수 있음" : (d.why[0] || "내보낼 수 없음")}</span></div>
       <${Chip} kind=${d.state === "confirmed" ? "ok" : "warn"}>${STATE_TEXT[d.state] || "확정 전"}<//></div>`)}</div>`}

@@ -393,7 +393,6 @@ export function KgPanel({ onClose }) {
         ${(s.blocks || []).map((b) => html`<${Notice} kind="err" icon="alert-triangle" key=${b.kind}>${b.text}<//>`)}
         ${(s.notes || []).map((t, i) => html`<${Notice} kind="warn" icon="alert-triangle" key=${i}>${t}<//>`)}
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${K.dismissError}>닫기<//><//>` : null}
-        ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
         <div class="kg-main"><${GraphCanvas} /><${Detail} /></div>`}
     </div></section>`;
 }

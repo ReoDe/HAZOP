@@ -81,11 +81,10 @@ async function write(name, args, notice) {
   try {
     const r = await cmd(name, Object.assign({ graph_id: ai.get().graphId, ver: ai.get().view.ver }, args));
     const failed = (r && r.failed) || [];
-    const text = notice(r) + (failed.length ? " 하지 못한 후보 " + failed.length + "건: " + failed.slice(0, 3).map((f) => f.reason).join(" · ") : "")
-      + ((r && r.notes && r.notes.length) ? " " + r.notes.join(" ") : "") + ((r && r.recheck && r.recheck.length) ? " " + r.recheck.join(" ") : "");
-    ai.set({ busy: false, notice: text });
-    // 패널 맨 위 알림은 목록 아래쪽에서 누른 사람에게 보이지 않는다(실제 창 4차): 화면 아래 알림으로도 띄운다
-    store.set({ toast: { text, kind: failed.length ? "err" : "info" } });
+    const text = [failed.length ? "하지 못한 후보 " + failed.length + "건: " + failed.slice(0, 3).map((f) => f.reason).join(" · ") : "",
+      (r && r.notes && r.notes.length) ? r.notes.join(" ") : "", (r && r.recheck && r.recheck.length) ? r.recheck.join(" ") : ""].filter(Boolean).join(" ");
+    ai.set({ busy: false, notice: null });
+    if (text) store.set({ toast: { text, kind: failed.length ? "err" : "info" } });      // 잘 됐다는 확인 글은 없다: 하지 못한 것과 다시 볼 것만
     await refresh();
     return r;
   } catch (e) {
@@ -112,7 +111,7 @@ export async function run() {
   try {
     const est = ai.get().estimate;
     await cmd("aireview.run", { graph_ids: [ai.get().graphId], cap: ai.get().cap || 20, conn_ver: (est && est.conn && est.conn.conn_ver) || "-" });
-    ai.set({ busy: false, notice: "AI 검토를 시작했습니다. 진행은 도면 패널의 작업 줄에 보입니다." });
+    ai.set({ busy: false });
   } catch (e) {
     ai.set({ busy: false, error: errorText(e) });
     if (e && e.code === "conn_changed") await refresh();      // 연결이 바뀌었으면 새 연결을 보이고 다시 누르게 한다
