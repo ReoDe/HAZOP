@@ -2,6 +2,7 @@
 
 옛 파일에 자리가 없던 대상(계기, 노즐 없는 설비)은 사람 고침의 지문에 at이 없다. 새 파일에는 자리가 생겨 corrections._same이 다른 대상으로
 본다. 여기서는 옛 추출과 새 추출을 나란히 놓고, id·종류·태그가 같고 그 태그가 양쪽에서 하나뿐일 때만 지문을 새 추출의 것으로 바꿔 적는다.
+원래 값 표시(§6.9)가 있는 파일은 표시를 빼고 읽은 값끼리 견준다. 옛 파일이 표시 없는 파일이어도, 새 파일이 표시 없는 파일이어도 같다.
 애매하면 잇지 않는다. 잇지 않은 고침도 기록에 남고(held) 적용되지 않는다. 옛 기록 파일은 바꾸지 않는다.
 고침을 적용하는 길(corrections.apply)은 건드리지 않으므로 drawio·PDF 도면과 기준 추출에는 닿지 않는다.
 """
@@ -14,6 +15,7 @@ import os
 
 from hazop import paths, store_io
 from hazop.extract import ai_review, confirmation, corrections, ids
+from hazop.extract.adapters import dexpi_origin
 
 MIN_MARKS = 3               # 알아볼 수 있는 구성요소가 이보다 적게 맞으면 같은 도면으로 보지 않는다
 HELD_TARGET = "carry-held"  # 남긴 add_* 연산의 target. add_*는 대상이 없어야 적용되므로 옛 앱도 적용하지 않는다
@@ -78,7 +80,7 @@ def check_same_drawing(old, new):
     titles = [_in_file(x, "title") for x in (old, new)]
     if numbers[0] != numbers[1] or (all(confirmed) and confirmed[0] != confirmed[1]) or (all(titles) and titles[0] != titles[1]):
         raise Refused("other_drawing")
-    known = [_marks(x) for x in (old, new)]
+    known = [_marks(dexpi_origin.plain_view(x)) for x in (old, new)]
     same = len(known[0] & known[1])
     if same < MIN_MARKS or 2 * same <= len(known[0]):
         raise Refused("other_drawing")
@@ -86,14 +88,19 @@ def check_same_drawing(old, new):
 
 # ---------------------------------------------------------------- 고침 하나하나
 class _Sheet:
+    """추출 하나. fp: 지금 값의 지문(고침이 적는 것). plain: 표시를 빼고 읽은 값의 지문(견주는 것). 표시가 없으면 둘이 같다."""
+
     def __init__(self, extraction):
         self.fp = corrections._fingerprints(extraction)
+        self.marked_nodes = extraction["nodes"]
+        extraction = dexpi_origin.plain_view(extraction)
+        self.plain = corrections._fingerprints(extraction)
         self.made = ids.made_ids(extraction)
         everything = [x for key in ("nodes", "relations", "unresolved_connectors") for x in extraction[key]]
         self.twice = {k for k, n in collections.Counter(x["source_object_id"] for x in everything).items() if n > 1}
         self.tags = collections.Counter(_tag_key(n.get("tag")) for n in extraction["nodes"])
         self.soid = {n["local_id"]: n["source_object_id"] for n in extraction["nodes"]}
-        self.nodes = [(n, fp["at"], _tag_key(n.get("tag"))) for n, fp in ((n, self.fp[n["source_object_id"]]) for n in extraction["nodes"])]
+        self.nodes = [(n, fp["at"], _tag_key(n.get("tag"))) for n, fp in ((n, self.plain[n["source_object_id"]]) for n in extraction["nodes"])]
         self.lines = collections.Counter((r.get("kind"), frozenset(self.soid.get(e.get("node_local_id")) for e in r["endpoints"]))
                                          for r in extraction["relations"])
 
@@ -101,24 +108,37 @@ class _Sheet:
         """같은 자리(반올림)에서 base와 같은 대상으로 보일 수 있는 id들. corrections._same과 같은 관용을 쓴다(모르는 종류·태그가 채워진 것,
         배관이 측정선이 된 것). 관계의 끝 id는 순번이라 보지 않는다."""
         mine = {k: v for k, v in base.items() if k != "ends"}
-        return {sid for sid, fp in self.fp.items() if ("ends" in fp) == ("ends" in base)
+        return {sid for sid, fp in self.plain.items() if ("ends" in fp) == ("ends" in base)
                 and corrections._same(mine, {k: v for k, v in fp.items() if k != "ends"})}
 
     def holding(self, add):
         """사람이 더한 것(add: _final의 값)과 같아 보이는 것의 수 (태그로, 자리로)."""
         if add["op"] == "add_relation":
             return (self.lines[(add["kind"], frozenset((add["from"], add["to"])))], 0)
+        return self._alike(add, self.nodes)
+
+    def holding_marked(self, add, old):
+        """old에 없던 id 가운데 표시된 값이 사람이 더한 것과 같아 보이는 것이 있는가(사람이 더한 것을 내보내면 새 id로 나간다)."""
+        rows = [(n, self.fp[n["source_object_id"]]["at"], _tag_key(n.get("tag"))) for n in self.marked_nodes
+                if dexpi_origin.PLAIN in n and n["source_object_id"] not in old.fp]
+        return add["op"] == "add_node" and any(self._alike(add, rows))
+
+    @staticmethod
+    def _alike(add, rows):
         x, y, w, h = add["bbox"]
         tag = _tag_key(add.get("tag"))
-        return (sum(1 for _n, _at, t in self.nodes if tag and t == tag),
-                sum(1 for n, at, _t in self.nodes if at and n.get("kind") == add["kind"] and x - 1 <= at[0] <= x + w + 1 and y - 1 <= at[1] <= y + h + 1))
+        return (sum(1 for _n, _at, t in rows if tag and t == tag),
+                sum(1 for n, at, _t in rows if at and n.get("kind") == add["kind"] and x - 1 <= at[0] <= x + w + 1 and y - 1 <= at[1] <= y + h + 1))
 
 
 def _judge(sid, base, old, new):
     """고침이 가리키는 대상 하나 → ("same", None) | ("link", None) | ("left", 까닭)."""
-    was, now = old.fp.get(sid), new.fp.get(sid)
+    was, now, given = old.fp.get(sid), new.fp.get(sid), base
     if was is None or not corrections._same(base, was):
         return "left", "not_of_old_file"
+    if was != old.plain[sid]:    # 표시가 바꾼 값에 남긴 고침: 파일만 읽은 값으로 견준다
+        base = old.plain[sid]
+    was, now, found = old.plain[sid], new.plain.get(sid), now
     if now is None:
         return "left", "gone"
     if sid in old.twice or sid in new.twice:
@@ -129,7 +149,9 @@ def _judge(sid, base, old, new):
         settled = {y for y in set(old.fp) & set(new.fp) if "ends" in old.fp[y] and old.fp[y]["kind"] != base["kind"]
                    and all(old.fp[y][k] == new.fp[y].get(k) for k in ("kind", "ends"))}     # 두 파일에서 같은 다른 종류의 선
         a, b = old.standing(base) - settled, new.standing(base) - settled
-        return ("left", "not_alone") if a != b and max(len(a), len(b)) > 1 else ("same", None)
+        if a != b and max(len(a), len(b)) > 1:
+            return "left", "not_alone"
+        return ("same" if corrections._same(given, found) else "link"), None
     if "ends" in was or "ends" in now:
         return "left", "relation"
     if sid in old.made or sid in new.made:
@@ -144,7 +166,7 @@ def _judge(sid, base, old, new):
         return "left", "tag_changed"
     if old.tags[_tag_key(was["tag"])] != 1 or new.tags[_tag_key(was["tag"])] != 1:
         return "left", "tag_not_unique"
-    return "link" if now["at"] is not None else "same", None
+    return "link" if now["at"] is not None or not corrections._same(given, found) else "same", None
 
 
 def _bound(sid):
@@ -179,7 +201,7 @@ def _judge_op(op, ops, old, new):
         return "left", why if why in WHY else "unknown", ()
     if op.get("op") in ("add_node", "add_relation"):
         add = _final(op, ops)
-        if any(n > o for n, o in zip(new.holding(add), old.holding(add))):
+        if any(n > o for n, o in zip(new.holding(add), old.holding(add))) or new.holding_marked(add, old):
             return "left", "in_file", ()
     target = op.get("target")
     pieces = ([(target, op.get("base") or {})] if target and not _bound(target) else []) + _refs(op)

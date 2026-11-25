@@ -27,7 +27,7 @@ def ops_of(ex):
     rows = []
     for n in ex["nodes"]:
         sid = n["source_object_id"]
-        rows += [("set_tag", sid, {"tag": "ZZ-1"}), ("set_kind", sid, {"kind": "pump"}), ("delete_node", sid, {}),
+        rows += [("set_tag", sid, {"tag": "ZZ-1"}), ("set_kind", sid, {"kind": "pump", "category": "equipment"}), ("delete_node", sid, {}),
                  ("confirm", sid, {"items": [{"check": "unplaced", "reason": "그대로"}]})]
     for r in ex["relations"]:
         rows += [("set_path", r["source_object_id"], {"points": [[1, 1], [2, 2]]}),
@@ -87,7 +87,7 @@ class WholeSheetTest(unittest.TestCase):
         """표시 있는 파일에서 고친 것이 새 파일의 표시로 들어와도 고침은 남는다."""
         old = numbered(read(sheet().marked))
         n = next(x for x in old["nodes"] if x["kind"] == "steam_generator")
-        op = corrections.make_op(old, "set_kind", n["source_object_id"], {"kind": "condenser"}, "검토자", existing_ops=[])
+        op = corrections.make_op(old, "set_kind", n["source_object_id"], {"kind": "condenser", "category": "equipment"}, "검토자", existing_ops=[])
         fixed = corrections.apply(old, [op])
         new = numbered(read(Sheet((fixed, build.build_graph(fixed))).marked))
         self.assertEqual(node(new, n["source_object_id"])["kind"], "condenser")
