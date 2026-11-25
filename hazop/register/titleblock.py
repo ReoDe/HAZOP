@@ -29,6 +29,8 @@ graph.superseded.json으로 비켜 둔다(한 도면이 프로젝트 그래프�
   않으므로 취소는 막지 않는다. 임시 이름 꼴 번호(material-…-p쪽)는 받지 않는다(reserved_number).
 - 지금 이름의 참조는 이 쪽이 그 이름의 주인일 때만 센다(같은 번호의 다른 파일, 정착 전에 가려진 도면은 남의 구간 때문에 갇히지 않음).
 - 번호를 바꾸기 전에 시트 자리를 정착해(정착 전 프로젝트만) 예측 이름이 다시 추출 뒤의 이름과 같게 한다.
+- auto_confirm_number(project_id, material_id): 추출하기 전인 새 자료의 도면 번호를 사람 없이 확정한다(예약 이름 hazop:auto). 사람 경로
+  (confirm·unconfirm)는 예약 이름을 거절한다. 규칙은 evidence/auto-confirm-design.md 6.2.
 - 거절 줄은 {target, code, reason, reason_code}. reason_code는 REASON_CODES 가운데 하나(가드가 아닌 거절은 None).
 """
 
@@ -50,6 +52,8 @@ COMMANDS = ("view", "confirm", "unconfirm")
 CODES = ("unknown_command", "bad_actor", "bad_args", "stale", "not_found", "rule", "conflict", "io")
 MAX_VALUE = 200
 SUPERSEDED = "graph.superseded.json"
+AUTO_NUMBER_ENABLED = False   # 도면 번호 자동 확정. 읽은 번호와 실제 번호를 맞대어 본 뒤 총괄이 켠다(auto-confirm-design.md 4.5)
+AUTO_NUMBER_WHYS = ("off", "not_ready", "extracted", "empty", "multi_page", "reserved", "taken", "has_records")
 LOG = logging.getLogger(__name__)
 # 도면 번호 가드의 사유 코드(거절 줄의 reason_code). 번호 꼴 사유 셋은 hazop.graph.sheets와 같은 값이다.
 HAS_RECORDS = "sheet_has_records"            # 그 도면을 가리키는 사람 기록이 있어 번호를 바꾸면 끊김
@@ -685,13 +689,15 @@ def _carry(sheets, new_record):
     """지금 쪽 이름의 사람 수정 기록·AI 후보 기록을 새 등록 버전 이름으로 옮겨 쓴다(앞 파일은 지우지 않음). 새 이름에 이미 기록이 있으면
     (앞서 다시 추출이 실패한 시도가 옮겨 둔 것 등) 덮지 않고 연산·후보 단위로 합친다(지금 쪽이 이긴다).
     반환 ([{from, to, edits, ai_review}], 이번에 새로 만든 파일 경로 목록)."""
-    from hazop.extract import ai_review, corrections
+    from hazop.extract import ai_review, confirmation, corrections
     out, created = [], []
     for s in sheets:
         new_name = _out_name(new_record, s["page"])
         if new_name == s["name"]:
             continue
         moved = {"from": s["name"], "to": new_name, "edits": False, "ai_review": False}
+        if confirmation.carry_auto(s["name"], new_name):     # 되돌린 쪽이 번호 확정 뒤 저절로 다시 수락되지 않게
+            created.append(confirmation.store_path(new_name))
         for key, path_of in (("edits", corrections.store_path), ("ai_review", ai_review.store_path)):
             data, _fp = store_io.read_bytes(path_of(s["name"]))
             if data is None:
@@ -790,9 +796,12 @@ def _apply(project_id, material_id, by, ver, store_root, change, extract, progre
     dry면 검사까지만 하고 아무것도 쓰지 않는다(화면·채팅이 사람 승인 전에 거절 사유를 바로 보이려고). 정착 전 프로젝트에서 번호를 바꾸면
     dry는 이름으로 셈하는 검사를 건너뛰고 알림(SETTLE_FIRST_NOTE)을 달며, 실제 확정이 먼저 정착한 뒤 모든 검사를 한다.
     다른 파일이 쓰는 번호를 받으면 그 파일을 주인으로 붙박은 뒤(sources.keep_owner) 새 판을 만든다."""
+    from hazop.extract import corrections
     by = (by or "").strip()
     if not by:
         raise Refused("by", "bad_actor", "확정한 사람 이름이 있어야 함(설정의 검토자 이름)")
+    if corrections.reserved_name(by):
+        raise Refused("by", "bad_actor", "앱이 쓰는 예약 이름(hazop:…)은 사람 이름으로 쓸 수 없음")
     record, path = registry.latest(project_id, material_id, _store_root(store_root))
     if record is None:
         raise Refused("material_id", "not_found", "등록된 자료가 아님: %s" % material_id)
@@ -897,6 +906,64 @@ def unconfirm(project_id, material_id, field_names, by, ver=None, reason=None, s
         return _apply(project_id, material_id, by, ver, store_root, change, extract or _default_extract, progress or _quiet, dry)
     except Refused as exc:
         return {"ok": False, "changed": False, "refused": [exc.row]}
+
+
+def auto_confirm_number(project_id, material_id, store_root=None):
+    """추출하기 전인 새 자료의 도면 번호를 사람 없이 확정한다 → {"registration_file", "confirmed", "why"}. registration_file은 추출에 쓸
+    등록 파일(확정했으면 새 등록 버전)이다. 확정하지 않은 까닭(AUTO_NUMBER_WHYS): off 꺼 둠, not_ready 등록이 끝난 P&ID가 아님,
+    extracted 이미 추출함(사람이 정함), empty 읽은 번호 없음, multi_page 여러 쪽 자료, reserved 임시 이름 꼴, taken 다른 자료가 같은(또는
+    글자만 다른) 번호를 씀, has_records 새 이름을 가리키는 사람 기록·원본 고르기가 있음. 이미 확정된 번호면 confirmed True.
+    겹침 검사와 새 버전 쓰기를 등록 잠금 하나 안에서 해 동시에 올린 같은 번호 가운데 하나만 확정된다. 없는 자료면 ValueError."""
+    from hazop.extract import corrections
+    with registry.INDEX_LOCK:
+        record, path = registry.latest(project_id, material_id, _store_root(store_root))
+        if record is None:
+            raise ValueError("등록된 자료가 아님: %s" % material_id)
+        if record.get("drawing_number") is not None:
+            return {"registration_file": path, "confirmed": True, "why": None}
+        number, why = _auto_number(project_id, record, store_root)
+        if why is not None:
+            return {"registration_file": path, "confirmed": False, "why": why}
+        src = registry.Store(_store_root(store_root), project_id).abs_ref(record["storage_ref"])
+        res = registry.register(src, project_id, "P&ID", _store_root(store_root),
+                                {"drawing_number": number, "by": corrections.AUTO_BY, "reason": "표제란 번호 자동 확정"},
+                                corrections.AUTO_BY, number_checked=True, auto=True)
+        if res["outcome"] != "new_version" or res["record"].get("status") != "registered":
+            raise OSError("도면 번호를 자동으로 확정하지 못함: %s" % ("; ".join(res.get("notes") or []) or res["outcome"]))
+        return {"registration_file": res["registration_file"], "confirmed": True, "why": None}
+
+
+def _auto_number(project_id, record, store_root):
+    """(확정할 번호, None) 또는 (None, 까닭)."""
+    from hazop.graph import sources
+    if not AUTO_NUMBER_ENABLED:
+        return None, "off"
+    if record.get("status") != "registered" or (record.get("material_type") or "P&ID") != "P&ID":
+        return None, "not_ready"
+    if _sheets(record):
+        return None, "extracted"
+    if _page_count(record) > 1:
+        return None, "multi_page"
+    cand = (record.get("auto_candidates") or {}).get("drawing_number") or {}
+    try:
+        number = _check_values({"drawing_number": str(cand.get("value") or "")})["drawing_number"]
+    except Refused:
+        return None, "empty"
+    problem = sheet_rules.number_problem(number, _page_count(record))
+    if problem:
+        return None, "reserved" if problem["code"] == sheet_rules.NUMBER_RESERVED else "multi_page"
+    gid = sheet_rules.PREFIX + number
+    used = [g for g, _fmt, _name, _mid in _others(project_id, record["material_id"], store_root)]
+    for mid in _materials(project_id, store_root):     # 확정했지만 다시 추출이 아직인 자료의 번호(_others는 추출한 쪽의 이름을 낸다)
+        other = registry.latest(project_id, mid, _store_root(store_root))[0] if mid != record["material_id"] else None
+        if (other or {}).get("drawing_number"):
+            used.append(sheet_rules.PREFIX + other["drawing_number"])
+    if _key(gid) in {_key(g) for g in used} or _owner_of(project_id, gid) is not None:
+        return None, "taken"
+    chosen = {_key(sheet_rules.PREFIX + n) for n in sources.load_choices(project_id)}
+    if _key(gid) in chosen or _references(project_id, gid):
+        return None, "has_records"
+    return number, None
 
 
 def execute(project_id, command, args=None, by=None, ver=None, store_root=None, extract=None, progress=None):

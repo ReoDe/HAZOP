@@ -327,14 +327,15 @@ def _unfinished_trace_only(store, material_id, sha):
 
 
 def register(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
-             now=None, number_checked=False):
+             now=None, number_checked=False, auto=False):
     """_register_one과 같되, 같은 프로젝트에 사람이 확정한 같은 도면 번호를 다른 형식(drawio·PDF·DEXPI)의 자료가 이미 쓰고 있으면
     결과에 conflicts(hazop.graph.sources.registration_conflicts)와 알림 문장을 더한다. 등록 자체는 막지 않고 그래프에 쓰는 원본도 바꾸지 않는다
     (고르기는 hazop.graph.sources.choose).
     number_checked: 부르는 쪽이 도면 번호 가드를 이미 지났다(hazop.register.titleblock만 True). 아니면 이미 등록한 P&ID의 번호를 바꾸는
-    다시 등록은 보류한다(_number_hold)."""
+    다시 등록은 보류한다(_number_hold).
+    auto: 자동 확정(titleblock.auto_confirm_number)이 예약 이름으로 부름. 아니면 예약 이름(hazop:…)은 보류한다."""
     with INDEX_LOCK:
-        result = _register_one(source_path, project_id, material_type, store_root, metadata, actor, now, number_checked)
+        result = _register_one(source_path, project_id, material_type, store_root, metadata, actor, now, number_checked, auto)
     rec = result.get("record") or {}
     if rec.get("status") == "registered" and rec.get("drawing_number") and material_type == "P&ID":
         from hazop.graph import sources
@@ -384,7 +385,7 @@ def _held(record, problems, path, notes):
 
 
 def _register_one(source_path, project_id, material_type="P&ID", store_root=None, metadata=None, actor=None,
-                  now=None, number_checked=False):
+                  now=None, number_checked=False, auto=False):
     """원본 1개를 등록한다. 원본 파일은 읽기만 한다. material_type: P&ID(draw.io·벡터 PDF) 또는
     design_document(글자가 있는 PDF 설계 문서). 저장 구조는 같다.
 
@@ -396,6 +397,8 @@ def _register_one(source_path, project_id, material_type="P&ID", store_root=None
     at = (now or _now)()
 
     problems = _meta_problems(metadata)
+    if not auto:
+        problems += [p for p in (_reserved_problem(actor), _reserved_problem((metadata or {}).get("by"))) if p][:1]
     if not project_id or paths.safe_name(project_id) != project_id:
         problems.append(_problem("invalid_project_id",
                                  "프로젝트 ID 규칙(paths.safe_name과 같음): 비어 있지 않음, 글자(한글 포함)·숫자·'_'·'.'·'-'만, "
@@ -612,10 +615,21 @@ def latest(project_id, material_id, store_root=None):
     return _read_json(path), path
 
 
+def _reserved_problem(by):
+    """사람 이름 자리에 앱이 쓰는 예약 이름이 오면 보류 사유, 아니면 None."""
+    from hazop.extract import corrections
+    if corrections.reserved_name(by):
+        return _problem("reserved_actor", "%r은(는) 앱이 쓰는 예약 이름이라 사람 이름으로 쓸 수 없음" % (by,), "by")
+    return None
+
+
 def clear_metadata(project_id, material_id, fields, by, reason=None, store_root=None, now=None):
     """사람이 확정한 식별정보(META_FIELDS 가운데 fields)를 확정 전(None)으로 되돌린다. register의 사람 확정 입력과 같이 새 등록
     버전을 만들고 이력에 action 'unconfirm_metadata'(before·after None·reason·by)를 남긴다. 원본·파생 자료는 그대로 쓴다.
     되돌릴 것이 없으면 outcome 'reused'. 반환은 register와 같은 꼴. 등록 완료가 아니거나 모르는 항목이면 ValueError."""
+    reserved = _reserved_problem(by)
+    if reserved:
+        raise ValueError(reserved["reason"])
     bad = [f for f in fields if f not in META_FIELDS]
     if bad:
         raise ValueError("알 수 없는 식별정보 항목: %s" % ", ".join(bad))
