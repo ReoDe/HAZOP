@@ -16,6 +16,24 @@ function reset() {
 }
 
 export const tests = [
+  { name: "DEXPI 기호의 회전·뒤집힘: 계약 견본 둘(tests/fixtures/dexpi/geometry-shape-samples.json)의 모서리가 화면 놓기에서도 같다", run(assert) {
+    // 입력은 tests/test_clean_items.py의 ShapeTest가 엔진에서 확인한 값(상자와 orient)과 같다. 기호는 돌리기 전 크기(shape.width·height)의 상자 그림이다.
+    const cases = [
+      { bbox: [58, 116, 61, 121], orient: { rot: 90, flip_h: false, flip_v: false, basis: "dexpi" }, size: [5, 3],
+        want: { lt: [61, 116], rt: [61, 121], rb: [58, 121], lb: [58, 116] } },
+      { bbox: [59, 112, 62, 122], orient: { rot: 270, flip_h: true, flip_v: false, basis: "dexpi" }, size: [10, 3],
+        want: { lt: [59, 112], rt: [59, 122], rb: [62, 122], lb: [62, 112] } },
+    ];
+    for (const c of cases) {
+      const sym = { vb: c.size, fit: "stretch", shapes: [] };
+      const p = V.placement(sym, c.bbox, c.orient);
+      const [w, h] = c.size;
+      const got = { lt: V.toWorld(p, 0, 0), rt: V.toWorld(p, w, 0), rb: V.toWorld(p, w, h), lb: V.toWorld(p, 0, h) };
+      for (const k of Object.keys(c.want)) {
+        assert(Math.abs(got[k][0] - c.want[k][0]) < 1e-6 && Math.abs(got[k][1] - c.want[k][1]) < 1e-6, "회전 " + c.orient.rot + " " + k + ": " + got[k] + " != " + c.want[k]);
+      }
+    }
+  } },
   { name: "정리된 보기: 기본 보기는 drawio·dexpi는 정리, PDF는 원본, 확정된 쪽은 정리", run(assert) {
     assert.equal([V.defaultView("drawio"), V.defaultView("dexpi"), V.defaultView("pdf_vector"), V.defaultView("pdf_vector", true)], ["clean", "clean", "orig", "clean"]);
     reset();

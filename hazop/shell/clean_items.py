@@ -71,6 +71,20 @@ def _drawio_orient(style):
     return {"rot": angle % 360, "flip_h": fh, "flip_v": fv, "basis": "drawio"}
 
 
+def _shape_orient(n):
+    """DEXPI에서 읽은 기호의 geometry.shape(규격 docs/specs/dexpi-exchange.md §5.3.1) → 회전·뒤집힘. 없거나 꼴이 틀리면 None(믿지 않는다).
+    rotation은 시계 방향 도(0 이상 360 미만), mirrored는 좌우 뒤집기다. 그림을 놓을 때 뒤집기 먼저, 그다음 회전이라 정리 보기의 변환 차례와 같다.
+    geometry 상자는 돌린 뒤의 상자이고 정리 보기는 90·270도에서 가로세로를 바꿔 맞추므로 상자는 그대로 쓴다."""
+    shape = (n.get("geometry") or {}).get("shape") if isinstance(n.get("geometry"), dict) else None
+    if not isinstance(shape, dict):
+        return None
+    rot = sheet_items._num(shape.get("rotation"))
+    mirrored = shape.get("mirrored", False)
+    if rot is None or rot != rot or rot in (float("inf"), float("-inf")) or not isinstance(mirrored, bool):
+        return None
+    return {"rot": rot % 360, "flip_h": mirrored, "flip_v": False, "basis": "dexpi"}
+
+
 def _pipes_orient(node_id, relations, ox, oy):
     """PDF처럼 회전 정보가 없을 때: 그 기호에 붙은 배관 끝점들이 놓인 축으로 0°·90°를 정한다. 못 정하면 None."""
     pts = []
@@ -173,7 +187,7 @@ def build(extraction, name=None):
             unconfirmed.append({"id": lid, "reason": "unplaced"})
             continue
         boxes[lid] = bbox
-        orient = _drawio_orient(n.get("style"))
+        orient = _shape_orient(n) or _drawio_orient(n.get("style"))
         if orient is None and n.get("kind") in TWO_PORT:
             orient = _pipes_orient(lid, relations, ox, oy)
         orient = orient or {"rot": 0, "flip_h": False, "flip_v": False, "basis": "none"}

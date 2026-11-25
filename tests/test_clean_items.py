@@ -131,6 +131,50 @@ class SnpTest(unittest.TestCase):
         self.assertEqual(sheet_items.build_items(e), items)
 
 
+class ShapeTest(unittest.TestCase):
+    """DEXPI에서 읽은 기호의 geometry.shape(규격 docs/specs/dexpi-exchange.md §5.3.1)가 정리 보기의 회전·뒤집힘이 된다.
+    shape.rotation은 시계 방향 도, mirrored는 좌우 뒤집기(뒤집기 먼저, 그다음 회전). geometry 상자는 돌린 뒤의 상자라 그림을 맞추는 상자로 그대로 쓴다."""
+
+    SAMPLES = os.path.join(REPO, "tests", "fixtures", "dexpi", "geometry-shape-samples.json")
+
+    def samples(self):
+        with open(self.SAMPLES, encoding="utf-8") as fh:
+            return json.load(fh)["samples"]
+
+    def dexpi_node(self, geometry):
+        n = node("s", "psv", 0, 0, 1, 1, cat="valve")
+        n["geometry"] = geometry
+        return n
+
+    def test_the_two_contract_samples_give_the_expected_orient_and_the_same_box(self):
+        want = {"rotation_only": (90, False), "rotation_and_mirror": (270, True)}
+        for s in self.samples():
+            g = s["geometry"]
+            b = clean_items.build(extraction([self.dexpi_node(g)], [], fmt="dexpi"))
+            self.assertEqual(b["items"]["s"]["orient"], {"rot": want[s["name"]][0], "flip_h": want[s["name"]][1], "flip_v": False, "basis": "dexpi"}, s["name"])
+            item = next(i for i in sheet_items.build_items(extraction([self.dexpi_node(g)], [], fmt="dexpi"))["items"] if i["id"] == "s")
+            self.assertEqual(item["bbox"], [g["x"], g["y"], g["x"] + g["width"], g["y"] + g["height"]], "상자는 geometry 그대로")
+
+    def test_a_node_without_shape_is_unchanged(self):
+        e = extraction([node("v", "manual_valve", 100, 100, 30, 50)], [], fmt="dexpi")
+        self.assertEqual(clean_items.build(e)["items"]["v"]["orient"], {"rot": 0, "flip_h": False, "flip_v": False, "basis": "none"})
+        d = extraction([node("t", "tank", 100, 100, 30, 50, cat="equipment", style="rotation=45;")], [])
+        self.assertEqual(clean_items.build(d)["items"]["t"]["orient"]["basis"], "drawio")
+
+    def test_a_broken_shape_is_ignored_not_trusted(self):
+        for bad in ({"rotation": "x", "mirrored": False}, {"rotation": float("nan"), "mirrored": True}, {"mirrored": True}, "box", None):
+            g = {"x": 0, "y": 0, "width": 3, "height": 5, "shape": bad}
+            b = clean_items.build(extraction([self.dexpi_node(g)], [], fmt="dexpi"))
+            self.assertEqual(b["items"]["s"]["orient"]["basis"], "none", bad)
+
+    def test_shape_wins_over_a_style_and_negative_or_large_angles_are_folded(self):
+        g = {"x": 0, "y": 0, "width": 3, "height": 5, "shape": {"name": None, "width": 5, "height": 3, "rotation": 450.0, "mirrored": False}}
+        n = self.dexpi_node(g)
+        n["style"] = "rotation=45;"
+        o = clean_items.build(extraction([n], [], fmt="dexpi"))["items"]["s"]["orient"]
+        self.assertEqual((o["rot"], o["basis"]), (90.0, "dexpi"))
+
+
 class RuleTest(unittest.TestCase):
     def test_pdf_two_port_symbol_orient_from_pipe_axis(self):
         e = extraction([node("v", "manual_valve", 100, 100, 30, 50), node("a", "tee", 100, 0, 2, 2), node("b", "tee", 100, 300, 2, 2)],
