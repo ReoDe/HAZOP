@@ -469,7 +469,7 @@ DEXPI XML의 `id`는 `[A-Za-z_][A-Za-z_0-9]*`만 됩니다(XSD `id-pattern`). �
 
 ### 6.8 정리된 보기를 DEXPI에서 그리기(rev 6)
 
-정리된 보기는 drawio와 DEXPI로 들어온 도면에서 이 앱이 지은 DEXPI를 되읽어 그립니다. 벡터 PDF와 그림 파일은 지금처럼 읽은 결과로 그립니다. 그림을 짓고 되읽고 믿어도 되는지 판정하는 일은 엔진(`hazop/export/dexpi_screen.py`)이 하고, 화면은 판정값만 봅니다. 견본은 `tests/fixtures/dexpi/screen-view-samples.json`입니다.
+정리된 보기를 이 앱이 지은 DEXPI에서 되읽어 그리려고 둔 엔진의 규격입니다. 지금 화면은 이 엔진을 쓰지 않고, 모든 도면을 읽은 결과로 그립니다. 엔진(`hazop/export/dexpi_screen.py`)은 drawio와 DEXPI로 들어온 도면의 그림을 짓고 되읽어 믿어도 되는지 판정하는 데까지 하고, 벡터 PDF와 그림 파일은 다루지 않습니다. 화면을 붙이면 화면은 판정값만 봅니다. 견본은 `tests/fixtures/dexpi/screen-view-samples.json`입니다.
 
 **상태(2026-11-25, 총괄 판정).** 엔진(`hazop/export/dexpi_screen.py`)만 있고 화면은 붙이지 않았습니다. 되읽은 값이 다른 것은 모두 곁 파일에서 채우므로 붙여도 사용자 눈에 바뀌는 것이 없고 여는 시간만 늘기 때문입니다. `open_view`·`verdict`는 '내보낸 DEXPI와 곁 파일이 지금 그림과 같은가'를 재는 검사로 씁니다. 붙이는 조건은 곁 파일에서 채우는 값이 0에 가까워지는 것입니다.
 
@@ -525,7 +525,7 @@ DEXPI XML의 `id`는 `[A-Za-z_][A-Za-z_0-9]*`만 됩니다(XSD `id-pattern`). �
 #### 6.8.3 짓는 시점과 열쇠
 
 - 열쇠는 `{ver, symbols, writer, input_sha256}`입니다. `ver`는 `sheet_refresh.ver_of(name)`, `symbols`는 화면이 넘기는 기호 자료의 판, `writer`는 쓰기·읽기 코드의 판, `input_sha256`은 고친 추출에서 그리는 데 쓰는 칸의 지문입니다. `ver`와 `symbols`는 화면이 정하며, 짓는 쪽과 여는 쪽이 같은 값을 넘겨야 합니다.
-- 캐시는 작업 루트의 `paths.folder("cache", "dexpi-screen")` 아래 도면마다 두 파일(`.dexpi.xml`, `.screen.json`)입니다. 지워도 다시 짓습니다. 내보내기 폴더와 `manifest.json`은 건드리지 않고, 추출 결과·사람 수정·확정 기록을 바꾸지 않습니다.
+- 캐시는 작업 루트의 `paths.folder("cache", "dexpi-screen")` 아래 도면마다 두 파일(`.dexpi.xml`, `.screen.json`)입니다. 파일 이름에 도면 이름의 지문을 붙여, 파일 이름으로 바꾸면 같아지는 두 도면이 서로 덮지 않습니다. 지워도 다시 짓습니다. 내보내기 폴더와 `manifest.json`은 건드리지 않고, 추출 결과·사람 수정·확정 기록을 바꾸지 않습니다.
 - `prepare`를 부르는 자리와 `symbols`의 값은 화면 쪽이 정합니다. 조건은 하나입니다. 도면을 여는 길을 막지 않아야 하며, 실패하거나 느리면 지금 길로 그립니다.
 - 짓지 못한 것은 까닭을 캐시에 남기고, 열쇠가 그대로인 동안 다시 짓지 않습니다(`build_failed`). 디스크에 쓰지 못한 것은 남지 않아 다음에 다시 짓습니다.
 - 두 파일은 DEXPI, 곁 파일 차례로 각각 임시 파일에 쓰고 바꿔 넣습니다. 사이에 끊기면 지문이나 열쇠가 어긋나 쓰이지 않습니다.

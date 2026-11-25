@@ -397,8 +397,9 @@ def _extraction(values, rest):
 
 # ---------------------------------------------------------------- 캐시와 화면이 부르는 함수
 def cache_paths(name):
-    """(DEXPI, 곁 파일)의 자리. 작업 루트의 지워도 되는 캐시 아래."""
-    base = paths.folder("cache", "dexpi-screen", paths.safe_name(name))
+    """(DEXPI, 곁 파일)의 자리. 작업 루트의 지워도 되는 캐시 아래. 이름의 지문을 붙여, 파일 이름으로 바꾸면 같아지는 두 도면이 서로 덮지 않게 한다."""
+    mark = hashlib.sha256(name.encode("utf-8")).hexdigest()[:12]
+    base = paths.folder("cache", "dexpi-screen", "%s-%s" % (paths.safe_name(name), mark))
     return base + ".dexpi.xml", base + ".screen.json"
 
 
