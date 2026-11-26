@@ -116,8 +116,6 @@ export function keyAction(e, { selection, typing, panelWide, card }) {
   if (typing || panelWide || e.ctrlKey || e.metaKey || e.altKey) return null;
   if (card) return e.key === "Enter" ? "submit" : null;          // 새 구간 카드가 열려 있으면 Enter는 만들기(카드를 다시 열지 않는다)
   const k = (e.key || "").toLowerCase();
-  if (k === "v") return "pan";
-  if (k === "s") return "pick";
   if (k === "f" && selection.length) return "fit";
   if (e.key === "Enter" && selection.length) return "card";
   return null;

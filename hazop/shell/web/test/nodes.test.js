@@ -169,7 +169,7 @@ export const tests = [
     assert.equal(L.escStep({ card: false, focus: null, mode: "pick", selection: ["a"] }), null);
     assert.equal(L.escStep({ card: false, focus: null, mode: "pick", selection: [] }), "pan");
     const k = (key, extra) => L.keyAction(Object.assign({ key }, extra), { selection: ["a"], typing: false, panelWide: false });
-    assert.equal([k("v"), k("S"), k("f"), k("Enter"), k("Enter", { ctrlKey: true }), k("x")], ["pan", "pick", "fit", "card", null, null]);
+    assert.equal([k("v"), k("S"), k("f"), k("Enter"), k("Enter", { ctrlKey: true }), k("x")], [null, null, "fit", "card", null, null], "이동·고르기 방식 단축키는 없다");
     assert.equal(L.keyAction({ key: "v" }, { selection: [], typing: true, panelWide: false }), null);
     assert.equal(L.keyAction({ key: "Enter" }, { selection: [], typing: false, panelWide: false }), null);
     assert.equal(L.keyAction({ key: "Enter" }, { selection: ["a"], typing: false, panelWide: false, card: true }), "submit", "카드가 열려 있으면 Enter는 만들기");

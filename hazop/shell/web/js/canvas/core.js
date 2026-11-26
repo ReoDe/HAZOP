@@ -16,8 +16,9 @@ const SETTLE_MS = 120;          // 이동·확대가 멈춘 뒤 표시를 한 �
 
 const CSS = `
 .hz-cv { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg, #f4f5f7); outline: none; }
-.hz-cv-vp { position: absolute; inset: 0; overflow: hidden; touch-action: none; user-select: none; cursor: grab; }
-.hz-cv[data-mode="pick"] .hz-cv-vp { cursor: crosshair; }
+.hz-cv-vp { position: absolute; inset: 0; overflow: hidden; touch-action: none; user-select: none; cursor: default; }
+.hz-cv-vp.over { cursor: pointer; }
+.hz-cv.ctrl .hz-cv-vp { cursor: crosshair; }
 .hz-cv-vp.moving { cursor: grabbing; }
 .hz-cv-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .hz-cv-svg { display: block; overflow: visible; }
@@ -117,6 +118,7 @@ export class SheetCore {
     on(this.vp, "pointerleave", () => this._hover(null));
     on(d, "keydown", (e) => this._key(e, true));
     on(d, "keyup", (e) => this._key(e, false));
+    on(this.doc.defaultView || window, "blur", () => this._ctrl(false));      // Ctrl을 누른 채 창을 벗어나면 떼는 것을 못 듣는다
     this._ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => this._resized()) : null;
     if (this._ro) this._ro.observe(h);
   }
@@ -441,11 +443,13 @@ export class SheetCore {
   _layerSet() { return new Set(Object.entries(this.layers).filter(([, on]) => on).map(([k]) => k)); }
 
   // ------------------------------------------------------------ 포인터
+  /** 방식 전환 없이: Ctrl(⌘)을 누르지 않고 끌면 도면 이동, Ctrl을 누르고 끌면 네모로 고르기(Alt를 더하면 빼기). */
   _wantsPan(e) {
     if (e.button === 1 || this.space) return true;
-    if (this.mode === "pan" && !e.shiftKey && !e.altKey) return true;
-    return false;
+    return !(e.ctrlKey || e.metaKey);
   }
+
+  _ctrl(on) { this.host.classList.toggle("ctrl", !!on); }
 
   _down(e) {
     if (e.button !== 0 && e.button !== 1) return;
@@ -454,16 +458,17 @@ export class SheetCore {
     try { this.vp.setPointerCapture(e.pointerId); } catch (x) { /* 합성 이벤트는 캡처할 수 없다 */ }
     const pan = this._wantsPan(e);
     this.pointer = { x: e.clientX, y: e.clientY, vx: this.view.x, vy: this.view.y, pan, moved: false, alt: e.altKey, id: e.pointerId };
-    if (pan) this.vp.classList.add("moving");
   }
 
   _move(e) {
+    this._ctrl(e.ctrlKey || e.metaKey);
     const p = this.pointer;
     if (!p) { this._hoverSoon(e); return; }
     const dx = e.clientX - p.x, dy = e.clientY - p.y;
     if (Math.abs(dx) + Math.abs(dy) > CLICK_SLOP) p.moved = true;
     if (!p.moved) return;
     if (p.pan) {
+      this.vp.classList.add("moving");      // 끄는 동안만 잡는 모양
       this.view = { k: this.view.k, x: p.vx + dx, y: p.vy + dy };
       this._applyView();
     } else {
@@ -511,7 +516,7 @@ export class SheetCore {
     }
     const badge = this.cb.onSegmentClick ? this._badgeAt(s) : null;
     if (badge) { this.cb.onSegmentClick({ node_id: badge.node_id }); return; }
-    if (this.mode === "pick") {
+    if (e.ctrlKey || e.metaKey) {                 // Ctrl+누르기: 그 하나를 고른 것에 더하거나 뺀다(말풍선은 열지 않는다)
       if (hit) this._change([hit.id], "toggle", "click");
       return;
     }
@@ -596,6 +601,7 @@ export class SheetCore {
   }
 
   _hover(id) {
+    this.vp.classList.toggle("over", !!id);      // 누를 수 있는 구성요소 위에서는 손가락 모양
     if (id === this.hoverId) return;
     this.hoverId = id;
     if (!this.cb.onHover) return;
@@ -604,12 +610,13 @@ export class SheetCore {
   }
 
   _key(e, down) {
+    if (e.key === "Control" || e.key === "Meta") this._ctrl(down);
     const t = e.target;
     if (t && t.closest && t.closest("input, textarea, select, [contenteditable]")) return;
     if (e.code === "Space") { this.space = down; return; }
     if (!down || e.key !== "Escape") return;
     if (this.cb.onEsc) this.cb.onEsc();
-    if (this.mode === "pick" && this.sel.length) this._change(this.sel.slice(), "remove", "clear");
+    if (this.sel.length) this._change(this.sel.slice(), "remove", "clear");
   }
 
   // ------------------------------------------------------------ 고르기

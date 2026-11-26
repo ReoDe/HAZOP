@@ -32,8 +32,7 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
       const act = keyAction(e, { selection: s.selection, typing, panelWide: false, card: !!s.card });
       if (!act) return;
       e.preventDefault();
-      if (act === "pan" || act === "pick") N.setMode(act);
-      else if (act === "fit") N.zoomToIds(s.selection);
+      if (act === "fit") N.zoomToIds(s.selection);
       else if (act === "card") N.openCard();
       else if (act === "submit") N.submitCard();
     }
@@ -58,15 +57,6 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
   };
 }
 
-function Toolbar() {
-  const mode = N.useNodes((s) => s.mode);
-  const b = (m, icon, label, key) => html`<button type="button" class=${mode === m ? "on" : ""} aria-pressed=${mode === m ? "true" : "false"} aria-label=${label + " (" + key + ")"}
-    title=${label + " (" + key + ")"} onClick=${() => N.setMode(m)}><${Icon} name=${icon} />${m === "pick" ? html`<span>고르기</span>` : null}</button>`;
-  return html`<div class="float toolbar" role="toolbar" aria-label="도면 도구">
-    ${b("pan", "arrows-move", "이동", "V")}${b("pick", "select", "네모로 고르기", "S")}<span class="sep"></span>
-    <button type="button" aria-label="전체 맞춤" title="전체 맞춤" onClick=${() => shell.set((s) => ({ command: { seq: s.command.seq + 1, type: "fit" } }))}><${Icon} name="zoom-scan" /></button></div>`;
-}
-
 function SelectionBar() {
   const selection = N.useNodes((s) => s.selection);
   const focus = N.useNodes((s) => s.focus);
@@ -80,7 +70,6 @@ function SelectionBar() {
   return html`<div class="float selbar" role="group" aria-label="고른 것">
     <span class="count">${selection.length}개 고름</span>
     ${truncated ? html`<${Chip} kind="warn" icon="alert-triangle" title="한 번에 고르는 수의 상한입니다. 네모를 나누어 고르세요.">앞 ${selection.length}개만 골랐습니다<//>` : null}
-    <span class="hint">끌기: 더하기 · Alt+끌기: 빼기 · 클릭: 넣고 빼기 · Esc: 비우기</span>
     ${node ? html`<${Chip} kind="accent" title="강조한 구간"><span class="seg-dot" style=${"background:" + colorOf(list, node.node_id)}></span> ${node.node_id}<//>` : null}
     ${node && edit ? html`<${Btn} sm=${true} disabled=${busy} label=${node.node_id + "에 더하기"} onClick=${() => N.addSelectionTo(node.node_id)}>${node.node_id}에 더하기<//>
       <${Btn} sm=${true} disabled=${busy} label=${node.node_id + "에서 빼기"} onClick=${() => N.removeSelectionFrom(node.node_id)}>빼기<//>` : null}
@@ -130,5 +119,5 @@ function OutsideChip() {
 
 export function NodeOverlay() {
   N.wire();
-  return html`<${OutsideChip} /><${SelectionBar} /><${NewNodeCard} /><${Toolbar} />`;
+  return html`<${OutsideChip} /><${SelectionBar} /><${NewNodeCard} />`;
 }
