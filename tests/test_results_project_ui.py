@@ -235,7 +235,7 @@ class ResultsProjectUiTest(unittest.TestCase):
         path = scr.export_excel(os.path.join(self.tmp, "x.xlsx"), scope="all", reviewer="EJ")
         import openpyxl
         names = [c.value for c in openpyxl.load_workbook(path).worksheets[1]["A"]]
-        self.assertTrue(any(v and keeps[0] == v for v in names) or keeps[0] in rows, "Excel 범위도 행렬과 같음")
+        self.assertTrue(any(v and keeps[0] == v for v in names), "Excel 구간 목록에도 든다(행렬과 같은 범위)")
         cover = {r[0].value: r[1].value for r in openpyxl.load_workbook(path).worksheets[0].iter_rows() if r[0].value}
         self.assertEqual(cover.get("구간 수", len(rows)), len(rows), "표지 구간 수 = 내보낸 구간")
         did = scr.deviations[0]["deviation_id"]

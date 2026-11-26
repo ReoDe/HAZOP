@@ -833,6 +833,21 @@ class ExportScopeTest(ExportTest):
         _d, full = self.export(scope="all")
         self.assertGreater(len(full), len(rows))
 
+    def test_approved_scope_leaves_out_scope_changed_approvals(self):
+        """검토 4(구간 확정 단계를 없앰, 구간 규격 §0.2): '범위 바뀜' 승인은 '승인 항목만'에 넣지 않는다. 전체 범위에는 그대로 나간다."""
+        before, rows = self.export(scope="approved")
+        self.assertGreaterEqual(len(rows), 1)
+        ns = sn.load(self.g)
+        doc, fp = res.load_fp(ns)
+        moved = next(e for c in doc["cells"] for e in c["entries"] if e.get("status") == "approved")
+        moved["scope_changed"] = {"from_rev": 1, "to_rev": 2, "at": "2026-11-26T00:00:00Z"}
+        res.save_fp(doc, ns.get("project_id"), expect=fp)
+        after, rows2 = self.export(scope="approved")
+        self.assertEqual(len(rows2), len(rows) - 1)
+        self.assertEqual(after["rows"], len(rows2))
+        _d, full = self.export(scope="all")
+        self.assertGreater(len(full), len(rows2))
+
     def test_nodes_scope_has_only_the_chosen_nodes_and_needs_a_choice(self):
         scope = api_results.scope_rows(sn.load(self.g))
         pick = scope[0]["node_id"]

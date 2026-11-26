@@ -225,13 +225,38 @@ def ever_confirmed(node_set, node_id):
                    for n in p.get("nodes") or []))
 
 
+def _judged_on_disk(node_set, node_ids):
+    """저장된 ⑤ 결과 파일에서 판정(항목이 있거나 칸 상태가 분석 전이 아님)이 있는 구간 ID. 결과 파일이 없으면 [].
+    읽지 못하거나 다른 도면의 결과면 None(판정이 있는지 알 수 없음)."""
+    from hazop.study import results as res
+    try:
+        doc, _fp = res.read_fp(res._readable_path(node_set.get("project_id"), node_set["graph_id"]))
+    except (OSError, ValueError, KeyError):
+        return None
+    if doc is None:
+        return []
+    if doc.get("graph_id") != node_set.get("graph_id") or not isinstance(doc.get("cells"), list):
+        return None
+    judged = {c.get("node_id") for c in doc["cells"]
+              if isinstance(c, dict) and (c.get("entries") or c.get("state") not in (None, "not_analyzed"))}
+    return [nid for nid in node_ids if nid in judged]
+
+
 def _refuse_drop(node_set, node_ids, what):
-    """결과를 받지 않는 옛 편집 길(④ nodes.merge·remove_member·remove_empty, AI 제안 받아들이기)이 확정한 적 있는 구간을
-    없애지 못하게 한다. 그 구간의 ⑤ 칸(보관 칸 포함)이 '없는 검토구간 참조'로 떨어지기 때문이다(규격 §4.4, 총괄 검토 R2).
-    결과를 함께 옮기거나 보관하는 길은 hazop.study.node_tools.apply_nodes다."""
-    hit = [nid for nid in node_ids if ever_confirmed(node_set, nid)]
+    """결과를 받지 않는 옛 편집 길(④ nodes.merge·remove_member·remove_empty, AI 제안 받아들이기. 이전 Qt 화면이 부름)이 판정이
+    있는 구간을 없애지 못하게 한다. 그 구간의 ⑤ 칸(보관 칸 포함)이 '없는 검토구간 참조'로 떨어지기 때문이다(규격 §4.4, 총괄 검토 R2).
+    확정 단계를 없애 확정한 적 없는 구간에도 판정이 생기므로(규격 §0.2), 확정 이력과 함께 저장된 결과 파일을 읽어 본다. 결과를
+    읽지 못하면 판정이 있는지 알 수 없어 모두 거절한다. 결과를 함께 옮기거나 보관하는 길은 hazop.study.node_tools.apply_nodes다."""
+    node_ids = list(node_ids)
+    if not node_ids:
+        return
+    on_disk = _judged_on_disk(node_set, node_ids)
+    if on_disk is None:
+        raise ValueError("⑤ 결과 파일을 읽지 못해 %s에 판정이 있는지 확인할 수 없음: %s는 결과를 함께 옮기는 길(apply_nodes)로만 함"
+                         % (", ".join(node_ids), what))
+    hit = [nid for nid in node_ids if ever_confirmed(node_set, nid) or nid in on_disk]
     if hit:
-        raise ValueError("%s는 확정한 적이 있어 ⑤ 칸이 있을 수 있음: %s는 결과를 함께 옮기는 길(apply_nodes)로만 함"
+        raise ValueError("%s는 ⑤ 칸에 판정이 있거나 있을 수 있음: %s는 결과를 함께 옮기는 길(apply_nodes)로만 함"
                          % (", ".join(hit), what))
 
 
@@ -773,7 +798,8 @@ def confirm(node_set, graph, reviewer, at=None):
 
 
 def reopen_node(node_set, node_id, at=None, by=None):
-    """확정 해제(옛 길): confirmed → applied. 구간 확정 단계를 없애(규격 §0.2) 두 상태 모두 분석에 들어 ⑤ 칸은 그대로다.
+    """확정 해제(옛 길): confirmed → applied. 구간 확정 단계를 없애(규격 §0.2) 두 상태 모두 분석에 든다. 확정을 푼 것은 사람이
+    그 판정을 다시 보겠다는 뜻이라 분석 판(rev)을 올려 칸의 판정에 '범위 바뀜'을 붙인다(사람이 다시 승인할 때까지 인계에서 빠짐).
     화면·채팅은 부르지 않는다. 잠긴 구간은 잠금 풀기가 먼저."""
     n = _find(node_set, node_id)
     if node_state(n) == "locked":
@@ -784,6 +810,7 @@ def reopen_node(node_set, node_id, at=None, by=None):
     n = _find(out, node_id)
     detail = {"node_id": node_id, "confirmed": n.get("confirmed"), "by": by}
     n["state"], n["confirmed"] = "applied", None
+    n["rev"] = (n.get("rev") or 1) + 1
     return _log(out, "reopen", detail, at)
 
 

@@ -499,6 +499,11 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
             members = sorted((set(n["members"]) | set(op.get("add") or [])) - set(op.get("remove") or []))
             if not members_ok(label, members):
                 continue
+            if ai and set(members) != set(n["members"]) and (out_res is None or judged(out_res, n["node_id"])):
+                # 채팅 동작 층(hazop.chat.actions §4.3 마지막 줄)과 같은 규칙: 판정이 있는 구간의 구성요소는 사람만 바꾼다(§4.4)
+                why.append((label, "칸에 판정이 있는 구간의 구성요소는 사람만 바꿈(§4.4)" if out_res is not None
+                            else "⑤ 결과 없이 AI가 구성요소를 바꿀 수 없음(칸 검사가 필요함)"))
+                continue
             n["members"] = members
         elif kind == "merge":
             ids = list(dict.fromkeys(op.get("node_ids") or []))

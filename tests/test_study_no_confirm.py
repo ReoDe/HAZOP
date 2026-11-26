@@ -268,7 +268,7 @@ class OldPathDropTest(Base):
             sn.merge(self.ns, [self.a, self.b], at=AT)
         self.assertEqual(self.handed(), ["e-b", "e-c"])
         ns, doc = self.loaded()
-        self.assertEqual(res.check(doc, ns), [], "없는 검토구간 참조가 생기지 않음")
+        self.assertEqual(res.validate(doc, ns), [], "없는 검토구간 참조가 생기지 않음")
 
     def test_removing_the_last_member_of_a_judged_node_is_refused(self):
         with self.assertRaises(ValueError):
@@ -430,6 +430,19 @@ class AiNodeTest(Base):
         with self.assertRaises(nt.Refused) as why:
             nt.apply_nodes(ns, doc, self.g, ops[:nt.REST_LIMIT + 1], self.request("q-3"), "ai", ns["set_rev"], at=AT)
         self.assertIn("30", str(why.exception))
+
+    def test_engine_refuses_ai_member_changes_on_a_judged_node(self):
+        """검토 3: 채팅 동작 층만이 아니라 엔진도, 판정이 있는 구간의 구성요소를 AI가 바꾸지 못하게 한다(사람은 됨)."""
+        nid = self.make("AI 구간", "TK", "V1", author="ai", by=None, request=self.request("q-1"))
+        self.put_entries(nid, [entry("h1")])
+        for by in (None, BY):
+            out = self.run_cmd("edit_members", {"node_id": nid, "add": self.ids("V2")}, author="ai", by=by,
+                               request=self.request("q-2-%s" % by))
+            self.assertFalse(out["ok"], by)
+            self.assertIn("사람만", out["refused"][0]["reason"])
+        self.assertTrue(self.run_cmd("rename", {"node_id": nid, "name": "AI 새 이름"}, author="ai", by=None,
+                                     request=self.request("q-3"))["ok"], "이름은 바꿀 수 있음")
+        self.assertTrue(self.run_cmd("edit_members", {"node_id": nid, "add": self.ids("V2")})["ok"], "사람은 바꿈")
 
     def test_chat_has_no_confirm_unconfirm_lock_actions(self):
         for name in ("nodes.confirm", "nodes.unconfirm", "nodes.lock"):

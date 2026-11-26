@@ -225,14 +225,16 @@ class CommandTest(Base):
         stale = self.run_cmd("rename", {"node_id": nid, "name": "다른 이름"}, set_rev=0)
         self.assertEqual((stale["ok"], stale["refused"][0]["code"]), (False, "stale"))
         for name, args in (("rename", {"node_id": nid, "name": "새 이름"}),
-                           ("set_design_intent", {"node_id": nid, "text": "가압기 압력 유지"}),
-                           ("confirm", {"node_ids": [nid]}), ("unconfirm", {"node_ids": [nid]})):
+                           ("set_design_intent", {"node_id": nid, "text": "가압기 압력 유지"})):
             out = self.run_cmd(name, args)
             self.assertTrue(out["ok"], (name, out))
-        node = sn.load(self.pg)["nodes"][0]
-        self.assertEqual((node["name"], node["design_intent"]["by"], node["state"]), ("새 이름", "user", "applied"))
         undo = self.run_cmd("undo", {"batch_id": out_batch(self.pg, "set_design_intent")})
         self.assertTrue(undo["ok"], undo)
+        for name in ("confirm", "unconfirm"):  # 옛 길. 확정 해제는 분석 판을 올리므로 되돌리기 뒤에 부름(구간 규격 §0.2)
+            out = self.run_cmd(name, {"node_ids": [nid]})
+            self.assertTrue(out["ok"], (name, out))
+        node = sn.load(self.pg)["nodes"][0]
+        self.assertEqual((node["name"], node["state"]), ("새 이름", "applied"))
         lock = self.run_cmd("lock", {"node_ids": [nid]})
         self.assertEqual((lock["ok"], lock["refused"][0]["code"]), (False, "rule"))
         self.assertEqual(sorted(cmd.COMMANDS), sorted(["create", "add_members", "remove_members", "edit_members", "rename",

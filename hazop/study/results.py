@@ -105,7 +105,8 @@ def reconcile(results, node_set, deviations=None, at=None):
       지금 목록에 없는 item_id의 칸은 손댄 것만 archived_cells(deviation_removed)로 옮긴다.
     - 분석에 드는 구간(nodes.is_active)의 칸은 hold 해제(§2.4). 확정 단계를 없애(규격 §0.2) 모든 구간이 들므로, 옛 파일에서
       확정 해제로 보관된 칸도 여기서 풀린다. 집합에 없는 구간의 칸은 그대로 둔다(validate가 칸 문제로 봄).
-    - 구간의 rev가 칸의 node_rev와 다르면(상태와 무관): 표시가 없는 항목에 scope_changed {from_rev, to_rev, at}을 붙이고
+    - 구간의 rev가 칸의 node_rev와 다르거나 보관 칸을 풀 때(상태와 무관): 표시가 없는 항목에 scope_changed {from_rev, to_rev, at
+      (, released: 보관을 풀었음)}을 붙이고
       칸의 node_rev를 지금 rev로 맞춘다(한 번만. 표시는 스스로 풀지 않고, 사람이 다시 보면 results.set_status·edit_entry·
       recheck_cell이 지운다). '범위 바뀜' 항목은 인계에서 빠진다(hazop.ie.bundle.approved_entries).
     - 구간에 없는 칸(새 편차, 새 구간)을 빈 칸으로 더한다. 잠긴 구간에는 after_lock을 단다."""
@@ -139,16 +140,21 @@ def reconcile(results, node_set, deviations=None, at=None):
             want["hold"] = not nodes.is_active(node)
             rev, cur = node.get("rev") or 1, cell.get("node_rev") or 1
             want["node_rev"] = cur
-            if nodes.is_active(node) and cur != rev:
-                # 그 판으로 맞추는 것은 한 번뿐이다. 그 뒤 사람이 다시 본 항목·새 AI 항목은 다시 표시하지 않는다
+            if nodes.is_active(node) and (cur != rev or cell.get("hold")):
+                # 그 판으로 맞추는 것은 한 번뿐이다. 그 뒤 사람이 다시 본 항목·새 AI 항목은 다시 표시하지 않는다.
+                # 보관(hold)을 풀 때도 표시한다: 옛 파일에서 확정을 풀어 보관한 칸은 구성원이 그대로여도 사람이 다시 봐야 인계에 든다
+                # (규격 §0.2). 저장한 뒤에는 hold가 없어 다시 붙지 않는다
                 want["node_rev"] = rev
                 when = at or (node.get("confirmed") or {}).get("at") or _batch_at(node_set, node)
-                want["entries"] = [e if e.get("scope_changed") else dict(e, scope_changed={
-                    "from_rev": cur, "to_rev": rev, "at": when}) for e in cell.get("entries") or []]
+                mark = {"from_rev": cur, "to_rev": rev, "at": when}
+                if cell.get("hold"):
+                    mark["released"] = True
+                want["entries"] = [e if e.get("scope_changed") else dict(e, scope_changed=dict(mark))
+                                   for e in cell.get("entries") or []]
                 if cell.get("state") not in (None, "not_analyzed") and not cell.get("entries")                         and not cell.get("scope_changed"):
                     # 항목 없이 판정한 칸('해당 없음' 등)도 범위가 바뀌었으니 다시 확인해야 한다(§2.4). 항목이 있는 칸은
                     # 항목마다 다시 확인하는 것이 칸을 다시 보는 것이다
-                    want["scope_changed"] = {"from_rev": cur, "to_rev": rev, "at": when}
+                    want["scope_changed"] = dict(mark)
         if any(cell.get(k) != v for k, v in want.items()):
             new = dict(cell, **want)
             changed = True

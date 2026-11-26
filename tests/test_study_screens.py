@@ -392,13 +392,10 @@ class StudyScreensTest(unittest.TestCase):
         scr = self.open_study(self.window())
         with mock.patch.object(scr, "ask_overwrite_unreadable", return_value=False) as ask:
             self.assertFalse(scr.repropose(ask=True))
+        # 구간 확정 단계를 없앰, 구간 규격 §0.2: 이전 화면이 연 구간은 분석에 드는 구간이라 묻기 전에 다시 제안을 막는다
         from hazop.study import nodes
-        if scr.node_set and nodes.active_nodes(scr.node_set):
-            # 구간 확정 단계를 없앰, 구간 규격 §0.2: 분석에 드는 구간이 있으면 이전 화면은 묻기 전에 다시 제안을 막는다(쓰지 않는 것은 같음)
-            ask.assert_not_called()
-        else:
-            ask.assert_called_once()
-            self.assertIn("저장하지 않았", scr.msg.text())
+        self.assertTrue(nodes.active_nodes(scr.node_set))
+        ask.assert_not_called()
         with open(path, "rb") as fh:
             self.assertEqual(fh.read(), raw, "다시 제안은 읽지 못한 파일을 덮어쓰지 않음")
 

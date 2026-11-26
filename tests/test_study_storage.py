@@ -389,16 +389,16 @@ class CellTest(WorkRoot):
     def test_10_design_intent_change_bumps_rev_and_marks_entries(self):
         ns = sn.reopen_node(self.ns, "S1", at=AT)
         ns = sn.set_design_intent(ns, "S1", "탱크에서 펌프로 보냄", at=AT)
-        self.assertEqual(sn._find(ns, "S1")["rev"], 2)
+        self.assertEqual(sn._find(ns, "S1")["rev"], 3, "확정 해제와 설계 의도가 한 번씩 올림(확정 해제는 분석 판을 올림, 구간 규격 §0.2)")
         ns = sn.confirm_nodes(ns, self.g, ["S1"], "검토자", at=AT)
         doc = res.reconcile(self.doc, ns, DEVS)
         e = next(c for c in doc["cells"] if (c["node_id"], c["item_id"]) == ("S1", "I1"))["entries"][0]
-        self.assertEqual((e["scope_changed"]["from_rev"], e["scope_changed"]["to_rev"], e["status"]), (1, 2, "approved"))
+        self.assertEqual((e["scope_changed"]["from_rev"], e["scope_changed"]["to_rev"], e["status"]), (1, 3, "approved"))
         self.assertIs(res.reconcile(doc, ns, DEVS), doc, "같은 입력이면 그대로")
         doc = res.set_status(doc, "S1", "D01", "e1", "approved", at=AT, node_set=ns)
         cell = next(c for c in doc["cells"] if (c["node_id"], c["item_id"]) == ("S1", "I1"))
         self.assertNotIn("scope_changed", cell["entries"][0])
-        self.assertEqual(cell["node_rev"], 2, "다시 확인하면 칸 판을 맞춤")
+        self.assertEqual(cell["node_rev"], 3, "다시 확인하면 칸 판을 맞춤")
         self.assertIs(res.reconcile(doc, ns, DEVS), doc)
 
     def test_17_inserted_deviation_keeps_item_id_and_removed_one_is_archived(self):
@@ -819,7 +819,7 @@ class ReviewFixTest(WorkRoot):
         ns2 = sn.confirm(sn.add_member(sn.reopen(ns, at=AT), "S1", ids(self.g, "V1")[0], at=AT), self.g, "검토자", at=AT)
         doc2 = res.reconcile(doc, ns2, DEVS)
         cell = next(c for c in doc2["cells"] if c["item_id"] == "I2")
-        self.assertEqual((cell["scope_changed"]["from_rev"], cell["scope_changed"]["to_rev"]), (1, 2))
+        self.assertEqual((cell["scope_changed"]["from_rev"], cell["scope_changed"]["to_rev"]), (1, 3), "확정 해제 + 구성요소 더하기(확정 해제는 분석 판을 올림, 구간 규격 §0.2)")
         doc3 = res.set_status(doc2, "S1", "D01", "e9", "approved", at=AT, node_set=ns2)
         self.assertTrue(sn.lock_problems(ns2, "S1", doc3), "칸 판정을 다시 보기 전에는 잠글 수 없음")
         doc4 = res.recheck_cell(doc3, "S1", cell["deviation_id"], "검토자", at=AT, node_set=ns2)
