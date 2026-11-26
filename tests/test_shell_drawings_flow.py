@@ -457,10 +457,19 @@ class ItemBubbleFlowTest(W.ShellBase):
     BOXES = "new Set([...document.querySelectorAll('.hz-cv-marks [data-check]')].map((e) => e.getAttribute('data-check'))).size"
     LEGEND_SUM = "[...document.querySelectorAll('.extract-legend .el-item')].reduce((n, e) => n + parseInt(e.textContent.replace(/[^0-9]/g, ''), 10), 0)"
 
+    # 범례와 원본·정리 단추는 그 자리를 눌렀을 때 자기 자신이 잡혀야 보이는 것이다(다른 칸 밑에 깔리거나 밀려 나가면 아니다). 도면 칸은 가운데 칸을 넘지 않는다.
+    VISIBLE = """(() => { const bad = [];
+      for (const q of ['.extract-legend', '.viewswitch']) { const el = document.querySelector(q); if (!el) continue; const r = el.getBoundingClientRect(),
+        hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); if (!hit || !el.contains(hit)) bad.push(q); }
+      const c = document.querySelector('.canvas').getBoundingClientRect(), m = document.querySelector('.center').getBoundingClientRect();
+      if (c.right > m.right + 1) bad.push('canvas가 ' + Math.round(c.right - m.right) + 'px 넘침');
+      return bad.join(', '); })()"""
+
     def boxes_match(self, win, where):
         ok = wait_for(lambda: (self.js(win, self.BOXES) or 0) > 0 and self.js(win, self.BOXES) == self.js(win, self.LEGEND_SUM), 15)
         self.assertTrue(ok, "%s: 네모 %s / 추출 항목 %s" % (where, self.js(win, self.BOXES), self.js(win, self.LEGEND_SUM)))
         self.assertTrue(self.js(win, "!!document.querySelector('.extract-legend')"), where + ": 범례")
+        self.assertTrue(wait_for(lambda: self.js(win, self.VISIBLE) == "", 10), "%s: 화면에 보이지 않는 것: %s" % (where, self.js(win, self.VISIBLE)))
 
     def toggle_view(self, win, name):
         self.js(win, "[...document.querySelectorAll('.clean-toggle button')].find((b) => b.textContent.startsWith(%s)).click()" % json.dumps(name))

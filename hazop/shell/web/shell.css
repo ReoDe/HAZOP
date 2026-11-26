@@ -49,7 +49,7 @@ select:disabled { color: var(--faint); cursor: not-allowed; }
 /* 패널을 감싸는 틀: 묶음 탭이 있으면 위에 붙는다. 넓은 패널(.panel.wide)이면 틀도 도면 칸 전체를 덮는다 */
 .pwrap { position: absolute; top: var(--top-h); bottom: 0; left: 0; width: var(--panel-w); z-index: 6; display: flex; flex-direction: column; background: var(--surface); border-right: 1px solid var(--line); box-shadow: var(--sh-3); }
 .pwrap:has(> .panel.wide) { width: auto; right: 0; border-right: 0; box-shadow: none; }
-.center:has(> .pwrap[data-panel="drawings"]) > .canvas { left: var(--panel-w); }      /* 도면 패널은 떠 있고 도면은 남은 자리에 맞춰 그린다 */
+.center:has(> .pwrap[data-panel="drawings"]) > .canvas { margin-left: var(--panel-w); }      /* 도면 패널은 떠 있고 도면 칸은 남은 폭으로 좁아진다(left로 밀면 폭이 그대로라 범례·보기 단추가 채팅 밑으로 간다) */
 .pwrap > .panel { position: static; width: auto; flex: 1; min-height: 0; box-shadow: none; border-right: 0; }
 .ptabs { display: flex; gap: 2px; padding: var(--sp-2) var(--sp-3) 0; border-bottom: 1px solid var(--line); flex: none; background: var(--surface); }
 .ptabs button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: var(--r-sm) var(--r-sm) 0 0; font-size: var(--fs-sm); color: var(--muted); border-bottom: 2px solid transparent; }
