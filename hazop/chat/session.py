@@ -49,11 +49,11 @@ from hazop.chat import mcp_server
 from hazop.study import claude_cli
 
 # 화면 이름 -> (--model, --effort, 질문 하나의 시간 상한 초)  (§2.4 모델 표)
-MODELS = {"fast": ("claude-haiku-5-5", "low", 120),
-          "normal": ("claude-sonnet-5-5", "medium", 240),
-          "deep": ("claude-opus-5-5", "medium", 240)}
+MODELS = {"fast": ("claude-haiku-5-5", "low", 600),
+          "normal": ("claude-sonnet-5-5", "medium", 900),
+          "deep": ("claude-opus-5-5", "medium", 900)}
 DEFAULT_MODEL = "fast"
-TOOL_USE_HALT = 12           # 앱이 세는 tool_use 상한(서버는 8회부터 거절, §2.3)
+TOOL_USE_HALT = 60           # 앱이 세는 tool_use 상한(서버는 40회를 넘으면 거절하고 지금까지의 결과로 답하게 한다, §2.3)
 IDLE_RENEW = 30 * 60         # 이만큼 질문이 없으면 다음 질문 전에 새 대화
 TOKEN_RENEW = 150_000        # 입력 + 캐시 읽기 토큰이 넘으면 다음 질문 전에 새 대화
 SELECTED_MAX = 20
