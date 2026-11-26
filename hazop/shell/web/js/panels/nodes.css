@@ -5,9 +5,8 @@ textarea.textbox { resize: vertical; min-height: 64px; }
 .small { font-size: var(--fs-sm); }
 .acts-col { display: flex; flex-direction: column; gap: 6px; }
 
-.nrow { padding: 6px var(--sp-3); gap: 4px var(--sp-2); flex-wrap: wrap; }   /* 칩이 많으면 아랫줄로(이름을 'S..'로 줄이지 않는다, 실제 창 결함 4) */
-.nrow > .chip { flex: none; }
-.nrow-b { all: unset; flex: 1 1 210px; min-width: 0; display: flex; align-items: center; gap: 8px; cursor: pointer; border-radius: var(--r-sm); padding: 2px 4px; }
+.nrow { padding: 6px var(--sp-3); gap: 4px var(--sp-2); }      /* 줄에는 체크·내용·(경고·자물쇠 아이콘)만 있어 한 줄에 둔다 */
+.nrow-b { all: unset; flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; cursor: pointer; border-radius: var(--r-sm); padding: 2px 4px; }
 .nrow-b:hover { background: var(--surface-2); }
 .nrow-b:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .nrow .nm { font-weight: 600; }

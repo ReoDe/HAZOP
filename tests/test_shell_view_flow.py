@@ -215,6 +215,8 @@ class FixedPanelTest(ViewBase):
             width = self.js(win, "document.querySelector('.pwrap').getBoundingClientRect().width")
             self.assertAlmostEqual(width, full * 0.8, delta=1.5, msg=name)
             self.assertEqual(self.jsj(win, CLIPPED), [], name + " 패널에서 잘린 글")
+            apart = self.jsj(win, "[...document.querySelectorAll('.pwrap .row')].filter((r) => { const c = r.querySelector('input[type=checkbox]'), m = r.querySelector('.nrow-b, .drow-open'); if (!c || !m) return false; const x = c.getBoundingClientRect(), y = m.getBoundingClientRect(), mid = (x.top + x.bottom) / 2; return mid < y.top || mid > y.bottom || x.right > y.left + 1; }).map((r) => r.textContent.slice(0, 30))")
+            self.assertEqual(apart, [], name + " 줄의 체크 상자가 내용과 같은 줄 왼쪽에 있다")
 
 
 # 구성요소 가운데를 누른다([id, ctrl]). 도면 탭의 추출 네모(data-check)가 구성요소 자리다

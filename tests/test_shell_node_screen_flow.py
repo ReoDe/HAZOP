@@ -73,11 +73,11 @@ class DrawingExcludePanelTest(W.ShellBase):
 
 
 class NodeRowWrapTest(W.ShellBase):
-    """실제 창 결함 4: 1366폭에서 구간 행에 '찾지 못한 구성요소 n개'·'적용됨' 칩이 붙어도 구간 번호·이름이 'S..'로 줄지 않는다(칩이 아랫줄로)."""
+    """1366폭의 좁은 구간 패널에서 경고·자물쇠 아이콘이 함께 붙어도 구간 번호·이름이 잘리지 않는다(상태 꼬리표는 줄에서 뺐다)."""
 
     setUp = DrawingExcludePanelTest.setUp
 
-    def test_the_name_keeps_its_width_when_chips_pile_up(self):
+    def test_the_name_keeps_its_width_beside_both_icons(self):
         win = self.window((1366, 768))
         self.switch_project(win, "SNP")
         ids = [n["local_id"] for n in self.pg["nodes"] if n.get("sheet") == S102][10:14]
@@ -86,9 +86,8 @@ class NodeRowWrapTest(W.ShellBase):
         self.assertTrue(r["ok"], r)
         self.js(win, "window.__hz.store.set({panel: 'nodes'})")
         self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.nrow .nm')"), 30))
-        self.js(win, """(() => { const row = document.querySelector('.nrow'); const last = row.lastElementChild;
-            for (const t of ['찾지 못한 구성요소 1개', '찾지 못한 구성요소 1개를 둔 채 확정함', '겹침 2']) {
-              const c = document.createElement('span'); c.className = 'chip warn'; c.textContent = t; row.insertBefore(c, last); } })()""")
+        self.js(win, """(() => { const row = document.querySelector('.nrow');
+            for (const cls of ['warn-mark', 'lock-mark']) { const c = document.createElement('span'); c.className = cls; c.style.width = '15px'; c.style.height = '15px'; row.appendChild(c); } })()""")
         pump(0.3)
         cut = self.js(win, "(() => { const b = document.querySelector('.nrow .main b'); return b.scrollWidth > b.clientWidth + 1; })()")
         self.assertFalse(cut, "구간 이름이 줄어듦: %s" % self.js(win, "document.querySelector('.nrow .main b').getBoundingClientRect().width"))
