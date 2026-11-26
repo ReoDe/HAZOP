@@ -103,7 +103,7 @@ ul.tight { margin: 0; padding-left: 16px; }
 .app.queue-open .hz-cv-legend button { display: none; }
 
 /* 추출 확인 창의 색 범례(도면 탭): 칠한 네모의 색과 개수 */
-.extract-legend { right: var(--sp-4); top: 64px; display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; font-size: var(--fs-sm); align-items: center; z-index: 2; }
+.extract-legend { right: 200px; top: var(--sp-3); display: flex; flex-direction: row; gap: 10px; padding: 6px 10px; font-size: var(--fs-sm); align-items: center; z-index: 2; }
 .extract-legend .el-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .extract-legend i { width: 12px; height: 12px; border-radius: 3px; border: 2px solid currentColor; display: inline-block; }
 .extract-legend .chk-ok i { color: var(--chk-ok, #6f9bd1); border-width: 1px; }

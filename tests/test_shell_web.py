@@ -441,6 +441,9 @@ class ShellChatTest(ShellBase):
         pump(1.0)
         quiet = self.js(win, "(() => { const f = document.querySelector('aside.chat .foot'); return [...f.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join('') })()")
         self.assertEqual(quiet, "", "평상시 글자 없음")
+        self.js(win, "window.__hz.store.set({conn: {state: 'x', tone: 'err', label: '연결 안 됨', chip: '구독 · 연결 안 됨', guide: '', detail: ''}})")
+        pump(0.4)
+        self.assertEqual(self.js(win, "(() => { const f = document.querySelector('aside.chat .foot'); return [...f.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join('') })()"), "", "연결이 끊겨도 글은 없다(점만)")
         self.assertEqual(self.js(win, "document.querySelectorAll('aside.chat .foot button').length"), 1, "모델 단추 하나")
         self.assertEqual(self.js(win, "document.querySelectorAll('.rail .badge').length"), 0, "도면 아이콘에 숫자 배지가 없다")
 
