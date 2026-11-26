@@ -18,6 +18,7 @@ export const results = createStore({
   plan: null,              // 분석 실행 확인 카드
   exporting: false,
   notice: null,            // 내보낸 결과 등 한 줄
+  exported: null,          // 방금 내보낸 종류(excel|ie): 글 끝에 폴더 열기를 붙인다
 });
 
 export function useResults(selector) {
@@ -173,7 +174,7 @@ export async function exportExcel(scope, nodeIds) {
   results.set({ exporting: true, error: null, notice: null });
   try {
     const r = await cmd("results.export_excel", Object.assign({ scope }, nodeIds && nodeIds.length ? { node_ids: nodeIds } : {}));
-    results.set({ exporting: false, notice: r.cancelled ? null : "Excel로 내보냈습니다(" + ({ approved: "승인 항목만", nodes: "고른 구간만" }[scope] || "전체") + "): " + r.path + " · 워크시트 " + r.rows + "행" });
+    results.set({ exporting: false, notice: r.cancelled ? null : "내보냈습니다 · " + r.path, exported: "excel" });
     return r;
   } catch (e) { results.set({ exporting: false, error: errorText(e) }); return null; }
 }
@@ -182,7 +183,7 @@ export async function exportIe() {
   results.set({ exporting: true, error: null, notice: null });
   try {
     const r = await cmd("results.export_ie");
-    results.set({ exporting: false, notice: r.cancelled ? null : "초기사건 인계 묶음을 내보냈습니다: " + r.path + " · 후보 " + r.candidates + "개" });
+    results.set({ exporting: false, notice: r.cancelled ? null : "내보냈습니다 · " + r.path, exported: "ie" });
     return r;
   } catch (e) { results.set({ exporting: false, error: errorText(e) }); return null; }
 }

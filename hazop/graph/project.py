@@ -29,6 +29,7 @@ import threading
 
 from hazop import paths
 from hazop.extract import ids
+from hazop.graph import old_names
 from hazop.graph import sheets as sheet_rules
 from hazop.graph import sources
 from hazop.graph.build import to_networkx
@@ -280,8 +281,8 @@ def match(graphs, manual_ops=(), system_codes=None, moved=None):
     방향을 한쪽도 모르거나 사람이 같은 방향끼리 이었으면 flow_known=False(흐름 방향을 만들지 않음).
     사람 지정의 끝에 지문(fp)이 있으면 지금 연결점의 지문과 견준다. 다르면 같은 도면에서 지문이 같은 연결점을 찾아 하나뿐이면 그쪽으로
     옮겨 붙이고(moved 목록에 {"op_id", "drawing_number", "from", "to"}를 더함), 없거나 여럿이면 붙이지 않고 manual_skipped로 돌린다.
-    지문이 없는 옛 지정은 번호대로 붙이고 그 연결에 "check": "no_fingerprint"를 단다."""
-    ends, fps = [], {}
+    지문이 없는 옛 지정은 번호대로 붙이고 그 연결에 "check": "no_fingerprint"를, 옛 글자의 지문으로 붙인 연결에는 "old_label"을 단다."""
+    ends, fps, old_fps = [], {}, {}
     by_drawing = {}
     for g in graphs:
         by_drawing.setdefault(_dn((g.get("source") or {}).get("drawing_number")), []).append(g["graph_id"])
@@ -289,6 +290,9 @@ def match(graphs, manual_ops=(), system_codes=None, moved=None):
             if n.get("kind") == "continuation":
                 ends.append(continuation_key(g, n))
                 fps[id(ends[-1])] = end_fingerprint(ends[-1], n)
+                if n.get(old_names.PLAIN):  # 원래 값 표시가 글자를 바꾼 연결점: 옛 글자로 남긴 지정도 같은 것으로 본다
+                    old = old_names.plain_node(n)
+                    old_fps[id(ends[-1])] = end_fingerprint(continuation_key(g, old), old)
     by_soid, by_dwg = {}, {}
     for e in ends:
         by_soid.setdefault((_norm(e["drawing_number"]), e["source_object_id"]), []).append(e)
@@ -319,7 +323,7 @@ def match(graphs, manual_ops=(), system_codes=None, moved=None):
             return None, "가리키는 연결점이 여럿이라 고르지 않음", None
         if not isinstance(want, dict):
             return (hit[0], None, None) if hit else (None, "가리키는 연결점이 프로젝트 도면에 없음", None)
-        if hit and fps[id(hit[0])] == want:
+        if hit and want in (fps[id(hit[0])], old_fps.get(id(hit[0]))):
             return hit[0], None, None
         same = [x for x in by_dwg.get(_norm(end["drawing_number"])) or [] if fps[id(x)] == want]
         if len(same) == 1:
@@ -339,6 +343,8 @@ def match(graphs, manual_ops=(), system_codes=None, moved=None):
         found = [x[0] for x in located]
         why = next((x[1] for x in located if x[1]), None)
         check = None if all(isinstance(e.get("fp"), dict) for e in op["ends"]) else "no_fingerprint"
+        if check is None and any(f is not None and fps[id(f)] != e["fp"] for e, f in zip(op["ends"], found)):
+            check = "old_label"
         if why:
             skipped.append({"op_id": op["op_id"], "reason": why})
         elif len({_ref(e) for e in found}) != len(found):

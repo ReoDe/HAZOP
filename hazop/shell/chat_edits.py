@@ -291,7 +291,7 @@ def _drawing_check(engine):
         elif item.action == "drawing.undo":
             op_id = _undo_target(view, a)
             if op_id is None:
-                return ("되돌릴 수 없는 고침: %s(AI 검토에서 수락한 고침은 AI 검토 패널에서, 뒤 고침이 쓰는 것은 뒤 고침부터)" % a["op_id"]
+                return ("되돌릴 수 없는 고침: %s(AI 후보를 수락한 고침은 aireview.revert, 자동으로 받은 값은 aireview.auto_revert로, 뒤 고침이 쓰는 것은 뒤 고침부터)" % a["op_id"]
                         if a.get("op_id") else "되돌릴 고침이 없음")
             basis.update(op_id=op_id, confirm=_undo_ask(engine, gid, view, op_id))
             item.targets = [gid, op_id]

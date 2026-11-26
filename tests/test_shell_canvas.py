@@ -107,6 +107,7 @@ def child_main(out_path):
     import shutil
     stub_root = os.path.join(tmp, "web")
     shutil.copytree(CANVAS, os.path.join(stub_root, "js", "canvas"), ignore=shutil.ignore_patterns("README.md"))
+    shutil.copy(os.path.join(os.path.dirname(CANVAS), "net_share.js"), os.path.join(stub_root, "js", "net_share.js"))      # sheet.js가 ../net_share.js를 읽는다
     os.makedirs(os.path.join(stub_root, "vendor"))
     with open(os.path.join(stub_root, "vendor", "preact.module.js"), "w", encoding="utf-8") as fh:
         fh.write("export const h = (tag, props, ...kids) => ({ tag, props: props || {}, kids });\n")

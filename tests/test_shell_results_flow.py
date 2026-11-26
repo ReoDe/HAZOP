@@ -103,8 +103,13 @@ class ResultsPanelTest(W.ShellBase):
         self.open_export_card(win)
         self.assertTrue(self.js(win, "(() => { const b = document.querySelector(\".exportcard button[aria-label='Excel로 내보내기']\"); b.click(); return true; })()"))
         self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
-        self.assertTrue(wait_for(lambda: "exported.xlsx" in self.text(win), 10))
+        self.assertTrue(wait_for(lambda: "내보냈습니다" in self.text(win) and "exported.xlsx" in self.text(win), 10), "내보냈습니다 · 파일 이름 한 줄")
         self.assertNotIn(os.path.dirname(out), self.text(win), "웹에는 경로를 보이지 않는다")
+        from unittest import mock
+        with mock.patch("hazop.shell.export_folder.open_folder", return_value="x") as op:
+            self.assertTrue(self.click(win, "button[aria-label='내보낸 폴더 열기']"))
+            self.assertTrue(wait_for(lambda: op.called, 10))
+            self.assertEqual(op.call_args[0][1], "excel", "폴더 열기는 방금 내보낸 종류로 부른다")
 
     def open_export_card(self, win):
         self.assertTrue(self.js(win, "(() => { const b = document.querySelector(\"button[aria-label='Excel 내보내기 범위 고르기']\"); b.click(); return true; })()"))
@@ -152,7 +157,6 @@ class ResultsPanelTest(W.ShellBase):
         self.assertIn("승인", self.js(win, "document.querySelector('.exportcard').textContent"))
         self.js(win, "document.querySelector(\".exportcard button[aria-label='Excel로 내보내기']\").click()")
         self.assertTrue(wait_for(lambda: os.path.isfile(out), 20))
-        self.assertTrue(wait_for(lambda: "승인 항목만" in self.text(win), 10))
         got = rows()
         self.assertTrue(got and {r["상태"] for r in got} == {"승인"}, got)
         os.remove(out)
@@ -184,7 +188,9 @@ class ResultsPanelTest(W.ShellBase):
             self.assertTrue(wait_for(lambda: "AI 분석 실행" in self.text(win), 10), self.text(win)[-300:])
             self.assertIn("호출", self.text(win))
             self.assertTrue(self.js(win, "(() => { const b = document.querySelector(\"button[aria-label='분석 시작']\"); if (b.disabled) return false; b.click(); return true; })()"))
-            self.assertTrue(wait_for(lambda: "AI 분석이 끝났습니다" in self.text(win), 30), self.text(win)[-500:])
+            self.assertTrue(wait_for(lambda: any(e["entry_id"].startswith("ai-") for c in self.stored()["cells"] for e in c["entries"]) and len(reads) >= 1, 30), self.text(win)[-500:])
+            pump(1.0)
+            self.assertNotIn("AI 분석이 끝났습니다", self.text(win), "잘 끝난 분석은 알리지 않는다(화면 단순화)")
             self.assertLessEqual(len(reads), 4, "호출 6번 동안 행렬 전체 요약을 호출마다 다시 읽지 않는다: %d번" % len(reads))
         doc = self.stored()
         self.assertTrue(any(e["entry_id"].startswith("ai-") for c in doc["cells"] for e in c["entries"]))
@@ -212,7 +218,7 @@ class ResultsPanelTest(W.ShellBase):
         self.assertEqual(self.js(win, "document.querySelectorAll('.vg-cell.on').length"), 0, "고른 칸도 비워진다")
         # 낡은 화면이 보낸 쓰기는 바뀐 프로젝트에 닿지 않는다(웹이 싣는 프로젝트 ID가 새 프로젝트로 바뀌었다)
         self.js(win, "window.__hz.cmd('results.stop', {})")
-        self.assertEqual(self.js(win, "window.__hz.store.get().app.project_id"), "OTHER")
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().app.project_id") == "OTHER", 10), "바뀜 알림은 모아서 오므로 기다린다")
 
     def test_without_nodes_the_panel_points_to_the_node_panel(self):
         for n in list(self.ns["nodes"]):
@@ -310,6 +316,7 @@ class ResultsToSheetTest(W.ShellBase):
         win = self.window()
         self.switch_project(win, "SNP")
         node, _local = self.make_confirmed_node_with_a_recommendation(win)
+        W.pump(0.6)      # 엔진의 바뀜 알림은 모아서(150ms) 웹에 오므로 구간 목록을 다시 읽을 때까지 기다린다
         self.assertTrue(self.click(win, ".rail button", 2))
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.res-matrix .vg-cell').length") or 0) > 0, 15), self.text(win)[-300:])
         self.js(win, "(() => { const e = document.querySelector('.vg-cell[style*=\"top: 0px; left: 0px\"]'); if (e) e.click(); })()")

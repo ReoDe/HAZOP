@@ -317,7 +317,7 @@ def n1_register(run, c):
     c.need("등록·추출 작업이 끝남", done and not failed, failed)
     res = done[-1]["result"]
     c.ok("등록됨(outcome registered)", res.get("outcome") == "registered", res)
-    c.ok("AI 검토는 꺼져 있어 돌지 않음", (res.get("ai_review") or {}).get("ran") is False, res.get("ai_review"))
+    c.ok("올린 drawio는 AI를 부르지 않고 자동 확정됨", (res.get("auto") or {}).get("calls") == 0 and bool((res.get("auto") or {}).get("done")), res.get("auto"))
     run.state["m101"] = res.get("material_id")
     gid = gid_of(run, "SNP-M-101", run.state["m101"])
     run.state["g101"] = gid
@@ -329,6 +329,9 @@ def n1_register(run, c):
     c.ok("도면 목록에 보임(drawings 읽기)", any(gid in json.dumps(d, ensure_ascii=False) for d in drawings.get("drawings", [])),
          json.dumps(drawings, ensure_ascii=False)[:300])
     c.ok("화면: 도면 패널에 도면 이름", run.panel("drawings", "SNP-M-101"), run.text()[-300:])
+    c.ok("화면: 도면 패널에 탭이 없고 도면 줄에 표제란·AI 검토 단추가 없다(자동 확정: 사람이 줄마다 확정하지 않는다)",
+         run.js("document.querySelectorAll('.ptabs').length") == 0 and run.js("document.querySelectorAll(\"button[aria-label$=' 표제란']\").length") == 0,
+         run.text()[-300:])
 
 
 class StubReview:
@@ -367,8 +370,8 @@ class StubReview:
 
 
 def n2_ai_review_extract(run, c):
-    r = run.cmd("extract.set_ai_review", {"enabled": True, "cap": 5})
-    c.need("AI 검토 켬(extract.set_ai_review)", r["ok"], r)
+    r = run.cmd("aireview.consent", {"allow": True})
+    c.need("자동 보내기 동의(aireview.consent)", r["ok"], r)
     stub, real_ai = StubReview(), run.engine.ai
     run.engine.ai = stub
     try:
@@ -378,16 +381,21 @@ def n2_ai_review_extract(run, c):
         r = run.cmd("register.pick")
         c.need("등록 시작", r["ok"], r)
         done, failed = run.wait_jobs(m)
+        c.need("등록·추출 작업이 끝남", done and not failed, failed)
+        res = done[-1]["result"]
+        run.state["m102"] = res.get("material_id")
+        c.ok("동의해도 drawio는 자동으로 AI에 보내지 않음", not stub.requests and (res.get("auto") or {}).get("done"), res.get("auto"))
+        gid = gid_of(run, "SNP-M-102", run.state["m102"])
+        est = run.read("aireview", "estimate") or {}
+        m = run.mark()
+        r = run.cmd("aireview.run", {"graph_ids": [gid], "cap": 5, "conn_ver": est["conn"]["conn_ver"]})
+        c.need("사람이 시킨 AI 검토 시작(aireview.run)", r["ok"], r)
+        done, failed = run.wait_jobs(m)
+        c.need("AI 검토 작업이 끝남", done and not failed, failed)
     finally:
         run.engine.ai = real_ai
-        run.cmd("extract.set_ai_review", {"enabled": False})
-    c.need("등록·추출·AI 검토 작업이 끝남", done and not failed, failed)
-    res = done[-1]["result"]
-    review = res.get("ai_review") or {}
-    run.state["m102"] = res.get("material_id")
-    c.ok("AI 검토가 돌았음(ran)", review.get("ran") is True, review)
+        run.cmd("aireview.consent", {"allow": False})
     c.ok("도면당 상한(5) 안에서 부름", 1 <= len(stub.requests) <= 5, len(stub.requests))
-    gid = gid_of(run, "SNP-M-102", run.state["m102"])
     run.state["g102"] = gid
     name = run.engine.graph_names()[gid]
     from hazop.extract import ai_review
@@ -495,7 +503,7 @@ def n5_sheet_confirm(run, c):
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as fh:
             c.ok("확정자는 검토자 이름", REVIEWER in fh.read())
-    c.ok("화면: 도면 패널에 확정 표시", run.panel("drawings", "확정"), run.text()[-300:])
+    c.ok("화면: 표제란 패널에 확정 표시(도면 줄에는 확정 표시가 없다)", run.panel("titleblock", "확정"), run.text()[-300:])
 
 
 def n6_chat_path(run, c):

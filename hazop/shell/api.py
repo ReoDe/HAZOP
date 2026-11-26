@@ -153,7 +153,11 @@ class Engine:
         self.ai = ai
         self.chat = chat
         self.current_sheet = None
-        self.hooks = {}          # 창이 꽂아 주는 일(파일 고르기·이전 화면 열기). 시험은 가짜를 꽂는다
+        from hazop.extract import corrections
+        from hazop.shell import export_folder
+        if corrections.reserved_name(self.settings.get("reviewer_name")):      # 예약 이름(자동 확정)은 사람 이름이 아니다: 비우고 다시 묻는다
+            self.settings["reviewer_name"] = None
+        self.hooks = export_folder.Hooks(self.project_id)          # 창이 꽂아 주는 일(파일 고르기·이전 화면 열기). 시험은 가짜를 꽂는다
         self._run_jobs = run_jobs or self._thread_jobs
         self._jobs = {}
         self._job_seq = 0
@@ -164,6 +168,9 @@ class Engine:
         from hazop.shell import ai_gate
         self.ai_gate = ai_gate.Gate()    # 일괄 AI 작업(AI 검토·추출 뒤 자동 검토·AI 분석)의 구독 호출 차례
         self._reviewing = set()          # AI 검토가 돌거나 차례를 기다리는 도면(추출 이름)
+        from hazop.shell import auto_flow
+        self.auto_budget = auto_flow.Budget()      # 자동 확정의 호출 예산(올리기 묶음 하나)
+        self._auto_extracting, self._auto_resuming, self._ai_ready = set(), False, False
         self._catching = set()           # 검토구간 판 이전을 기다리는 프로젝트
         self._settle_gate = threading.Lock()   # 열 때 정착과 도면 등록·추출 작업을 가른다(정착이 다시 짓는 폴더와 추출이 쓰는 폴더가 겹치지 않게)
         # 판 이전과 ⑤ AI 분석 시작을 가른다(분석이 도는 동안 판 이전을 하지 않고, 판 이전 중에는 분석을 시작하지 않는다). 같은 스레드가 다시 잡을 수 있다:
@@ -239,7 +246,18 @@ class Engine:
             api_inputs.scan_on_open(self)
         except Exception:  # noqa: BLE001 - 안내 한 줄을 위한 찾기: 실패해도 열기를 막지 않는다
             LOG.warning("짓지 않은 입력 연산 찾기 실패", exc_info=True)
-        return self.auto_catch_up(self.project_id())
+        done = self.auto_catch_up(self.project_id())
+        from hazop.shell import auto_flow
+        auto_flow.resume_quietly(self)          # 앞서 끝내지 못한 자동 확정을 이어 한다
+        return done
+
+    def on_connection(self):
+        """AI 연결 상태가 바뀌었다(창이 부른다). 쓸 수 있게 된 순간에만 자동 확정을 이어 한다."""
+        from hazop.shell import api_settings, auto_flow
+        ready = bool(api_settings.run_conn(self, "ai_review")["can_start"])
+        was, self._ai_ready = self._ai_ready, ready
+        if ready and not was:
+            self.spawn(lambda: auto_flow.resume_quietly(self), "auto-resume")
 
     def settle_on_open(self):
         """시트 정체 정착(hazop.app.data.settle_sheets)을 프로젝트를 열 때 한 번 한다. 정착 전 프로젝트는 이 단위 전 이름 규칙에 가려진 도면(첫 PDF,
@@ -285,7 +303,9 @@ class Engine:
         paths.save_settings(self.settings, self.settings_path)
 
     def reviewer(self):
-        return (self.settings.get("reviewer_name") or "").strip() or None
+        from hazop.extract import corrections
+        name = (self.settings.get("reviewer_name") or "").strip()
+        return None if not name or corrections.reserved_name(name) else name
 
     def project_id(self):
         """지금 프로젝트: 설정에 적힌 값, 없으면 등록된 자료의 프로젝트, 없으면 기본값."""
@@ -368,8 +388,18 @@ class Engine:
         if not checked:
             raise CommandError("bad_args", "파일이 없음")
         from hazop.shell import register_flow
-        return {"jobs": [self.start_job(os.path.basename(f), lambda progress, f=f: register_flow.register_and_extract(self, f, progress))
-                         for f in checked]}
+        for _f in checked:                # 작업을 시작하기 전에 모두 세어 한 묶음이 예산 하나를 나눠 쓰게 한다
+            self.auto_budget.enter(file=True)
+        jobs = []
+        try:
+            for f in checked:
+                jobs.append(self.start_job(os.path.basename(f), lambda progress, f=f: register_flow.upload(self, f, progress)))
+        except Exception:
+            for _f in checked[len(jobs):]:       # 시작하지 못한 파일의 몫을 돌려준다
+                self.auto_budget.file_done()
+                self.auto_budget.leave()
+            raise
+        return {"jobs": jobs}
 
     def _thread_jobs(self, job_id, fn):
         t = threading.Thread(target=fn, name="hazop-job-%s" % job_id, daemon=True)
@@ -531,6 +561,9 @@ def _h_open_sheet(engine, a):
 
 
 def _h_set_reviewer(engine, a):
+    from hazop.extract import corrections
+    if corrections.reserved_name(a["name"]):
+        raise CommandError("bad_args", "이 이름은 앱이 쓰는 이름이라 검토자 이름으로 쓸 수 없습니다.")
     engine.settings["reviewer_name"] = a["name"].strip()
     engine.save_settings()
     engine.changed("state")
@@ -644,6 +677,9 @@ def _h_set_ai_review(engine, a):
     if "images" in a:
         engine.settings["ai_review_images"] = a["images"]      # 도면 조각 그림을 AI에 보낼지(기본 켬, 켜고 끄는 선택은 이것 하나)
     engine.save_settings()
+    if a.get("images"):
+        from hazop.shell import auto_flow
+        engine.spawn(lambda: auto_flow.resume_quietly(engine), "auto-resume")
     if "images" in a:
         engine.changed("aireview", None)
         engine.changed("state")                         # 열려 있는 AI 검토 패널이 예상 호출 수와 안내를 다시 읽는다
@@ -659,6 +695,15 @@ def _h_pick_files(engine, a):
     if not files:
         return {"jobs": []}
     return engine.add_files(list(files)[:MAX_FILES])
+
+
+def _h_open_folder(engine, a):
+    from hazop.shell import export_folder
+    try:
+        export_folder.open_folder(engine, a["kind"])
+    except export_folder.Refused as exc:
+        raise CommandError("not_found", str(exc))
+    return {"opened": True}
 
 
 def _h_open_classic(engine, a):
@@ -687,19 +732,21 @@ COMMANDS = {
     "chat.action.decline": Command({"token": (v_str(1, 80), True)}, _h_action_decline, "채팅이 제안한 동작의 확인 상자에서 '하지 않음'"),
     "chat.set_model": Command({"model": (v_enum(*CHAT_MODELS), True)}, _h_chat_model, "채팅 모델(빠름·보통·깊게)"),
     "extract.set_ai_review": Command({"enabled": (v_bool(), False), "cap": (v_int(1, 200), False), "images": (v_bool(), False)}, _h_set_ai_review,
-                                     "추출 뒤 AI 검토 토글, 도면당 호출 상한, 도면 조각 그림을 AI에 보낼지"),
+                                     "AI 검토 토글(자동 확정은 보지 않음), 도면당 호출 상한, 도면 조각 그림을 AI에 보낼지(끄면 자동 확정도 보내지 않음)"),
     "register.pick": Command({}, _h_pick_files, "파일 고르기 창을 열어 고른 파일을 등록한다"),
+    "export.open_folder": Command({"kind": (v_enum("excel", "ie", "fmea", "dexpi", "chat"), True)}, _h_open_folder,
+                                  "이번 실행에서 내보낸 폴더를 탐색기로 연다(종류만 받고 경로는 앱이 정한다)"),
     "app.open_classic": Command({}, _h_open_classic, "이전 위젯 화면으로 연다(이 창은 닫힌다)"),
 }
 
 
 # 프로젝트에 묶인 명령의 이름 머리(웹이 보낼 때 프로젝트 ID를 실어야 하는 것). 영역 모듈의 몫은 _load_modules가 더한다.
 CORE_TOPICS = ("state", "drawings", "connection", "chat", "icons", "examples", "sheet")
-PROJECT_BOUND_CORE = ("chat.action.", "sheet.")
+PROJECT_BOUND_CORE = ("chat.action.", "sheet.", "export.")
 
 # 영역별 모듈(등록 규약은 hazop/shell/README.md). 새 영역은 이 튜플에 모듈 이름 하나를 더하는 것이 전부다.
 MODULES = ("api_nodes", "api_results", "api_drawings", "api_ie", "api_kg", "api_actionlog", "api_aireview", "api_docs", "api_titleblock", "api_settings", "api_corrections", "clean_items",
-           "api_next", "api_queue", "api_inputs")
+           "api_next", "api_queue", "api_inputs", "api_props")
 
 TOPIC_OWNER = {}          # 토픽 -> 읽기 모듈
 LOADED = {}               # 모듈 이름 -> 모듈 (읽지 못한 것은 없다)

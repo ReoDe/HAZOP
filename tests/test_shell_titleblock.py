@@ -185,6 +185,15 @@ class PanelTest(Base):
             pump(0.02)
         return out[0] if out else None
 
+    def until(self, fn, timeout=60.0):
+        import time
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if fn():
+                return True
+            pump(0.2)
+        return False
+
     def wait(self, win, code, timeout=120.0):
         import time
         end = time.monotonic() + timeout
@@ -228,7 +237,7 @@ class PanelTest(Base):
             return inp.value === '주 배관(고침)'; })()"""), "제목 칸에 입력")
         self.assertTrue(self.click_once(win, "c1", "입력한 값으로 확정"), "확정 단추")
         # 확정이 끝나면 패널을 닫고(캔버스의 '쪽 확정' 칩이 가려지지 않게, 실제 창 6차) 알림은 화면 아래로
-        self.assertTrue(self.wait(win, "!document.querySelector('.titleblock') && ((window.__hz.store.get().toast || {}).text || '').includes('확정했습니다')"),
+        self.assertTrue(self.wait(win, "!document.querySelector('.titleblock') && !(window.__hz.store.get().toast || {}).text"),
                         self.js(win, "JSON.stringify(window.__hz.store.get().toast)"))
         self.js(win, "window.__hz.store.set({panel: 'titleblock'})")
         r = self.read(self.mid)
@@ -245,8 +254,7 @@ class PanelTest(Base):
                         self.js(win, "document.querySelector('.titleblock').innerText"))
         self.assertEqual(self.read(self.mid)["version"], 2, "승인 전에는 저장하지 않음")
         self.assertTrue(self.click_once(win, "c3", "옮기고 확정"), "옮기고 확정 단추")
-        self.assertTrue(self.wait(win, "((window.__hz.store.get().toast || {}).text || '').includes('등록 버전 3')"),
-                        self.js(win, "JSON.stringify(window.__hz.store.get().toast)"))
+        self.assertTrue(self.wait(win, "!document.querySelector('.titleblock .tb-ask')") and self.until(lambda: self.read(self.mid)["version"] == 3) and win.engine.wait_jobs(60), "옮기고 확정하면 등록 버전 3(확정했다는 알림 글은 없다)")
         r = self.read(self.mid)
         self.assertEqual((r["fields"][0]["value"], r["fields"][1]["value"]), ("SNP-M-101", "0"), "번호와 개정을 후보 그대로 확정")
         pg_nodes = nodes.load(project_ctx_graph(self))["nodes"]

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { store } from "../store.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import * as I from "./ie_state.js";
+import { OpenFolder } from "./open_folder.js";
 import { FmeaView, MldSection } from "./ie_p5.js";
 import { CandidateCard } from "./ie_judge.js";
 
@@ -228,6 +229,7 @@ export function IePanel({ onClose }) {
   const view = I.useIe((x) => x.view);
   const error = I.useIe((x) => x.error);
   const notice = I.useIe((x) => x.notice);
+  const exported = I.useIe((x) => x.exported);
   const unreadable = !s.available && /초기사건 파일을 읽을 수 없습니다/.test(s.reason || "");
   return html`<section class="panel wide ie" aria-label="초기사건">
     <div class="panel-h"><h2>초기사건</h2><span class="acts"><${Btn} kind="ghost" icon="x" label="닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
@@ -241,7 +243,7 @@ export function IePanel({ onClose }) {
         <${Header} s=${s} />
         ${(s.side_unreadable || []).length ? html`<${Notice} kind="warn" icon="alert-triangle">읽을 수 없는 파일: ${s.side_unreadable.join(", ")}. 이 파일 없이 보이고 내보냅니다. FMEA 보기나 완전성 대조 보기에서 백업 뒤 새로 시작할 수 있습니다.<//>` : null}
         ${error ? html`<${Notice} kind="err" icon="alert-triangle">${error} <${Btn} sm=${true} kind="ghost" label="알림 닫기" onClick=${I.dismissError}>닫기<//><//>` : null}
-        ${notice ? html`<${Notice} kind="info" icon="circle-check">${notice}<//>` : null}
+        ${notice && /확정이 풀린|내보냈/.test(notice) ? html`<${Notice} kind="warn" icon="alert-triangle">${notice} ${exported && /^내보냈/.test(notice) ? html`<${OpenFolder} kind=${exported} />` : null}<//>` : null}
         ${view === "groups" ? html`<${Groups} s=${s} />` : view === "completeness" ? html`<${Completeness} s=${s} />` : view === "fmea" ? html`<${FmeaView} />` : html`<${Warnings} s=${s} />`}`}
     </div></section>`;
 }

@@ -178,7 +178,7 @@ export function CompareCard() {
   const doneAndConfirm = async () => {      // 견줌 기록과 확정을 한 번에(U8). 끝나면 견주기 화면과 쪽 확정 카드가 저절로 닫힌다
     setError("");
     const r = await compareAndConfirm(c.gid, c.mode, c.pin);
-    if (r.ok) { closeCompare(); conf.set({ open: false }); toast("쪽을 확정했습니다."); }
+    if (r.ok) { closeCompare(); conf.set({ open: false }); }
     else if (r.step === "confirm") { closeCompare(); conf.set({ open: true }); }      // 견줌은 기록됨: 확정을 막은 까닭을 카드에 보인다
     else setError(r.error || "견줌을 기록하지 못했습니다.");
   };

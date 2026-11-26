@@ -696,7 +696,8 @@ GROUP_PREFIX = "grp:"
 KN_PREFIX = "kn:"
 EXPECT_SHOWN = tuple(s for s, _, on in EXPECT_STATES if on)
 NEIGHBORS_SHOWN = 30
-ORIGIN_LABELS = {o: v["label_ko"] for o, v in REGISTRY.origins.items()}
+AUTO_LABEL = "자동 확정(AI)"
+ORIGIN_LABELS = dict({o: v["label_ko"] for o, v in REGISTRY.origins.items()}, ai_auto=AUTO_LABEL)
 KS_LABELS = {"confirmed": "확인", "unknown": "미확인(사람 확인 전)", "hypothesis": "가설"}
 LINK_ST_LABELS = {"confirmed": "확정", "candidate": "후보(사람 확인 전)", "recheck": "재확인 필요", "excluded": "계산 제외(미확인·가설)"}
 KN_TYPE_LABELS = {"document": "문서", "doc_chunk": "문서 조각", "requirement": "요건", "setpoint": "설정치", "condition": "운전조건·설계값",
@@ -1129,6 +1130,13 @@ def _expectation_detail(model, it):
             "digest": it["digest"], "caution": EXPECT_NOTE_TEXT}
 
 
+def made_by(node):
+    """P&ID 노드의 '만든 곳' 글. 사람이 고친 노드에 자동 확정이 정한 값이 남아 있으면 함께 보인다."""
+    origin = node_origin(node)
+    label = ORIGIN_LABELS.get(origin, origin)
+    return "%s, %s" % (label, AUTO_LABEL) if node.get("auto") and origin != "ai_auto" else label
+
+
 def panel_node(model, nid, kg=None):
     """노드 상세 또는 None: 무엇인지(what), 근거(evidence), 속성(attrs), 도면 위치(at: {sheet, local_id} 또는 None), 이웃(최대
     NEIGHBORS_SHOWN), 이 노드에 걸린 잠재 후보. 잠재 후보 노드면 expectation(규칙·근거·상태·판단 기록·할 수 있는 동작과 필수 입력)."""
@@ -1143,7 +1151,7 @@ def panel_node(model, nid, kg=None):
         out["what"] = ([["태그", p["tag"]]] if p.get("tag") else []) + [["종류", p.get("kind") or "-"],
                                                                       ["분류", p.get("category") or p.get("node_type") or "-"]]
         out["evidence"] = [["도면", model["drawing"].get(p.get("sheet")) or "도면 연결 구간"],
-                           ["만든 곳", ORIGIN_LABELS.get(node_origin(p), node_origin(p))]]
+                           ["만든 곳", made_by(p)]]
         if p.get("source_object_id"):
             out["evidence"].append(["원본 객체", p["source_object_id"]])
         out["attrs"] = _plain_attrs(p.get("attributes"))

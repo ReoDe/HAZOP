@@ -118,7 +118,8 @@ export function wire() {
     if (!mine.has(d.id)) return;
     const n = resultNotice(d.label || mine.get(d.id), d.result || {});
     mine.delete(d.id);
-    docs.set(n.kind === "err" ? { error: n.text } : { notice: n.text });
+    const kgNotes = ((d.result || {}).kg_notes || []).join(" ");
+    docs.set(n.kind === "err" ? { error: n.text } : { notice: kgNotes || null });      // 끝났다는 글은 없고, 확인한 조각이 다시 후보가 되는 등 결과가 달라진 것만 알린다
     refresh();
   });
   on("job.failed", (d) => {

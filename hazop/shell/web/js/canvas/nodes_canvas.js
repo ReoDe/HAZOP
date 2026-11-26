@@ -3,25 +3,25 @@
 // 도면·모델에서 온 글(태그, 이름)은 htm이 이스케이프하는 텍스트로만 넣는다.
 import { html } from "../ui/html.js";
 import { useEffect, useLayoutEffect, useMemo } from "../../vendor/hooks.module.js";
-import { store as shell } from "../store.js";
+import { store as shell, useStore } from "../store.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { escStep, keyAction, canEdit, colorOf, sheetSegments } from "../panels/nodes_logic.js";
 import * as N from "../panels/nodes_state.js";
-import { EditOverlay, useEditCanvas } from "./edit.js";
 
 /** <Sheet>에 펼칠 props와 키 처리. 상태는 nodes_state의 저장소에 있다. */
 export function useNodeCanvas(sheet, { onEsc } = {}) {
   N.wire();
   const mode = N.useNodes((s) => s.mode);
   const selection = N.useNodes((s) => s.selection);
+  const panel = useStore((s) => s.panel);          // 구간 색 강조는 구간 탭에서만(도면 탭은 추출 확인 창)
   const sheetView = N.useNodes((s) => s.sheetView);
   const list = N.useNodes((s) => s.list.nodes);
   const focus = N.useNodes((s) => s.focus);
   const showOutside = N.useNodes((s) => s.showOutside);
-  const segments = useMemo(() => (sheetView && sheetView.graph_id === sheet ? sheetSegments(sheetView, list, focus) : []), [sheetView, list, focus, sheet]);
+  const segments = useMemo(() => (panel === "nodes" && sheetView && sheetView.graph_id === sheet ? sheetSegments(sheetView, list, focus) : []), [panel, sheetView, list, focus, sheet]);
   const links = useMemo(() => (sheetView && sheetView.graph_id === sheet && Array.isArray(sheetView.links) ? sheetView.links : []), [sheetView, sheet]);
-  const outside = useMemo(() => (showOutside && sheetView && sheetView.graph_id === sheet && sheetView.segments.length ? sheetView.outside_ids : []), [sheetView, showOutside, sheet]);
+  const outside = useMemo(() => (panel === "nodes" && showOutside && sheetView && sheetView.graph_id === sheet && sheetView.segments.length ? sheetView.outside_ids : []), [panel, sheetView, showOutside, sheet]);
 
   useLayoutEffect(() => {          // 그린 바로 뒤에 키를 잇는다(끌기 → Enter가 바로 먹게)
     function key(e) {
@@ -41,10 +41,8 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
     return () => window.removeEventListener("keydown", key);
   }, []);
 
-  const ec = useEditCanvas(sheet);           // 도면 고치기(edit.js): 도구가 있을 때 누르기를 고치기로 돌린다
   return {
     props: {
-      ...ec,
       mode, selection, segments, outside, links,
       onLinkClick: (link) => N.followLink(link),
       onSelection: (d) => N.setSelection(d.selected, d.truncated),
@@ -120,9 +118,8 @@ function NewNodeCard() {
     <div class="field"><label for="nn-name">이름</label>
       <input id="nn-name" class="textbox" autofocus value=${card.name} maxlength="120" onInput=${(e) => N.editCard({ name: e.target.value })} /></div>
     <div class="field"><label for="nn-intent">설계 의도</label>
-      <textarea id="nn-intent" class="textbox" rows="3" maxlength="2000" placeholder="이 구간이 무엇을 하는지(비워 둘 수 있습니다)" value=${card.intent} onInput=${(e) => N.editCard({ intent: e.target.value })}></textarea></div>
+      <textarea id="nn-intent" class="textbox" rows="3" maxlength="2000" value=${card.intent} onInput=${(e) => N.editCard({ intent: e.target.value })}></textarea></div>
     ${sg && sg.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${sg.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
-    ${sg && sg.overlaps.length ? html`<${Notice} kind="info">${sg.overlaps.map((o) => o.node_id + " 구간과 " + o.shared + "개가 겹칩니다").join(" · ")}. 겹쳐도 만들 수 있습니다.<//>` : null}
     ${sg && sg.asked > sg.count ? html`<${Notice} kind="warn" icon="alert-triangle">고른 ${sg.asked}개 가운데 ${sg.asked - sg.count}개는 구간에 넣을 수 없는 선(신호선·계측선)이라 뺐습니다.<//>` : null}
     ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//>` : null}
     <div class="muted small">이름과 설계 의도는 여기서 고칠 수 있습니다. 그대로 두려면 Esc나 다음 구간 고르기로 닫으세요.</div>
@@ -143,5 +140,5 @@ function OutsideChip() {
 
 export function NodeOverlay() {
   N.wire();
-  return html`<${OutsideChip} /><${SelectionBar} /><${PickHint} /><${NewNodeCard} /><${Toolbar} /><${EditOverlay} />`;
+  return html`<${OutsideChip} /><${SelectionBar} /><${PickHint} /><${NewNodeCard} /><${Toolbar} />`;
 }

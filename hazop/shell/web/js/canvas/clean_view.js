@@ -10,6 +10,7 @@ export const AI_LINE = "var(--ai-line, #8a929c)";
 export const FAINT = "var(--faint, #8a929c)";
 export const FRAME = "var(--line-strong, #b8bec6)";
 const MONO = "var(--mono, 'Cascadia Mono', Consolas, monospace)";
+let K = 1;                                        // 지금 그리는 도면의 단위 배율(clean_items의 scale): 도면 단위로 잰 글자·간격·화살촉 크기에 곱한다. 보통 1, mm 단위 도면은 약 0.24
 const FONT = 9;                                   // 태그·번호 글자 크기(도면 단위)
 const SYMBOL_W = 1.8;                             // 기호 선 굵기(화면 픽셀, 확대해도 같게)
 const PIPE_W = { process: 2.0, process_secondary: 1.6, instrument_tap: 1.2, signal_electric: 1.2, dashed_pipe: 2.0, dashed_signal: 1.2 };   // 화면 픽셀(확대해도 같게)
@@ -52,7 +53,7 @@ export function toWorld(p, x, y) {
 const strokeAttrs = (color, width, extra) => Object.assign({ stroke: color, "stroke-width": width, "vector-effect": "non-scaling-stroke", "stroke-linecap": "round", "stroke-linejoin": "round" }, extra);
 
 function textEl(x, y, text, o = {}) {
-  return el("text", { x: r(x), y: r(y), "text-anchor": o.anchor || "start", "font-family": MONO, "font-size": o.size || FONT, fill: o.fill || INK, "dominant-baseline": o.baseline || "auto",
+  return el("text", { x: r(x), y: r(y), "text-anchor": o.anchor || "start", "font-family": MONO, "font-size": o.size || FONT * K, fill: o.fill || INK, "dominant-baseline": o.baseline || "auto",
     transform: o.rotate ? `rotate(${o.rotate} ${r(x)} ${r(y)})` : null, opacity: o.opacity, "pointer-events": "none" }, null, text);
 }
 
@@ -80,20 +81,20 @@ function arrowAt(a, b, t, color, s = 6) {
 }
 
 /** 흐름 화살촉: 40 단위 넘는 선분마다 가운데에, 긴 선분은 110 단위 간격으로 더 둔다(시안 7번처럼 일정 간격). */
-function arrowsAlong(line, forward, color, avoid, size = 6) {
+function arrowsAlong(line, forward, color, avoid, size = 6 * K) {
   const out = [];
   const blocked = (x, y) => {
     if (line.some((q) => Math.hypot(q[0] - x, q[1] - y) < size * 2.2)) return true;                    // 꺾임·분기점 앞뒤
-    return (avoid || []).some((o) => x > o.x0 - 5 && x < o.x1 + 5 && y > o.y0 - 5 && y < o.y1 + 5);   // 기호 둘레
+    return (avoid || []).some((o) => x > o.x0 - 5 * K && x < o.x1 + 5 * K && y > o.y0 - 5 * K && y < o.y1 + 5 * K);   // 기호 둘레
   };
   for (let i = 0; i + 1 < line.length; i++) {
     const [a, b] = forward ? [line[i], line[i + 1]] : [line[line.length - 1 - i], line[line.length - 2 - i]];
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     if (len < size * 6) continue;                                      // 화살촉 길이(2·size)의 세 배보다 짧은 선분에는 넣지 않는다
-    const n = Math.max(1, Math.round(len / 110));
+    const n = Math.max(1, Math.round(len / (110 * K)));
     for (let j = 0; j < n; j++) {
       let t = (j + 0.5) / n, ok = false;
-      for (const dt of [0, 12 / len, -12 / len, 24 / len, -24 / len]) {      // 막히면 선분 위에서 조금 비켜 놓는다. 그래도 안 되면 그리지 않는다
+      for (const dt of [0, 12 * K / len, -12 * K / len, 24 * K / len, -24 * K / len]) {      // 막히면 선분 위에서 조금 비켜 놓는다. 그래도 안 되면 그리지 않는다
         const tt = t + dt, x = a[0] + (b[0] - a[0]) * tt, y = a[1] + (b[1] - a[1]) * tt;
         if (tt > 0.08 && tt < 0.92 && !blocked(x, y)) { t = tt; ok = true; break; }
       }
@@ -110,10 +111,10 @@ export function pipeShapes(rec, extra, style = {}) {
   const type = pipeType(extra);
   const color = style.color || INK, width = style.width || PIPE_W[type] || 1.4;
   const out = [el("polyline", Object.assign({ points: line.map((p) => r(p[0]) + "," + r(p[1])).join(" "), fill: "none", "data-id": style.id || null }, strokeAttrs(color, width, { "stroke-dasharray": style.dash || PIPE_DASH[type] || null })))];
-  if (extra && extra.flow) out.push(...arrowsAlong(line, extra.flow === "source_to_target", color, style.avoid, style.recolor ? 10 : 6));   // 경로 위에서는 경로 색. 기호·꺾임·분기점과 겹치지 않게
+  if (extra && extra.flow) out.push(...arrowsAlong(line, extra.flow === "source_to_target", color, style.avoid, style.recolor ? 10 * K : 6 * K));   // 경로 위에서는 경로 색. 기호·꺾임·분기점과 겹치지 않게
   if (!style.recolor) {
     for (const e of (extra && extra.ends) || []) {
-      if (e.status === "open" && e.point) out.push(el("circle", { cx: r(e.point[0]), cy: r(e.point[1]), r: 3, fill: "var(--card, #fff)", stroke: AMBER, "stroke-width": 1.4, "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
+      if (e.status === "open" && e.point) out.push(el("circle", { cx: r(e.point[0]), cy: r(e.point[1]), r: 3 * K, fill: "var(--card, #fff)", stroke: AMBER, "stroke-width": 1.4, "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
     }
   }
   return out;
@@ -130,7 +131,7 @@ function splitTag(tag) {
 
 /** 글자 한 줄의 자리 후보. 보이는 글자 크기는 화면 확대 값에 따라 layoutLabels가 정한다(화면 픽셀 하한). pri: 작을수록 먼저 자리를 잡는다. */
 function labelSpec(x, y, text, o = {}) {
-  return { x, y, text: String(text), anchor: o.anchor || "start", size: o.size || FONT, rotate: o.rotate || 0, fill: o.fill || INK, opacity: o.opacity, pri: o.pri == null ? 5 : o.pri,
+  return { x, y, text: String(text), anchor: o.anchor || "start", size: o.size || FONT * K, k: K, rotate: o.rotate || 0, fill: o.fill || INK, opacity: o.opacity, pri: o.pri == null ? 5 : o.pri,
     owner: o.owner || null, always: !!o.always, fixed: !!o.fixed, showFrom: o.showFrom || 0, hideFrom: o.hideFrom || 0, baseline: o.baseline || "auto" };
 }
 
@@ -144,14 +145,15 @@ function pipeLabel(text, mx, my, vertical, o = {}) {
   return Object.assign(labelSpec(mx, my, text, Object.assign({ anchor: "middle" }, o)), { place: { t: "pipe", mx, my, vertical } });
 }
 
-const amberTick = (x, y) => el("line", { x1: r(x - 3), y1: r(y - 3), x2: r(x + 3), y2: r(y + 3), stroke: AMBER, "stroke-width": 1.6, "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
-const attrBox = (x0, y0, x1, y1) => el("rect", { x: r(x0 - 3), y: r(y0 - 3), width: r(x1 - x0 + 6), height: r(y1 - y0 + 6), rx: 3, fill: "none", stroke: AMBER, "stroke-width": 1.2, "stroke-dasharray": "4 3", "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
+const amberTick = (x, y) => el("line", { x1: r(x - 3 * K), y1: r(y - 3 * K), x2: r(x + 3 * K), y2: r(y + 3 * K), stroke: AMBER, "stroke-width": 1.6, "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
+const attrBox = (x0, y0, x1, y1) => el("rect", { x: r(x0 - 3 * K), y: r(y0 - 3 * K), width: r(x1 - x0 + 6 * K), height: r(y1 - y0 + 6 * K), rx: 3 * K, fill: "none", stroke: AMBER, "stroke-width": 1.2, "stroke-dasharray": "4 3", "vector-effect": "non-scaling-stroke", "pointer-events": "none" });
 const PLACEMENT_REASONS = new Set(["unknown_symbol", "open_end", "missing_tag", "ai_candidate", "unplaced", "unresolved_connector"]);
 
 /** 정리된 도면 전체(원본 SVG 없이). ctx: {symbols, width, height, items(recs 배열), extras(id → 그리기 자료), unconfirmed([{id, reason}]), textItems}.
  *  돌려주는 것: {nodes: 바탕 서술자, top: 불확실 표시(흐리기·표시 위에 그린다), labels: 글자 자리 후보, obstacles: 글자가 피할 기호 상자,
  *  missingKinds: 그림이 없어 generic으로 그린 kind, placeholders: 자리표 수}. */
 export function buildBase(ctx) {
+  K = ctx.scale || 1;
   const { symbols, width, height } = ctx, generic = symbols.generic;
   const nodes = [], top = [], attr = [], missing = new Set(), labels = [], obstacles = [];
   let placeholders = 0;
@@ -189,8 +191,8 @@ export function buildBase(ctx) {
     if (unknown && !ai) {                              // 미확인 기호: 호박색 점선 자리표 + 가운데 ? (흐리기 위에 그린다)
       placeholders++;
       top.push(el("rect", { "data-id": rec.id, x: r(bb[0]), y: r(bb[1]), width: r(Math.max(bb[2] - bb[0], 6)), height: r(Math.max(bb[3] - bb[1], 6)), fill: "var(--card, #fff)", "fill-opacity": 0.6, stroke: AMBER, "stroke-width": 1.4, "stroke-dasharray": "4 3", "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
-      top.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, "?", { anchor: "middle", baseline: "central", fill: AMBER, size: Math.min(14, Math.max(8, (bb[3] - bb[1]) * 0.6)) }));
-      if (rec.tag) labels.push(labelSpec(bb[0], bb[3] + FONT + 1, rec.tag, { fill: AMBER, opacity: 0.85, pri: 0, owner: rec.id, always: true }));
+      top.push(textEl((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2, "?", { anchor: "middle", baseline: "central", fill: AMBER, size: Math.min(14 * K, Math.max(8 * K, (bb[3] - bb[1]) * 0.6)) }));
+      if (rec.tag) labels.push(labelSpec(bb[0], bb[3] + (FONT + 1) * K, rec.tag, { fill: AMBER, opacity: 0.85, pri: 0, owner: rec.id, always: true }));
       continue;
     }
     const sym = symbols[kind];
@@ -232,9 +234,9 @@ export function buildBase(ctx) {
       }
     } else if (TAGGED.includes(rec.category)) {          // 태그 없음: 호박색 점선 밑줄과 글자(늘 보인다)
       placeholders++;
-      const y = bb[3] + FONT + 3;
-      top.push(el("line", { x1: r(cx - 20), y1: r(y + 2), x2: r(cx + 20), y2: r(y + 2), stroke: AMBER, "stroke-width": 1, "stroke-dasharray": "3 2", "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
-      labels.push(labelSpec(cx, y, "태그 없음", { anchor: "middle", fill: AMBER, size: 7, pri: 0, always: true, owner: rec.id }));
+      const y = bb[3] + (FONT + 3) * K;
+      top.push(el("line", { x1: r(cx - 20 * K), y1: r(y + 2 * K), x2: r(cx + 20 * K), y2: r(y + 2 * K), stroke: AMBER, "stroke-width": 1, "stroke-dasharray": "3 2", "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
+      labels.push(labelSpec(cx, y, "태그 없음", { anchor: "middle", fill: AMBER, size: 7 * K, pri: 0, always: true, owner: rec.id }));
     }
   }
   // 기호 연결점과 배관 끝: 그 배관 끝이 그 기호에 실제로 이어져 있고(그래프 연결) 8 단위 안이면 같은 굵기의 짧은 선으로 잇는다. 8 단위를 넘으면 잇지 않고
@@ -248,17 +250,17 @@ export function buildBase(ctx) {
       if (!ports || !e.point) continue;
       let best = null;
       for (const q of ports) { const d = Math.hypot(q[0] - e.point[0], q[1] - e.point[1]); if (!best || d < best.d) best = { q, d }; }
-      if (!best || best.d <= STUB_GAP) continue;
-      if (best.d <= PORT_GAP) stubs.push(el("line", Object.assign({ x1: r(best.q[0]), y1: r(best.q[1]), x2: r(e.point[0]), y2: r(e.point[1]) }, strokeAttrs(INK, w, {}))));
+      if (!best || best.d <= STUB_GAP * K) continue;
+      if (best.d <= PORT_GAP * K) stubs.push(el("line", Object.assign({ x1: r(best.q[0]), y1: r(best.q[1]), x2: r(e.point[0]), y2: r(e.point[1]) }, strokeAttrs(INK, w, {}))));
       else top.push(amberTick(e.point[0], e.point[1]));
     }
   }
-  for (const t of ctx.textItems || []) labels.push(labelSpec(t.bbox[0], t.bbox[1] + FONT, t.text, { pri: 5 }));
+  for (const t of ctx.textItems || []) labels.push(labelSpec(t.bbox[0], t.bbox[1] + FONT * K, t.text, { pri: 5 }));
   // 이어지지 않고 엇갈리는 배관: 가로선에 작은 건너뜀(교차 자리의 두 선을 끊고 다리 모양을 그린다)
   const hops = [];
   for (const h of ctx.hops || []) {
-    hops.push(el("circle", { cx: h.x, cy: h.y, r: 4.5, fill: "var(--card, #fff)", "pointer-events": "none" }));
-    hops.push(el("path", Object.assign({ d: `M${r(h.x - 4.5)} ${h.y} A4.5 4.5 0 0 1 ${r(h.x + 4.5)} ${h.y}`, fill: "none" }, strokeAttrs(INK, PIPE_W.process, {}))));
+    hops.push(el("circle", { cx: h.x, cy: h.y, r: 4.5 * K, fill: "var(--card, #fff)", "pointer-events": "none" }));
+    hops.push(el("path", Object.assign({ d: `M${r(h.x - 4.5 * K)} ${h.y} A${r(4.5 * K)} ${r(4.5 * K)} 0 0 1 ${r(h.x + 4.5 * K)} ${h.y}`, fill: "none" }, strokeAttrs(INK, PIPE_W.process, {}))));
   }
   nodes.push(...pipes, ...hops, ...stubs, ...symbolsOut);
   return { nodes, top, attr, labels, obstacles, missingKinds: [...missing].sort(), placeholders };
@@ -269,18 +271,18 @@ const textWidth = (text, size) => { let w = 0; for (const ch of text) w += wide(
 
 /** 글자의 자리 후보를 글자 크기에 맞춰 만든다. 반환: [{x, y, anchor, rotate}] */
 function candidatesOf(l, size) {
-  const p = l.place;
+  const p = l.place, g = l.k || 1;      // g: 도면 단위 배율(글자와 기호·선 사이 간격에 곱한다)
   if (!p) return [{ x: l.x, y: l.y, anchor: l.anchor, rotate: l.rotate }];
   if (p.t === "pipe") {
     return p.vertical
-      ? [{ x: p.mx - size * 0.2 - 5, y: p.my, anchor: "middle", rotate: -90 }, { x: p.mx + size * 0.85 + 5, y: p.my, anchor: "middle", rotate: -90 }]
-      : [{ x: p.mx, y: p.my - size * 0.2 - 5, anchor: "middle", rotate: 0 }, { x: p.mx, y: p.my + size * 0.85 + 5, anchor: "middle", rotate: 0 }];
+      ? [{ x: p.mx - size * 0.2 - 5 * g, y: p.my, anchor: "middle", rotate: -90 }, { x: p.mx + size * 0.85 + 5 * g, y: p.my, anchor: "middle", rotate: -90 }]
+      : [{ x: p.mx, y: p.my - size * 0.2 - 5 * g, anchor: "middle", rotate: 0 }, { x: p.mx, y: p.my + size * 0.85 + 5 * g, anchor: "middle", rotate: 0 }];
   }
   const bb = p.bb, cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2;
   const at = {
-    below: { x: cx, y: bb[3] + size * 0.85 + 2, anchor: "middle" }, above: { x: cx, y: bb[1] - size * 0.2 - 2, anchor: "middle" },
-    right: { x: bb[2] + 3, y: cy + size * 0.35, anchor: "start" }, left: { x: bb[0] - 3, y: cy + size * 0.35, anchor: "end" },
-    righttop: { x: bb[2] + 3, y: bb[1] + size, anchor: "start" }, lefttop: { x: bb[0] - 3, y: bb[1] + size, anchor: "end" },
+    below: { x: cx, y: bb[3] + size * 0.85 + 2 * g, anchor: "middle" }, above: { x: cx, y: bb[1] - size * 0.2 - 2 * g, anchor: "middle" },
+    right: { x: bb[2] + 3 * g, y: cy + size * 0.35, anchor: "start" }, left: { x: bb[0] - 3 * g, y: cy + size * 0.35, anchor: "end" },
+    righttop: { x: bb[2] + 3 * g, y: bb[1] + size, anchor: "start" }, lefttop: { x: bb[0] - 3 * g, y: bb[1] + size, anchor: "end" },
   };
   return p.order.map((o) => Object.assign({ rotate: 0 }, at[o]));
 }
@@ -321,6 +323,7 @@ export function layoutLabels(labels, k, obstacles, minPx = MIN_LABEL_PX) {
 
 /** 표시가 걸린 객체를 그 색으로 다시 그린다(정리된 보기에서 '객체의 색을 바꾼다', 규격 §10.5). 못 그리면 null. */
 export function recolor(ctx, rec, color, width, opts = {}) {
+  K = ctx.scale || 1;
   rec = (ctx.tidyMap && ctx.tidyMap.get(rec.layer + ":" + rec.id)) || rec;      // 정돈한 자리(원본과 같은 자리에서 작은 어긋남만 바로잡은 것)
   const ex = ctx.extras[rec.id] || {};
   if (rec.layer === "pipe") return pipeShapes(rec, ex, { color, width: Math.max(width || 2.2, 1.6), recolor: true, dash: opts.dashed ? "6 4" : null, avoid: ctx.avoid });

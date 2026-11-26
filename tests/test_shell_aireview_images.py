@@ -152,21 +152,6 @@ class ImageRunTest(PdfBase):
         self.assertEqual((row["field_label"], row["current_text"]), ("덩어리 나누기", "한 덩어리"), "내부 이름 split·종류 없음 대신 사람 말")
         self.assertNotIn("manual_valve", row["values_text"])
 
-    def test_auto_review_after_extraction_uses_the_same_picture_input(self):
-        from hazop.app import data
-        from hazop.shell import register_flow
-        self.engine.settings["extract_ai_review"] = True
-        self.engine.settings["ai_review_images"] = True      # 자동 검토는 명시적으로 켠 경우에만 그림을 싣는다
-        pages = [(self.pname, data.read_json(data.extraction_path(self.pname))), (self.name, self.ex)]
-        out = register_flow.review_if_wanted(self.engine, pages, lambda *a: None)
-        self.assertTrue(out["ran"], out)
-        self.assertLessEqual(out["calls"], out["estimate"])
-        self.assertTrue(any(q.get("images") for q in self.client.requests))
-        self.engine.settings["ai_review_images"] = False
-        self.client.requests.clear()
-        register_flow.review_if_wanted(self.engine, pages, lambda *a: None)
-        self.assertFalse(any(q.get("images") for q in self.client.requests))
-
 
 if __name__ == "__main__":
     unittest.main()

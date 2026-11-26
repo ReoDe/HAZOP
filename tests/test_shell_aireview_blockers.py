@@ -1,7 +1,7 @@
 """총괄 검토(2026-11-18) 차단 1~4와 함께 고친 것의 시험. 실행: python -m unittest tests.test_shell_aireview_blockers
 
 1 과금: 추출 뒤 자동 AI 검토와 수동 실행 모두 실제 API 클라이언트 클래스(네트워크는 막음)로는 돌지 않는다.
-2 안내 전 전송: 자동 검토는 설정이 명시적으로 켜졌을 때만 그림을 싣고, 수동 실행은 누를 때의 스위치 값을 설정에 적는다.
+2 안내 전 전송: 자동 검토는 동의 기록이 있을 때만(그림만) 보내고, 수동 실행은 누를 때의 스위치 값을 설정에 적는다.
 3 유실: 범례판 출처는 실행 기록과 같은 저장에 들어가 따로 다시 쓰지 않는다.
 4 예상 초과: 그림 입력을 만들지 못한 도면은 글로 돌리되 그 도면의 예상 호출 수에서 자른다.
 """
@@ -59,15 +59,18 @@ class BlockerTest(PdfBase):
         return [(self.pname, data.read_json(data.extraction_path(self.pname)))]
 
     def auto(self):
-        from hazop.shell import register_flow
-        self.engine.settings["extract_ai_review"] = True
-        return register_flow.review_if_wanted(self.engine, self.pages(), lambda *a: None)
+        from hazop.extract import confirmation
+        from hazop.shell import api_settings, auto_flow
+        auto_flow.set_consent(self.engine, True)
+        confirmation.record_auto(self.pname, "waiting", "started")
+        with mock.patch.object(api_settings, "run_conn", return_value={"can_start": True}):      # 연결 상태는 이 시험의 대상이 아니다
+            return auto_flow.run_budgeted(self.engine, [self.pname], lambda *a: None)
 
     def test_1_auto_review_never_uses_an_api_client(self):
         api_client = BlockedHttp()
         self.engine.ai = FakeAi(api_client)                  # conn이 없는 창구: make_client()가 API 클라이언트를 준다
         out = self.auto()
-        self.assertFalse(out["ran"], out)
+        self.assertEqual(out["skipped"], "no_connection", out)
         self.assertEqual(api_client.sent, [])
 
     def test_1_auto_review_asks_the_connection_for_subscription(self):
@@ -75,7 +78,7 @@ class BlockerTest(PdfBase):
         conn = FakeConn(sub, api_client)
         self.engine.ai = ConnAi(conn)
         out = self.auto()
-        self.assertTrue(out["ran"], out)
+        self.assertEqual(out["done"], [self.pname], out)
         self.assertEqual(conn.asked, ["subscription"])
         self.assertEqual(api_client.sent, [])
         self.assertTrue(sub.requests)
@@ -84,8 +87,7 @@ class BlockerTest(PdfBase):
         api_client = BlockedHttp()
         self.engine.ai = ConnAi(FakeConn(StubClient(kind_answers), api_client, methods=("api",)))
         out = self.auto()
-        self.assertFalse(out["ran"])
-        self.assertTrue(out["skipped"])
+        self.assertEqual(out["skipped"], "no_connection", out)
         self.assertEqual(api_client.sent, [])
 
     def test_1_manual_run_never_uses_an_api_client_either(self):
@@ -95,15 +97,16 @@ class BlockerTest(PdfBase):
             AR.run_review(self.engine, [self.pgid], 20, lambda *a: None)
         self.assertEqual(api_client.sent, [])
 
-    def test_2_auto_review_sends_pictures_only_when_the_setting_is_explicitly_on(self):
-        self.engine.settings.pop("ai_review_images", None)      # 값이 없다 = 안내를 본 적 없다
-        self.assertTrue(self.auto()["ran"])
-        self.assertTrue(self.client.requests)
-        self.assertFalse(any(q.get("images") for q in self.client.requests))
-        self.client.requests.clear()
-        self.engine.settings["ai_review_images"] = True
+    def test_2_auto_review_sends_pictures_with_consent_only_and_never_text(self):
+        from hazop.extract import confirmation
+        from hazop.shell import auto_flow
+        self.engine.settings["ai_review_images"] = True         # 그림 스위치는 동의가 아니다
+        confirmation.record_auto(self.pname, "waiting", "started")
+        auto_flow.run_budgeted(self.engine, [self.pname], lambda *a: None)
+        self.assertEqual(self.client.requests, [])
+        self.engine.settings.pop("ai_review_images")
         self.auto()
-        self.assertTrue(any(q.get("images") for q in self.client.requests))
+        self.assertTrue(self.client.requests and all(q.get("images") for q in self.client.requests))
 
     def test_2_pressing_run_writes_the_switch_value_explicitly(self):
         self.engine.settings.pop("ai_review_images", None)

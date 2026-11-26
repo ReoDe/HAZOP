@@ -259,7 +259,7 @@ export async function run(hz, data, big) {
     c3.setData(withLinks);
     await sleep(200);
     const chips = h3.querySelectorAll(".hz-cv-chip");
-    t("연결 칩: 연결됨·미연결 둘", chips.length === 2 && chips[0].textContent === "→ SNP-X" && chips[1].classList.contains("warn") && chips[1].textContent.startsWith("미연결"), Array.from(chips).map((x) => x.textContent).join("|"));
+    t("연결 칩: 짝 있는 이동 칩만 그린다(미연결 칩은 없다)", chips.length === 1 && chips[0].textContent === "→ SNP-X" && !h3.textContent.includes("미연결"), Array.from(chips).map((x) => x.textContent).join("|"));
     chips[0].click();
     t("연결 칩: 누르면 onLinkClick", ev.link.length === 1 && ev.link[0].peer_graph_id === "graph-X");
     c3.destroy();

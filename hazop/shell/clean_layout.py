@@ -43,6 +43,21 @@ def is_signal(ex):
     if ex.get("line_type") == "pdf_dashed":
         return ex.get("rel_kind") != "physical_connection"
     return ex.get("line_type") in SIGNAL_TYPES
+REF_SYMBOL = 40.0       # 위의 거리 상수들을 맞춘 기준 크기: drawio 표본(1617×1132 단위 도면)의 계기 기호 한 변
+SCALE_BAND = (0.4, 2.5)  # 기호가 기준의 이 배율 안이면 상수를 그대로 쓴다(drawio·PDF 도면의 출력은 그대로). 밖이면(예: mm 단위 DEXPI 도면) 배율만큼 줄이거나 키운다
+
+
+def drawing_scale(items):
+    """이 도면의 단위 배율: 위 상수들(거리·크기)에 곱한다. 기호(다른 도면 연결·주석 제외) 긴 변의 가운데 값을 REF_SYMBOL과 견주고,
+    SCALE_BAND 안이면 1.0이다. 기호가 5개보다 적으면 알 수 없어 1.0. 웹의 글자 크기·간격도 같은 값을 쓴다(clean_items가 `scale`로 싣는다)."""
+    sizes = sorted(max(it["bbox"][2] - it["bbox"][0], it["bbox"][3] - it["bbox"][1]) for it in items
+                   if it.get("layer") == "symbol" and it.get("bbox") and it.get("kind") not in FIXED)
+    if len(sizes) < 5:
+        return 1.0
+    ratio = statistics.median(sizes) / REF_SYMBOL
+    return 1.0 if SCALE_BAND[0] <= ratio <= SCALE_BAND[1] else round(ratio, 4)
+
+
 INSTRUMENTS = ("transmitter", "indicator", "temperature_element", "controller")     # 원 안에 두 줄을 쓰는 계기: 원이 작으면 표준 크기로 키운다
 INSTR_MIN = 48.0
 CONT_SIZE = (160.0, 44.0)      # 다른 도면 연결 오각형의 표준 크기(원본 글자가 두 줄 들어간다)
@@ -171,9 +186,9 @@ def _area(b):
     return max(b[2] - b[0], 0) * max(b[3] - b[1], 0)
 
 
-def _overlap(a, b):
+def _overlap(a, b, k=1.0):
     ox, oy = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
-    return (ox, oy) if ox > 1.0 and oy > 1.0 else None
+    return (ox, oy) if ox > k and oy > k else None
 
 
 def _inside(q, b, m=1.0):
@@ -261,6 +276,7 @@ class _Sheet:
     """정돈하는 동안의 상태. 기호(sym)·미확인 기호 상자(fixed)·배관(pipes)과 읽은 좌표(orig)."""
 
     def __init__(self, items, extras, symbols):
+        self.k = drawing_scale(items)       # 도면 단위 배율(거리·크기 상수에 곱한다)
         self.sym, self.fixed, self.pipes = {}, {}, {}
         for it in items:
             if it["layer"] != "symbol" or not it.get("bbox"):
@@ -347,32 +363,34 @@ def _standardize_sizes(sh):
             for i in ids:
                 b = sh.sym[i]["bbox"]
                 cx, cy = _center(b)
-                w, h = max(10, round((b[2] - b[0]) / 10) * 10), max(10, round((b[3] - b[1]) / 10) * 10)
+                step = 10 * sh.k
+                w, h = max(step, round((b[2] - b[0]) / step) * step), max(step, round((b[3] - b[1]) / step) * step)
                 sh.sym[i]["bbox"] = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]
         elif len(ids) > 1 or kind in INSTRUMENTS:
             mw = statistics.median(sh.sym[i]["bbox"][2] - sh.sym[i]["bbox"][0] for i in ids)
             mh = statistics.median(sh.sym[i]["bbox"][3] - sh.sym[i]["bbox"][1] for i in ids)
             if kind in INSTRUMENTS:
-                mw, mh = max(mw, INSTR_MIN), max(mh, INSTR_MIN)
+                mw, mh = max(mw, INSTR_MIN * sh.k), max(mh, INSTR_MIN * sh.k)
             for i in ids:
                 cx, cy = _center(sh.sym[i]["bbox"])
                 sh.sym[i]["bbox"] = [cx - mw / 2, cy - mh / 2, cx + mw / 2, cy + mh / 2]
     for s in sh.sym.values():
         if s["kind"] == "continuation":
             cx, cy = _center(s["bbox"])
-            s["bbox"] = [cx - CONT_SIZE[0] / 2, cy - CONT_SIZE[1] / 2, cx + CONT_SIZE[0] / 2, cy + CONT_SIZE[1] / 2]
+            cw, ch = CONT_SIZE[0] * sh.k, CONT_SIZE[1] * sh.k
+            s["bbox"] = [cx - cw / 2, cy - ch / 2, cx + cw / 2, cy + ch / 2]
 
 
-def _orthogonalize(line, pins):
+def _orthogonalize(line, pins, k=1.0):
     """2 거의 수평·수직인 선분을 정확히 수평·수직으로. 옮기면 안 되는 끝(pins)은 그대로 두고 이웃 꼭짓점을 맞춘다."""
     pts = [list(p) for p in line]
     for _ in range(2):
         for i in range(len(pts) - 1):
             a, b = pts[i], pts[i + 1]
             dx, dy = abs(b[0] - a[0]), abs(b[1] - a[1])
-            if dy <= max(3.0, ANGLE_TOL * dx) and dx >= dy:
+            if dy <= max(3.0 * k, ANGLE_TOL * dx) and dx >= dy:
                 k = 1
-            elif dx <= max(3.0, ANGLE_TOL * dy):
+            elif dx <= max(3.0 * k, ANGLE_TOL * dy):
                 k = 0
             else:
                 continue
@@ -433,7 +451,7 @@ def _align_axes(sh):
             pin = sh.pinned(pid, j)
             ex.append((q[0], wx, pin))
             ey.append((q[1], wy, pin))
-    mx, my = _cluster(ex, AXIS_TOL), _cluster(ey, AXIS_TOL)
+    mx, my = _cluster(ex, AXIS_TOL * sh.k), _cluster(ey, AXIS_TOL * sh.k)
     for pid, p in sh.pipes.items():
         for j, q in enumerate(p["line"]):
             if not sh.pinned(pid, j):
@@ -445,8 +463,8 @@ def _align_axes(sh):
     free = [(i, s) for i, s in sorted(sh.sym.items()) if s["kind"] not in FIXED]
     fx = [(i, s) for i, s in free if "v" not in held.get(i, ())]
     fy = [(i, s) for i, s in free if "h" not in held.get(i, ())]
-    sx = _cluster([(_center(s["bbox"])[0], 0.0, False) for _i, s in fx], AXIS_TOL)
-    sy = _cluster([(_center(s["bbox"])[1], 0.0, False) for _i, s in fy], AXIS_TOL)
+    sx = _cluster([(_center(s["bbox"])[0], 0.0, False) for _i, s in fx], AXIS_TOL * sh.k)
+    sy = _cluster([(_center(s["bbox"])[1], 0.0, False) for _i, s in fy], AXIS_TOL * sh.k)
     for _i, s in fx:
         b = s["bbox"]
         cx = _center(b)[0]
@@ -503,7 +521,7 @@ def _center_on_pipes(sh, pipe_grid):
             vals = process or signal
             return sum(vals) / len(vals) if vals else 0.0
         nx, ny = cx + pick("v"), cy + pick("h")
-        if math.hypot(nx - cx, ny - cy) > MOVE_LIMIT:
+        if math.hypot(nx - cx, ny - cy) > MOVE_LIMIT * sh.k:
             continue
         for cand in ((nx, ny), (nx, cy), (cx, ny)):          # 옮긴 자리가 다른 배관을 지나면 한 축씩, 그래도 안 되면 옮기지 않는다
             nb = [b[0] + cand[0] - cx, b[1] + cand[1] - cy, b[2] + cand[0] - cx, b[3] + cand[1] - cy]
@@ -549,7 +567,7 @@ def _snap_target(sh, pid, idx):
         w = _ports(d, s["bbox"], s["orient"])[p["port"][idx]]
         if _port_reachable(line, idx, w) or not outline(d) or d["ports"][p["port"][idx]][2] == "actuator":
             return w
-    return _outline_hit(s, line, idx)
+    return _outline_hit(s, line, idx, sh.k)
 
 
 def _port_reachable(line, idx, w):
@@ -557,7 +575,7 @@ def _port_reachable(line, idx, w):
     return _end_axis(line, idx) == "h" and _near(line[idx][1], w[1]) or _end_axis(line, idx) == "v" and _near(line[idx][0], w[0])
 
 
-def _outline_hit(s, line, idx):
+def _outline_hit(s, line, idx, k=1.0):
     """배관이 오던 축 위에서 기호의 그려진 겉모양과 만나는 가장 가까운 점. 겉모양이 없으면 상자 가장자리."""
     d = s["def"] or {}
     b = s["bbox"]
@@ -572,7 +590,7 @@ def _outline_hit(s, line, idx):
             if hits:
                 return list(min(hits, key=lambda c: _dist(c, q)))
         c, dist = _nearest_on_polygon(poly, q)          # 축이 겉모양을 살짝 비껴가면(축 맞춤으로 0.5 옮겨진 끝 등) 가장 가까운 둘레 점, 축 맞춤 폭 안에서만
-        return list(c) if dist <= AXIS_TOL else None
+        return list(c) if dist <= AXIS_TOL * k else None
     return [min(max(q[0], b[0]), b[2]), min(max(q[1], b[1]), b[3])]
 
 
@@ -584,7 +602,7 @@ def _snap_ends(sh):
             target = _snap_target(sh, pid, idx)
             q = line[idx]
             s = sh.sym[p["att"][idx]]
-            if target is None or (_dist(target, q) > SNAP_LIMIT and not _inside(q, s["bbox"], -1.0) and not _inside(q, s["orig"], -1.0)):
+            if target is None or (_dist(target, q) > SNAP_LIMIT * sh.k and not _inside(q, s["bbox"], -1.0) and not _inside(q, s["orig"], -1.0)):
                 continue                                    # 기호 안에 그려진 끝(drawio 가운데 연결)은 멀어도 연결점으로 옮긴다
             nb_i = 1 if idx == 0 else len(line) - 2
             nb = line[nb_i]
@@ -681,7 +699,7 @@ def _push_apart(sh):
                     continue
                 b = sh.sym.get(bi)
                 bb = b["bbox"] if b else sh.fixed[bi]
-                ov = _overlap(a["bbox"], bb)
+                ov = _overlap(a["bbox"], bb, sh.k)
                 if not ov or _contains(a["def"], a["bbox"], bb) or (b and _contains(b["def"], bb, a["bbox"])):
                     continue
                 if b is None or a["kind"] == "annotation":
@@ -699,7 +717,7 @@ def _push_apart(sh):
                 else:
                     d = oy if _center(sb)[1] >= _center(big)[1] else -oy
                     nb = [sb[0], sb[1] + d, sb[2], sb[3] + d]
-                if _dist(_center(nb), _center(small["orig"])) <= PUSH_LIMIT:
+                if _dist(_center(nb), _center(small["orig"])) <= PUSH_LIMIT * sh.k:
                     small["bbox"] = nb
                     small["pushed"] = True
 
@@ -709,8 +727,8 @@ def _push_apart(sh):
 class _Picture:
     """한 상태의 그림: 기호 상자·배관 선과 그 격자. 접촉·겹침을 센다."""
 
-    def __init__(self, boxes, lines, nodes, defs):
-        self.boxes, self.lines, self.nodes, self.defs = boxes, lines, nodes, defs
+    def __init__(self, boxes, lines, nodes, defs, k=1.0):
+        self.boxes, self.lines, self.nodes, self.defs, self.k = boxes, lines, nodes, defs, k
         self.sg = _Grid()
         for i, b in boxes.items():
             self.sg.add(i, b)
@@ -730,7 +748,7 @@ class _Picture:
                 out.add(("s", sid))
         for other in self.pg.near(box):
             if other != pid and not (mine & self.nodes[other]):
-                if min(_seg_dist(q, a, b) for a, b in _segments(self.lines[other])) < 0.75:
+                if min(_seg_dist(q, a, b) for a, b in _segments(self.lines[other])) < 0.75 * self.k:
                     out.add(("p", other))
         return out
 
@@ -738,7 +756,7 @@ class _Picture:
         out = set()
         for a in self.boxes:
             for b in self.sg.near(self.boxes[a]):
-                if a < b and _overlap(self.boxes[a], self.boxes[b]) and not _contains(self.defs.get(a), self.boxes[a], self.boxes[b]) \
+                if a < b and _overlap(self.boxes[a], self.boxes[b], self.k) and not _contains(self.defs.get(a), self.boxes[a], self.boxes[b]) \
                         and not _contains(self.defs.get(b), self.boxes[b], self.boxes[a]):
                     out.add((a, b))
         return out
@@ -766,7 +784,7 @@ class _Picture:
             for b in near:
                 if a < b and not (self.nodes[a] & self.nodes[b]):
                     ov = _collinear(line, self.lines[b])
-                    if ov > 2:
+                    if ov > 2 * self.k:
                         out[(a, b)] = ov
         return out
 
@@ -778,7 +796,7 @@ def _picture(sh, now):
     lines = {pid: (p["line"] if now else p["orig"]) for pid, p in sh.pipes.items()}
     nodes = {pid: p["nodes"] for pid, p in sh.pipes.items()}
     defs = {i: s["def"] for i, s in sh.sym.items()}
-    return _Picture(boxes, lines, nodes, defs)
+    return _Picture(boxes, lines, nodes, defs, sh.k)
 
 
 def _offenders(sh, before, after):
@@ -797,16 +815,16 @@ def _offenders(sh, before, after):
     for pid, sid in after.pipes_through() - before.through_cache:
         bad.update((pid, sid))
     for k, v in after.pipe_overlaps().items():
-        if v > before.pipe_overlap_cache.get(k, 0.0) + 2:
+        if v > before.pipe_overlap_cache.get(k, 0.0) + 2 * sh.k:
             bad.update(k)
     for i, s in sh.sym.items():
-        limit = PUSH_LIMIT if s["pushed"] else MOVE_LIMIT
+        limit = (PUSH_LIMIT if s["pushed"] else MOVE_LIMIT) * sh.k
         if _dist(_center(s["bbox"]), _center(s["orig"])) > limit + 1e-6:
             bad.add(i)
     for pid, p in sh.pipes.items():
         if len(p["line"]) == len(p["orig"]):
             for j in range(1, len(p["line"]) - 1):
-                if _dist(p["line"][j], p["orig"][j]) > PUSH_LIMIT + 1e-6:
+                if _dist(p["line"][j], p["orig"][j]) > PUSH_LIMIT * sh.k + 1e-6:
                     bad.add(pid)
     return bad
 
@@ -894,7 +912,7 @@ def tidy(items, extras, symbols):
     _assign_ports(sh)
     _standardize_sizes(sh)
     for pid, p in sh.pipes.items():
-        p["line"] = _orthogonalize(p["line"], {k for k in (0, len(p["line"]) - 1) if sh.pinned(pid, k)})
+        p["line"] = _orthogonalize(p["line"], {k for k in (0, len(p["line"]) - 1) if sh.pinned(pid, k)}, sh.k)
     _align_axes(sh)
     _center_on_pipes(sh, _pipe_grid(sh.pipes))
     _snap_ends(sh)
@@ -944,7 +962,7 @@ def layout_lint(items, extras, symbols, tidied):
             if sh.pinned(pid, idx) and _dist(p["line"][idx], p["orig"][idx]) > 1e-6:
                 lint["moved_too_far"] += 1
     for i, s in sh.sym.items():
-        if _dist(_center(s["bbox"]), _center(s["orig"])) > max(MOVE_LIMIT, PUSH_LIMIT) + 1e-6:
+        if _dist(_center(s["bbox"]), _center(s["orig"])) > max(MOVE_LIMIT, PUSH_LIMIT) * sh.k + 1e-6:
             lint["moved_too_far"] += 1
     lint["symbol_overlap"] = len(after.symbol_overlaps())
     lint["pipe_through_symbol"] = len(after.pipes_through())

@@ -165,7 +165,6 @@ export async function undoMade() {
   editCard({ busy: true });
   const r = c.batch ? await undo(c.batch) : null;
   nodes.set({ card: null });
-  if (r) shell.set({ toast: { text: c.made + " 구간 만들기를 되돌렸습니다.", kind: "info" } });
   return r;
 }
 
@@ -282,8 +281,7 @@ export async function confirmMany(ids, seen) {
     changed.length ? "바뀐 구간 " + changed.length + "개는 확정하지 않았습니다(" + changed.slice(0, 5).map((f) => f.node_id).join(", ") + ") — 다시 확인하세요." : "",
     other.length ? other.length + "개는 확정하지 못했습니다: " + other.slice(0, 3).map((f) => f.node_id + " " + f.reason).join(" · ") : ""].filter(Boolean).join(" ")
     : ok.length + "개 구간을 확정했습니다.";
-  shell.set({ toast: { text, kind: failed.length ? "err" : "info" } });
-  if (failed.length) nodes.set({ error: text });
+  if (failed.length) { shell.set({ toast: { text, kind: "err" } }); nodes.set({ error: text }); }
   if (ok.length) import("../next/next.js").then((m) => m.adjustDrafts(-ok.length)).catch(() => {});      // 한 줄의 수를 바로
   return { ok, failed };
 }
@@ -348,7 +346,7 @@ export async function catchUp() {
   try {
     const r = await cmd("nodes.catch_up", { project_id: nodes.get().list.project_id });
     nodes.set({ busy: false });
-    shell.set({ toast: { text: catchUpText(r), kind: "info" } });
+    if (r && r.changed && r.tombstones) shell.set({ toast: { text: catchUpText(r), kind: "info" } });      // 찾지 못한 구성요소가 있을 때만 알린다
     await refresh();
   } catch (e) {
     await afterError(e);

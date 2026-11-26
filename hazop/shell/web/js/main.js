@@ -10,11 +10,12 @@ import { ChatPanel, loadChat, pushMsg, setChat } from "./chat/panel.js";
 import { addActions, updateAction } from "./chat/actions.js";
 import { PANELS, byName, leadOf, loadPanelCss, panelLabel, tabsOf } from "./panels/index.js";
 import { resetAreas } from "./areas.js";
+import { wirePrefetch } from "./clean_prefetch.js";
 import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
 import { Notices, addNotice, demotedNotice, lostNotice, refreshLostNotice } from "./notices.js";
-import { NextLine, next as nextStore, setGo } from "./next/next.js";
+import { go as nextGo, next as nextStore, setGo, wireNotice as wireNextNotice } from "./next/next.js";
 import { closeQueue, openQueue, q as queueStore, useQueue, wire as wireQueue } from "./queue/queue.js";
 import { QueueCard, QueueLine } from "./queue/card.js";
 import { ReviewConfirm, setOpeners as setReviewOpeners, startReview, wire as wireReview } from "./review/review.js";
@@ -51,6 +52,8 @@ setGo("panel:results#run", async () => { store.set({ panel: "results" }); const 
 setGo("confirm:results.export_excel", async () => { const R = await import("./panels/results_state.js"); R.exportExcel("all"); });
 
 const toast = (text, kind) => store.set({ toast: { text, kind } });
+/** 엔진이 app.notice로 올려도 사람이 할 일이 없는 글(화면에 띄우지 않는다). 나머지(다시 읽기 실패·나누기 반영 뒤 다시 묻기·구간 재확인·AI 연결·창 닫기 대기)는 띄운다. */
+const QUIET_NOTICES = [/새 이름 규칙으로 정리하지 못했습니다/];
 
 // ---------------------------------------------------------------- 엔진에서 읽기
 export async function loadState() {
@@ -133,17 +136,17 @@ function wireEvents() {
   on("conn.changed", (d) => store.set({ conn: d }));
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));
-  on("app.notice", (d) => toast(d.text));
+  on("app.notice", (d) => { if (!QUIET_NOTICES.some((re) => re.test(d.text || ""))) toast(d.text); });      // 할 일이 없는 엔진 알림은 거른다
   on("study.lost", (d) => { for (const n of [lostNotice(d), demotedNotice(d)]) if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
   const job = (state) => (d) => store.set((s) => ({ jobs: Object.assign({}, s.jobs, { [d.id]: Object.assign({}, s.jobs[d.id], d, { state }) }) }));
   on("job.progress", job("running"));
   on("job.done", (d) => {
     job("done")(d);
     const dup = d.result && d.result.conflicts;
-    if (dup && dup.length) toast("같은 도면 번호 " + dup.join(", ") + "의 원본이 다른 형식으로 이미 있습니다. 도면 패널에서 쓸 쪽을 고르세요(고르기 전에는 먼저 있던 쪽을 씁니다).");
+    if (dup && dup.length) toast("같은 도면 번호 " + dup.join(", ") + "의 원본이 둘입니다. 도면 패널에서 쓸 것을 고르세요.");
     loadDrawings().then((x) => { if (!store.get().sheet && x.drawings.length === 1) openSheet(x.drawings[0].graph_id); }); });
   on("job.failed", (d) => {       // 사람이 한 멈춤·취소(stopped)는 실패가 아니다: 빨간 표시를 하지 않고 조용히 알린다(실제 창 3차 결함 3)
-    if (d.stopped) { job("stopped")(d); toast(d.label + ": 멈췄습니다."); return; }
+    if (d.stopped) { job("stopped")(d); return; }
     job("failed")(d); toast(d.label + ": " + d.message, "err");
   });
   onChanged((topic) => {
@@ -217,7 +220,7 @@ function TopBar() {
   return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
     <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => togglePanel("drawings")}>${row ? (row.display || row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
     ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div>
-    ${queueOpen ? html`<${QueueLine} />` : html`<${NextLine} />`}</header>`;     // 도면 제목은 도면 번호에 마우스를 올리면 보인다(1366 폭에서 다음에 할 일 줄이 잘리지 않게, HZ-DSN-06 §3.1)
+    ${queueOpen ? html`<${QueueLine} />` : null}</header>`;     // 도면 제목은 도면 번호에 마우스를 올리면 보인다. '다음에 할 일' 한 줄은 화면에서 내렸다(화면 단순화, 코드는 next/에 남김)
 }
 
 function Toast() {
@@ -277,9 +280,11 @@ async function boot() {
   if (ui0.sheet && d.drawings.some((x) => x.graph_id === ui0.sheet)) openSheet(ui0.sheet);
   else if (d.drawings.length === 1) openSheet(d.drawings[0].graph_id);
   else store.set({ panel: "drawings" });   // 열 도면이 없거나 여럿이면 도면 패널을 먼저 보인다
-  if (!s.reviewer) { store.set({ panel: "settings" }); toast("검토자 이름을 입력하세요. 승인·확정 기록에 남습니다."); }   // 처음 실행할 때 묻는 것은 그대로
-  if (s.debug) window.__hz = { store, cmd, read, ui, clean, next: nextStore, queue: queueStore };
+  if (!s.reviewer) { store.set({ panel: "settings" }); }   // 처음 실행할 때 묻는 것은 그대로
+  if (s.debug) window.__hz = { store, cmd, read, ui, clean, next: nextStore, queue: queueStore, go: nextGo };
   cmd("project.open_check").catch(() => {});      // 앱을 끈 사이 도면이 다시 읽혔으면 검토구간을 뒤에서 맞춘다(잃은 것이 있으면 알림이 온다)
+  wirePrefetch();      // 정리 자료 미리 읽기와 오래된 자료 버리기
+  wireNextNotice();      // '다음에 할 일' 줄은 내렸지만 수락하고 반영하지 않은 입력 연산 알림은 이어서 맞춘다
   checkLost();        // 다시 추출 뒤 찾지 못한 구성요소가 있으면 한 줄로 알린다(읽기는 뒤에서, 화면을 붙잡지 않는다)
   await loadChat();   // 채팅 예시 질문은 프로젝트 그래프를 읽어 큰 프로젝트에서 수 초 걸린다. 도면 목록이 먼저 보이게 맨 끝에서 읽는다
 }

@@ -238,6 +238,12 @@ ACTIONS = {a.name: a for a in (
     Action("aireview.accept_bulk", CONFIRM, _spec(("graph_id", "id"), ("task", "str")), "②",
            "확신 높은 묶음 수락. 확인 상자에 보인 후보 ID만 수락한다",
            "도면 {graph_id}의 확신 높은 AI 후보 묶음을 한 번에 수락합니다. 아래 후보만 수락합니다."),
+    Action("aireview.auto_run", CONFIRM, _spec(("graph_ids", "ids")), "②",
+           "도면을 AI로 확정: 종류를 못 읽은 기호를 AI에 묻고 자동 확정한다(되돌린 쪽·멈춘 쪽·옛 쪽도). 자료마다 누적 20회까지",
+           "도면 {graph_ids}의 읽지 못한 기호를 AI에 물어 자동 확정합니다. 구독 한도를 쓰고 도면 조각 그림이 AI로 나갑니다."),
+    Action("aireview.auto_revert", CONFIRM, _spec(("graph_id", "id")), "②",
+           "도면 한 장의 자동 수락을 한 번에 되돌린다(사람이 수락한 것과 사람 고침은 그대로). 되돌린 쪽은 저절로 다시 돌지 않는다",
+           "도면 {graph_id}에서 AI가 자동으로 받은 값을 모두 되돌립니다."),
     Action("sources.choose", CONFIRM, _spec(("drawing_number", "str"), ("format", "str")), "②",
            "같은 도면 번호의 원본이 형식 둘 이상일 때 프로젝트 그래프에 쓸 형식을 고른다(사람 수정·추출 결과는 그대로)",
            "도면 {drawing_number}에 {format} 원본을 쓰도록 고릅니다. 프로젝트 그래프가 그 원본으로 다시 만들어집니다."),
@@ -276,7 +282,7 @@ ACTIONS = {a.name: a for a in (
            "add_node·delete_node·add_relation·delete_relation). 대상은 구성요소 id 또는 graph_id+local_id. 되돌리기로 뺄 수 있다",
            "도면 고침을 저장합니다."),
     Action("drawing.undo", CONFIRM, _spec(("graph_id", "id"), op_id="id"), "②",
-           "도면 고침 하나 빼기(op_id가 없으면 되돌릴 수 있는 마지막 고침). AI 검토에서 수락한 고침은 aireview.revert",
+           "도면 고침 하나 빼기(op_id가 없으면 되돌릴 수 있는 마지막 고침). AI 후보를 수락한 고침은 aireview.revert, 자동으로 받은 값은 aireview.auto_revert",
            "도면 {graph_id}의 고침을 되돌립니다."),
     Action("drawing.redo", CONFIRM, _spec(("graph_id", "id")), "②", "마지막으로 되돌린 도면 고침을 원래 자리에 되살리기",
            "도면 {graph_id}의 되돌린 고침을 다시 합니다."),
@@ -659,8 +665,8 @@ class ActionPlanner:
         missing = [g for g in ids if g not in snap.sheets]
         if missing:
             raise _Reject("지금 프로젝트에 없는 도면: %s" % ", ".join(missing[:5]))
-        if not any(snap.sheets[g].get("state") == "confirmed" for g in ids):
-            raise _Reject("확정된 쪽이 하나도 없어 내보낼 것이 없음", "도면에서 '쪽 확정'을 마친 쪽만 내보낸다")
+        if not any(snap.sheets[g].get("level") in ("human", "auto") or snap.sheets[g].get("state") == "confirmed" for g in ids):
+            raise _Reject("사람이나 자동으로 확정된 쪽이 하나도 없어 내보낼 것이 없음", "자동 확정이 끝난 쪽이나 사람이 확정한 쪽만 내보낸다")
         item.targets = list(ids)
 
     def _need_nodes(self, item, snap, allow=("applied", "confirmed")):

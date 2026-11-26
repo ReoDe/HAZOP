@@ -92,9 +92,10 @@ export const tests = [
     assert(n && n.text === "SNP-M-101 AI 검토가 끝났습니다 · 후보 9건" && n.action.label === "검토하기", JSON.stringify(store.get().notices));
     n.action.run();
     assert.equal(opened[1], ["ai", "G1"]);
+    store.set({ toast: null });
     deliver(JSON.stringify({ t: "event", name: "job.done", data: { id: "j2", label: "AI 검토", result: { drawings: [{ graph_id: "G1", candidates: 0 }], estimate: 2 } } }));
     await tick();
-    assert(store.get().toast && store.get().toast.text === "SNP-M-101 AI 검토가 끝났습니다. 새 후보는 없습니다.");
+    assert(!store.get().toast, "후보가 없으면 끝났다는 알림도 없다(화면 단순화)");
   } },
   { name: "AI 검토 칩(실제 창 3차 결함 2): 보는 도면을 바꾸면 칩은 그 도면의 상태만 보이고, 누르면 그 도면에 간다", async run(assert) {
     install([ROW("running", { graph_id: "G2", drawing_number: "SNP-M-102", progress: { done: 0, total: 1 } }), ROW("waiting", { ahead: 1 })]);

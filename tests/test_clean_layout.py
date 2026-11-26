@@ -274,6 +274,63 @@ class RuleTest(unittest.TestCase):
         self.assertGreaterEqual(cl.layout_lint(items, extras, SYMBOLS, bad2)["off_axis"], 1)
 
 
+class ScaleTest(unittest.TestCase):
+    """도면 단위가 다른 도면(mm 단위 DEXPI 등)에서도 정돈 상수가 도면 크기에 맞게 쓰인다. 기준 크기 안의 도면(drawio·PDF)은 그대로다."""
+
+    def snp_items(self, name="SNP-M-101"):
+        e = snp_extractions()[name]
+        items = sheet_items.build_items(e)["items"]
+        return items, clean_items.build(e)["items"]
+
+    def shrink(self, items, extras, f):
+        its = copy.deepcopy(items)
+        for it in its:
+            it["bbox"] = [v * f for v in it["bbox"]]
+            if it.get("polyline"):
+                it["polyline"] = [[v * f for v in q] for q in it["polyline"]]
+        ex = copy.deepcopy(extras)
+        for x in ex.values():
+            for e in x.get("ends") or []:
+                if e.get("point"):
+                    e["point"] = [v * f for v in e["point"]]
+        return its, ex
+
+    def test_the_scale_is_one_for_the_standard_sheets_and_follows_the_symbol_size_otherwise(self):
+        for d in ("SNP-M-101", "SNP-M-102", "SNP-M-201", "SNP-M-301", "SNP-M-401", "SNP-M-501"):
+            items, _ex = self.snp_items(d)
+            self.assertEqual(cl.drawing_scale(items), 1.0, d)
+        items, ex = self.snp_items()
+        small, _ = self.shrink(items, ex, 0.25)
+        self.assertAlmostEqual(cl.drawing_scale(small), 0.25 * 40.0 / cl.REF_SYMBOL, delta=0.05)
+        self.assertEqual(cl.drawing_scale(small[:3]), 1.0, "기호가 5개보다 적으면 알 수 없다")
+
+    def test_clean_items_carries_the_scale_for_the_screen(self):
+        self.assertEqual(clean_items.build(snp_extractions()["SNP-M-101"])["scale"], 1.0)
+
+    def test_a_sheet_in_small_units_is_laid_out_like_the_same_sheet_scaled_down(self):
+        """같은 도면을 0.25배로 줄여 정돈하면 원래 정돈 결과를 0.25배한 것과 같다(계기가 부풀지 않고, 이동·맞춤 한도가 함께 줄어든다)."""
+        items, ex = self.snp_items()
+        base = cl.tidy(items, ex, SYMBOLS)
+        small_items, small_ex = self.shrink(items, ex, 0.25)
+        got = cl.tidy(small_items, small_ex, SYMBOLS)
+        for sid, b in base["symbols"].items():
+            for u, v in zip(got["symbols"][sid], b):
+                self.assertAlmostEqual(u, v * 0.25, delta=0.05, msg=sid)
+        for pid, p in base["pipes"].items():
+            self.assertEqual(len(got["pipes"][pid]["polyline"]), len(p["polyline"]), pid)
+            for a, b in zip(got["pipes"][pid]["polyline"], p["polyline"]):
+                self.assertAlmostEqual(a[0], b[0] * 0.25, delta=0.05, msg=pid)
+                self.assertAlmostEqual(a[1], b[1] * 0.25, delta=0.05, msg=pid)
+
+    def test_an_instrument_in_small_units_is_not_inflated_to_the_big_sheet_minimum(self):
+        a = sym("t", "transmitter", (10, 10, 19.5, 19.5), cat="instrument")
+        parts = [a] + [sym("t%d" % i, "indicator", (30 + 15 * i, 10, 39.5 + 15 * i, 19.5), cat="instrument") for i in range(5)]
+        items, extras, out = run(*parts)
+        w = out["symbols"]["t"][2] - out["symbols"]["t"][0]
+        self.assertLess(w, 20.0, "mm 단위 도면의 계기가 기준 도면의 48 단위로 커지지 않는다")
+        self.assertEqual(cl.drawing_scale(items), 0.2375)
+
+
 class ReviewDefectTest(unittest.TestCase):
     """2026-11-14 검토 반려(검토 재현 폴더 2026-11-14-review-clean-view)의 결함을 실제 추출 결과 꼴로 다시 만든다."""
 

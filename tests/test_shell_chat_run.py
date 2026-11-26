@@ -329,7 +329,20 @@ class SheetTest(RunBase):
         with self.state():
             item = self.one("dexpi.export", graph_ids=["graph-SNP-M-101"])
         self.assertEqual(item["status"], "rejected")
-        self.assertIn("확정된 쪽", item["reason"])
+        self.assertIn("확정된 쪽이 하나도 없어", item["reason"])
+
+    def test_dexpi_accepts_an_auto_confirmed_sheet_and_says_what_was_left_out(self):
+        """자동 확정(level auto)만 있어도 받는다. 못 낸 쪽의 수와 까닭, 남은 옛 파일은 답에 한 줄로 붙는다."""
+        auto = {"state": "open", "level": "auto", "fingerprint": "sha256:a", "rev": 1, "reason": None}
+
+        def export(engine, a):
+            return {"cancelled": False, "folder": "x", "drawings": [{"graph_id": "graph-SNP-M-101"}], "stale_files": ["old.xml"],
+                    "not_exported": [{"graph_id": "graph-SNP-M-102", "display": "SNP-M-102", "reason": "쪽이 확정되지 않음"}]}
+        with self.state(SNP_M_101=auto), mock.patch("hazop.shell.api_drawings._export", export):
+            item = self.one("dexpi.export", "DEXPI로 내보내 줘", graph_ids=["graph-SNP-M-101"])
+        self.assertEqual(item["status"], "applied", item)
+        self.assertIn("못 내보낸 쪽 1장(SNP-M-102: 쪽이 확정되지 않음)", item["text"])
+        self.assertIn("남은 파일 1개", item["text"])
 
     def test_dexpi_writes_a_new_folder_without_asking(self):
         done = {"state": "confirmed", "fingerprint": "sha256:a", "rev": 3, "reason": None}

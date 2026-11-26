@@ -113,7 +113,7 @@ export function LinkSection({ gid, item }) {
       ${p.op ? html`<${Btn} sm=${true} kind="ghost" label="지정 빼기(자동 판정으로)" title="사람이 한 지정을 빼고 자동 판정으로 돌아갑니다" disabled=${s.busy} onClick=${() => clearOp(p.op.op_id)}>지정 빼기<//>` : null}
     </div>
     ${s.picking ? html`<div class="ec-pick">
-      <input class="textbox" aria-label="맞은편 찾기" placeholder="도면 번호·배관 번호로 찾기" value=${s.q} onInput=${(e) => search(e.target.value)} />
+      <input class="textbox" aria-label="맞은편 찾기" placeholder="도면·배관 번호" value=${s.q} onInput=${(e) => search(e.target.value)} />
       <ul class="ec-cands" role="listbox" aria-label="맞은편 후보">${v.candidates.map((c) => {
         const on = s.picked && s.picked.graph_id === c.graph_id && s.picked.local_id === c.local_id;
         return html`<li key=${c.graph_id + "/" + c.local_id} role="option" aria-selected=${on ? "true" : "false"} class=${on ? "on" : ""} tabindex="0"
@@ -122,7 +122,7 @@ export function LinkSection({ gid, item }) {
           ${(c.warn || []).length ? html` <span class="warn small" title=${c.warn.join(", ")}>⚠ ${c.warn.length}</span>` : null}</li>`;
       })}${v.more ? html`<li class="muted small">그 밖에 ${v.more}개: 찾기로 좁히세요</li>` : null}
       ${!v.candidates.length ? html`<li class="muted small">맞는 후보가 없습니다.</li>` : null}</ul>
-      <input class="textbox" aria-label="지정 사유" maxlength="300" placeholder="사유(선택): 예) 도면 개정으로 배관 번호가 바뀜" value=${s.reason} onInput=${(e) => links.set({ reason: e.target.value })} />
+      <input class="textbox" aria-label="지정 사유" maxlength="300" placeholder="사유" value=${s.reason} onInput=${(e) => links.set({ reason: e.target.value })} />
       ${s.picked && (s.picked.warn || []).length ? html`<${Notice} kind="warn" icon="alert-triangle">고른 후보: ${s.picked.warn.join(", ")}. 맞는 짝인지 확인하고 사유를 남기세요.<//>` : null}
       <div class="acts-row"><${Btn} sm=${true} kind="primary" label="이 짝으로 지정" disabled=${s.busy || !s.picked} onClick=${() => pairWith(s.picked)}>이 짝으로 지정<//></div>
     </div>` : null}

@@ -354,7 +354,7 @@ class ReachTest(Base):
 
     def test_a_confirmed_sheet_is_reported_as_released_by_an_edit(self):
         from hazop.extract import confirmation
-        seq = iter([{"status": "confirmed"}, {"status": "released"}])
+        seq = iter([{"level": "human", "compared": {}}, {"level": "extracted", "compared": None}])      # sheet_confirmation의 실제 칸
         with mock.patch.object(confirmation, "sheet_confirmation", lambda name: next(seq)):
             r = self.edit("set_tag", self.tagged()["local_id"], {"tag": "REL-1"})
         self.assertTrue(r["data"]["released"])
@@ -397,7 +397,7 @@ class ReviewReproTest(Base):
         self.assertIsNone(AC.view(self.engine, self.gid)["redo"])
         self.assertEqual(self.redo()["error"]["code"], "not_found")
 
-    def test_r2_an_ai_accepted_op_is_undone_only_in_the_ai_review_panel(self):
+    def test_r2_an_ai_accepted_op_is_undone_only_through_ai_revert(self):
         from hazop.extract import ai_review
         n = self.tagged()
         doc = ai_review.new_doc(self.name, self.ex)
@@ -411,7 +411,7 @@ class ReviewReproTest(Base):
         self.assertTrue(next(o for o in v["ops"] if o["op_id"] == ai_op)["ai"])
         u = self.undo(ai_op)
         self.assertEqual(u["error"]["code"], "bad_args")
-        self.assertIn("AI 검토 패널", u["error"]["message"])
+        self.assertIn("채팅", u["error"]["message"])
         self.assertEqual(ai_review.load_doc(self.name)["candidates"][0]["status"], "accepted")
         self.assertEqual(self.cur_tag(n["local_id"]), "AI-TAG")
 

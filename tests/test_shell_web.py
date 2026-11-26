@@ -239,30 +239,26 @@ class ShellWindowTest(ShellBase):
         self.assertFalse(self.jsj(win, "!!document.querySelector(\"button[aria-label$='돌아가기']\")"), "이 표시가 없으면 칩도 없다")
 
     def test_related_panels_are_tabs_under_one_menu_button(self):
+        """지식그래프와 설계 문서는 한 메뉴의 탭이다. 도면 패널은 탭이 없다(표제란·AI 검토는 자동 확정으로 화면 진입을 내렸고 열려 있어도 탭이 안 뜬다)."""
         win = self.window()
-        for name, lead, tabs in (("aireview", "도면", ["도면", "표제란", "AI 검토"]), ("docs", "지식그래프", ["지식그래프", "설계 문서"])):
-            self.js(win, "window.__hz.store.set({panel: %s})" % json.dumps(name))
-            self.assertTrue(wait_for(lambda: self.jsj(win, "[...document.querySelectorAll('.ptabs button')].map(b => b.textContent)") == tabs, 10), name)
-            self.assertEqual(self.jsj(win, "document.querySelector('.rail button.on').getAttribute('aria-label')").split(" (")[0], lead, "묶음의 메뉴 단추가 켜진다")
-        self.js(win, "window.__hz.store.set({panel: 'aireview'})")
-        pump(0.4)
-        self.assertTrue(self.click(win, ".ptabs button", 1))
-        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "titleblock", 10))
-        self.assertEqual(self.js(win, "document.querySelector('.ptabs button.on').textContent"), "표제란")
+        self.js(win, "window.__hz.store.set({panel: 'docs'})")
+        self.assertTrue(wait_for(lambda: self.jsj(win, "[...document.querySelectorAll('.ptabs button')].map(b => b.textContent)") == ["지식그래프", "설계 문서"], 10))
+        self.assertEqual(self.jsj(win, "document.querySelector('.rail button.on').getAttribute('aria-label')").split(" (")[0], "지식그래프", "묶음의 메뉴 단추가 켜진다")
         self.assertTrue(self.click(win, ".rail button.on"))
         self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10), "켜진 메뉴 단추를 누르면 닫힌다")
-        self.js(win, "window.__hz.store.set({panel: 'results'})")
-        pump(0.3)
-        self.assertEqual(self.js(win, "document.querySelector('.ptabs') === null"), True, "묶음이 아니면 탭이 없다")
+        for name in ("drawings", "titleblock", "aireview", "results"):
+            self.js(win, "window.__hz.store.set({panel: %s})" % json.dumps(name))
+            pump(0.4)
+            self.assertEqual(self.js(win, "document.querySelector('.ptabs') === null"), True, name + ": 탭이 없다")
+        labels = self.jsj(win, "[...document.querySelectorAll('.rail button')].map((b) => b.getAttribute('aria-label'))")
+        self.assertFalse(any("표제란" in x or "AI 검토" in x for x in labels), labels)
 
-    def test_the_action_log_opens_from_the_chat_header_not_the_menu(self):
+    def test_chat_header_keeps_only_the_new_chat_button(self):
+        """화면 단순화(사용자 결정 2026-11-25): 채팅 머리의 아이콘 단추는 맨 왼쪽 하나(새 대화)만 남는다. 실행 기록 패널은 메뉴에도 없다."""
         win = self.window()
         labels = self.jsj(win, "[...document.querySelectorAll('.rail button')].map(b => b.getAttribute('aria-label'))")
         self.assertFalse(any("실행 기록" in x for x in labels), labels)
-        self.assertTrue(self.click(win, ".chat-h button[aria-label='AI 실행 기록']"))
-        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "actionlog", 10))
-        self.assertTrue(self.click(win, ".chat-h button[aria-label='AI 실행 기록']"))
-        self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10))
+        self.assertEqual(self.jsj(win, "[...document.querySelectorAll('.chat-h button')].map(b => b.getAttribute('aria-label'))"), ["새 대화"])
 
     def test_the_connection_dot_sits_on_the_settings_button(self):
         win = self.window()
@@ -330,7 +326,7 @@ class ShellWindowTest(ShellBase):
     def test_first_run_without_reviewer_opens_settings(self):
         win = self.window(reviewer=None)
         self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "settings")
-        self.assertIn("검토자 이름을 입력하세요", self.text(win))
+        self.assertIn("검토자 이름", self.text(win))      # 설정 패널의 입력 칸이 보인다(따로 띄우는 안내 글은 없다)
 
     def test_project_box_changes_the_project_from_the_top_bar(self):
         win = self.window()
@@ -438,11 +434,23 @@ class ShellChatTest(ShellBase):
         self.assertTrue(self.js(win, "document.querySelector('.chat-input').disabled"))
         self.assertEqual(self.sessions, [])
 
-    def test_examples_fill_the_input_without_sending(self):
+    def test_the_chat_foot_is_a_dot_and_the_model_button_and_speaks_only_when_the_connection_is_bad(self):
+        """채팅 입력칸 아래 줄: 평상시는 점 하나와 모델 단추뿐이고, 연결이 끊겼거나 한도에 닿았을 때(경고·오류 톤)만 글자가 붙는다. 도면 메뉴 아이콘에 숫자 배지는 없다."""
         win = self.window()
-        self.assertTrue(self.click(win, ".examples .chip", 0))
-        pump(0.3)
-        self.assertNotEqual(self.js(win, "document.querySelector('.chat-input').value"), "")
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('aside.chat .foot .dot')"), 15))
+        pump(1.0)
+        quiet = self.js(win, "(() => { const f = document.querySelector('aside.chat .foot'); return [...f.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join('') })()")
+        self.assertEqual(quiet, "", "평상시 글자 없음")
+        self.assertEqual(self.js(win, "document.querySelectorAll('aside.chat .foot button').length"), 1, "모델 단추 하나")
+        self.assertEqual(self.js(win, "document.querySelectorAll('.rail .badge').length"), 0, "도면 아이콘에 숫자 배지가 없다")
+
+    def test_chat_shows_no_examples_or_guide_text(self):
+        """화면 단순화(사용자 결정 2026-11-25): 추천 질문과 '물어보세요' 안내 문구가 없고, 입력 칸도 자리표 글이 없다(낭독용 이름만)."""
+        win = self.window()
+        self.assertEqual(self.js(win, "document.querySelectorAll('.examples').length"), 0)
+        self.assertNotIn("물어보세요.", self.js(win, "document.querySelector('.msgs').textContent"))
+        self.assertEqual(self.js(win, "document.querySelector('.chat-input').placeholder"), "")
+        self.assertEqual(self.js(win, "document.querySelector('.chat-input').getAttribute('aria-label')"), "채팅 질문")
         self.assertEqual(self.sessions, [])
 
     def test_enter_sends_and_shift_enter_does_not(self):
@@ -496,7 +504,7 @@ class ShellDropTest(ShellBase):
         self.assertTrue(r["ok"], r)
         self.assertTrue(wait_for(lambda: self.js(win, "Object.values(window.__hz.store.get().jobs).some(j => j.state === 'done')"), 60), self.text(win)[:400])
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().drawings.documents.length") >= 1, 20))
-        self.assertIn("등록됨", self.text(win))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow').length") >= 1, 20), "올린 도면이 도면 줄로 보인다")
 
     def test_non_drawing_files_are_refused_with_a_message(self):
         win = self.window()

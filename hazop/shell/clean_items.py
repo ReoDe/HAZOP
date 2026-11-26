@@ -3,7 +3,9 @@
 `sheet_items.build_items`(도면 읽기 API의 `items`)는 그대로 두고, 같은 추출 결과에서 그리기용 값만 따로 모은다. 웹은 `/api/clean/<graph_id>`로
 읽어 `items`와 같은 `id`로 잇는다. 좌표는 `items`와 같은 SVG 사용자 단위다(추출 좌표에서 svg_alignment.offset을 뺌). 엔진은 자료를 바꾸지 않고 읽기만 한다.
 
-기호(symbol)마다: `orient`{rot, flip_h, flip_v, basis}, `review`, 다른 도면 연결이면 `label`(원본 글자 두 줄 안).
+기호(symbol)마다: `orient`{rot, flip_h, flip_v, basis}, `review`(ai_candidate 수락 전 AI 후보 · ai_auto 자동 확정이 정한 값 · human 사람 고침이나
+사람이 수락한 값 · ai_accepted 추출 결과가 AI 값이라 적은 것 · script), 다른 도면 연결이면 `label`(원본 글자 두 줄 안), 종류를 못 읽은 기호에 AI가 '기호 아님'·'모름'이라고 답했으면
+`ai_answer`(not_symbol · unknown). ai_answer는 보이기만 하며 미확인 수에서 빼지 않는다.
 배관(pipe)마다: `line_type`, `flow`(source_to_target·target_to_source·None), `ends`[{point, status, node}], `review`.
 도면마다: `source_format`(drawio·dexpi·pdf_vector·raster·unknown), `text_items`, `unconfirmed`, `counts`, `unplaced`, `leftovers`.
 
@@ -69,6 +71,20 @@ def _drawio_orient(style):
     return {"rot": angle % 360, "flip_h": fh, "flip_v": fv, "basis": "drawio"}
 
 
+def _shape_orient(n):
+    """DEXPI에서 읽은 기호의 geometry.shape(규격 docs/specs/dexpi-exchange.md §5.3.1) → 회전·뒤집힘. 없거나 꼴이 틀리면 None(믿지 않는다).
+    rotation은 시계 방향 도(0 이상 360 미만), mirrored는 좌우 뒤집기다. 그림을 놓을 때 뒤집기 먼저, 그다음 회전이라 정리 보기의 변환 차례와 같다.
+    geometry 상자는 돌린 뒤의 상자이고 정리 보기는 90·270도에서 가로세로를 바꿔 맞추므로 상자는 그대로 쓴다."""
+    shape = (n.get("geometry") or {}).get("shape") if isinstance(n.get("geometry"), dict) else None
+    if not isinstance(shape, dict):
+        return None
+    rot = sheet_items._num(shape.get("rotation"))
+    mirrored = shape.get("mirrored", False)
+    if rot is None or rot != rot or rot in (float("inf"), float("-inf")) or not isinstance(mirrored, bool):
+        return None
+    return {"rot": rot % 360, "flip_h": mirrored, "flip_v": False, "basis": "dexpi"}
+
+
 def _pipes_orient(node_id, relations, ox, oy):
     """PDF처럼 회전 정보가 없을 때: 그 기호에 붙은 배관 끝점들이 놓인 축으로 0°·90°를 정한다. 못 정하면 None."""
     pts = []
@@ -87,20 +103,56 @@ def _pipes_orient(node_id, relations, ox, oy):
     return {"rot": 90 if dy > dx else 0, "flip_h": False, "flip_v": False, "basis": "pipes"}
 
 
-def _ai_pending(name):
-    """수락 전 AI 후보가 걸린 대상 ID {id: [후보 ID]}. 후보 기록이 없거나 못 읽으면 빈 사전."""
+def _ai_doc(name):
+    """AI 후보 문서. 없거나 못 읽으면 빈 사전(정리된 보기를 막지 않는다)."""
     if not name:
         return {}
     try:
         from hazop.extract import ai_review
-        doc = ai_review.load_doc(name)
-    except Exception:  # noqa: BLE001 - 후보 기록이 없거나 깨졌다고 정리된 보기를 막지 않는다
+        return ai_review.load_doc(name) or {}
+    except Exception:  # noqa: BLE001
         return {}
+
+
+def _ai_pending(doc, extraction):
+    """수락 전 AI 후보가 걸린 항목 local_id {id: [후보 ID]}. 후보는 source_object_id를 적으므로 지금 local_id로 옮긴다."""
+    local = {o.get("source_object_id"): o.get("local_id") for key in ("nodes", "relations", "unresolved_connectors")
+             for o in extraction.get(key) or [] if isinstance(o, dict)}
     out = {}
-    for c in (doc or {}).get("candidates") or []:
+    for c in doc.get("candidates") or []:
         if isinstance(c, dict) and c.get("status") not in ("accepted", "rejected") and isinstance(c.get("target"), str):
-            out.setdefault(c["target"], []).append(c.get("cand_id"))
+            out.setdefault(local.get(c["target"]) or c["target"], []).append(c.get("cand_id"))
     return out
+
+
+def _ai_answers(doc):
+    """AI가 '기호 아님'(not_symbol)·'모름'(unknown)이라고 답한 자리 {source_object_id: (상자, 답)}. 나중 실행의 답이 이긴다."""
+    out = {}
+    for r in doc.get("runs") or []:
+        for a in (r.get("no_kind") if isinstance(r, dict) else None) or []:
+            if isinstance(a, dict) and isinstance(a.get("bbox"), list):
+                out[a.get("target")] = (a["bbox"], a.get("answer"))
+    return out
+
+
+def _ai_answer(n, answers):
+    """이 기호에 보일 답. 종류가 정해졌거나 사람·자동 값이 있거나, 물은 때와 자리가 다르면(번호가 밀림) None."""
+    from hazop.extract import ai_review
+    hit = answers.get(n.get("source_object_id"))
+    if hit is None or n.get("kind") or n.get("human_edit"):
+        return None
+    box = ai_review._box(n)
+    same = box is not None and all(abs(x - y) <= ai_review.BOX_TOL for x, y in zip(box, hit[0]))
+    return hit[1] if same and hit[1] in ai_review.NO_KIND else None
+
+
+def _review(n, pending):
+    edit = n.get("human_edit")
+    if n["local_id"] in pending:
+        return "ai_candidate"
+    if edit:
+        return "ai_auto" if edit.get("auto") else "human"
+    return "ai_accepted" if n.get("origin") == "ai" else "script"
 
 
 def _leftovers(extraction, fmt, ox, oy):
@@ -122,7 +174,8 @@ def build(extraction, name=None):
     ox, oy = sheet_items._offset(extraction)
     fmt = source_format(extraction)
     relations = [r for r in extraction.get("relations") or [] if isinstance(r, dict)]
-    pending = _ai_pending(name)
+    ai_doc = _ai_doc(name)
+    pending, answers = _ai_pending(ai_doc, extraction), _ai_answers(ai_doc)
     items, unconfirmed, boxes, unplaced = {}, [], {}, []
     for n in extraction.get("nodes") or []:
         if not isinstance(n, dict) or not isinstance(n.get("local_id"), str):
@@ -134,12 +187,14 @@ def build(extraction, name=None):
             unconfirmed.append({"id": lid, "reason": "unplaced"})
             continue
         boxes[lid] = bbox
-        orient = _drawio_orient(n.get("style"))
+        orient = _shape_orient(n) or _drawio_orient(n.get("style"))
         if orient is None and n.get("kind") in TWO_PORT:
             orient = _pipes_orient(lid, relations, ox, oy)
         orient = orient or {"rot": 0, "flip_h": False, "flip_v": False, "basis": "none"}
-        review = "ai_candidate" if lid in pending else ("human" if n.get("human_edit") else ("ai_accepted" if n.get("origin") == "ai" else "script"))
-        items[lid] = {"orient": orient, "review": review}
+        items[lid] = {"orient": orient, "review": _review(n, pending)}
+        answer = _ai_answer(n, answers)
+        if answer:
+            items[lid]["ai_answer"] = answer
         if n.get("kind") == "continuation":              # 다른 도면 연결: 오각형 안에 원본 글자 그대로(최대 두 줄)
             raw = str(n.get("label_text") or n.get("tag") or "")
             items[lid]["label"] = [ln.strip()[:40] for ln in raw.splitlines() if ln.strip()][:2]
@@ -171,7 +226,7 @@ def build(extraction, name=None):
         flow = {"source": "source_to_target", "target": "target_to_source"}.get(from_end) if lid not in flow_unknown else None
         xs, ys = [p[0] for p in line], [p[1] for p in line]
         boxes[lid] = [min(xs), min(ys), max(xs), max(ys)]
-        items[lid] = {"line_type": r.get("line_type"), "flow": flow, "ends": ends, "review": "human" if r.get("human_edit") else "script"}
+        items[lid] = {"line_type": r.get("line_type"), "flow": flow, "ends": ends, "review": _review(r, pending)}
         if r.get("line_type") == "pdf_dashed":
             items[lid]["rel_kind"] = r.get("kind")      # 점선은 배관 굵기 점선(물리 연결)일 수도 신호 점선일 수도 있어 관계 종류로 가른다
         if any(e["status"] == "open" for e in ends):
@@ -213,10 +268,12 @@ def build(extraction, name=None):
         counts.setdefault(r, 0)
     counts["total"] = len(unconfirmed)
     counts["unplaced"] = len(unplaced)
+    built = sheet_items.build_items(extraction)["items"]
     out = {"source_format": fmt, "items": items, "text_items": texts, "unconfirmed": unconfirmed, "counts": counts, "unplaced": unplaced,
-           "leftovers": _leftovers(extraction, fmt, ox, oy), "hops": [], "layout_lint": None}
+           "leftovers": _leftovers(extraction, fmt, ox, oy), "hops": [], "layout_lint": None,
+           "scale": clean_layout.drawing_scale(built)}      # 도면 단위 배율: 기호가 기준보다 아주 작거나 큰 도면(mm 단위 DEXPI 등)에서 웹의 글자·간격도 이만큼 줄인다. 보통 1.0
     try:                                                 # 정돈(clean_layout.py): 원본과 같은 자리에서 작은 어긋남만 바로잡은 좌표를 더한다(위상은 그대로)
-        t = clean_layout.tidy(sheet_items.build_items(extraction)["items"], items, _symbols())
+        t = clean_layout.tidy(built, items, _symbols())
     except Exception:  # noqa: BLE001 - 정돈이 실패해도 원본 좌표 그대로 그린다
         t = None
     if t:

@@ -289,7 +289,7 @@ export const tests = [
     const text = host.textContent;
     assert(text.includes("AI 적용됨") && text.includes("겹침 1") && text.includes("[101 → 102]") && text.includes("구간 밖 30"), text.slice(0, 300));
     assert(text.includes("<b>RC-L003</b>") && !host.querySelector(".nrow b b"), "이름의 태그가 HTML로 해석되지 않음");
-    assert(text.includes("채팅이 만든 구간 1개가 아직 확인 전"), "AI 구간 안내");
+    assert(!text.includes("아직 확인 전입니다"), "AI 구간 안내 줄은 없다(화면 단순화)");
     N.nodes.set({ scope: "all" });
     await tick();
     assert.equal(host.querySelectorAll(".nrow").length, 3);
@@ -457,7 +457,7 @@ export const tests = [
     assert.equal(N.nodes.get().selection, []);
     assert.equal(N.nodes.get().focus, "S4");
     const card = host.querySelector(".newnode");
-    assert(card && card.textContent.includes("구간 S4을 만들었습니다") && card.textContent.includes("S1 구간과 1개가 겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
+    assert(card && card.textContent.includes("구간 S4을 만들었습니다") && !card.textContent.includes("겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
     const intent = card.querySelector("#nn-intent");
     intent.value = "원자로 출구를 증기발생기로 보냄";
     intent.dispatchEvent(new Event("input", { bubbles: true }));
@@ -491,8 +491,13 @@ export const tests = [
     await setup();
     let props = null;
     function Probe() { props = useNodeCanvas("graph-A").props; return html`<i></i>`; }
+    store.set({ panel: "drawings" });
     const host = mount(html`<${Probe} />`);
     await tick();
+    assert.equal([props.segments, props.outside], [[], []], "도면 탭에는 구간 색 강조가 없다(화면 단순화)");
+    await new Promise((r) => setTimeout(r, 300));      // 구독이 붙을 때까지
+    store.set({ panel: "nodes" });
+    for (let i = 0; i < 40 && !props.segments.length; i++) await new Promise((r) => setTimeout(r, 50));      // 숨은 페이지는 구독 효과가 늦다
     assert.equal(props.segments.map((s) => [s.node_id, s.ids, s.active]), [["S1", ["n1", "n2"], false], ["S2", ["n2", "n3"], false]]);
     assert.equal(props.outside, ["n4", "n5"]);
     assert.equal(props.mode, "pan");

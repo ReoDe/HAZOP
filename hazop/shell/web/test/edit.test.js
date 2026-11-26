@@ -65,6 +65,12 @@ async function setup() {
 function mount(v) { const d = document.createElement("div"); document.body.appendChild(d); render(v, d); return d; }
 
 export const tests = [
+  { name: "흐름 방향 줄: 이 프로젝트의 사람이 정한 것만 '(사람이 정함)'이고, 되읽은 human_elsewhere나 다른 근거에는 붙지 않는다", run(assert) {
+    const f = (basis) => E.flowText({ from: "A", to: "B", basis });
+    assert.equal(f("human"), "A → B (사람이 정함)");
+    for (const b of ["human_elsewhere", "ai_auto", "dexpi_flow_arrow", "source_to_target", undefined]) assert.equal(f(b), "A → B");
+    assert.equal(E.flowText(null), "정하지 않음");
+  } },
   { name: "도면 고치기: 켜면 판을 읽고, 고치기를 켠 채 누른 구성요소는 말풍선 대신 고치기 카드(태그는 글자로만, 확정·잠금 영향 표시)", async run(assert) {
     await setup();
     assert.equal(E.edit.get().head.ver, "v1");

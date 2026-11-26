@@ -16,6 +16,7 @@ export const ie = createStore({
   busy: false,
   error: null,
   notice: null,
+  exported: null,          // 방금 내보낸 종류(ie|fmea): 글 끝에 폴더 열기를 붙인다
   ask: null,               // {name, args, notice, message}: 엔진이 되물은 것
   fmea: null,              // GET ie/fmea (P5: FMEA 행·전기·제어 구간·구성요소)
   mld: null,               // GET ie/mld (P5: MLD 잎 가지 대조)
@@ -197,7 +198,7 @@ export async function exportBundle() {
   const s = ie.get().summary;
   try {
     const r = await cmd("ie.export", { ver: s.ver, rver: s.rver });
-    ie.set({ busy: false, notice: r.cancelled ? (r.reason || null) : "초기사건 인계 묶음을 내보냈습니다: " + r.path + " · " + r.json_path + " · 후보 " + r.candidates + "개 · 그룹 " + r.groups + "개" });
+    ie.set({ busy: false, notice: r.cancelled ? (r.reason || null) : "내보냈습니다 · " + r.path, exported: "ie" });
     return r;
   } catch (e) {
     ie.set({ busy: false, error: errorText(e) });
@@ -232,7 +233,7 @@ export const fmeaResolve = (id, field, take) => sideWrite("ie.fmea_resolve", { f
   id + (take === "file" ? "에 파일 값을 썼습니다(앞값은 이력에 남음)." : "의 사람이 고친 값을 그대로 둡니다."));
 export const sideReplace = (which) => sideWrite("ie." + which + "_replace_unreadable", {},
   (r) => (r && r.backup ? "원본을 백업하고 새로 시작했습니다: " + r.backup : null));
-export const fmeaTemplate = () => sideWrite("ie.fmea_template", {}, (r) => (r.cancelled ? null : "FMEA 양식을 내보냈습니다: " + r.path + " · 행 " + r.rows + "개"));
+export const fmeaTemplate = () => sideWrite("ie.fmea_template", {}, (r) => (r.cancelled ? null : "내보냈습니다 · " + r.path), (r) => { if (!r.cancelled) ie.set({ exported: "fmea" }); });
 export const fmeaImport = () => sideWrite("ie.fmea_import", { fver: fver() }, (r) => (r.cancelled ? null
   : "FMEA를 가져왔습니다: " + r.file + " · 새 행 " + r.report.new + " · 바뀐 행 " + r.report.changed + " · 대응 실패 " + r.report.unmatched
     + (r.reopened.length ? " · 승인이 풀린 행 " + r.reopened.join(", ") : "") + (r.report.problems.length ? " · " + r.report.problems.join(" ") : "")));

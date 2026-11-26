@@ -22,6 +22,7 @@ pump, wait_for = W.pump, W.wait_for
 tearDownModule = W.shell_teardown
 
 
+@unittest.skip("화면 단순화: 표제란·AI 검토 시작·쪽 확정 단추를 화면에서 뺐다. 자동 확정(C2)이 들어올 때 새 흐름으로 다시 쓴다")
 class SheetConfirmFlowTest(W.ShellBase):
     def setUp(self):
         self.gid = None
@@ -140,8 +141,7 @@ class SheetConfirmFlowTest(W.ShellBase):
         self.open_sheet(win)
         self.js(win, "window.__hz.next.set({ running: null, open: false, items: [{ kind: 'sheet_confirm', count: 1, text: '원본과 견주어 확정할 쪽이 1장 있습니다', detail: null,"
                      " action: { label: '쪽 확정', go: 'panel:drawings#sheetconf', target: %s }, tone: '' }] })" % json.dumps(self.gid))
-        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.topbar .next .line .btn')"), 10))
-        self.assertTrue(self.click(win, ".topbar .next .line .btn"))                              # 클릭 1: 다음에 할 일의 '쪽 확정'
+        self.js(win, "window.__hz.go({ go: 'panel:drawings#sheetconf', target: %s })" % json.dumps(self.gid))      # '다음에 할 일' 줄은 화면에서 내렸다: 그 단추가 부르던 길을 바로 부른다
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.cmpcard') !== null") is True, 15), "조건이 찬 쪽은 견주기 화면이 바로 열린다")
         self.assertTrue(wait_for(lambda: self.js(win, "!document.querySelector('.cmpcard input[type=checkbox]').disabled") is True, 15))
         self.assertEqual(self.js(win, "%s.disabled" % self.btn("견줌 기록하고 이 쪽 확정")), True, "체크 전에는 막힘(견줌을 건너뛰지 않는다)")
@@ -234,8 +234,8 @@ class SheetConfirmFlowTest(W.ShellBase):
         self.open_sheet(win)
         self.js(win, "window.__hz.store.set({panel: 'drawings'})")
         self.assertTrue(wait_for(lambda: "DEXPI로 내보내기" in self.text(win), 10))
-        self.assertTrue(wait_for(lambda: "확정된 쪽이 하나도 없어 내보낼 수 없습니다" in self.text(win), 10), self.text(win)[-400:])
-        self.assertEqual(self.js(win, "document.querySelector(\"button[aria-label='확정된 쪽 DEXPI로 내보내기']\") === null"), True, "단추 대신 안내")
+        self.assertEqual(self.js(win, "document.querySelector(\"button[aria-label='DEXPI로 내보내기']\").disabled"), True, "낼 수 있는 쪽이 없으면 단추가 꺼져 있다")
+        self.assertNotIn("내보낼 수 없습니다", self.text(win), "설명 줄은 없다")
         # 확정(엔진 명령으로: 견주기 화면의 방식은 위 시험이 본다)
         self.make_clean(path)
         st = cf.sheet_confirmation(self.name)
@@ -246,10 +246,11 @@ class SheetConfirmFlowTest(W.ShellBase):
         os.makedirs(out, exist_ok=True)
         asked = []
         win._save_dir = lambda kind: (asked.append(threading.current_thread()), out)[1]      # 창이 묻는 자리. 내보내기는 작업 스레드에서 도니 화면 스레드로 넘어와야 한다
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='확정된 쪽 DEXPI로 내보내기']\") !== null") is True, 15), self.text(win)[-400:])
-        self.assertTrue(self.click(win, "button[aria-label='확정된 쪽 DEXPI로 내보내기']"))
-        self.assertTrue(wait_for(lambda: "쪽을 내보냈습니다" in self.text(win), 30), self.text(win)[-500:])
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='DEXPI로 내보내기']\").disabled") is False, 15), self.text(win)[-400:])
+        self.assertTrue(self.click(win, "button[aria-label='DEXPI로 내보내기']"))
+        self.assertTrue(wait_for(lambda: "내보냈습니다" in self.text(win), 30), self.text(win)[-500:])
         self.assertEqual(asked, [threading.main_thread()], "저장 폴더는 화면 스레드에서 물었다")
+        self.assertTrue(self.js(win, "!!document.querySelector(\"button[aria-label='내보낸 폴더 열기']\")"), "내보냄 한 줄 끝에 폴더 열기")
         xml = os.path.join(out, self.name + ".dexpi.xml")
         self.assertTrue(os.path.isfile(xml))
         self.assertNotIn(self.tmp, self.text(win), "웹에는 경로를 보이지 않는다")
@@ -266,19 +267,20 @@ class SheetConfirmFlowTest(W.ShellBase):
 
 
 class AiEstimateFlowTest(W.ShellBase):
-    def test_turning_ai_review_on_shows_the_expected_calls_per_drawing(self):
+    def test_the_drawings_panel_has_no_ai_review_settings_card(self):
+        """화면 단순화(사용자 결정 2026-11-25): 도면 패널의 AI 검토 설정(켜고 끄기·호출 상한)은 화면에서 내린다. 엔진의 상한과 구독 제한은 그대로다."""
         win = self.window()
         self.js(win, "window.__hz.store.set({panel: 'drawings'})")
         pump(0.5)
-        self.assertNotIn("예상 호출", self.text(win), "꺼져 있으면 예상 호출 수를 읽지 않는다")
-        self.assertTrue(win.engine.dispatch("extract.set_ai_review", {"enabled": True, "cap": 20}, project=win.engine.project_id(), via_web=True)["ok"])
-        self.js(win, "window.__hz.store.set((s) => ({app: Object.assign({}, s.app, {ai_review: true, ai_review_cap: 20})}))")
-        self.assertTrue(wait_for(lambda: "예상 호출" in self.text(win), 15), self.text(win)[-300:])
-        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.row .chip.review').length") or 0) >= 1, 10), "도면 행마다 AI 검토 칩(예상 호출 수는 그 칩의 확인 창에)")
-        win.engine.dispatch("extract.set_ai_review", {"enabled": False}, project=win.engine.project_id(), via_web=True)
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.drow').length") or 0) >= 2, 10))
+        text = self.text(win)
+        for word in ("추출 설정", "도면당 호출 상한", "예상 호출"):
+            self.assertNotIn(word, text)
+        self.assertEqual(self.js(win, "document.querySelectorAll('.ai-foot').length"), 0)
 
 
 class TitleblockLinkFlowTest(W.ShellBase):
+    @unittest.skip("화면 단순화: 표제란·AI 검토 시작·쪽 확정 단추를 화면에서 뺐다. 자동 확정(C2)이 들어올 때 새 흐름으로 다시 쓴다")
     def test_a_drawing_row_opens_the_titleblock_panel_for_that_sheet(self):
         win = self.window()
         self.js(win, "window.__hz.store.set({panel: 'drawings'})")
@@ -289,25 +291,178 @@ class TitleblockLinkFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: "표제란" in self.text(win), 10))
 
 
+class AutoWaitDotTest(W.ShellBase):
+    def test_only_sheets_stopped_at_extraction_only_get_a_dot_with_the_reason_and_the_tabs_are_gone(self):
+        """자동 확정이 멈춘 도면(할 일이 있는 까닭)만 도면 줄에 점 하나와 말풍선 한 줄. 잘 끝난 도면·진행 중(started)은 표시가 없다."""
+        from unittest import mock
+        from hazop.shell import auto_flow
+        fake = {"sheets": [{"graph_id": "graph-SNP-M-101", "result": "waiting", "why": "no_consent"},
+                           {"graph_id": "graph-SNP-M-102", "result": "waiting", "why": "started"}]}
+        with mock.patch.object(auto_flow, "summary", lambda engine: fake):
+            win = self.window()          # 도면 패널은 시작 때 열려 있어 읽기가 창을 만들 때 나간다
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow .drow-dot').length") == 1, 15))
+            self.assertIn("허락하지 않았습니다", self.js(win, "document.querySelectorAll('.drow')[0].querySelector('.drow-dot').title"))
+            self.assertEqual(self.js(win, "document.querySelectorAll('.drow')[1].querySelectorAll('.drow-dot').length"), 0)
+            self.assertNotIn("no_consent", self.js(win, "document.querySelector('.drow').textContent"))
+        self.assertEqual(self.js(win, "document.querySelectorAll('.ptabs').length"), 0, "표제란·AI 검토 탭이 없다")
+
+
+class AutoConsentTest(W.ShellBase):
+    def test_the_send_question_is_asked_once_with_two_buttons_and_the_answer_goes_to_the_engine(self):
+        """엔진이 ask를 주면 도면 패널에 한 문장과 단추 둘이 뜨고, 누르면 aireview.consent로 간다. 묻지 않을 때는 카드가 없고 설정에 같은 선택 한 줄이 있다."""
+        from unittest import mock
+        from hazop.shell import auto_flow
+        calls = []
+        fake = {"ask": True, "consent": {"allow": False, "asked": False, "at": None}, "sheets": []}
+        real_consent = auto_flow.set_consent
+        with mock.patch.object(auto_flow, "summary", lambda engine: fake),                 mock.patch.object(auto_flow, "set_consent", lambda engine, allow: (calls.append(allow), {"allow": allow})[1]):
+            win = self.window()
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('[aria-label=\"도면 조각 전송 동의\"]').length") == 1, 15))
+            text = self.js(win, "document.querySelector('[aria-label=\"도면 조각 전송 동의\"]').textContent")
+            self.assertIn("올린 도면의 조각을 AI에 보내 읽기를 돕게 할까요?", text)
+            self.assertEqual(self.jsj(win, "[...document.querySelectorAll('[aria-label=\"도면 조각 전송 동의\"] button')].map((b) => b.textContent)"), ["보냄", "보내지 않음"])
+            self.assertTrue(self.click(win, "[aria-label='도면 조각 전송 동의'] button[aria-label='보내지 않음']"))
+            self.assertTrue(wait_for(lambda: calls == [False], 10), calls)
+            fake.update(ask=False)
+            self.js(win, "window.__hz.store.set({panel: 'settings'})")
+            self.assertTrue(wait_for(lambda: "도면 조각을 AI에 보내 읽기 돕기" in self.text(win), 15))
+            self.assertEqual(self.js(win, "document.querySelectorAll('[aria-label=\"도면 조각 전송 동의\"]').length"), 0)
+
+
+class DexpiLineTest(W.ShellBase):
+    def test_the_export_line_shows_the_failed_count_with_reasons_and_the_stale_files_note(self):
+        """내보냈습니다 · 폴더 열기 한 줄. 못 내보낸 쪽이 있을 때만 그 수 단추(누르면 까닭 목록), 앞 내보내기에서 남은 파일이 있으면 한 줄 알림."""
+        from unittest import mock
+        from hazop.export import dexpi_export
+        n0, n1 = self.names[0], self.names[1]
+        rows = [{"name": n0, "drawing_number": "SNP-M-101", "state": "open", "level": "auto", "unconfirmed": 2, "exportable": True, "why": []},
+                {"name": n1, "drawing_number": "SNP-M-102", "state": "open", "level": "extracted", "unconfirmed": 3, "exportable": False, "why": ["쪽이 확정되지 않음"]}]
+        res = {"status": "written", "manifest": "m", "existing": [], "stale_files": ["old.dexpi.xml"], "stale_reason": "남은 파일",
+               "drawings": [{"name": n0, "drawing_number": "SNP-M-101", "state": "open", "level": "auto", "unconfirmed": 2, "auto_accepted": 4, "files": ["a.xml"], "stats": {}}],
+               "not_exported": [{"name": n1, "drawing_number": "SNP-M-102", "state": "open", "level": "extracted", "unconfirmed": 3, "code": "extracted_only", "reason": "쪽이 확정되지 않음"}]}
+        out = os.path.join(self.tmp, "dexpi-line")
+        os.makedirs(out, exist_ok=True)
+        with mock.patch.object(dexpi_export, "list_exportable", lambda *a, **k: rows), mock.patch.object(dexpi_export, "export_names", lambda *a, **k: res):
+            win = self.window()
+            win._save_dir = lambda kind: out
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='DEXPI로 내보내기']\").disabled") is False, 15))
+            self.assertTrue(self.click(win, "button[aria-label='DEXPI로 내보내기']"))
+            self.assertTrue(wait_for(lambda: "내보냈습니다" in self.text(win), 30), self.text(win)[-400:])
+            self.assertTrue(self.js(win, "!!document.querySelector(\"button[aria-label='내보낸 폴더 열기']\")"))
+            self.assertIn("못 내보낸 쪽 1개", self.text(win))
+            self.assertNotIn("쪽이 확정되지 않음", self.text(win), "까닭은 누르기 전에는 숨어 있다")
+            self.assertTrue(self.click(win, "button[aria-label^='못 내보낸 쪽 1개']"))
+            self.assertTrue(wait_for(lambda: "SNP-M-102: 쪽이 확정되지 않음" in self.text(win), 10), self.text(win)[-400:])
+            self.assertIn("old.dexpi.xml", self.text(win))
+            self.assertNotIn(self.tmp, self.text(win))
+
+
+class AutoFollowUpTest(W.ShellBase):
+    def test_a_dot_says_no_connection_before_no_consent_when_no_ai_is_connected(self):
+        from unittest import mock
+        from hazop.shell import auto_flow
+        fake = {"connected": False, "ask": False, "consent": {"allow": False, "asked": False, "unsaved": False},
+                "sheets": [{"graph_id": "graph-SNP-M-101", "result": "waiting", "why": "no_consent"},
+                           {"graph_id": "graph-SNP-M-102", "result": "waiting", "why": "taken"}]}
+        with mock.patch.object(auto_flow, "summary", lambda engine: fake):
+            win = self.window()
+            self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow .drow-dot').length") == 2, 15))
+            titles = self.jsj(win, "[...document.querySelectorAll('.drow .drow-dot')].map((e) => e.title)")
+            self.assertIn("연결된 AI가 없습니다", titles[0])
+            self.assertIn("채팅에서 번호를 알려 주세요", titles[1])
+
+    def test_a_registered_file_that_could_not_be_read_shows_as_a_row_with_a_dot(self):
+        win = self.window()
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow').length") == 2, 15))
+        self.js(win, """(() => { const d = window.__hz.store.get().drawings; window.__hz.store.set({ drawings: Object.assign({}, d, { documents: d.documents.concat([
+            { material_id: 'm-bad', name: 'broken.pdf', type: 'P&ID', status: 'registered', graphed: false, extracted: false }]) }) }); })()""")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow').length") == 3, 10))
+        row = self.js(win, "document.querySelectorAll('.drow')[2].textContent")
+        self.assertIn("broken.pdf", row)
+        self.assertIn("읽지 못했습니다", self.js(win, "document.querySelectorAll('.drow')[2].querySelector('.drow-dot').title"))
+
+    def test_an_unsaved_withdrawal_stays_as_a_notice_and_the_switch_shows_the_saved_value_and_the_picture_switch_is_in_settings(self):
+        from unittest import mock
+        from hazop.shell import auto_flow
+        fake = {"connected": True, "ask": False, "consent": {"allow": False, "asked": True, "unsaved": True}, "sheets": []}
+        with mock.patch.object(auto_flow, "summary", lambda engine: fake):
+            win = self.window()
+            self.js(win, "window.__hz.store.set({panel: 'settings'})")
+            self.assertTrue(wait_for(lambda: "도면 조각을 AI에 보내 읽기 돕기" in self.text(win), 15))
+            self.assertTrue(wait_for(lambda: "다시 열면 보내게 됩니다" in self.text(win), 10), "남는 알림 한 줄")
+            on = self.js(win, "document.querySelector('[aria-label=\"도면 조각을 AI에 보내 읽기 돕기\"]').getAttribute('aria-checked')")
+            self.assertEqual(on, "true", "저장된 값(켬)을 보인다")
+            self.assertIn("조각 그림도 보내기", self.text(win))
+
+
 class ItemBubbleFlowTest(W.ShellBase):
-    def test_the_component_card_shows_the_korean_kind_name_first_and_the_english_one_small(self):
+    def test_the_component_card_shows_its_own_specification_items_without_links_or_english(self):
+        """속성 카드(사용자 결정 2026-11-25): 머리는 '태그 한글 종류', 아래는 그 구성요소 자체의 사양 항목(값이 없으면 '—'). 이어진 곳·든 구간·
+        영문 종류 이름·내부 ID·'지식그래프에서 보기'·'고치기'는 없고 '분석 결과 추적'은 있다."""
         win = self.window()
         gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
-        from hazop.shell import api
-        item = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"][0]["id"]      # 고치기가 읽을 수 있는 실제 구성요소
-        bubble = {"sheet": gid, "id": item, "tag": "RC-V001", "kind": "control_valve", "kind_label": "제어 밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
+        from hazop.shell import api, api_props
+        items = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"]
+        valve = next(i for i in items if i.get("layer") == "symbol" and api_props.group_of(i.get("kind"), "symbol") == "valve")
+        bubble = {"sheet": gid, "id": valve["id"], "tag": "RC-V001", "kind": valve["kind"], "kind_label": "제어 밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
         self.js(win, "window.__hz.store.set({sheet: %s, panel: null, bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble') !== null") is True, 15))
-        text = self.js(win, "document.querySelector('.bubble div').textContent")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.bubble.props dt').length") == 6, 15), "밸브 항목 6개")
+        text = self.js(win, "document.querySelector('.bubble.props').textContent")
         self.assertIn("RC-V001", text)
         self.assertIn("제어 밸브", text)
-        self.assertIn("control_valve", text)
-        self.assertLess(text.index("제어 밸브"), text.index("control_valve"), "한글이 먼저")
-        self.js(win, "window.__hz.store.set({bubble: %s})" % json.dumps(dict(bubble, kind_label=None)))      # 사전에 없는 종류는 영문만
-        self.assertTrue(wait_for(lambda: "제어 밸브" not in (self.js(win, "document.querySelector('.bubble div').textContent") or ""), 10))
-        self.assertIn("control_valve", self.js(win, "document.querySelector('.bubble div').textContent"))
-        self.assertTrue(self.click(win, ".bubble button[aria-label='고치기']"), "말풍선에서 바로 고치기로 간다")
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble') === null") is True, 10), "말풍선은 닫히고 고치기 카드로 넘어간다(카드 모양은 s-viewer의 시험이 본다)")
+        labels = self.jsj(win, "[...document.querySelectorAll('.bubble.props dt')].map((e) => e.textContent)")
+        self.assertEqual(labels, [x[0] for x in api_props.SPECS["valve"][1]])
+        for word in (valve["kind"], valve["id"], "지식그래프", "고치기", "이어진 곳", "든 구간"):
+            self.assertNotIn(word, text)
+        self.js(win, "window.__hz.store.set({bubble: %s})" % json.dumps(dict(bubble, kind_label=None)))      # 사전에 없는 종류는 영문 대신 '종류 미확인'
+        self.assertTrue(wait_for(lambda: "종류 미확인" in (self.js(win, "document.querySelector('.bubble.props').textContent") or ""), 10))
+        self.assertNotIn(valve["kind"], self.js(win, "document.querySelector('.bubble.props').textContent"))
+        self.assertTrue(self.click(win, ".bubble button[aria-label='분석 결과 추적']"))
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "results", 10))
+        self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
+
+    def test_a_value_is_shown_with_its_source_next_to_it(self):
+        """값 옆에 작은 글씨로 출처(도면 번호 또는 문서 이름)만 보이고, 값이 없는 항목은 '—'다."""
+        from unittest import mock
+        win = self.window()
+        gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
+        from hazop.shell import api, api_props
+        items = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"]
+        valve = next(i for i in items if i.get("layer") == "symbol" and api_props.group_of(i.get("kind"), "symbol") == "valve")
+        real = api_props.values_for
+        docs = [{"property": "material", "item": None, "value": "SA-106", "unit": None, "name": "배관 사양서"}]
+        bubble = {"sheet": gid, "id": valve["id"], "tag": "RC-V001", "kind": valve["kind"], "kind_label": "밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
+        with mock.patch.object(api_props, "values_for", lambda g, a, d: real(g, {"valve_type": "globe"}, docs)):
+            self.js(win, "window.__hz.store.set({sheet: %s, panel: null, bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
+            self.assertTrue(wait_for(lambda: "글로브" in (self.js(win, "(document.querySelector('.bubble.props dl') || {}).textContent") or ""), 15))
+            rows = self.jsj(win, "[...document.querySelectorAll('.bubble.props dt')].map((t) => [t.textContent, [...t.nextElementSibling.children].map((c) => c.textContent.trim())])")
+        by = dict((k, v) for k, v in rows)
+        self.assertEqual(by["형식"], ["글로브", "SNP-M-101"], "값과 출처는 따로 나뉜다")
+        self.assertEqual(by["재질"], ["SA-106", "배관 사양서"])
+        self.assertEqual(by["호칭 지름"], ["—"])
+        self.assertTrue(self.js(win, "(() => { const v = document.querySelector('.bubble.props .pv'), s = document.querySelector('.bubble.props .ps'); return getComputedStyle(s).fontSize !== getComputedStyle(v).fontSize && getComputedStyle(v).textOverflow === 'ellipsis'; })()"), "출처는 더 작은 글씨, 값은 줄임표")
+
+    def test_the_drawing_tab_shows_extraction_boxes_and_no_segment_colors(self):
+        """도면 탭은 원본 위에 추출한 것을 네모로(색 범례가 뜸) 보이고, 구간 색 강조(S1 딱지)는 구간 탭에서만 나온다."""
+        win = self.window()
+        gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
+        self.js(win, "window.__hz.store.set({sheet: %s, panel: 'drawings'})" % json.dumps(gid))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.clean-toggle') !== null") is True, 30))
+        self.assertTrue(wait_for(lambda: self.js(win, "[...document.querySelectorAll('.clean-toggle button')].find((b) => b.textContent.startsWith('정리')).getAttribute('aria-pressed')") == "true", 15), "drawio 기본 보기는 정리(정리 자료가 오면)")
+        pump(1.5)
+        self.assertEqual(self.js(win, "document.querySelector('.extract-legend') === null"), True, "정리 보기에는 추출 네모·범례가 없다")
+        self.js(win, "[...document.querySelectorAll('.clean-toggle button')].find((b) => b.textContent.startsWith('원본')).click()")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') !== null") is True, 30), "원본 보기의 도면 탭에 추출 확인 범례")
+        self.assertIn("읽음", self.js(win, "document.querySelector('.extract-legend').textContent"))
+        self.assertTrue(self.js(win, "(() => { const l = document.querySelector('.extract-legend').getBoundingClientRect(), p = document.querySelector('section.panel').getBoundingClientRect(); return l.left >= p.right; })()"), "범례가 도면 패널에 가려지지 않는다")
+        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.hz-sheet svg *').length") or 0) > 0, 10))
+        self.js(win, "window.__hz.store.set({panel: 'nodes'})")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') === null") is True, 10), "구간 탭에는 추출 확인 범례가 없다")
+        self.js(win, "window.__hz.store.set({panel: null})")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') === null") is True, 10), "패널을 닫고 도면만 볼 때는 켜지 않는다(차단 1)")
+        self.js(win, "window.__hz.store.set({panel: 'drawings', marks: {rid: 'results-basis', bySheet: {[%s]: [{op: 'mark', groups: [{ids: [], style: 'path'}], dim_others: false}]}}})" % json.dumps(gid))
+        pump(1.0)
+        self.assertEqual(self.js(win, "document.querySelector('.extract-legend') === null"), True, "추적·채팅 강조 같은 다른 표시가 있으면 끈다(차단 1)")
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
 
 

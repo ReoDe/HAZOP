@@ -58,7 +58,7 @@ class DocsPanelFlowTest(ShellBase):
         self.assertTrue(wait_for(lambda: "도면과 이어" in (self.js(win, "(document.querySelector('.docs-doc')||{}).innerText") or ""), 60), self.text(win)[-500:])
         t = self.text(win)
         self.assertIn("SNP-DOC-102 · 개정 0 · 3쪽", t)
-        self.assertIn("개를 뽑았습니다", t)                              # 이 패널이 시작한 작업의 결과 알림
+        self.assertNotIn("개를 뽑았습니다", t)                           # 끝났다는 확인 글은 없다(화면 단순화)
         self.click(win, ".docs-acts .btn")                               # 뽑힌 항목 보기
         self.assertTrue(wait_for(lambda: "사람 확인 전" in self.text(win), 15), self.text(win)[-400:])
         self.assertIn("16.6", self.text(win))
@@ -69,8 +69,8 @@ class DocsPanelFlowTest(ShellBase):
         self.click(win, ".docs .btn.primary")
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.docs-doc').length") == 1, 60))
         self.click(win, ".docs .btn.primary")
-        self.assertTrue(wait_for(lambda: "이미 등록하고 추출한 같은 파일" in self.text(win), 30), self.text(win)[-400:])
-        pump(1.0)
+        pump(2.0)                                                        # 같은 파일을 다시 넣으면 알림 없이 조용히 아무 일도 하지 않는다(화면 단순화)
+        self.assertNotIn("이미 등록하고 추출한 같은 파일", self.text(win))
         self.assertEqual(self.js(win, "document.querySelectorAll('.docs-doc').length"), 1)
 
     def test_kg_build_failure_shows_as_an_error_on_the_panel(self):

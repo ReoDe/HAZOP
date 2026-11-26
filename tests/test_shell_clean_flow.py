@@ -85,11 +85,11 @@ class CleanFlowTest(W.ShellBase):
         pump(1.0)
         self.assertEqual(self.pressed(win, "원본"), "true", "앞 도면의 고른 보기는 기억한다")
 
-    def test_the_status_chip_is_drawn_in_the_frame(self):
+    def test_no_unconfirmed_chip_is_drawn_over_the_sheet(self):
         win = self.window()
         self.open_sheet(win)
         chip = self.js(win, "(() => { const c = document.querySelector('.viewswitch .chip'); return c ? c.textContent.trim() : ''; })()")
-        self.assertTrue("미확인" in chip or "drawio" in chip, chip)      # 미확인이 있으면 '미확인 n곳', 모두 읽었으면 읽은 방법 꼬리표
+        self.assertEqual(chip, "", chip)      # 도면 위의 '미확인 n곳' 칩은 없다
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
 
     def test_marks_use_the_same_store_key_and_are_drawn_in_both_views(self):
@@ -165,6 +165,7 @@ class CleanWithNodesTest(W.ShellBase):
         r = win.engine.dispatch("nodes.create", {"project_id": "SNP", "set_rev": rev, "sheet": self.S101, "ids": local, "name": "구간 가"})
         self.assertTrue(r["ok"], r)
         self.open_clean_sheet(win)
+        self.js(win, "window.__hz.store.set({panel: 'nodes'})")      # 구간 색은 구간 탭에서만 나온다(화면 단순화)
         # 정리된 자료·기호가 올 때까지는 원본으로 그리므로(core.js _effective) 바뀔 때까지 기다린 뒤 읽는다
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')") == "clean", 20), "정리된 보기로 바뀐다")
         self.assertTrue(wait_for(lambda: "S1" in (self.js(win, "document.querySelector('.hz-cv-vp').textContent") or "") or

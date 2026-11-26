@@ -840,7 +840,7 @@ hazop/shell/                 새 틀(Python)
 
 | 필드 | 값 | 어디서 오는가 |
 | --- | --- | --- |
-| `orient` | `{rot, flip_h, flip_v, basis: "drawio"\|"pipes"\|"none"}` | drawio는 도형 스타일의 `rotation`·`direction`·`flipH`·`flipV`(`drawio.py`가 이미 읽는 값. 가상 도면의 세로 밸브는 `direction=south`·`north`로 돌려져 있다). PDF는 회전 정보가 없으므로, 두 구멍 기호에 붙은 배관 끝들이 놓인 축으로 0°·90°를 정한다(`basis: "pipes"`). 못 정하면 0°, `basis: "none"` |
+| `orient` | `{rot, flip_h, flip_v, basis: "drawio"\|"dexpi"\|"pipes"\|"none"}` | DEXPI에서 읽은 기호는 `geometry.shape`의 회전(시계 방향 도)·좌우 뒤집힘(뒤집기 먼저, 그다음 회전, 규격 `dexpi-exchange.md` §5.3.1)을 `basis: "dexpi"`로 쓴다(꼴이 틀린 shape는 믿지 않고 아래 차례로 넘어간다). drawio는 도형 스타일의 `rotation`·`direction`·`flipH`·`flipV`(`drawio.py`가 이미 읽는 값. 가상 도면의 세로 밸브는 `direction=south`·`north`로 돌려져 있다). PDF는 회전 정보가 없으므로, 두 구멍 기호에 붙은 배관 끝들이 놓인 축으로 0°·90°를 정한다(`basis: "pipes"`). 못 정하면 0°, `basis: "none"` |
 | `line_type` · `flow` | 선 종류, `source_to_target`·`target_to_source`·`null` | 커넥터 `line_type`, 배관 `flow_direction.basis` |
 | `ends` | 배관 끝마다 `{end, point, status: connected\|open, node}` | 끝점 `status`와 `node_local_id` |
 | `review` | `script`·`ai_candidate`·`ai_accepted`·`human` | AI 검토 후보 기록과 사람 수정 기록 |

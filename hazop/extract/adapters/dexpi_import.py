@@ -14,7 +14,7 @@ import math
 import re
 
 from hazop.extract import dexpi_map, ids, properties, rules
-from hazop.extract.adapters import dexpi_read
+from hazop.extract.adapters import dexpi_origin, dexpi_read
 
 SCHEMA_VERSION = "0.1"
 SIDECAR_SCHEMA = "hazop_dexpi_sidecar/1"  # hazop.export.dexpi_export와 같은 값
@@ -22,12 +22,14 @@ SCRIPT_NAME = "hazop.extract.adapters.dexpi_import"
 SCRIPT_VERSION = "0.1.0"
 RULES_VERSION = "dexpi-import-2026-11-13"
 COORDINATE_SPACE = "dexpi_diagram"
+OWN_URI = dexpi_origin.OWN_URI
 FLOW_COS = 0.7  # 화살표 방향이 그 선분의 방향과 이 값 이상 맞아야 흐름으로 읽는다
 ARROW_MAX_MM = 1.5  # 화살표가 길(폴리라인)에서 이보다 멀면 그 길의 것으로 보지 않는다
 ARROW_TIE_MM = 0.5  # 두 길에 이 차이 안으로 가까우면 어느 쪽인지 정하지 않는다
 
 _NAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]")
 TAGGED_CATEGORIES = ("equipment", "valve", "instrument")
+NO_CLAIM = dexpi_origin.Claim({}, [], False)
 UNIT_NAMES = {"Bar": "bar", "MegaPascal": "MPa", "KiloPascal": "kPa", "Pascal": "Pa", "DegreeCelsius": "°C",
               "Kelvin": "K", "DegreeFahrenheit": "°F"}
 # 설비 속성 이름 -> (우리 속성, 챔버 안의 이름). 챔버가 하나일 때만 설비 값으로 올린다(§3.5)
@@ -73,15 +75,19 @@ def _pretty_quantity(text):
     return "%s %s%s" % (m.group(1), unit, suffix)
 
 
+def instrument_tag(category, number):
+    """계측 기능의 구분 문자와 번호 -> 계기 태그(곁 파일이 없을 때). 내보내기의 되읽기 검사도 이 규칙으로 견준다."""
+    return category + number if category and number else None
+
+
 def _tag_of(item):
     """(태그 또는 None, 근거 또는 None). 규칙은 §3.5."""
     a = item["attrs"]
     group, cls = item["group"], item["cls"]
     if group == "instrument":
         cat, num = a.get("ProcessInstrumentationFunctionCategory"), a.get("ProcessInstrumentationFunctionNumber")
-        if cat and num:
-            return cat + num, "계측 기능 구분 문자와 번호"
-        return None, None
+        tag = instrument_tag(cat, num)
+        return tag, "계측 기능 구분 문자와 번호" if tag else None
     if group == "equipment":
         if a.get("TagName"):
             return a["TagName"], "TagName"
@@ -108,6 +114,36 @@ def _bbox(points):
     return [_clean(min(xs)), _clean(min(ys)), _clean(max(xs) - min(xs)), _clean(max(ys) - min(ys))]
 
 
+def _geometry(shapes):
+    """놓인 기호들 -> 노드의 geometry {x, y, width, height, shape}. 여럿이면 모두를 감싼 상자이고 shape(모양 이름, 돌리기 전 크기, 시계
+    방향 회전, 좌우 뒤집힘)는 기호가 하나일 때만 있다. 기호를 읽지 못했으면 None."""
+    if not shapes:
+        return None
+    x0, y0 = min(s["box"][0] for s in shapes), min(s["box"][1] for s in shapes)
+    x1, y1 = max(s["box"][0] + s["box"][2] for s in shapes), max(s["box"][1] + s["box"][3] for s in shapes)
+    if not (math.isfinite(x1 - x0) and math.isfinite(y1 - y0)):
+        return None
+    out = {"x": _clean(x0), "y": _clean(y0), "width": _clean(x1 - x0), "height": _clean(y1 - y0)}
+    if len(shapes) == 1:
+        s = shapes[0]
+        out["shape"] = {"name": s["name"], "width": _clean(s["size"][0]), "height": _clean(s["size"][1]), "rotation": s["rotation"],
+                        "mirrored": s["mirrored"]}
+    return out
+
+
+def _along(path, nodes, ends, start, end):
+    """그림의 선을 관계의 source -> target 차례로. 선은 거꾸로 그려져 있을 수 있다. 선의 자리가 가리키는 노드(nodes)가 관계의 두 끝 노드
+    (ends)와 맞으면 그것으로, 모르면 두 끝의 자리(start·end)와 더 가까운 쪽으로 정한다."""
+    forward = sum(a is not None and a == b for a, b in zip(nodes, ends))
+    backward = sum(a is not None and a == b for a, b in zip(nodes, ends[::-1]))
+    if forward != backward:
+        return path if forward > backward else path[::-1]
+
+    def gap(p):
+        return sum(math.dist(a, b) for a, b in ((p[0], start), (p[-1], end)) if b is not None)
+    return path[::-1] if gap(path[::-1]) < gap(path) else path
+
+
 def _points_of(model, item):
     pts = [model.node_pos[n] for n in item.get("nodes", []) if n in model.node_pos]
     for nz in item.get("nozzles", []):
@@ -117,20 +153,44 @@ def _points_of(model, item):
     return pts
 
 
-def build(model, source, registration=None, page=0, repo_root=None):
-    """Model -> 추출 결과 dict. source: {"file", "sha256", "size_bytes"}. registration: 등록정보(드로이오와 같은 규칙)."""
-    unknowns, blockers = [], []
-    used = set()
-    reg = registration or {}
-    local_of = {}  # 항목 id -> local_id
-    nodes, source_locations = [], []
+def _middle(model, item_id):
+    """이 앱이 낸 파일의 기호이면 그 가운데, 아니면 None. 그림이 없던 옛 내보내기는 모든 노드를 구성요소 가운데에 적었으므로, 새로 내보낸
+    파일로 바꿔 등록해도 자리 열쇠(source_locations)가 같도록 배관 끝이 아니라 가운데를 쓴다. 기호가 없는 옛 파일에는 닿지 않는다."""
+    owner = model.nozzles[item_id]["parent"] if item_id in model.nozzles else item_id
+    return model.items[owner]["position"] if (model.uri or "").startswith(OWN_URI) and owner in model.shapes else None
 
-    for dup in sorted(set(model.duplicate_ids)):
-        _issue(blockers, "duplicate_id", "같은 id가 두 번 이상 나타남(어느 객체인지 정할 수 없음)", dup)
-    for iss in model.issues:
-        _issue(unknowns, iss["check"], iss["reason"], iss.get("target"))
 
-    # ---- 구동계: 밸브 id -> {fail_action, loop} (구동 기능이 신호 흐름의 끝이면 제어 밸브)
+def _tag_not_unique(nodes, unknowns):
+    """같은 태그가 여럿이면 어느 것인지 가를 수 없다(태그는 유일해야 한다). 합치지 않고 미확인으로 남긴다."""
+    counts = {}
+    for n in nodes:
+        if n["tag"] and n["category"] in TAGGED_CATEGORIES:
+            counts[n["tag"]] = counts.get(n["tag"], 0) + 1
+    for n in nodes:
+        if n["tag"] and counts.get(n["tag"], 0) > 1:
+            _issue(unknowns, "dexpi_tag_not_unique", "같은 태그 %s가 %d개 객체에 있음(DEXPI 부품 번호는 유일하지 않을 수 있음)"
+                   % (n["tag"], counts[n["tag"]]), n["source_object_id"], n["local_id"], "tag")
+
+
+def _restore_tag(node, tag, unknowns):
+    """곁 파일의 태그를 노드에 되붙인다(None이면 태그가 없던 구성요소). 바꿨으면 True."""
+    tag = tag or None
+    if tag == node["tag"]:
+        return False
+    node["tag"], node["label"] = tag, tag or ""
+    if dexpi_origin.PLAIN not in node:  # 원본 글자를 표시에서 읽은 노드는 그 글자를 둔다
+        node["label_text"] = tag or ""
+    node["attributes"].pop("tag", None)
+    if tag:
+        node["attributes"]["tag"] = tag
+    unknowns[:] = [u for u in unknowns if not (u["check"] == "missing_tag" and u.get("target") == node["local_id"])]
+    if tag is None and node["category"] in TAGGED_CATEGORIES:
+        _issue(unknowns, "missing_tag", "태그를 읽을 수 없음", node["source_object_id"], node["local_id"], "tag")
+    return True
+
+
+def controlled_valves(model):
+    """밸브 id -> {fail_action, in_loop, number}. 구동계가 가리키는 밸브. in_loop: 구동 기능이 신호 흐름의 끝(제어 밸브)."""
     controlled = {}
     signal_targets = {f["target"] for f in model.info_flows if f["cls"] and "SignalConveyingFunction" in dexpi_map.ancestry(f["cls"])
                       and f["cls"] != "MeasuringLineFunction"}
@@ -145,6 +205,30 @@ def build(model, source, registration=None, page=0, repo_root=None):
     for sid, entry in model.act_systems.items():  # 구동 기능 없이 구동계만 있는 파일(Proteus 일부)
         for valve in entry["valves"]:
             controlled.setdefault(valve, {"fail_action": entry["fail_action"], "in_loop": False, "number": entry["number"]})
+    return controlled
+
+
+def drive_of(controlled, item_id):
+    """밸브의 구동계(dexpi_origin.node_echo의 drive)."""
+    return None if item_id not in controlled else "loop" if controlled[item_id]["in_loop"] else "system"
+
+
+def build(model, source, registration=None, page=0, repo_root=None):
+    """Model -> 추출 결과 dict. source: {"file", "sha256", "size_bytes"}. registration: 등록정보(드로이오와 같은 규칙)."""
+    unknowns, blockers = [], []
+    used = set()
+    reg = registration or {}
+    local_of = {}  # 항목 id -> local_id
+    line_grades = dexpi_origin.line_grades(model)
+    nodes, source_locations = [], []
+
+    for dup in sorted(set(model.duplicate_ids)):
+        _issue(blockers, "duplicate_id", "같은 id가 두 번 이상 나타남(어느 객체인지 정할 수 없음)", dup)
+    for iss in model.issues:
+        _issue(unknowns, iss["check"], iss["reason"], iss.get("target"))
+
+    # ---- 구동계: 밸브 id -> {fail_action, loop} (구동 기능이 신호 흐름의 끝이면 제어 밸브)
+    controlled = controlled_valves(model)
 
     # ---- 노드
     for item in model.items.values():
@@ -164,12 +248,21 @@ def build(model, source, registration=None, page=0, repo_root=None):
             else:
                 kind = None  # 구동 방식을 지어내지 않는다(§3.4)
                 extra_unknown.append(("dexpi_actuator_kind_unknown", "구동계가 있으나 구동 방식을 알 수 없음", "kind"))
+        tag, tag_basis = _tag_of(item)
+        plain = {"kind": kind, "tag": tag, "label_text": tag or ""}
+        claim = dexpi_origin.claim_node(model.origins[iid], item, plain, drive_of(controlled, iid)) if iid in model.origins else NO_CLAIM
+        kind, tag, label_text = (claim.values.get(k, plain[k]) for k in ("kind", "tag", "label_text"))
+        if "kind" in claim.values:
+            extra_unknown = []
+        if "tag" in claim.values:
+            tag_basis = "원래 값 표시"
+        refusals = claim.problems + [(f, dexpi_origin.WAS_OPEN) for f in dexpi_origin.open_of(model.origins.get(iid, {})) if f not in dict(claim.problems)]
+        extra_unknown += [(dexpi_origin.CHECK, why, field) for field, why in refusals]
         classification = "classified" if kind is not None else "unclassified"
         if kind is not None and rules.KIND_CATEGORY.get(kind):
             category = rules.KIND_CATEGORY[kind]
         else:
             category = "valve" if (kind is None and iid in controlled) else dexpi_map.raw_category(group)
-        tag, tag_basis = _tag_of(item)
         if kind is not None:
             attrs["kind"] = kind
         if tag:
@@ -181,6 +274,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 attrs["fail_position"] = dexpi_map.FAIL_ACTION[fa]
             elif fa:
                 attrs["dexpi:FailAction"] = fa
+            if claim.marked and model.origins[iid].get("Fail") == "FL" and attrs.get("fail_position") == "FAI":
+                attrs["fail_position"] = "FL"  # DEXPI에는 FL이 없어 FailRetainPosition(FAI)으로 나갔다
             if controlled[iid]["number"]:
                 attrs["dexpi:ActuatingSystemNumber"] = controlled[iid]["number"]
         if group == "equipment":
@@ -225,12 +320,27 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 attrs["direction"] = "FROM"
         evidence = {"dexpi": {"type": cls, "id": iid if item.get("has_id", True) else None,
                               "xml": item["xml"], "xml_cut": bool(item.get("xml_cut"))}}
+        refused = {field for field, _why in claim.problems}  # 버린 값의 등급은 지금 값의 등급이 아니다
+        grades = dexpi_origin.without(dexpi_origin.grades_of(model.origins.get(iid, {})), refused)
+        if group == "offpage":
+            if attrs.get("line_no") and item.get("system") in line_grades:
+                key = line_grades[item["system"]]
+                grades = dict(grades, **{key: grades.get(key, []) + ["line_no"]})
+            why = dexpi_origin.why_line(model.origins.get(iid, {}), attrs.get("line_no"))
+            if why and "line_no" not in {f for _c, _w, f in extra_unknown}:
+                extra_unknown.append((dexpi_origin.CHECK, why, "line_no"))
+        if grades:  # 등급은 낮추기만 하므로 지문이 낡은 표시의 것도 본다
+            evidence["dexpi_origin"] = grades
+        if tag and "tag" not in refused:
+            tag_basis = dexpi_origin.tag_basis_of(model.origins.get(iid, {})) or tag_basis
         if tag_basis and tag_basis != "TagName":
             evidence["tag_basis"] = tag_basis
         node = {"local_id": local, "source_object_id": iid, "classification": classification, "category": category,
-                "kind": kind, "tag": tag, "label": tag or "", "label_text": tag or "", "label_location": None,
+                "kind": kind, "tag": tag, "label": tag or "", "label_text": label_text, "label_location": None,
                 "attributes": {k: v for k, v in attrs.items() if v is not None}, "style": "", "parent": None,
-                "geometry": None, "evidence": evidence}
+                "geometry": _geometry(model.shapes.get(iid)), "evidence": evidence}
+        if claim.marked:
+            node[dexpi_origin.PLAIN] = plain
         if kind == "check_valve":
             node["check_direction"] = None
             _issue(unknowns, "unknown_check_valve_direction", "DEXPI에 체크밸브 허용 방향이 없음", iid, local, "flow_direction")
@@ -243,7 +353,8 @@ def build(model, source, registration=None, page=0, repo_root=None):
         for check, field, reason in properties.node_issues(kind, {k: v for k, v in node["attributes"].items()
                                                                   if not k.startswith("dexpi:")}):
             _issue(unknowns, check, reason, iid, local, field)
-        pts = _points_of(model, item)
+        middle = _middle(model, iid)
+        pts = [middle] if middle is not None else _points_of(model, item)
         if pts:
             loc = {"object_id": iid, "local_id": local, "coordinate_space": COORDINATE_SPACE, "unit": "mm",
                    "bbox": _bbox(pts), "approximate": True, "method": "dexpi_positions"}
@@ -251,14 +362,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
         else:
             _issue(unknowns, "dexpi_no_position", "그림 위치 없음(DEXPI 파일에 그림 정보가 없음)", iid, local, "bbox")
         nodes.append(node)
-    counts = {}
-    for n in nodes:
-        if n["tag"] and n["category"] in TAGGED_CATEGORIES:
-            counts[n["tag"]] = counts.get(n["tag"], 0) + 1
-    for n in nodes:  # 같은 태그가 여럿이면 어느 것인지 가를 수 없다(태그는 유일해야 한다). 합치지 않고 미확인으로 남긴다
-        if n["tag"] and counts.get(n["tag"], 0) > 1:
-            _issue(unknowns, "dexpi_tag_not_unique", "같은 태그 %s가 %d개 객체에 있음(DEXPI 부품 번호는 유일하지 않을 수 있음)"
-                   % (n["tag"], counts[n["tag"]]), n["source_object_id"], n["local_id"], "tag")
+    _tag_not_unique(nodes, unknowns)
 
     # ---- 끝점 풀이: 노즐은 부모 설비로, 포트는 노즐 이름
     def resolve(item_id, node_id):
@@ -299,16 +403,18 @@ def build(model, source, registration=None, page=0, repo_root=None):
             out["dexpi:system"] = seg["system"]
         return out
 
-    def add_relation(kind, line_type, c_id, src, dst, extra_attrs, flow=None, waypoints=None, made=False):
+    def add_relation(kind, line_type, c_id, src, dst, extra_attrs, flow=None, path=None, nodes=(None, None), made=False):
         nonlocal rel_no
         rel_no += 1
         lid = _local_id(c_id, used)
         ends, ok = [], True
-        for end, (item_id, node_id) in (("source", src), ("target", dst)):
+        places = [endpoint_point(*src), endpoint_point(*dst)]
+        drawn = [[_clean(x), _clean(y)] for x, y in _along(path, nodes, (src[1], dst[1]), *places)] if path else None
+        for n, (end, (item_id, node_id)) in enumerate((("source", src), ("target", dst))):
             local, port, status, why = resolve(item_id, node_id)
+            basis = "dexpi_node" if node_id in model.node_pos else "dexpi_line" if drawn else "dexpi_item_position" if item_id else None
             ep = {"end": end, "node_local_id": local, "source_object_id": item_id, "constraint": None,
-                  "point": endpoint_point(item_id, node_id), "point_basis": "dexpi_node" if node_id in model.node_pos
-                  else ("dexpi_item_position" if item_id else None), "status": status, "port": port}
+                  "point": drawn[-n] if drawn else places[n], "point_basis": basis, "status": status, "port": port}
             if status != "connected":
                 ok = False
                 _issue(unknowns, "unconnected_endpoint", "%s %s" % (end, why), c_id, lid, end)
@@ -316,7 +422,7 @@ def build(model, source, registration=None, page=0, repo_root=None):
         attrs = dict(extra_attrs)
         rec = {"local_id": lid, "source_object_id": c_id, "kind": kind, "line_type": line_type,
                "line_no": attrs.get("line_no"), "endpoints": ends, "flow_direction": None if not ok else flow,
-               "waypoints": waypoints or [], "label": "", "label_text": "", "label_cells": [], "attributes": attrs,
+               "waypoints": drawn[1:-1] if drawn else [], "label": "", "label_text": "", "label_cells": [], "attributes": attrs,
                "style": "", "parent": None, "geometry": None}
         if made:  # 파일에 있던 id가 아니라 가져오기가 지은 id(문서 순서에서 나옴). 파일이 바뀌면 다른 연결로 밀린다.
             # Proteus 연결은 전부 지은 id라 적지 않는다(ids.made_ids가 flavor로 읽는다. 추출 결과가 그대로여야 graph_version이 안 바뀐다)
@@ -324,17 +430,21 @@ def build(model, source, registration=None, page=0, repo_root=None):
         (relations if ok else unresolved).append(rec)
         if ok:
             resolved_ids.add(id(rec))
-        pts = [e["point"] for e in ends if e["point"] is not None]
+        # 그린 선이 아니라 두 끝의 자리. 사람 수정이 대상을 다시 찾는 열쇠라 그림을 읽어도 같아야 한다
+        pts = [p for p in (_middle(model, end[0]) or place for end, place in zip((src, dst), places)) if p is not None]
         if pts:
             source_locations.append({"object_id": c_id, "local_id": lid, "coordinate_space": COORDINATE_SPACE,
                                      "unit": "mm", "bbox": _bbox(pts), "approximate": True, "method": "dexpi_endpoints"})
-        elif ok:
+        elif ok and not drawn:
             _issue(unknowns, "dexpi_no_position", "그림 위치 없음(DEXPI 파일에 그림 정보가 없음)", c_id, lid, "bbox")
         return rec
 
     # ---- 흐름: 도면 연결 기호와 화살표(§5.4)
     assumed_seen = set()
     arrow_of, unplaced_arrows = _arrow_flows(model)
+    parts = {}  # 한 연결이 부품 앞뒤로 나뉜 조각 수. 나뉜 연결은 그림의 선 하나를 나눠 줄 수 없어 선 점을 주지 않는다
+    for c in model.connections:
+        parts[(c["segment"], c.get("index"))] = parts.get((c["segment"], c.get("index")), 0) + 1
     for arrow in unplaced_arrows:
         _issue(unknowns, "dexpi_flow_arrow_unplaced", "흐름 화살표를 배관 경로에 붙이지 못해 방향을 정하지 않음(경로 없음·거리·방향 불일치·모호)",
                arrow["segment"], None, "flow_direction")
@@ -349,6 +459,12 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 _issue(unknowns, "dexpi_item_order_assumed", "어느 연결의 끝에도 없는 부품을 문서 순서로 길에 끼움", item_id,
                        local_of.get(item_id), "kind")
         flow, basis = _flow_of(model, c, arrow_of.get(idx))
+        flow_class = _flow_class(model, c["segment"])
+        claim, plain_flow = NO_CLAIM, flow
+        if c["id"] in model.origins:
+            disputed = flow_class == "dual" or (flow is None and (idx in arrow_of or _flow_of(model, c, None)[0] is not None))
+            claim = dexpi_origin.claim_pipe(model.origins[c["id"]], c, flow, disputed)
+            flow, basis = claim.values.get("flow", (flow, basis))
         flow_dict = None
         src_local = resolve(c["source"], c["source_node"])[0]
         dst_local = resolve(c["target"], c["target_node"])[0]
@@ -357,11 +473,20 @@ def build(model, source, registration=None, page=0, repo_root=None):
             a, b = (src_local, dst_local) if flow == "forward" else (dst_local, src_local)
             flow_dict = {"from": a, "to": b, "from_end": first, "to_end": last, "basis": basis}
             attrs["flow_direction"] = "source_to_target" if flow == "forward" else "target_to_source"
-        flow_class = _flow_class(model, c["segment"])
         if flow_class:
             attrs["flow_class"] = flow_class
+        path = model.conn_paths.get(c["id"] or c["synthetic_id"]) if parts[(c["segment"], c.get("index"))] == 1 else None
         rec = add_relation("physical_connection", "process", c_id, (c["source"], c["source_node"]),
-                           (c["target"], c["target_node"]), attrs, flow_dict, made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
+                           (c["target"], c["target_node"]), attrs, flow_dict, path, model.path_nodes.get(c_id, (None, None)), made=not c["id"] and model.fmt != dexpi_read.FMT_PROTEUS)
+        rec["label_text"] = claim.values.get("label_text", "")
+        grades = dexpi_origin.without(dexpi_origin.grades_of(model.origins.get(c["id"], {})), {"flow"} if "flow_direction" in dict(claim.problems) else ())
+        if grades:
+            rec["evidence"] = {"dexpi_origin": grades}
+        if plain_flow is None and flow_dict is not None:
+            rec[dexpi_origin.PLAIN] = {"flow_direction": None}
+        was_open = [(f, dexpi_origin.WAS_OPEN) for f in dexpi_origin.open_of(model.origins.get(c["id"], {})) if f not in dict(claim.problems)]
+        for field, why in claim.problems + was_open:
+            _issue(unknowns, dexpi_origin.CHECK, why, c_id, rec["local_id"], field)
         for end, key in (("source", "source_node_no"), ("target", "target_node_no")):
             if c.get(key):
                 for ep in rec["endpoints"]:
@@ -371,6 +496,11 @@ def build(model, source, registration=None, page=0, repo_root=None):
             _issue(unknowns, "unknown_flow_direction",
                    "양방향 흐름 구간(DEXPI DualFlow): 한쪽으로 확정하지 않음" if flow_class == "dual"
                    else "DEXPI 연결의 Source·Target은 흐름 방향이 아님(근거 없음)", c_id, rec["local_id"], "flow_direction")
+
+    def grade_signal(rec, oid):
+        grades = dexpi_origin.grades_of(model.origins.get(oid, {}))
+        if grades:
+            rec["evidence"] = {"dexpi_origin": grades}
 
     # ---- 계장 연결: 측정선(센서 위치 -> 계측 기능), 신호선(계측 기능 -> 구동 대상)
     for flow in model.info_flows:
@@ -383,8 +513,10 @@ def build(model, source, registration=None, page=0, repo_root=None):
             if loc_item and loc_item in model.segments:
                 _issue(unknowns, "unconnected_endpoint", "측정 위치가 배관 구간이라 구성요소에 붙이지 못함", flow["id"], None, "source")
                 loc_item = None
-            add_relation("measurement_connection", "instrument_tap", flow["id"] or "measuring-line",
-                         (loc_item, None), (pif, None), {"line_type": "instrument_tap"}, made=not flow["id"])
+            rec = add_relation("measurement_connection", "instrument_tap", flow["id"] or "measuring-line",
+                         (loc_item, None), (pif, None), {"line_type": "instrument_tap"}, path=model.conn_paths.get(flow["id"]),
+                         made=not flow["id"])
+            grade_signal(rec, flow["id"])
         else:
             targets = []
             if tgt in model.items:
@@ -396,8 +528,10 @@ def build(model, source, registration=None, page=0, repo_root=None):
                 targets = [None]
             for n, t in enumerate(targets):
                 cid = flow["id"] if n == 0 else "%s#%d" % (flow["id"], n + 1)
-                add_relation("signal_connection", "signal", cid or "signal-line", (src, None), (t, None),
-                             {"line_type": "signal"}, made=n > 0 or not flow["id"])
+                rec = add_relation("signal_connection", "signal", cid or "signal-line", (src, None), (t, None),
+                             {"line_type": "signal"}, path=model.conn_paths.get(flow["id"]) if n == 0 else None,
+                             made=n > 0 or not flow["id"])
+                grade_signal(rec, flow["id"])
 
     # ---- 도면 정보와 식별
     drawing_number, drawing_name = model.drawing["number"], model.drawing["name"]
@@ -526,7 +660,7 @@ def match_arrow(arrow, candidates):
 
 
 def _arrow_flows(model):
-    """흐름 화살표 -> ({연결 순번: 'forward'|'backward'}, 붙이지 못한 화살표 목록).
+    """흐름 화살표 -> ({연결 순번: 'forward'|'backward', 어긋나는 화살표가 둘이면 None}, 붙이지 못한 화살표 목록).
     2.0은 연결마다 그림의 ConnectorLine(시작·안쪽 점·끝)이 길이다. Proteus는 구간의 CenterLine이 길이고(처음 FromID → 끝 ToID 순서),
     구간에 연결이 하나(구간 안 부품으로 나뉜 관계들은 한 연결)일 때만 쓴다. 그 구간 전체가 한 방향 길이라 나뉜 관계 모두에 같은 방향을 준다."""
     by_segment = {}
@@ -553,7 +687,7 @@ def _arrow_flows(model):
                 out[i] = None
             else:
                 out[i] = flow
-    return {k: v for k, v in out.items() if v is not None}, unplaced
+    return out, unplaced
 
 
 def _flow_class(model, segment_id):
@@ -596,12 +730,20 @@ def extract_bytes(data, file_label, registration=None, page=0, repo_root=None, s
     return result, model
 
 
+def _put_grade(item, grade):
+    """곁 파일이 적은 등급을 노드·관계에 남긴다. 등급 칸이 없는 옛 곁 파일이면 아무것도 하지 않는다."""
+    grade = {k: [x for x in dexpi_origin.GRADED if x in (grade.get(k) or ())] for k in ("auto", "edited")} if isinstance(grade, dict) else {}
+    grade = {k: v for k, v in grade.items() if v}
+    if grade:
+        item.setdefault("evidence", {})["dexpi_origin"] = grade
+
+
 def apply_sidecar(extraction, sidecar, dexpi_sha256):
-    """같은 앱이 내보낸 곁 파일(`<도면>.hazop.json`)로 DEXPI에 자리가 없던 정보를 되붙인다(§6.3·§7.3): 원래 kind(근사 대응),
-    DEXPI에 없던 속성, 흐름 방향, 체크밸브 허용 방향, 원래 출처(entity_id·origin·수정 표시). 곁 파일이 이 DEXPI 파일의 것이 아니거나
+    """같은 앱이 내보낸 곁 파일(`<도면>.hazop.json`)로 DEXPI에 자리가 없던 정보를 되붙인다(§6.3·§7.3): 원래 kind(근사 대응), 원래 태그(계기 태그는
+    DEXPI의 조각만으로 되돌릴 수 없다), DEXPI에 없던 속성, 흐름 방향, 체크밸브 허용 방향, 원래 출처(entity_id·origin·수정 표시). 곁 파일이 이 DEXPI 파일의 것이 아니거나
     그 뒤 파일이 바뀌었으면(SHA-256이 다름) 아무것도 되붙이지 않고 미확인 dexpi_sidecar_stale을 남긴다. 반환: 되붙인 개수 dict."""
     unknowns = extraction["validation"]["unknowns"]
-    out = {"restored_kinds": 0, "restored_attributes": 0, "restored_flows": 0, "restored_check_directions": 0}
+    out = {"restored_kinds": 0, "restored_tags": 0, "restored_attributes": 0, "restored_flows": 0, "restored_check_directions": 0}
     if sidecar.get("schema") != SIDECAR_SCHEMA or sidecar.get("dexpi_sha256") != dexpi_sha256:
         _issue(unknowns, "dexpi_sidecar_stale", "곁 파일이 이 DEXPI 파일의 것이 아님(내보낸 뒤 파일이 바뀌었거나 다른 파일): 되붙이지 않음")
         extraction["summary"] = summarize(extraction)
@@ -619,34 +761,59 @@ def apply_sidecar(extraction, sidecar, dexpi_sha256):
             node["kind"], node["category"], node["classification"] = kind, rules.KIND_CATEGORY[kind], "classified"
             node["attributes"]["kind"] = kind
             out["restored_kinds"] += 1
+        if ent.get("tag") is not None and not isinstance(ent["tag"], str):
+            _issue(unknowns, "dexpi_sidecar_bad_tag", "곁 파일의 태그가 글자가 아니어서 되붙이지 않음", node["source_object_id"],
+                   node["local_id"], "tag")
+        elif "tag" in ent:
+            out["restored_tags"] += _restore_tag(node, ent["tag"], unknowns)
+        _put_grade(node, ent.get("grade"))
+        basis = dexpi_origin.tag_basis_of({"TagBasis": (ent.get("grade") or {}).get("tag_basis")})
+        if basis and (ent.get("tag") or None) == node["tag"]:
+            node.setdefault("evidence", {})["tag_basis"] = basis
+        settled = {f for f in ("kind", "tag") if (ent.get(f) or None) == node[f]}  # 표시로는 받지 못한 값을 곁 파일이 되돌렸다
+        line = (ent.get("attributes") or {}).get("line_no")
+        if line and any(u["check"] == dexpi_origin.CHECK and u.get("target") == node["local_id"] and u.get("field") == "line_no" for u in unknowns):
+            node["attributes"]["line_no"] = line
+            settled.add("line_no")
+            grades = dexpi_origin.without((node.get("evidence") or {}).pop("dexpi_origin", {}), {"line_no"})
+            if grades:
+                node["evidence"]["dexpi_origin"] = grades
+        unknowns[:] = [u for u in unknowns if not (u["check"] == dexpi_origin.CHECK and u.get("target") == node["local_id"] and u.get("field") in settled)]
         restored = []
         if (ent.get("attributes") or {}).get("fail_position") == "FL" and node["attributes"].get("fail_position") == "FAI":
             node["attributes"]["fail_position"] = "FL"  # DEXPI에는 FL이 없어 FailRetainPosition(FAI)으로 나갔다
             restored.append("fail_position")
         for k, v in (ent.get("attributes") or {}).items():
-            if not k.startswith("dexpi:") and k not in node["attributes"] and v not in (None, ""):
+            if k != "tag" and not k.startswith("dexpi:") and k not in node["attributes"] and v not in (None, ""):
                 node["attributes"][k] = v
                 restored.append(k)
         out["restored_attributes"] += len(restored)
         node.setdefault("evidence", {})["hazop_sidecar"] = {"entity_id": ent["entity_id"], "graph_version": sidecar.get("graph_version"),
-                                                           "origin": ent.get("origin"), "human_edit": ent.get("human_edit")}
+                                                           "origin": ent.get("origin"), "human_edit": ent.get("human_edit"),
+                                                           "auto": ent.get("auto") or []}
         gone = set(restored)
         if kind and node["kind"] == kind:
             gone.add("kind")
         unknowns[:] = [u for u in unknowns if not (u.get("target") == node["local_id"] and u.get("field") in gone)]
+    if out["restored_tags"]:
+        unknowns[:] = [u for u in unknowns if u["check"] != "dexpi_tag_not_unique"]
+        _tag_not_unique(extraction["nodes"], unknowns)
     for pipe in sidecar.get("pipes", []):
         rel = rel_by_id.get(pipe["dexpi_id"])
         if rel is None:
             continue
         pipe_of_entity[pipe["entity_id"]] = rel["local_id"]
         fd = pipe.get("flow_direction")
-        if fd and rel["flow_direction"] is None and fd.get("from") in local_of_entity and fd.get("to") in local_of_entity:
+        _put_grade(rel, pipe.get("grade"))
+        refused = [u for u in unknowns if u["check"] == dexpi_origin.CHECK and u.get("target") == rel["local_id"] and u.get("field") == "flow_direction"]
+        if fd and (rel["flow_direction"] is None or refused) and fd.get("from") in local_of_entity and fd.get("to") in local_of_entity:
             a, b = local_of_entity[fd["from"]], local_of_entity[fd["to"]]
             ends = [e["node_local_id"] for e in rel["endpoints"]]
             if a in ends and b in ends and a != b:
                 rel["flow_direction"] = {"from": a, "to": b, "from_end": "source" if ends[0] == a else "target",
-                                         "to_end": "source" if ends[0] == b else "target", "basis": fd.get("basis")}
-                unknowns[:] = [u for u in unknowns if not (u["check"] == "unknown_flow_direction" and u.get("target") == rel["local_id"])]
+                                         "to_end": "source" if ends[0] == b else "target",
+                                         "basis": dexpi_origin.basis_for(fd.get("basis"), (pipe.get("grade") or {}))}
+                unknowns[:] = [u for u in unknowns if u not in refused and not (u["check"] == "unknown_flow_direction" and u.get("target") == rel["local_id"])]
                 out["restored_flows"] += 1
     for dexpi_id, cd in (sidecar.get("check_directions") or {}).items():
         node = node_by_id.get(dexpi_id)

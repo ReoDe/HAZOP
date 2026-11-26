@@ -92,7 +92,7 @@ class RegistryContractTest(unittest.TestCase):
                 mock.patch.dict(api.TOPIC_OWNER, clear=True), mock.patch.dict(api.LOADED, clear=True):
             with self.assertLogs("hazop.shell.api", level="ERROR"):
                 bound = api._load_modules()
-        self.assertEqual(bound, ("chat.action.", "sheet."))
+        self.assertEqual(bound, api.PROJECT_BOUND_CORE)
 
 
 if __name__ == "__main__":

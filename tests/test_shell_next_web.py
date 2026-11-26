@@ -10,27 +10,12 @@ LONGEST = "도면이 바뀌어 3곳을 다시 확인해야 합니다"
 
 
 class NextLineTest(ShellBase):
-    def test_the_line_shows_the_engine_item_in_the_top_bar(self):
+    def test_the_top_bar_has_no_next_line(self):
+        """화면 단순화(사용자 결정 2026-11-25): 맨 위 '다음에 할 일' 한 줄은 화면에서 내렸다(코드와 엔진 읽기는 남김)."""
         win = self.window((1366, 768))
-        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.topbar .next .line')"), 15), "줄이 뜨지 않음")
-        from hazop.shell import api_next
-        first = api_next.summary(win.engine)["items"][0]["text"]
-        self.assertTrue(wait_for(lambda: first in (self.js(win, "document.querySelector('.topbar .next .line .txt').textContent") or ""), 10))
-
-    def test_the_longest_sentence_is_not_cut_at_1366(self):
-        win = self.window((1366, 768))
-        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.topbar .next .line')"), 15))
-        # 가장 긴 문장·단추·'그 밖에 n건'을 넣고 잘림을 잰다
-        self.js(win, """window.__hz.next.set(({ running: null, open: false, items: [
-            { kind: 'recheck', count: 3, text: '%s', detail: null, action: { label: '확인하기', go: 'queue:lost' }, tone: 'warn' },
-            { kind: 'titleblock', count: 1, text: '표제란을 확정하지 않은 도면이 1장 있습니다', detail: null, action: { label: '표제란 확정', go: 'panel:drawings#titleblock' }, tone: '' },
-            { kind: 'nodes_draft', count: 2, text: '확정하지 않은 검토구간이 2개 있습니다', detail: null, action: { label: '모두 확정', go: 'confirm:nodes.confirm' }, tone: '' }] }))""" % LONGEST)
-        self.assertTrue(wait_for(lambda: LONGEST in (self.js(win, "document.querySelector('.topbar .next .line .txt').textContent") or ""), 10))
-        m = self.js(win, """(() => { const t = document.querySelector('.topbar .next .line .txt'); const l = t.closest('.line'); const b = document.querySelector('.topbar').getBoundingClientRect();
-            const r = l.getBoundingClientRect(); return JSON.stringify({ cut: t.scrollWidth > t.clientWidth + 1, inside: r.left >= b.left && r.right <= b.right,
-            more: !!l.querySelector('.more') }); })()""")
-        import json
-        self.assertEqual(json.loads(m), {"cut": False, "inside": True, "more": True}, m)
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.topbar .crumb')"), 15))
+        pump(0.5)
+        self.assertEqual(self.js(win, "document.querySelectorAll('.topbar .next').length"), 0)
 
 
 class QueueCardTest(ShellBase):
@@ -62,6 +47,7 @@ class QueueCardTest(ShellBase):
 class ReviewFlowTest(ShellBase):
     """도면별 AI 검토 한 바퀴(HZ-DSN-06 G7): 도면 위 'AI 검토 시작' → 확인 창 → 시작 → 끝 알림 → 검토하기 → 그 도면 대기열. 가짜 구독 클라이언트."""
 
+    @unittest.skip("화면 단순화: 표제란·AI 검토 시작·쪽 확정 단추를 화면에서 뺐다. 자동 확정(C2)이 들어올 때 새 흐름으로 다시 쓴다")
     def test_start_on_the_drawing_then_review_the_queue(self):
         from tests.test_ai_review import StubClient
         from tests.test_shell_aireview import FakeAi, kind_answers
@@ -98,6 +84,7 @@ class QueueFocusTest(ShellBase):
         QTest.keyClick(target, getattr(Qt, "Key_" + k), Qt.NoModifier)
         pump(0.3)
 
+    @unittest.skip("화면 단순화: 표제란·AI 검토 시작·쪽 확정 단추를 화면에서 뺐다. 자동 확정(C2)이 들어올 때 새 흐름으로 다시 쓴다")
     def test_e_moves_focus_into_the_field_and_enter_saves_not_reopens(self):
         from hazop.app import data
         from hazop.extract import ai_review as ar
@@ -148,11 +135,8 @@ class LayoutTest(ShellBase):
         win = self.window((1366, 768))
         gid = self.js(win, "window.__hz.store.get().drawings.drawings[0].graph_id")
         self.js(win, "window.__hz.store.set({ sheet: '%s', panel: 'nodes', notices: [{ id: 't', kind: 'warn', text: '도면이 바뀌어 2곳을 다시 확인해야 합니다(찾지 못한 구성요소 2개)' }] })" % gid)
-        self.assertTrue(wait_for(lambda: self.rect(win, ".pwrap") and self.rect(win, ".notice-row") and self.rect(win, ".topbar .next .line"), 15))
-        line, panel, row, canvas = (self.rect(win, s) for s in (".topbar .next .line", ".pwrap", ".notice-row", ".canvas"))
-        hit = self.js(win, "(() => { const r = document.querySelector('.topbar .next .line').getBoundingClientRect();"
-                           " const e = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2); return !!(e && e.closest('.next')); })()")
-        self.assertTrue(hit, "열린 패널이 다음에 할 일 줄을 가림")
+        self.assertTrue(wait_for(lambda: self.rect(win, ".pwrap") and self.rect(win, ".notice-row") and self.rect(win, ".topbar"), 15))
+        line, panel, row, canvas = (self.rect(win, s) for s in (".topbar", ".pwrap", ".notice-row", ".canvas"))
         self.assertGreaterEqual(panel[1], line[3] - 1, "패널은 위 막대 아래에서 시작")
         self.assertGreaterEqual(row[0], panel[2] - 1, "알림은 패널 오른쪽에서 시작(글이 패널에 잘리지 않음)")
         self.assertGreaterEqual(canvas[1], row[3] - 1, "알림이 도면을 덮지 않음")
@@ -163,16 +147,6 @@ class LayoutTest(ShellBase):
                      " key: 'L-1', label: '밸브', graph_id: null, sheet: null, target: { node_id: 'S1', rev: 1, state: 'applied' }, held: false, cands: [], state: 'open' }] })")
         self.assertTrue(wait_for(lambda: self.rect(win, "aside.chat.queue") is not None, 10))
         self.assertTrue(wait_for(lambda: self.js(win, "getComputedStyle(document.querySelector('.notice-bar')).display") == "none", 5), "대기열 동안 알림이 남음")
-
-    def test_the_list_closes_with_escape(self):
-        win = self.window((1366, 768))
-        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.topbar .next .line')"), 15))
-        self.js(win, """window.__hz.next.set({ running: null, open: true, items: [
-            { kind: 'titleblock', count: 1, text: '표제란을 확정하지 않은 도면이 1장 있습니다', detail: null, action: { label: '표제란 확정', go: 'panel:drawings#titleblock' }, tone: '' },
-            { kind: 'nodes_draft', count: 2, text: '확정하지 않은 검토구간이 2개 있습니다', detail: null, action: { label: '모두 확정', go: 'confirm:nodes.confirm' }, tone: '' }] })""")
-        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.next-list')"), 5))
-        self.js(win, "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
-        self.assertTrue(wait_for(lambda: self.js(win, "!document.querySelector('.next-list')"), 5), "Esc로 닫히지 않음")
 
 
 class CloseWaitTest(ShellBase):

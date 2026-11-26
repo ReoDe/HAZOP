@@ -22,7 +22,7 @@
 
 ## 2. DEXPI 내보내기
 
-내보내기는 **'쪽 확정'이 `confirmed`인 쪽만** 합니다(규격 §6.1). 그 함수는 `hazop.extract.confirmation.sheet_confirmation(name)`(화면 규격 §10.7, c0e2f4c, 명령 표 [sheet-commands.md](sheet-commands.md))이고, 내보내기는 `default_confirmation()`으로 찾습니다(없으면 내보내지 않고 사유를 보임). 개발·시험에서는 `confirmation="assume"`(또는 명령줄 `--assume-confirmed`)이 모두 확정으로 봅니다.
+내보내기는 **확정 수준이 `human`·`auto`인 쪽만** 합니다(규격 §6.1 rev 4. 2026-11-25에 자동 확정된 쪽을 더했고, 걸린 쪽만 `not_exported`에 `level`·`code`·`reason`을 적어 빼고 나머지를 냅니다. 아래에서 'confirmed인 쪽', '하나라도 걸리면'이라고 적은 곳은 그 앞의 글입니다). 그 함수는 `hazop.extract.confirmation.sheet_confirmation(name)`(화면 규격 §10.7, c0e2f4c, 명령 표 [sheet-commands.md](sheet-commands.md))이고, 내보내기는 `default_confirmation()`으로 찾습니다(없으면 내보내지 않고 사유를 보임). 개발·시험에서는 `confirmation="assume"`(또는 명령줄 `--assume-confirmed`)이 모두 확정으로 봅니다.
 
 **확정한 자료 그대로 내보냅니다(2026-11-14 검토 R1).** `confirmation="auto"`(엔진의 쪽 확정)이면 디스크의 `output/graph/<이름>/graph.json`을 내용으로 쓰지 않습니다. AI 후보 수락처럼 그래프를 다시 만들지 않는 저장 뒤에는 그 파일이 낡을 수 있기 때문입니다. 대신 `confirmation.load_sheet(name)`이 확정을 판정한 바로 그 세 파일 바이트(추출 결과·사람 수정 기록·AI 후보 기록)로 그래프를 그 자리에서 만들어(`hazop.graph.build.build_graph`, `build_graph.build_one`과 같은 입력) 내보냅니다. 디스크 그래프와 판(`graph_version`)이 다르면 `drawings[].graph_rebuilt`가 `true`입니다. 디스크 파일은 고치지 않습니다. 그래프를 만들 수 없으면 그 쪽은 `not_exported`에 `state: "graph_error"`와 `reason`으로 적습니다. 쓰기 직전에 세 파일 지문을 다시 보고, 바뀌었으면 그 쪽을 `not_exported`(`state: "changed"`)로 옮깁니다. `graph_version`의 뜻은 바꾸지 않았습니다(지문은 `drawings[].source_fingerprint`, 그래프 밖).
 

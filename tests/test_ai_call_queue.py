@@ -8,6 +8,7 @@ AI는 부르지 않는다(가짜 클라이언트). 작업은 실제 스레드로
 """
 
 import json
+import os
 import threading
 import time
 import unittest
@@ -100,20 +101,28 @@ class SerialTest(QueueBase):
 
     def test_c_auto_review_after_register_waits_its_turn(self):
         from hazop.app import data
-        from hazop.shell import register_flow
-        self.engine.settings["extract_ai_review"] = True
-        self.engine.settings["extract_ai_cap"] = 1
-        ex = data.read_json(data.extraction_path(self.name))
+        from hazop.extract import ai_images, confirmation
+        from hazop.shell import auto_flow
+        from tests.test_shell_auto_flow import big, fake_images
+        name = "Q__material-000000000001-r1-p0"
+        os.makedirs(os.path.dirname(data.extraction_path(name)))
+        with open(data.extraction_path(name), "w", encoding="utf-8") as fh:
+            json.dump(big(1, unread=5), fh)
+        confirmation.record_auto(name, "waiting", "started")
+        auto_flow.set_consent(self.engine, True)
+        p = mock.patch.object(ai_images, "image_input_for", side_effect=fake_images)
+        p.start()
+        self.addCleanup(p.stop)
         first = self.review_job()
         self.assertTrue(wait_for(lambda: self.client.active == 1))
-        auto = self.engine.start_job("등록", lambda progress: register_flow.review_if_wanted(self.engine, [(self.name + "-copy", ex)], progress))
+        auto = self.engine.start_job("등록", lambda progress: auto_flow.run_budgeted(self.engine, [name], progress))
         time.sleep(0.5)
         self.assertEqual(self.client.peak, 1, "자동 검토가 AI 검토와 겹침")
         self.assertTrue(wait_for(lambda: any("기다리는 중" in t for t in self.texts(auto))), self.texts(auto))
         self.client.release.set()
         self.assertTrue(self.engine.wait_jobs(20))
         self.assertEqual(self.ended(first)["name"], "job.done")
-        self.assertTrue(self.ended(auto)["data"]["result"]["ran"], self.ended(auto))
+        self.assertEqual(self.ended(auto)["data"]["result"]["done"], [name], self.ended(auto))
         self.assertEqual(self.client.peak, 1)
 
     def test_c_analysis_run_waits_its_turn(self):
@@ -209,28 +218,6 @@ class BusyTest(QueueBase):
         self.assertTrue(self.engine.wait_jobs(20))
         out = self.engine.dispatch("aireview.run", {"graph_ids": [self.gid], "cap": 1, "conn_ver": ver})   # 끝나면 다시 받는다
         self.assertTrue(out["ok"], out)
-
-
-    def test_auto_review_skips_the_drawing_a_manual_review_holds(self):
-        from hazop.app import data
-        from hazop.shell import register_flow
-        self.engine.settings["extract_ai_review"] = True
-        self.engine.settings["extract_ai_cap"] = 1
-        ex = data.read_json(data.extraction_path(self.name))
-        out = self.engine.dispatch("aireview.run", {"graph_ids": [self.gid], "cap": 1, "conn_ver": self.conn_ver()})
-        self.assertTrue(out["ok"], out)
-        self.assertTrue(wait_for(lambda: self.client.active == 1))
-        only = register_flow.review_if_wanted(self.engine, [(self.name, ex)], lambda *a: None)
-        self.assertEqual((only["ran"], only["skipped"], only.get("busy")), (False, "busy", [self.name]), only)
-        self.client.release.set()                       # 아래 실행이 차례를 기다리지 않게 앞 작업을 끝낸다
-        self.assertTrue(self.engine.wait_jobs(20))
-        held = self.engine.reserve_review([self.name])  # 수동 검토가 그 도면을 잡은 채로
-        try:
-            mixed = register_flow.review_if_wanted(self.engine, [(self.name, ex), (self.name + "-copy", ex)], lambda *a: None)
-        finally:
-            self.engine.release_review(held)
-        self.assertTrue(mixed["ran"], mixed)
-        self.assertEqual(mixed.get("busy"), [self.name], mixed)   # 건너뛴 도면이 결과에 남는다
 
 
 class GateTest(unittest.TestCase):
@@ -419,7 +406,7 @@ class RetryTest(unittest.TestCase):
         from types import SimpleNamespace
         from hazop.shell import ai_image_flow
         client = StubClient(good_answers, errors=["timeout"] * 20)
-        engine = SimpleNamespace(settings={ai_image_flow.KEY: False})
+        engine = SimpleNamespace(settings={ai_image_flow.KEY: False}, project_id=lambda: None)
         pages = [("A", self.ex), ("B", self.ex), ("C", self.ex)]
         with mock.patch.object(ar, "decided_targets", lambda name: set()), mock.patch.object(ar, "merge_and_save", lambda *a, **k: None):
             done, _ = ai_image_flow.run_pages(engine, pages, client, 2, ar.RUN_CAP, None, None)

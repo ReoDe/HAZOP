@@ -44,19 +44,6 @@ class AiReviewStopTest(Base):
         self.assertEqual(doc["runs"][-1]["calls"], 1)
         self.assertTrue(doc["runs"][-1]["stopped"])
 
-    def test_auto_review_after_extraction_stops_the_same_way(self):
-        from hazop.shell import api, register_flow
-        self.engine.settings["extract_ai_review"] = True
-
-        def progress(text, done=None, total=None):                # 작업 진행 알림과 같은 규칙: 멈춤 요청이 서 있으면 JobStopped
-            if self.engine.stop_requested():
-                raise api.JobStopped("중지했습니다")
-        with mock.patch.object(ar, "DEFAULT_BATCH", 1):
-            out = register_flow.review_if_wanted(self.engine, [(self.name, self.ex)], progress)
-        self.assertEqual(len(self.client.requests), 1)
-        self.assertTrue(out["ran"], out)
-        self.assertEqual(ar.load_doc(self.name)["runs"][-1]["calls"], 1)
-
     def test_a_stop_set_before_the_run_sends_no_call_at_all(self):
         from hazop.shell import ai_image_flow
         self.engine.stop_jobs()

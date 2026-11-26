@@ -24,7 +24,7 @@ import export_dexpi  # noqa: E402
 from hazop import paths  # noqa: E402
 from hazop.export import dexpi_export as de  # noqa: E402
 from hazop.extract import dexpi_map, drawio  # noqa: E402
-from hazop.extract.adapters import dexpi_import, dexpi_read  # noqa: E402
+from hazop.extract.adapters import dexpi_import, dexpi_origin, dexpi_read  # noqa: E402
 from hazop.graph import build  # noqa: E402
 
 FIXTURES = os.path.join(REPO_ROOT, "tests", "fixtures", "dexpi")
@@ -84,7 +84,7 @@ class SnpExportTest(unittest.TestCase):
             root = dexpi_read.parse_safely(exp.xml)
             self.assertEqual(dexpi_read.check_structure(root), [])
             self.assertEqual(dexpi_read.check_references(root), [])
-            self.assertTrue(all(dexpi_map.type_is_known(o.get("type")) for o in root.iter("Object")))
+            self.assertTrue(all(dexpi_map.type_is_known(o.get("type")) for o in root.iter("Object") if o.get("type") != dexpi_origin.TYPE))
 
     def test_counts_match_an_independent_count_of_the_graph(self):
         for _, (ex, g), exp in self.each():
@@ -199,10 +199,11 @@ class SnpExportTest(unittest.TestCase):
             self.assertEqual(len(valves_after), len(valves_before))
 
     def test_without_the_sidecar_the_file_stands_alone(self):
-        """곁 파일 없이도 DEXPI 파일만으로 온전하다. 근사로 낸 kind는 DEXPI 쪽 이름으로, 흐름 방향은 미확인으로 돌아온다."""
+        """곁 파일과 원래 값 표시가 없어도 DEXPI 파일만으로 온전하다. 근사로 낸 kind는 DEXPI 쪽 이름으로, 흐름 방향은 미확인으로 돌아온다."""
         key = "SNP-M-201"
         ex, g = self.pairs[key]
-        back = reimport(self.exports[key], with_sidecar=False)
+        with mock.patch.object(de, "WRITE_MARKS", False):
+            back = reimport(export((ex, g)), with_sidecar=False)
         self.assertEqual(back["validation"]["status"], "passed")
         # 곁 파일이 없으면 흐름은 파일에 근거가 있는 것(도면 연결 기호)만 남고 나머지는 미확인이다
         self.assertEqual({r["flow_direction"]["basis"] for r in back["relations"] if r["flow_direction"]}, {"dexpi_off_page_connector"})
@@ -407,6 +408,103 @@ class DexpiRoundtripTest(unittest.TestCase):
         self.assertTrue(all("hazop_sidecar" not in n.get("evidence", {}) for n in ex2["nodes"]))
 
 
+class InstrumentRoundtripTest(unittest.TestCase):
+    """V2-1: 계기의 노드 위치와 계기 태그가 왕복에서 어긋나지 않는다."""
+
+    def test_instrument_with_nodes_in_a_proteus_file_is_exported(self):
+        """공개 1.3 예제(저장소 밖)와 같은 꼴: 계측 기능에 ConnectionPoints가 있다. 계기의 노드는 DEXPI에 쓰지 않으므로 위치도 쓰지 않는다."""
+        node = (b'<ConnectionPoints NumPoints="1"><Node ID="NI1"><Position><Location X="150" Y="232" Z="0"/></Position></Node>'
+                b'</ConnectionPoints>')
+        head = b'<ProcessInstrumentationFunction ID="PIF-1" ComponentClass="ProcessInstrumentationFunction">'
+        raw = fixture("small-pid-proteus.xml")
+        self.assertEqual(raw.count(head), 1)
+        ex = dexpi_import.extract_bytes(raw.replace(head, head + node), "x.xml")[0]
+        pif = next(n for n in ex["nodes"] if n["source_object_id"] == "PIF-1")
+        self.assertIn("NI1", pif["attributes"]["dexpi:nodes"])
+        exp = export((ex, build.build_graph(ex)))
+        self.assertEqual(dexpi_read.check_references(dexpi_read.parse_safely(exp.xml)), [])
+        plain = export(dexpi_pair("small-pid-proteus.xml"))
+        self.assertEqual(exp.xml, plain.xml)
+
+    def test_every_tag_comes_back_through_the_sidecar(self):
+        for path in SNP:
+            with self.subTest(os.path.basename(path)):
+                exp = export(snp_pair(path))
+                back = {n["source_object_id"]: n for n in reimport(exp)["nodes"]}
+                for e in exp.sidecar["entities"]:
+                    n = back[e["dexpi_id"]]
+                    self.assertEqual((n["tag"], n["label"], n["attributes"].get("tag")), (e["tag"], e["tag"] or "", e["tag"]))
+
+    def test_three_instruments_of_one_loop_stay_three(self):
+        exp = export(snp_pair([p for p in SNP if "SNP-M-101" in p][0]))
+        back = reimport(exp)
+        tags = [n["tag"] for n in back["nodes"] if n["category"] == "instrument"]
+        self.assertTrue({"RC-TE101", "RC-TT101", "RC-TI101"} <= set(tags), tags)
+        self.assertEqual(len(tags), len(set(tags)))
+        self.assertFalse([u for u in back["validation"]["unknowns"] if u["check"] == "dexpi_tag_not_unique"])
+        again = export((back, build.build_graph(back)))  # 한 번 더 내보내도 태그가 그대로
+        self.assertEqual(sorted(str(e["tag"]) for e in again.sidecar["entities"]), sorted(str(e["tag"]) for e in exp.sidecar["entities"]))
+
+    def test_sidecar_restores_a_tag_the_person_changed_or_removed(self):
+        for tag in ("PIC-101A", None):
+            with self.subTest(tag):
+                ex, _ = dexpi_pair("small-pid-dexpi2.xml")
+                n = next(n for n in ex["nodes"] if n["category"] == "instrument")
+                oid = n["source_object_id"]
+                n["tag"], n["label"], n["label_text"] = tag, tag or "", tag or ""
+                n["attributes"].pop("tag", None)
+                if tag:
+                    n["attributes"]["tag"] = tag
+                back = reimport(export((ex, build.build_graph(ex))))
+                got = next(x for x in back["nodes"] if x["source_object_id"] == oid)
+                self.assertEqual((got["tag"], got["attributes"].get("tag")), (tag, tag))
+                missing = [u for u in back["validation"]["unknowns"] if u["check"] == "missing_tag" and u["target"] == got["local_id"]]
+                self.assertEqual(len(missing), 0 if tag else 1)
+
+    def test_missing_tag_is_cleared_when_the_sidecar_gives_the_tag(self):
+        ex, _ = dexpi_pair("small-pid-dexpi2.xml")
+        n = next(n for n in ex["nodes"] if n["category"] == "instrument")
+        n["tag"] = n["label"] = n["label_text"] = n["attributes"]["tag"] = "LOCAL PANEL"
+        for k in [k for k in n["attributes"] if k.startswith("dexpi:ProcessInstrumentation")]:
+            del n["attributes"][k]
+        with mock.patch.object(de, "WRITE_MARKS", False):
+            exp = export((ex, build.build_graph(ex)))
+
+        def missing(back):
+            lid = next(x["local_id"] for x in back["nodes"] if x["source_object_id"] == n["source_object_id"])
+            return [u for u in back["validation"]["unknowns"] if u["check"] == "missing_tag" and u["target"] == lid]
+        self.assertEqual((len(missing(reimport(exp, with_sidecar=False))), len(missing(reimport(exp)))), (1, 0))
+
+    def test_a_sidecar_tag_that_is_not_text_is_not_put_back(self):
+        exp = export(dexpi_pair("small-pid-dexpi2.xml"))
+        plain = {n["source_object_id"]: n["tag"] for n in reimport(exp)["nodes"]}
+        for bad in (["P-1"], {"a": 1}, 7, True):
+            with self.subTest(bad):
+                side = copy.deepcopy(exp.sidecar)
+                side["entities"][0]["tag"] = bad
+                back = dexpi_import.extract_bytes(exp.xml, "x.xml", sidecar=side)[0]
+                self.assertEqual({n["source_object_id"]: n["tag"] for n in back["nodes"]}, plain)
+                self.assertEqual(len([u for u in back["validation"]["unknowns"] if u["check"] == "dexpi_sidecar_bad_tag"]), 1)
+
+    def test_a_wrong_instrument_tag_in_the_file_is_caught_before_writing(self):
+        real = de._Builder._finish
+        pair = snp_pair([p for p in SNP if "SNP-M-101" in p][0])
+        for old, new in ((b"<String>101</String>", b"<String>109</String>"),):
+            def broken(self, xml, *a):
+                assert old in xml
+                return real(self, xml.replace(old, new, 1), *a)
+            with mock.patch.object(de._Builder, "_finish", broken):
+                with self.assertRaises(de.ExportError) as cm:
+                    export(pair)
+            self.assertIn("계기 태그", " ".join(cm.exception.reasons))
+
+    def test_a_sidecar_that_does_not_give_the_tag_back_is_caught_before_writing(self):
+        with mock.patch.object(dexpi_import, "apply_sidecar", lambda *a, **k: {}), mock.patch.object(de, "WRITE_MARKS", False):
+            with self.assertRaises(de.ExportError) as cm:
+                export(snp_pair([p for p in SNP if "SNP-M-101" in p][0]))
+        self.assertIn("곁 파일", " ".join(cm.exception.reasons))
+
+
 class WriteTest(unittest.TestCase):
 
     def setUp(self):
@@ -456,7 +554,11 @@ class WriteTest(unittest.TestCase):
     def test_only_confirmed_pages_are_exported_and_the_rest_is_listed(self):
         res = self.export(confirmation=self.gate({"SNP-M-101": "confirmed", "SNP-M-102": "ready"}))
         self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
-        self.assertEqual(res["not_exported"], [{"name": "SNP-M-102", "drawing_number": "SNP-M-102", "state": "ready", "unconfirmed": 3}])
+        row = res["not_exported"][0]
+        self.assertEqual({k: row[k] for k in ("name", "drawing_number", "state", "level", "unconfirmed", "code")},
+                         {"name": "SNP-M-102", "drawing_number": "SNP-M-102", "state": "ready", "level": "extracted",
+                          "unconfirmed": 3, "code": "extracted_only"})
+        self.assertIn("ready", row["reason"])
         self.assertEqual(sorted(os.listdir(self.out)), ["SNP-M-101.dexpi.xml", "SNP-M-101.excluded.json", "SNP-M-101.hazop.json",
                                                          "manifest.json"])
         with open(res["manifest"], encoding="utf-8") as fh:
@@ -522,17 +624,153 @@ class WriteTest(unittest.TestCase):
         self.assertEqual(len(cm.exception.reasons), 2)
         self.assertFalse(os.path.exists(self.out))
 
-    def test_one_failing_drawing_writes_nothing_for_the_others(self):
+    def test_one_failing_drawing_does_not_stop_the_others(self):
         path = os.path.join(self.graph_root, "SNP-M-102", "graph.json")
         with open(path, encoding="utf-8") as fh:
             g = json.load(fh)
         g["validation"]["status"] = "blocked"
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(g, fh)
-        with self.assertRaises(de.ExportError) as cm:
-            self.export()
-        self.assertEqual(len(cm.exception.reasons), 1)
-        self.assertFalse(os.path.exists(self.out))
+        res = self.export()
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
+        with open(res["manifest"], encoding="utf-8") as fh:
+            man = json.load(fh)
+        self.assertEqual([(x["name"], x["code"]) for x in man["not_exported"]], [("SNP-M-102", "check_failed")])
+        self.assertIn("구조 검증", man["not_exported"][0]["reason"])
+        self.assertFalse([f for f in os.listdir(self.out) if f.startswith("SNP-M-102")])
+
+    def test_an_unexpected_error_in_one_drawing_does_not_stop_the_others(self):
+        real = de.export_drawing
+
+        def flaky(graph, *a, **k):
+            if graph["source"]["drawing_number"] == "SNP-M-101":
+                raise KeyError("port")
+            return real(graph, *a, **k)
+        with mock.patch.object(de, "export_drawing", side_effect=flaky):
+            res = self.export()
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-102"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-101", "check_failed")])
+
+    def test_an_unreadable_graph_file_does_not_stop_the_others(self):
+        with open(os.path.join(self.graph_root, "SNP-M-101", "graph.json"), "w", encoding="utf-8") as fh:
+            fh.write("{")
+        res = self.export()
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-102"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-101", "error")])
+
+    def test_a_page_with_malformed_data_or_listed_twice_does_not_stop_the_others(self):
+        def gate(name):
+            if name == "SNP-M-102":
+                raise TypeError("list indices must be integers")
+            return {"state": "confirmed", "unconfirmed": [], "unplaced": []}
+        res = de.export_names(["SNP-M-101", "SNP-M-102", "SNP-M-101"], self.out, graph_root=self.graph_root, extract_root=self.extract_root,
+                              confirmation=gate, require_confirmed_number=False)
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-102", "error")])
+        rows = de.list_exportable(self.graph_root, self.extract_root, confirmation=gate)
+        self.assertEqual([(r["name"], r["state"]) for r in rows], [("SNP-M-101", "confirmed"), ("SNP-M-102", "error")])
+
+    def test_a_page_without_a_confirmed_number_does_not_stop_the_others(self):
+        path = os.path.join(self.extract_root, "SNP-M-101", "extraction.json")
+        with open(path, encoding="utf-8") as fh:
+            ex = json.load(fh)
+        ex["drawing"]["identification_basis"] = "registration_confirmed"
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(ex, fh)
+        res = self.export(require_confirmed_number=True)
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-101"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-102", "number_unconfirmed")])
+
+    def test_files_left_from_an_earlier_export_are_named_not_deleted(self):
+        self.export()
+        with open(os.path.join(self.out, "SNP-M-102.dexpi.xml"), "rb") as fh:
+            old = fh.read()
+        res = self.export(confirmation=self.gate({"SNP-M-101": "confirmed", "SNP-M-102": "open"}), overwrite=True)
+        with open(res["manifest"], encoding="utf-8") as fh:
+            man = json.load(fh)
+        want = ["SNP-M-102.dexpi.xml", "SNP-M-102.excluded.json", "SNP-M-102.hazop.json"]
+        self.assertEqual((man["stale_files"], res["stale_files"]), (want, want))
+        self.assertIn("이번에 내지 않은", man["stale_reason"])
+        with open(os.path.join(self.out, "SNP-M-102.dexpi.xml"), "rb") as fh:
+            self.assertEqual(fh.read(), old)
+        res = self.export(overwrite=True)
+        self.assertEqual(res["stale_files"], [])
+
+    def test_one_malformed_drawing_does_not_empty_the_list(self):
+        for text in ("[]", '{"source": []}', '{"source": {"drawing_number": 3}, "validation": []}'):
+            with self.subTest(text):
+                with open(os.path.join(self.graph_root, "SNP-M-101", "graph.json"), "w", encoding="utf-8") as fh:
+                    fh.write(text)
+                rows = de.list_exportable(self.graph_root, self.extract_root, confirmation="assume")
+                self.assertEqual([(r["name"], r["exportable"]) for r in rows], [("SNP-M-101", False), ("SNP-M-102", False)])
+                self.assertEqual(rows[1]["drawing_number"], "SNP-M-102")
+        rows = de.list_exportable(self.graph_root, self.extract_root, confirmation=lambda name: [1] if name == "SNP-M-101" else
+                                  {"state": "confirmed"})
+        self.assertEqual(len(rows), 2)
+        res = self.export(confirmation=lambda name: {"state": "confirmed", "unconfirmed": 3} if name == "SNP-M-101" else {"state": "confirmed"})
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-102"])
+
+    def test_a_page_that_cannot_be_turned_into_bytes_does_not_stop_the_others(self):
+        real = de.export_drawing
+
+        def broken(graph, *a, **k):
+            exp = real(graph, *a, **k)
+            if graph["source"]["drawing_number"] == "SNP-M-101":
+                exp.sidecar["bad"] = {1, 2}
+            return exp
+        with mock.patch.object(de, "export_drawing", side_effect=broken):
+            res = self.export()
+        self.assertEqual([d["name"] for d in res["drawings"]], ["SNP-M-102"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("SNP-M-101", "check_failed")])
+
+    def failing_replace(self, fail):
+        real = os.replace
+
+        def replace(src, dst):
+            if fail(src, dst):
+                raise PermissionError(13, "denied", dst)
+            return real(src, dst)
+        return mock.patch.object(de.os, "replace", side_effect=replace)
+
+    def test_new_files_are_removed_when_the_swap_fails(self):
+        os.makedirs(self.out)
+        with self.failing_replace(lambda src, dst: dst == os.path.join(self.out, "manifest.json")):
+            with self.assertRaises(OSError):
+                self.export()
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_a_previous_file_that_cannot_be_put_back_is_kept_aside(self):
+        self.export()
+        name = "SNP-M-101.dexpi.xml"
+        with open(os.path.join(self.out, name), "rb") as fh:
+            old = fh.read()
+        with self.failing_replace(lambda src, dst: dst == os.path.join(self.out, name)):
+            with self.assertRaises(OSError):
+                self.export(overwrite=True)
+        kept = glob.glob(os.path.join(glob.escape(self.out), ".hazop-dexpi-old-*", name))
+        self.assertEqual(len(kept), 1)
+        with open(kept[0], "rb") as fh:
+            self.assertEqual(fh.read(), old)
+
+    def test_assumed_pages_are_not_called_human_or_auto(self):
+        self.assertEqual({d["level"] for d in self.export()["drawings"]}, {"assumed"})
+
+    def test_an_interrupted_overwrite_puts_the_previous_files_back(self):
+        self.export()
+        before = {f: open(os.path.join(self.out, f), "rb").read() for f in os.listdir(self.out)}
+        real, n = os.replace, []
+
+        def stop(src, dst):
+            if os.path.dirname(dst) == self.out:
+                n.append(dst)
+                if len(n) == 3:
+                    raise KeyboardInterrupt()
+            return real(src, dst)
+        with mock.patch.object(de.os, "replace", side_effect=stop):
+            with self.assertRaises(KeyboardInterrupt):
+                self.export(overwrite=True, now="2027-01-01T00:00:00+00:00")
+        self.assertEqual({f: open(os.path.join(self.out, f), "rb").read() for f in os.listdir(self.out)
+                          if os.path.isfile(os.path.join(self.out, f))}, before)
 
     def test_failed_write_removes_what_was_written(self):
         real = de.store_io.write_bytes
@@ -749,6 +987,12 @@ class ConfirmedExportTest(unittest.TestCase):
             de.export_names(["A", "B"], self.out, require_confirmed_number=False, confirmation="assume")
         self.assertIn("겹침", cm.exception.reasons[0])
         self.assertFalse(os.path.exists(self.out))
+        os.makedirs(os.path.join(groot, "C"))      # 겹친 둘은 어느 쪽이 맞는지 정하지 않고 둘 다 뺀다
+        with open(os.path.join(groot, "C", "graph.json"), "w", encoding="utf-8") as fh:
+            json.dump(dict(g, source=dict(g["source"], drawing_number="SNP-M-999")), fh, ensure_ascii=False)
+        res = de.export_names(["A", "B", "C"], self.out, require_confirmed_number=False, confirmation="assume")
+        self.assertEqual([d["name"] for d in res["drawings"]], ["C"])
+        self.assertEqual([(x["name"], x["code"]) for x in res["not_exported"]], [("A", "name_clash"), ("B", "name_clash")])
 
     def test_r4_existing_files_are_reported_and_a_failed_overwrite_keeps_them(self):
         self.save_extraction()
@@ -771,6 +1015,145 @@ class ConfirmedExportTest(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(self.out)), sorted(before))
         with open(ok["manifest"], encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["exported_at"], "2027-01-01T00:00:00+00:00")
+
+    def auto_page(self):
+        """미확인이 남은 채 자동 확정된 쪽: 종류를 모르는 밸브 하나, 종류가 의심스러운 밸브 하나."""
+        valves = [n for n in self.ex["nodes"] if n.get("category") == "valve" and n.get("tag")]
+        valves[0]["kind"], valves[0]["classification"] = None, "unclassified"
+        self.ex["validation"]["unknowns"] = [
+            {"check": "position_kind_mismatch", "target": valves[1]["local_id"], "source_object_id": valves[1]["source_object_id"],
+             "field": "kind", "reason": "종류를 확인할 것"}]
+        self.save_extraction()
+        self.cf.record_auto(self.name, "confirmed")
+        st = self.cf.sheet_confirmation(self.name)
+        self.assertEqual((st["state"], st["level"]), ("open", "auto"))
+        return valves
+
+    def test_auto_confirmed_page_goes_out_with_its_level_and_without_unconfirmed_components(self):
+        valves = self.auto_page()
+        st = self.cf.sheet_confirmation(self.name)
+        res = de.export_names([self.name], self.out, confirmation="auto")
+        with open(res["manifest"], encoding="utf-8") as fh:
+            row = json.load(fh)["drawings"][0]
+        self.assertEqual((row["level"], row["unconfirmed"], row["auto_accepted"], row["state"]),
+                         ("auto", st["unconfirmed_targets"], 0, "open"))
+        self.assertEqual(st["unconfirmed_targets"], 2)
+        out = {(x["tag"], x["reason"]) for x in json.loads(self.read_out(".excluded.json"))["excluded_components"]}
+        self.assertTrue({(valves[0]["tag"], "unclassified"), (valves[1]["tag"], "kind_unconfirmed")} <= out, out)
+        for v in valves[:2]:
+            self.assertNotIn(">%s<" % v["tag"], self.read_out(".dexpi.xml"))
+        listed = de.list_exportable(confirmation="auto")[0]
+        self.assertEqual((listed["exportable"], listed["level"], listed["state"]), (True, "auto", "open"))
+
+    def test_components_with_automatically_accepted_values_are_marked_in_the_sidecar(self):
+        from hazop.extract import corrections
+        valves = self.auto_page()
+        pump = next(n for n in self.ex["nodes"] if n.get("kind") == "pump" and n.get("tag"))
+        ops = []
+        for op, n, value, who in (("set_tag", valves[2], {"tag": "AUTO-1"}, corrections.AUTO_BY),
+                                  ("set_tag", pump, {"tag": "AUTO-2"}, corrections.AUTO_BY),
+                                  ("set_kind", pump, {"kind": "compressor", "category": "equipment"}, "검토자")):
+            auto = who == corrections.AUTO_BY
+            made = corrections.make_op(self.ex, op, n["source_object_id"], value, who, existing_ops=ops, name=self.name, auto=auto)
+            if auto:
+                made["accepted_by"] = who
+            ops.append(made)
+        corrections.save_fp(self.name, ops, corrections.AUTO_BY, auto=True)
+        res = de.export_names([self.name], self.out, confirmation="auto")
+        self.assertEqual(res["drawings"][0]["auto_accepted"], 2)
+        side = json.loads(self.read_out(".hazop.json"))
+        self.assertEqual({e["tag"]: (e["origin"], e["auto"]) for e in side["entities"] if e["auto"]},
+                         {"AUTO-1": ("ai_auto", ["tag"]), "AUTO-2": ("human_edit", ["tag"])})
+        back = dexpi_import.extract_bytes(self.read_out(".dexpi.xml").encode("utf-8"), "x.xml", sidecar=side)[0]
+        self.assertEqual({n["tag"]: n["evidence"]["hazop_sidecar"]["auto"] for n in back["nodes"] if n["evidence"]["hazop_sidecar"]["auto"]},
+                         {"AUTO-1": ["tag"], "AUTO-2": ["tag"]})
+
+    def test_auto_page_whose_sources_change_before_writing_is_not_exported(self):
+        valves = self.auto_page()
+        real = de.export_drawing
+
+        def edit(*a, **k):
+            self.save_ops(("set_tag", valves[2]["source_object_id"], {"tag": "LATE-1"}))
+            return real(*a, **k)
+        with mock.patch.object(de, "export_drawing", side_effect=edit):
+            with self.assertRaises(de.ExportError) as cm:
+                de.export_names([self.name], self.out, confirmation="auto")
+        self.assertEqual(self.cf.sheet_confirmation(self.name)["level"], "auto")
+        self.assertIn("직전", " ".join(cm.exception.reasons))
+        self.assertFalse(os.path.exists(self.out))
+
+    def test_unconfirmed_counts_places_not_lines(self):
+        valves = self.auto_page()
+        self.ex["validation"]["unknowns"].append(
+            {"check": "missing_kind", "target": valves[0]["local_id"], "source_object_id": valves[0]["source_object_id"], "field": "kind",
+             "reason": "근거 없음"})
+        self.save_extraction()
+        self.assertEqual(len(self.cf.sheet_confirmation(self.name)["unconfirmed"]), 3)
+        self.assertEqual(de.export_names([self.name], self.out, confirmation="auto")["drawings"][0]["unconfirmed"], 2)
+
+    def test_assumed_item_order_does_not_drop_the_component(self):
+        valves = self.auto_page()
+        self.ex["validation"]["unknowns"].append(
+            {"check": "dexpi_item_order_assumed", "target": valves[2]["local_id"], "source_object_id": valves[2]["source_object_id"],
+             "field": "kind", "reason": "순서 가정"})
+        self.save_extraction()
+        de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn(">%s<" % valves[2]["tag"], self.read_out(".dexpi.xml"))
+
+    def test_any_error_while_rebuilding_the_graph_leaves_only_that_page_out(self):
+        self.auto_page()
+        with mock.patch.object(build, "build_graph", side_effect=RecursionError("deep")):
+            with self.assertRaises(de.ExportError) as cm:
+                de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("그래프를 다시 만들 수 없음", " ".join(cm.exception.reasons))
+
+    def test_human_confirmed_page_says_human(self):
+        self.save_extraction()
+        self.confirm()
+        d = de.export_names([self.name], self.out, confirmation="auto")["drawings"][0]
+        self.assertEqual((d["level"], d["state"], d["unconfirmed"], d["auto_accepted"]), ("human", "confirmed", 0, 0))
+
+    def test_page_waiting_for_its_number_is_left_out_with_the_reason(self):
+        self.save_extraction()
+        self.cf.record_auto(self.name, "waiting", "taken")
+        row = de.list_exportable(confirmation="auto")[0]
+        self.assertEqual((row["exportable"], row["level"]), (False, "extracted"))
+        with self.assertRaises(de.ExportError) as cm:
+            de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("다른 파일이 같은 도면 번호", " ".join(cm.exception.reasons))
+        self.assertFalse(os.path.exists(self.out))
+
+    def test_auto_page_whose_number_is_not_confirmed_is_left_out(self):
+        self.ex["drawing"].pop("identification_basis")
+        self.auto_page()
+        with self.assertRaises(de.ExportError) as cm:
+            de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("도면 번호", " ".join(cm.exception.reasons))
+
+    def test_auto_page_reverted_before_writing_is_not_exported(self):
+        self.auto_page()
+        real = de.export_drawing
+
+        def revert(*a, **k):
+            self.cf.record_auto(self.name, "reverted", by="검토자")
+            return real(*a, **k)
+        with mock.patch.object(de, "export_drawing", side_effect=revert):
+            with self.assertRaises(de.ExportError) as cm:
+                de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("직전", " ".join(cm.exception.reasons))
+        self.assertFalse(os.path.exists(self.out))
+
+    def test_auto_page_with_an_input_still_waiting_to_be_read_is_not_exported(self):
+        self.auto_page()
+        real = self.cf.load_sheet
+
+        def waiting(name):
+            st, ex, corrected = real(name)
+            return st, ex, dict(corrected, corrections={"inputs": {"waiting": ["op-1"]}})
+        with mock.patch.object(self.cf, "load_sheet", side_effect=waiting):
+            with self.assertRaises(de.ExportError) as cm:
+                de.export_names([self.name], self.out, confirmation="auto")
+        self.assertIn("반영", " ".join(cm.exception.reasons))
 
     def test_broken_confirmation_record_does_not_stop_the_export_of_others(self):
         self.save_extraction()

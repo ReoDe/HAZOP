@@ -18,6 +18,7 @@ import copy
 import re
 
 from hazop import store_io
+from hazop.graph import old_names
 from hazop.ie import model
 from hazop.study import idmap, migrate
 from hazop.study import refs
@@ -26,7 +27,7 @@ KIND = "hazop_fmea"
 SCHEMA_VERSION = "0.1"
 ID_FORMAT = "FM-%03d"
 STATUSES = {"imported": "가져옴", "approved": "승인", "excluded": "제외"}
-MATCHES = {"ok": "대응", "none": "대응 실패(없음)", "many": "대응 실패(여럿)", "human": "사람이 고름"}
+MATCHES = {"ok": "대응", "none": "대응 실패(없음)", "many": "대응 실패(여럿)", "old_tag": "대응 실패(옛 글자)", "human": "사람이 고름"}
 MARKS = {"include": "전기·제어 구간에 넣음", "exclude": "전기·제어 구간에서 뺌"}
 SOURCE_PREFIX = "fmea:"
 MAX_ROWS = 5000
@@ -122,7 +123,8 @@ def code_of(text):
 # ---------------------------------------------------------------- 태그 대응
 
 def tag_index(pg):
-    """{정규화 태그: [구성요소]} 프로젝트 그래프 기준(안정 참조가 있는 구성요소만)."""
+    """{정규화 태그: [구성요소]} 프로젝트 그래프 기준(안정 참조가 있는 구성요소만). 원래 값 표시가 글자를 바꾼 구성요소는 옛 글자로도
+    찾게 {(옛 글자 표지, 정규화 글자): [구성요소]}를 함께 둔다."""
     gid = pg.get("graph_id")
     out = {}
     for n in pg.get("nodes") or []:
@@ -133,6 +135,10 @@ def tag_index(pg):
                 out.setdefault(norm_tag(t), [])
                 if n not in out[norm_tag(t)]:
                     out[norm_tag(t)].append(n)
+        if n.get(old_names.PLAIN):
+            old = old_names.plain_node(n)
+            for t in {norm_tag(x) for x in (old.get("tag"), refs.node_text(old)) if x}:
+                out.setdefault((old_names.PLAIN, t), []).append(n)
     return out
 
 
@@ -148,7 +154,11 @@ def _placed(pg, node_set, n, how, node_id=None):
 
 def match_tag(pg, node_set, tag, node_id=None, index=None):
     """태그 하나의 대응 결과 {ref, entity_id, equipment_kind, match, node_id}. 대응 실패면 ref·entity_id가 None."""
-    hits = (index if index is not None else tag_index(pg)).get(norm_tag(tag)) or []
+    index = index if index is not None else tag_index(pg)
+    hits = index.get(norm_tag(tag)) or []
+    hits = hits + [n for n in index.get((old_names.PLAIN, norm_tag(tag))) or [] if n not in hits]
+    if len(hits) == 1 and hits != index.get(norm_tag(tag)):  # 옛 글자로만 맞음: 같은 글자의 다른 설비일 수 있어 사람이 고른다
+        return {"ref": None, "entity_id": None, "equipment_kind": "", "match": "old_tag", "node_id": node_id}
     if len(hits) == 1:
         return _placed(pg, node_set, hits[0], "ok", node_id)
     return {"ref": None, "entity_id": None, "equipment_kind": "", "match": "many" if hits else "none", "node_id": node_id}

@@ -4,8 +4,9 @@
 프로젝트 도면 목록(범례판 재료), 예상 호출 수, 구독 클라이언트 고르기, 도면별 실행 순서를 정하고, 그림을 만들고 묻는 일은
 hazop.extract.ai_images·ai_review가 한다.
 
-- 켜고 끄기: 설정 `ai_review_images`. 수동 실행은 값이 없으면 켬이다(스위치와 안내가 실행 전에 보인다). 추출 뒤 자동 검토는 안내를 거치지 않으므로
-  값이 명시적으로 True일 때만 그림을 싣는다(수동 실행을 누르면 그때의 스위치 값이 설정에 적힌다). 이 선택 하나뿐이다.
+- 켜고 끄기: 설정 `ai_review_images`. 수동 실행은 값이 없으면 켬이다(스위치와 안내가 실행 전에 보인다).
+- 자동 확정(run_pages의 auto, hazop.shell.auto_flow)도 끈 것을 따른다(auto_flow.gate의 images_off). 동의·보내기 정책을 gate가 먼저 보고, 늘 그림 입력에
+  표준 기호 판(ai_review.AUTO_LEGEND)만 쓴다. 그림을 만들지 못하거나 표준 판이 없으면 글로 묻지 않고 그 도면을 묻지 않는다.
 - 그림을 싣는 도면: 추출 결과의 source.format이 pdf_vector이고 source.file의 원본 PDF가 지금 있는 도면. drawio·DEXPI·스캔·원본이 없는 도면은 글 입력.
 - 범례판 캐시: paths.folder('cache', 'ai-legend') 아래에만 쓴다(지워도 되는 계산 결과, 저장소·배포본에 들어가지 않음).
 - 보내는 것: 종류를 못 정한 기호 둘레의 조각 그림과 범례판. 구독 연결로만 보낸다(subscription_client가 API 클라이언트를 거절한다).
@@ -32,10 +33,9 @@ API_REFUSED = "AI 검토는 Claude 구독 연결로만 돕니다. 연결 방식�
 NO_SUBSCRIPTION = "구독 연결을 쓸 수 없어 AI 검토를 하지 않습니다(AI 검토는 구독 연결로만 돕니다)."
 
 
-def enabled(engine, auto=False):
-    """그림 입력을 쓰는지. 수동 실행은 설정이 없으면 켬, 자동 검토(auto)는 설정이 명시적으로 True일 때만."""
-    value = engine.settings.get(KEY)
-    return value is True if auto else value is not False
+def enabled(engine):
+    """수동 실행이 그림 입력을 쓰는지(설정이 없으면 켬)."""
+    return engine.settings.get(KEY) is not False
 
 
 def pdf_source(ex):
@@ -127,10 +127,11 @@ class Factory:
     """도면마다 그림 입력을 만들고, 어느 범례판을 썼는지 used에, 만들지 못한 도면을 failed에 남긴다.
     프로젝트 도면 목록(범례판 재료)은 처음 필요할 때 한 번 읽고, 읽다 실패하면 빈 목록으로 굳힌다(도면마다 다시 읽지 않는다)."""
 
-    def __init__(self, engine, extra=()):
-        self.engine, self.extra = engine, dict(extra)
+    def __init__(self, engine, extra=(), auto=False):
+        """auto: 프로젝트 도면을 주지 않아 표준 기호 판에 고정한다."""
+        self.engine, self.extra, self.auto = engine, dict(extra), auto
         self.used, self.failed = {}, []
-        self._drawings = None
+        self._drawings = [] if auto else None
 
     def drawings(self):
         if self._drawings is None:
@@ -161,6 +162,9 @@ class Factory:
             LOG.exception("그림 입력을 만들지 못함: %s", name)
             self.failed.append(name)
             return None
+        if self.auto and img.legend_source != ai_review.AUTO_LEGEND:
+            self.failed.append(name)
+            return None
         self.used[name] = img.legend_source
         return img
 
@@ -178,15 +182,16 @@ def _tolerant(progress, name):
     return on
 
 
-def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=False, skip=None, on_page=None):
+def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=False, skip=None, on_page=None, kinds=None, note=None):
     """도면마다 AI 검토를 돌려 후보 문서에 합쳐 저장한다(ai_review.run_many와 같은 순서). 그림 입력은 설정(enabled)이 켜졌을 때만이고,
     범례판 출처·그림 실패는 그 실행 기록(runs[].images)에 저장과 함께 적힌다. 실행 상한이 바닥난 도면은 그림을 만들지 않는다.
     그림 입력을 만들지 못한 도면은 글 입력으로 돌리되 그 도면의 그림 입력 예상 호출 수에서 자른다.
     skip(name): 참이면 그 도면은 묻지 않고 넘어간다(도면별 취소). on_page(name): 그 도면을 묻기 시작할 때 부른다(도면별 멈춤이 지금 도면을 알게).
-    should_stop은 그 도면을 묻는 동안의 멈춤이고, 도면 사이에서 참이면 남은 도면을 모두 그만둔다(엔진 멈춤).
+    auto: 자동 확정의 실행(늘 그림 입력·표준 판, 그림을 만들지 못한 도면은 묻지 않음, 실행 기록에 auto). kinds: 앞 도면부터 이어지는 오류 종류 목록.
+    note: 실행 기록에 덧붙일 값. should_stop은 그 도면을 묻는 동안의 멈춤이고, 도면 사이에서 참이면 남은 도면을 모두 그만둔다(엔진 멈춤).
     → ([(이름, 새 후보 수, stats)], Factory 또는 None)."""
-    images = Factory(engine, pages) if enabled(engine, auto) else None
-    done, used, kinds = [], 0, []          # kinds: 실행 전체의 오류 줄(같은 오류 3번이면 멈춤이 도면 경계에서 풀리지 않게)
+    images = Factory(engine, pages, auto) if auto or enabled(engine) else None
+    done, used, kinds = [], 0, [] if kinds is None else kinds          # kinds: 실행 전체의 오류 줄(같은 오류 3번이면 멈춤이 도면 경계에서 풀리지 않게)
     for name, ex in pages:
         if skip and skip(name):
             continue
@@ -199,21 +204,24 @@ def run_pages(engine, pages, client, cap, run_cap, progress, should_stop, auto=F
         budget, limit, img, info = run_cap - used, cap, None, None
         if images is not None and budget > 0 and pdf_source(ex):
             img = images(name, ex)
-            if img is None:
+            if img is None and not auto:
                 limit = min(cap, ai_review.estimate_pages([(name, ex)], cap=cap, run_cap=budget, images=estimate_input())["calls"])
                 info = {"failed": True}
-            else:
+            elif img is not None:
                 info = {"legend_source": img.legend_source}
+        if img is None and auto:         # 그림을 실을 수 없으면(원본이 사라짐, 예산 없음 포함) 글로 보내지 않고 묻지 않는다
+            continue
         result = ai_review.run(ex, client, cap=limit, budget=budget, exclude=ai_review.decided_targets(name),
                                on_progress=_tolerant(progress, name) if progress else None, should_stop=should_stop, images=img,
-                               kinds=kinds)
+                               kinds=kinds, project_id=engine.project_id())
         stats = result["stats"]
         used += stats["calls"]
         if info is not None:
             stats["images"] = info
+        stats.update(note or {})
         if not stats["refused"]:
             desc = client.describe() if hasattr(client, "describe") else {}
-            ai_review.merge_and_save(name, ex, result, via=desc.get("via"), model=desc.get("model"))
+            ai_review.merge_and_save(name, ex, result, via=desc.get("via"), model=desc.get("model"), **({"auto": True} if auto else {}))
         done.append((name, len(result["candidates"]), stats))
         if stats["halted"] or stats["refused"]:
             break

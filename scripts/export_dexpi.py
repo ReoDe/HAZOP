@@ -4,10 +4,10 @@
   python scripts/export_dexpi.py --out D:/내보내기                 # 그래프가 있는 모든 도면
   python scripts/export_dexpi.py --out D:/내보내기 SNP-M-101 SNP-M-102
 도면마다 `<이름>.dexpi.xml`, `<이름>.excluded.json`(뺀 구성요소·연결·속성과 근사), `<이름>.hazop.json`(곁 파일)을 쓰고
-묶음 목록 `manifest.json`을 쓴다. **쪽 확정이 `confirmed`인 도면만** 내보내고(`sheet_confirmation`, 화면 규격 V3) 나머지는
-`manifest.json`의 `not_exported`에 적는다. 도면 번호는 등록에서 사람이 확정한 것만 내보낸다. `--assume-confirmed`는 쪽 확정과 도면 번호
+묶음 목록 `manifest.json`을 쓴다. **사람이 확정했거나 자동 확정된 도면만** 내보내고(`sheet_confirmation`의 확정 수준 human·auto) 나머지는
+`manifest.json`의 `not_exported`에 수준과 까닭을 적는다. 도면 번호는 등록에서 확정된 것만 내보낸다. `--assume-confirmed`는 쪽 확정과 도면 번호
 확정을 모두 확정으로 보는 개발·시험용이다.
-검사(스키마 규칙·클래스 목록·참조·되읽기)에 걸리면 아무 파일도 쓰지 않고 사유를 보인다. 쓸 파일이 --out에 이미 있으면 쓰지 않고
+검사(스키마 규칙·클래스 목록·참조·되읽기)에 걸린 도면은 빼고 나머지를 낸다. 낼 도면이 하나도 없으면 아무 파일도 쓰지 않는다. 쓸 파일이 --out에 이미 있으면 쓰지 않고
 목록을 보인다(--overwrite를 주면 덮음). 종료 코드 0은 성공, 1은 내보내지 못함.
 """
 
@@ -48,11 +48,13 @@ def main(argv=None):
         return 1
     for d in res["drawings"]:
         s = d["stats"]
-        print("%s: 구성요소 %d, 연결 %d, 뺀 구성요소 %d·연결 %d·속성 %d, 뺀 것 때문에 끊긴 배관 %d, 근사 %d -> %s"
-              % (d["drawing_number"], s["components"], s["connections"], s["excluded_components"], s["excluded_connections"],
+        print("%s(%s, 남은 미확인 %d, 자동 수락 %d): 구성요소 %d, 연결 %d, 뺀 구성요소 %d·연결 %d·속성 %d, 뺀 것 때문에 끊긴 배관 %d, 근사 %d -> %s"
+              % (d["drawing_number"], d["level"], d["unconfirmed"], d["auto_accepted"], s["components"], s["connections"], s["excluded_components"], s["excluded_connections"],
                  s["excluded_attributes"], s["cut_pipes"], s["approximations"], paths.plain_rel(args.out, paths.work_root())))
     for x in res["not_exported"]:
-        print("내보내지 않음: %s(쪽 확정 %s, 남은 미확인 %d)" % (x["name"], x["state"], x["unconfirmed"]))
+        print("내보내지 않음: %s(%s, 남은 미확인 %d) %s" % (x["name"], x["level"], x["unconfirmed"], x["reason"]))
+    if res["stale_files"]:
+        print("앞 내보내기에서 남은 파일(이번에 내지 않음): %s" % ", ".join(res["stale_files"]))
     print("묶음 목록: %s" % res["manifest"])
     return 0
 

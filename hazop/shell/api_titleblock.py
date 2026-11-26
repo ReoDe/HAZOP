@@ -88,6 +88,30 @@ def carry_view(out):
     return {"carries": carries, "lost": lost, "renames": renames, "text": " ".join(p for p in parts if p)}
 
 
+BUSY_TEXT = "이 도면은 AI 검토가 돌고 있습니다. 끝난 뒤 번호를 정해 주세요."
+
+
+def _busy_check(engine, material_id):
+    """AI 검토가 돌거나 기다리는 쪽이 있으면 번호를 바꾸지 않는다(새 이름으로 다시 추출하면 받던 답이 옛 이름에 남아 같은 도면을 다시 묻게 된다)."""
+    from hazop.graph import sheets
+    if any((sheets.from_out_name(n) or (None,))[0] == material_id for n in list(engine._reviewing)):
+        raise _api().CommandError("busy", BUSY_TEXT)
+
+
+@contextlib.contextmanager
+def _hold(engine, material_id):
+    """다시 추출하는 동안 이 자료의 쪽에 AI 검토가 들어오지 못하게 잡는다. 이미 돌고 있으면 시작하지 않는다."""
+    from hazop.shell import auto_flow
+    names = auto_flow.sheets_of(material_id)
+    held = engine.reserve_review(names)
+    if names and not held:
+        raise RuntimeError(BUSY_TEXT)
+    try:
+        yield
+    finally:
+        engine.release_review(held)
+
+
 def _run(engine, a, fn):
     """fn(dry, progress) -> 엔진 답. 먼저 dry로 검사하고, 다시 추출할 쪽이 있으면 작업으로 돌린다.
     a["dry"]면 검사만 하고 옮길 기록·이름 바뀜(carry_view)을 돌려준다(저장하지 않음, 화면이 승인 전에 보인다)."""
@@ -97,18 +121,20 @@ def _run(engine, a, fn):
         _refuse(check)
     if a.get("dry"):
         return dict(carry_view(check), dry=True, changed=bool(check.get("changed")))
+    _busy_check(engine, a["material_id"])
     if not check.get("changed"):
         return {"changed": False, "row": tb.row(pid, a["material_id"])}
 
     def job(progress):
         from hazop.app import data
-        with (data.prepared_for_reextract(pid) if check.get("re_extract") else contextlib.nullcontext()):   # 앞 그래프를 비켜 두기 전에 검토구간 표지를 채운다
+        with _hold(engine, a["material_id"]), (data.prepared_for_reextract(pid) if check.get("re_extract") else contextlib.nullcontext()):   # 앞 그래프를 비켜 두기 전에 검토구간 표지를 채운다
             out = fn(pid, False, progress)
         if not out["ok"]:
             raise RuntimeError((out["refused"][0] or {}).get("reason") or "처리하지 못했습니다.")
         engine.changed("titleblock")
         engine.changed("sheetconf")
         engine.changed("kg")
+        _resume_taken(engine, a["material_id"])
         return dict(carry_view(out), material_id=a["material_id"], version=out["version"], re_extracted=out["re_extracted"],
                     carried=out["carried"], released=out["released_sheet_confirmations"],
                     number_conflicts=[c.get("drawing_number") for c in out.get("conflicts") or []], notes=out["notes"])
@@ -117,6 +143,17 @@ def _run(engine, a, fn):
         return dict(result, changed=True, row=tb.row(pid, a["material_id"]))
     label = "표제란 확정 · %s" % (tb.row(pid, a["material_id"]) or {}).get("name", a["material_id"])
     return {"changed": True, "job": engine.start_job(label, job)}
+
+
+def _resume_taken(engine, material_id):
+    """번호가 겹쳐 기다리던 쪽은 사람이 번호를 정했으니 이어 한다."""
+    from hazop.extract import confirmation
+    from hazop.shell import auto_flow
+    names = [n for n in auto_flow.sheets_of(material_id) if (confirmation.auto_record(n) or {}).get("why") == "taken"]
+    for name in names:
+        auto_flow.mark_waiting(name, "started")
+    if names:
+        auto_flow.resume_quietly(engine)
 
 
 def _h_confirm(engine, a):

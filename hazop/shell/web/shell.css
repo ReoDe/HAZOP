@@ -101,3 +101,18 @@ ul.tight { margin: 0; padding-left: 16px; }
 .notice-row .nt { flex: 1; }
 /* 대기열이 열린 동안 도면 표시의 '지우기 (Esc)'는 숨긴다: Esc는 대기열을 끝낸다(실제 창 결함 8) */
 .app.queue-open .hz-cv-legend button { display: none; }
+
+/* 추출 확인 창의 색 범례(도면 탭): 칠한 네모의 색과 개수 */
+.extract-legend { right: var(--sp-4); top: 64px; display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; font-size: var(--fs-sm); align-items: center; z-index: 2; }
+.extract-legend .el-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.extract-legend i { width: 12px; height: 12px; border-radius: 3px; border: 2px solid currentColor; display: inline-block; }
+.extract-legend .chk-ok i { color: var(--chk-ok, #6f9bd1); border-width: 1px; }
+.extract-legend .chk-unknown i { color: var(--chk-unknown, #d9534f); border-width: 1px; }
+.extract-legend .chk-ai i { color: var(--chk-ai, #8b6fc9); border-width: 1px; }
+/* 구성요소 속성 카드 */
+.bubble.props { width: 340px; max-width: 340px; }
+.props-list { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0; font-size: var(--fs-sm); }
+.props-list dt { color: var(--muted); }
+.props-list dd { margin: 0; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.props-list .pv { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }      /* 값은 본문 글씨, 길면 줄임표 */
+.props-list .ps { margin-left: auto; flex: 0 1 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .75; font-size: 0.88em; }      /* 출처는 오른쪽에 작고 흐리게 */

@@ -98,7 +98,7 @@ export const tests = [
     assert.equal(sent[0], ["sources.choose", { drawing_number: "graph-SNP-M-101", material_id: "m-b" }]);
     host.remove();
   } },
-  { name: "밀린 파일 표시: 도면 줄에 '원본 2개', 등록 자료 줄에 '쓰이지 않음'(그래프 칩 대신), 카드에 쓰이지 않는 파일 이름", async run(assert) {
+  { name: "밀린 파일 표시: 도면 줄에 '원본 2개', 고르기 카드에 쓰이지 않는 파일 이름(도면 패널에 등록 자료 목록은 없다)", async run(assert) {
     const info = { conflicts: [FILE_ROW] };
     assert.equal(choicesCount(info), { "graph-SNP-M-101": 2 });
     assert.equal(Object.keys(displacedOf(info)), ["m-b"]);
@@ -113,10 +113,7 @@ export const tests = [
     await tick(); await tick();
     const chip = [...host.querySelectorAll(".drow button")].find((b) => b.textContent.includes("원본 2개"));
     assert(chip, "도면 줄 칩: " + host.querySelector(".drow").textContent);
-    const rows = [...host.querySelectorAll(".row")].filter((r) => /^[ab]\.pdf/.test(r.querySelector(".main b") ? r.querySelector(".main b").textContent : ""));
-    const b = rows.find((r) => r.textContent.startsWith("b.pdf")), a = rows.find((r) => r.textContent.startsWith("a.pdf"));
-    assert(b && b.textContent.includes("쓰이지 않음") && !b.textContent.includes("그래프"), "밀린 파일: " + (b && b.textContent));
-    assert(a && a.textContent.includes("그래프") && !a.textContent.includes("쓰이지 않음"), "쓰는 파일: " + (a && a.textContent));
+    assert(!host.textContent.includes("등록 자료"), "등록 자료 목록은 없다");
     assert(host.querySelector("#src-card").textContent.includes("쓰이지 않음: b.pdf"));
     store.set({ sources: null, drawings: { drawings: [], documents: [], project_id: null, rev: null } });
     host.remove();

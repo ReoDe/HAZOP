@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 from xml.parsers import expat
 
 from hazop.extract import dexpi_map, ids
+from hazop.extract.adapters import dexpi_origin, dexpi_shape
 
 MAX_BYTES = 100 * 1024 * 1024
 MAX_ELEMENTS = 3_000_000
@@ -139,13 +140,17 @@ class Model:
         self.fmt = fmt
         self.version = version
         self.application = None
+        self.uri = None  # 2.0 Model의 uri
+        self.origins = {}  # 이 앱이 낸 2.0 파일의 원래 값 표시: 대상 id -> {칸: 글자}(dexpi_origin)
         self.schema_version = None  # Proteus 스키마 판(예 4.1.1)
         self.drawing = {"number": None, "name": None, "width": None, "height": None}
         self.items = {}  # id -> 항목 dict(equipment·piping·offpage·instrument)
         self.nozzles = {}  # id -> {id, cls, parent, port, attrs, nodes, xml}
         self.node_owner = {}  # 노드 id -> (항목 id, 순번)
         self.node_index = {}  # (항목 id, 순번) -> 노드 id (Proteus FromNode·ToNode를 상수 시간에 풀려고)
-        self.conn_paths = {}  # 2.0 연결 id -> 그림의 실제 경로 [(x, y)…] (ConnectorLine: 시작·안쪽 점·끝)
+        self.conn_paths = {}  # 2.0 연결·신호 흐름 id -> 그림의 실제 경로 [(x, y)…] (ConnectorLine: 시작·안쪽 점·끝)
+        self.path_nodes = {}  # 같은 id -> (시작 자리가 가리키는 배관 노드 id, 끝 자리의 노드 id). 가리키는 노드가 없으면 None
+        self.shapes = {}  # 2.0 항목 id -> 놓인 기호 [{name, box(x, y, 너비, 높이), size(회전 전), rotation, mirrored}]
         self.segment_paths = {}  # Proteus 구간 id -> 구간의 CenterLine 목록 [[(x, y)…], …](각각 FromID에서 ToID 쪽 순서로 본다)
         self.not_imported = {}  # 그래프에 자리가 없어 옮기지 않은 요소의 종류 -> 개수(HZ-PLN-22 §3.6·§5.5)
         self.connections = []  # {id, cls, source, source_node, target, target_node, segment, system}
@@ -158,6 +163,7 @@ class Model:
         self.arrows = []  # {segment, position, direction}
         self.node_pos = {}  # 노드 id -> (x, y)
         self.pos_objects = {}  # 2.0 PipingNodePosition 객체 id -> (x, y)
+        self.pos_nodes = {}  # 2.0 PipingNodePosition 객체 id -> 가리키는 배관 노드 id
         self.diagram_count = 0
         self.process_objects = 0
         self.issues = []  # {check, target, reason}
@@ -273,6 +279,7 @@ def _data_point(obj, prop="Position"):
 
 def read_dexpi_xml(root, version):
     m = Model(FMT_DEXPI, version)  # Import의 주소는 열지 않는다. 판 번호는 detect가 이미 뽑았다
+    m.uri = root.get("uri")
     versions = import_versions(root)
     if len(set(versions.values())) > 1:
         m.issue("dexpi_version_mixed", None, "Core와 Plant의 DEXPI 판이 다름(%s)" % ", ".join("%s %s" % kv for kv in sorted(versions.items())))
@@ -344,6 +351,7 @@ def read_dexpi_xml(root, version):
             loc = _refs(obj, "SensingLocation")
             m.sensing[obj.get("_id")] = {"item": loc[0] if loc else None}
     _read_diagram(m, root, objects)
+    m.origins = dexpi_origin.collect(root, m)
     return m
 
 
@@ -508,10 +516,11 @@ def _read_diagram(m, root, objects):
             for nid in _refs(obj, "Node"):
                 if p is not None:
                     m.node_pos[nid] = p
+                    m.pos_nodes.setdefault(obj.get("_id"), nid)
     for diag in _iter_objects(root):
         if (diag.get("type") or "") != "Core/Diagram.Diagram":
             continue
-        _walk_groups(m, diag, objects, None)
+        _walk_groups(m, diag, objects, None, {})
         border = [o for o in diag.iter("Object") if (o.get("type") or "") == "Core/Diagram.Border"]
         if border:
             xs, ys = [], []
@@ -537,6 +546,70 @@ def _read_diagram(m, root, objects):
                 item["position"] = (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
 
 
+def _prop(obj, name):
+    return next((_data_value(d) for d in obj.findall("Data") if d.get("property") == name), None)
+
+
+def _number(obj, name, default):
+    """숫자 속성. 적혀 있지 않으면 default, 적혀 있는데 수가 아니면 nan(놓을 수 없는 기호가 된다)."""
+    text = _prop(obj, name)
+    if text is None:
+        return default
+    v = _float(text)
+    return math.nan if v is None else v
+
+
+def _primitive_points(el):
+    """모양을 이루는 도형 하나가 차지하는 점들(꺾은선의 점, 타원과 타원호의 끝·가장 먼 점)."""
+    pts = [(v.get("X"), v.get("Y")) for d in el.findall("Data") if d.get("property") == "Points"
+           for a in d.findall("AggregatedDataValue") for v in [{x.get("property"): _float(_data_value(x)) for x in a.findall("Data")}]]
+    center, a, b = _data_point(el, "Center"), _float(_prop(el, "HorizontalSemiAxis")), _float(_prop(el, "VerticalSemiAxis"))
+    if center is not None and a is not None and b is not None:
+        pts += dexpi_shape.ellipse_points(center, a, b, _number(el, "Rotation", 0.0), _number(el, "StartAngle", 0.0),
+                                          _number(el, "EndAngle", 360.0))
+    return [p for p in pts if None not in p]
+
+
+def _stroke_width(el):
+    for d in el.findall("Data"):
+        if d.get("property") == "Stroke":
+            for a in d.findall("AggregatedDataValue"):
+                return _float(next((_data_value(x) for x in a.findall("Data") if x.get("property") == "Width"), None)) or 0.0
+    return 0.0
+
+
+def _shape_bounds(shape):
+    """Shape -> dexpi_shape.Bounds. 점을 읽을 수 있는 도형이 없으면 None."""
+    pts, stroke = [], 0.0
+    for el in _children(shape, "Primitives"):
+        got = _primitive_points(el)
+        pts += got
+        stroke = max(stroke, _stroke_width(el)) if got else stroke
+    if not pts:
+        return None
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return dexpi_shape.Bounds(min(xs), min(ys), max(xs), max(ys), stroke)
+
+
+def _placed_shape(usage, objects, cache):
+    """ShapeUsage -> {name, box, size, rotation, mirrored}. 모양이나 놓임을 알 수 없으면 None."""
+    shape_id, pos = (_refs(usage, "Shape") or [None])[0], _data_point(usage)
+    shape = objects.get(shape_id)
+    if shape is None or pos is None or shape.get("type") != "Core/Diagram.Shape":
+        return None
+    if shape_id not in cache:
+        cache[shape_id] = _shape_bounds(shape)
+    bounds = cache[shape_id]
+    mirrored = (_prop(usage, "IsMirrored") or "").lower() in ("true", "1")
+    p = dexpi_shape.Placement(pos[0], pos[1], _number(usage, "ScaleX", 1.0), _number(usage, "ScaleY", 1.0),
+                              _number(usage, "Rotation", 0.0), mirrored)
+    box = dexpi_shape.placed(bounds, p) if bounds is not None else None
+    if box is None:
+        return None
+    return {"name": _prop(shape, "Name"), "box": box, "size": dexpi_shape.local_size(bounds, p), "rotation": dexpi_shape.angle(p.rotation, 3),
+            "mirrored": mirrored}
+
+
 def _connector_path(m, line, pos_of):
     """ConnectorLine -> [시작 위치, 안쪽 점…, 끝 위치]. 시작·끝 위치를 모르면 None."""
     src, dst = (_refs(line, "Source") or [None])[0], (_refs(line, "Target") or [None])[0]
@@ -553,8 +626,11 @@ def _connector_path(m, line, pos_of):
     return [a] + inner + [b]
 
 
-def _walk_groups(m, group, objects, represents):
-    """표현 묶음(RepresentationGroup)을 따라 내려가며 Represents 대상의 모양 위치와 화살표를 모은다."""
+_SYMBOL_GROUPS = ("Core/Diagram.RepresentationGroup", "Core/Diagram.Static")  # 이 묶음의 기호만 구성요소 자신의 것이다(글자표·화살표 묶음은 아님)
+
+
+def _walk_groups(m, group, objects, represents, cache):
+    """표현 묶음(RepresentationGroup)을 따라 내려가며 Represents 대상의 기호(자리·상자·방향), 선, 화살표를 모은다."""
     rep = _refs(group, "Represents")
     current = rep[0] if rep else represents
     for el in group.findall("Components"):
@@ -562,10 +638,15 @@ def _walk_groups(m, group, objects, represents):
             t = child.get("type") or ""
             if t == "Core/Diagram.ShapeUsage" and current in m.items and m.items[current]["position"] is None:
                 m.items[current]["position"] = _data_point(child)
+            if t == "Core/Diagram.ShapeUsage" and current in m.items and group.get("type") in _SYMBOL_GROUPS:
+                placed = _placed_shape(child, objects, cache)
+                if placed is not None:
+                    m.shapes.setdefault(current, []).append(placed)
             if t == "Core/Diagram.ConnectorLine" and current is not None and current not in m.conn_paths:
                 path = _connector_path(m, child, m.pos_objects)
                 if path is not None:
                     m.conn_paths[current] = path
+                    m.path_nodes[current] = tuple(m.pos_nodes.get((_refs(child, end) or [None])[0]) for end in ("Source", "Target"))
             if t == "Core/Diagram.PipeFlowArrow" and current in m.segments:
                 for su in child.iter("Object"):
                     if (su.get("type") or "") == "Core/Diagram.ShapeUsage":
@@ -579,7 +660,7 @@ def _walk_groups(m, group, objects, represents):
                         if pos is not None and direction is not None:
                             m.arrows.append({"segment": current, "position": pos, "direction": direction})
                         break
-            _walk_groups(m, child, objects, current)
+            _walk_groups(m, child, objects, current, cache)
 
 
 # ---------------------------------------------------------------- Proteus XML 1.x
@@ -903,7 +984,7 @@ _DATA_VALUES = ("AggregatedDataValue", "DataReference", "Boolean", "DateTime", "
 _MODEL_DEFINITIONS = ("Package", "AbstractClass", "ConcreteClass", "ClassExtension", "AbstractDataType", "AggregatedDataType",
                       "Enumeration", "BooleanType", "DateTimeType", "DoubleType", "IntegerType", "StringType", "UndefinedType")
 # 요소 이름 -> 허용 자식 요소, 필수 속성, 허용 속성(XSD complexType과 같다). 정의 쪽(Package·ConcreteClass 등)은 이 앱이 읽지 않아
-# 이름만 허용하고 안쪽은 보지 않는다.
+# 등록에서는 이름만 허용하고 안쪽은 보지 않는다. 이 앱이 쓴 파일을 검사할 때(definitions=True)는 DEFINITIONS로 안쪽도 본다.
 STRUCTURE = {
     "Model": {"children": ("Import",) + _MODEL_DEFINITIONS + ("Object", "Data"), "required": ("name", "uri"),
               "attributes": ("name", "uri")},
@@ -926,8 +1007,49 @@ _MULTI = {("References", "objects")}
 _MIN_ONE_CHILD = ("Components", "Data")  # XSD minOccurs=1
 
 
-def check_structure(root, limit=50):
-    """DEXPI XML 2.0 뿌리(Model)가 스키마의 인스턴스 규칙을 지키는지 본다. 어긋난 곳의 문장 목록(최대 limit개). 비면 통과."""
+def _definition_rules():
+    """정의 요소 이름 -> {children, attributes {이름: (XSD 형, 필수)}, low·high: Data가 아닌 자식의 수}. Data는 늘 그 뒤에 온다.
+    first: 맨 앞에 하나 와야 하는 자식."""
+    name = {"name": ("name", True)}
+    super_types = dict(name, superTypes=("nameReferences", False))
+    members = ("CompositionProperty", "DataProperty", "ReferenceProperty")
+    class_ref, data_ref = ("ClassReference", "UnionClass", "BoundClass"), ("DataTypeReference", "UnionDataType", "BoundDataType")
+    prop = dict(name, lower=("xsd:integer", True), upper=("xsd:integer", False), isOrdered=("xsd:boolean", True))
+
+    def rule(children, attributes, low=0, high=None, data=True, first=None):
+        return {"children": tuple(children) + (("Data",) if data else ()), "attributes": attributes, "low": low, "high": high, "first": first}
+    out = {"Package": rule(_MODEL_DEFINITIONS + ("Object",), name), "Enumeration": rule(("EnumerationLiteral",), super_types),
+           "ClassExtension": rule(members, dict(name, baseType=("nameReference", False))),
+           "AggregatedDataType": rule(("DataProperty", "DataTypeParameter"), super_types), "EnumerationLiteral": rule((), name),
+           "ClassParameter": rule(class_ref, name, 1, 1), "DataTypeParameter": rule(data_ref, name, 1, 1),
+           "CompositionProperty": rule(class_ref, prop, 1, 1),
+           "DataProperty": rule(data_ref, dict(prop, isUnique=("xsd:boolean", True)), 1, 1),
+           "ReferenceProperty": rule(class_ref, dict(prop, isUnique=("xsd:boolean", True), oppositeLower=("xsd:integer", True),
+                                                     oppositeUpper=("xsd:integer", False)), 1, 1),
+           "UnionClass": rule(class_ref, {}, 1, data=False), "UnionDataType": rule(data_ref, {}, 1, data=False),
+           "BoundClass": rule(("ClassReference", "ClassBinding", "DataTypeBinding"), {}, 2, data=False, first="ClassReference"),
+           "BoundDataType": rule(("DataTypeReference", "DataTypeBinding"), {}, 2, data=False, first="DataTypeReference"),
+           "ClassBinding": rule(class_ref, {"parameter": ("nameReference", True)}, 1, data=False),
+           "DataTypeBinding": rule(data_ref, {"parameter": ("nameReference", True)}, 1, data=False)}
+    for kind in ("ConcreteClass", "AbstractClass"):
+        out[kind] = rule(members + ("DataTypeParameter", "ClassParameter"), super_types)
+    for kind in ("AbstractDataType", "BooleanType", "DoubleType"):
+        out[kind] = rule((), super_types)
+    for kind in ("DateTimeType", "IntegerType", "StringType", "UndefinedType"):
+        out[kind] = rule((), name)
+    for kind in ("ClassReference", "DataTypeReference"):
+        out[kind] = rule((), {"type": ("nameReference", True)}, data=False)
+    return out
+
+
+DEFINITIONS = _definition_rules()
+_XSD_TYPES = {"name": _NAME, "nameReference": _NAME_REF, "xsd:boolean": re.compile("true|false|0|1"), "xsd:integer": re.compile(r"[+-]?\d+"),
+              "nameReferences": re.compile(r"(?:%s)(?: (?:%s))*" % (_NAME_REF.pattern, _NAME_REF.pattern))}
+
+
+def check_structure(root, limit=50, definitions=False):
+    """DEXPI XML 2.0 뿌리(Model)가 스키마의 인스턴스 규칙을 지키는지 본다. 어긋난 곳의 문장 목록(최대 limit개). 비면 통과.
+    definitions: 정의 요소(ConcreteClass 등)의 안쪽도 본다."""
     problems = []
 
     def bad(msg):
@@ -947,7 +1069,45 @@ def check_structure(root, limit=50):
                 bad("Data는 Object 뒤에 와야 함")
             seen_definition = True
     _check_element(root, bad, "")
+    if definitions:
+        for child in root:
+            if child.tag in DEFINITIONS:
+                _check_definition(child, bad)
     return problems
+
+
+def _check_definition(el, bad):
+    rule = DEFINITIONS[el.tag]
+    label = ("%s %s" % (el.tag, el.get("name") or "")).strip()
+    for name, (kind, needed) in rule["attributes"].items():
+        value = el.get(name)
+        if value is None:
+            if needed:
+                bad("%s: 필수 속성 %s 없음" % (label, name))
+        elif _XSD_TYPES[kind].fullmatch(value) is None:
+            bad("%s: 속성 %s 값 형식이 아님: %r" % (label, name, value))
+    for name in el.attrib:
+        if name not in rule["attributes"] and not name.startswith("_"):
+            bad("%s: 허용하지 않은 속성 %s" % (label, name))
+    heads, data_seen = [], False
+    for child in el:
+        if child.tag not in rule["children"]:
+            bad("%s 아래에 올 수 없는 요소: %s" % (label, child.tag))
+            continue
+        if child.tag == "Data":
+            data_seen = True
+        else:
+            heads.append(child.tag)
+            if data_seen:
+                bad("%s: Data는 다른 요소 뒤에 와야 함" % label)
+        if child.tag in DEFINITIONS:
+            _check_definition(child, bad)
+        else:
+            _check_element(child, bad, "")
+    if len(heads) < rule["low"] or (rule["high"] is not None and len(heads) > rule["high"]):
+        bad("%s: 자식 요소 수가 맞지 않음(%d)" % (label, len(heads)))
+    if rule["first"] and (heads[:1] != [rule["first"]] or (rule["first"] in heads[1:])):
+        bad("%s: 처음에 %s 하나가 와야 함" % (label, rule["first"]))
 
 
 def _check_element(el, bad, where):

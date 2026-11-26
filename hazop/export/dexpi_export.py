@@ -5,10 +5,11 @@
   그래프에 있으므로(hazop.extract.ai_review) 이 모듈은 그래프에 있는 것만 낸다.
 - 구성요소는 확실하고 속성만 미확인이거나 DEXPI에 자리가 없는 속성은 그 속성만 뺀다. 추측값을 넣지 않는다.
 - DEXPI 파일 안에 미확인 표시를 넣지 않는다. 뺀 것과 자리가 없는 정보는 `<이름>.excluded.json`·`<이름>.hazop.json`(곁 파일)에 적는다.
-- 파일을 쓰기 전에 §6.5 검사(스키마 규칙·클래스 목록·참조·되읽기)를 통과해야 한다. 하나라도 걸리면 아무 파일도 쓰지 않는다.
+- 파일을 쓰기 전에 §6.5 검사(스키마 규칙·클래스 목록·참조·되읽기)를 통과해야 한다. 걸린 쪽은 쓰지 않고 까닭을 적으며 나머지 쪽은 낸다.
 같은 입력이면 같은 바이트가 나온다(시각은 묶음 목록에만 둔다).
 """
 
+import collections
 import copy
 import hashlib
 import json
@@ -19,15 +20,18 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 from hazop import paths, store_io
+from hazop.export import dexpi_diagram, dexpi_marks, dexpi_xml
+from hazop.export.dexpi_xml import components as _components, el as _el, obj as _obj, refs as _refs
 from hazop.extract import dexpi_map
-from hazop.extract.adapters import dexpi_import, dexpi_read
+from hazop.extract.adapters import dexpi_import, dexpi_origin, dexpi_read
 
 SIDECAR_SCHEMA = "hazop_dexpi_sidecar/1"
 EXCLUDED_SCHEMA = "hazop_dexpi_excluded/1"
 MANIFEST_SCHEMA = "hazop_dexpi_manifest/1"
 EXPORTER_VERSION = "0.1.0"
+WRITE_MARKS = True  # 원래 값 표시(§6.9)를 싣는가. 끄면 표시 없는 파일이 나간다
 MODEL_SOURCE = {"Core": "https://data.dexpi.org/models/2.0.1/Core.xml", "Plant": "https://data.dexpi.org/models/2.0.1/Plant.xml"}
-A3 = (420.0, 297.0)
+A3 = dexpi_diagram.A3
 MARGIN = 10.0
 _NAME = re.compile(r"[A-Za-z_][A-Za-z_0-9]*\Z")
 _QUANTITY = re.compile(r"(\S+) ((?:Pressure\w+|Temperature|Length|VolumeFlowRate|\w+)Unit)\.(\w+)\Z")
@@ -54,10 +58,11 @@ class ExportError(ValueError):
 
 
 class Export:
-    """한 도면의 내보내기 결과."""
+    """한 도면의 내보내기 결과. drawn은 파일에 쓰지 않는 대응표다(화면용 짓기 hazop.export.dexpi_screen): {"nodes"|"symbols"|"lines": {DEXPI id: local_id},
+    "in_file": {"nodes"|"relations": [되읽으면 나올 DEXPI id]}}. symbols·lines는 그림이 있는 것만."""
 
-    def __init__(self, name, xml, excluded, sidecar, stats):
-        self.name, self.xml, self.excluded, self.sidecar, self.stats = name, xml, excluded, sidecar, stats
+    def __init__(self, name, xml, excluded, sidecar, stats, drawn):
+        self.name, self.xml, self.excluded, self.sidecar, self.stats, self.drawn = name, xml, excluded, sidecar, stats, drawn
 
     @property
     def files(self):
@@ -108,13 +113,6 @@ def _num(text):
 
 
 # ---------------------------------------------------------------- XML 조립
-def _el(parent, tag, **attrs):
-    e = ET.SubElement(parent, tag)
-    for k, v in attrs.items():
-        e.set(k, v)
-    return e
-
-
 def _data(parent, prop, value):
     """Data 요소 하나. value: 문자열(수량·열거 참조는 알맞은 요소로), bool·숫자 아님(DEXPI가 문자열로 받는 속성만 옮긴다)."""
     d = _el(parent, "Data", property=prop)
@@ -130,21 +128,6 @@ def _data(parent, prop, value):
     else:
         _el(d, "String").text = value
     return d
-
-
-def _refs(parent, prop, target):
-    _el(parent, "References", objects="#" + target, property=prop)
-
-
-def _components(parent, prop):
-    return _el(parent, "Components", property=prop)
-
-
-def _obj(parent, typ, oid=None):
-    o = _el(parent, "Object", type=typ)
-    if oid:
-        o.set("id", oid)
-    return o
 
 
 class _Ids:
@@ -176,9 +159,10 @@ class _Ids:
 
 
 # ---------------------------------------------------------------- 본체
-def export_drawing(graph, extraction=None, require_confirmed_number=True, name=None):
+def export_drawing(graph, extraction=None, require_confirmed_number=True, name=None, drop_kind_unconfirmed=False):
     """그래프 하나 -> Export. graph는 build_graph 결과(사람 수정·수락한 AI 후보가 이미 반영됨). extraction은 있으면 도면 크기·번호
-    확정 여부·가져온 원문 조각을 읽는 데 쓴다. 내보낼 수 없으면 ExportError."""
+    확정 여부·가져온 원문 조각과 그림(기호 상자·방향·선 점·글자 자리)을 읽는 데 쓴다. 그래프를 지은 바로 그 추출 결과여야 그림이 맞는다. drop_kind_unconfirmed: 종류에 미확인이 남은 구성요소도 뺀다(자동 확정된 쪽. 사람이
+    확정한 쪽의 미확인은 사람이 본 것이라 남아 있지 않다). 내보낼 수 없으면 ExportError."""
     dwg = graph["source"].get("drawing_number")
     reasons = []
     if graph["validation"]["status"] != "passed":
@@ -187,16 +171,18 @@ def export_drawing(graph, extraction=None, require_confirmed_number=True, name=N
         reasons.append("도면 번호가 없어 도면 사이 참조를 쓸 수 없음")
     elif require_confirmed_number and (extraction is None
                                        or (extraction.get("drawing") or {}).get("identification_basis") != "registration_confirmed"):
-        reasons.append("도면 번호 %s 가 등록에서 사람이 확정한 값이 아님(표제란 후보만 있음)" % dwg)
+        reasons.append("도면 번호 %s 가 등록에서 확정된 값이 아님(표제란 후보만 있음)" % dwg)
     if reasons:
         raise ExportError(reasons)
-    return _Builder(graph, extraction, name or paths.safe_name(dwg)).run()
+    doubtful = {u.get("target") for u in graph["validation"]["unknowns"]
+                if u.get("field") == "kind" and u.get("check") != "dexpi_item_order_assumed"} if drop_kind_unconfirmed else ()
+    return _Builder(graph, extraction, name or paths.safe_name(dwg), doubtful).run()
 
 
 class _Builder:
 
-    def __init__(self, graph, extraction, name):
-        self.g, self.ex, self.name = graph, extraction, name
+    def __init__(self, graph, extraction, name, doubtful=()):
+        self.g, self.ex, self.name, self.doubtful = graph, extraction, name, doubtful
         self.ids = _Ids()
         self.excl_nodes, self.excl_conn, self.excl_attrs, self.approx = [], [], [], []
         self.check_dirs = {}
@@ -208,7 +194,11 @@ class _Builder:
         self.noz = {}  # entity_id -> {port: (nozzle id, node id)}
         self.positions = {}  # PipingNode id -> (x, y) mm
         self.pending_conn = []
+        self.instrument_text = {}  # 계기 entity_id -> DEXPI에 쓴 조각을 되읽으면 나올 태그
+        self.signals = []  # [(계장 연결, DEXPI id, 시작 구성요소, 끝 구성요소)]
+        self.systems = []  # [(배관망 계통 id, 배관 번호, [배관 id])]
         self.sc = self._scale()
+        self.picture = dexpi_diagram.Picture(extraction, dexpi_diagram.Canvas(self.sc, self._sheet()))
 
     # ----- 좌표
     def _scale(self):
@@ -221,8 +211,14 @@ class _Builder:
             xs = [n["position"][0] for n in self.nodes.values() if n.get("position")] or [1.0]
             ys = [n["position"][1] for n in self.nodes.values() if n.get("position")] or [1.0]
             w, h = max(xs) * 1.05 or 1.0, max(ys) * 1.05 or 1.0
-        factor = round(min((A3[0] - 2 * MARGIN) / w, (A3[1] - 2 * MARGIN) / h), 6)
-        return {"factor": factor, "dx": MARGIN, "dy": MARGIN}
+        return {"factor": min((A3[0] - 2 * MARGIN) / w, (A3[1] - 2 * MARGIN) / h), "dx": MARGIN, "dy": MARGIN}
+
+    def _sheet(self):
+        """쓸 도면의 크기(mm). DEXPI에서 온 도면은 원래 크기(모르면 None), 그 밖에는 줄여 담는 A3."""
+        if (self.g.get("coordinate_system") or {}).get("coordinate_space") != "dexpi_diagram":
+            return A3
+        size = [(self.ex or {}).get("drawing", {}).get(k) for k in ("page_width", "page_height")]
+        return tuple(float(v) for v in size) if all(isinstance(v, (int, float)) and 0 < v < 1e6 for v in size) else None
 
     def _xy(self, p):
         return (round(p[0] * self.sc["factor"] + self.sc["dx"], 3), round(p[1] * self.sc["factor"] + self.sc["dy"], 3))
@@ -234,6 +230,8 @@ class _Builder:
             cls, why = None, None
             if kind is None or n["classification"] == "unclassified":
                 why = "unclassified"
+            elif eid in self.doubtful:
+                why = "kind_unconfirmed"
             elif kind in dexpi_map.EXPORT_NONE:
                 why = "no_dexpi_class"
             elif kind in dexpi_map.INSTRUMENT_KINDS:
@@ -356,6 +354,8 @@ class _Builder:
                 self._allocate_raw(eid, p)
                 continue
             self.node_ids[eid] = []
+            if p["group"] == "instrument":  # 계측 기능의 노드는 파일에 쓰지 않으므로 위치도 내지 않는다
+                continue
             for x in _loads(n["attributes"].get("dexpi:nodes")):
                 nid = self.ids.take(x.get("id"), "Node", keep=True)
                 self.node_ids[eid].append(nid)
@@ -424,7 +424,7 @@ class _Builder:
         self._allocate()
         self.excl_attrs = []
         root = ET.Element("Model", name=_safe_name(self.g["source"]["drawing_number"]),
-                          uri="urn:hazop:dexpi-export:" + _safe_name(self.g["source"]["drawing_number"]))
+                          uri=dexpi_import.OWN_URI + _safe_name(self.g["source"]["drawing_number"]))
         for prefix in ("Core", "Plant"):
             _el(root, "Import", prefix=prefix, source=MODEL_SOURCE[prefix])
         em = _obj(root, "Core/EngineeringModel")
@@ -443,8 +443,9 @@ class _Builder:
             self._equipment(tagged, eid)
         self._piping(pm, pipes)
         instr = self._instrumentation(pm)
-        self._diagram(em, pm)
+        self._diagram(em, pm, pipes)
         ET.indent(root, space="  ")
+        dexpi_xml.join_values(root)
         body = ET.tostring(root, encoding="unicode")
         xml = ('<?xml version="1.0" encoding="UTF-8"?>\n' + body + "\n").encode("utf-8")
         return self._finish(xml, pipes, instr)
@@ -547,6 +548,7 @@ class _Builder:
             first = keys[0]
             if sysk:
                 _data(so, "LineNumber", sysk)
+                self.systems.append((so.get("id"), sysk, [pipe["id"] for key in keys for pipe in groups[key]]))
             fluid, klass = first[2], first[3]
             if fluid and all(k[2] == fluid for k in keys):
                 _data(so, "FluidCode", fluid)
@@ -692,6 +694,7 @@ class _Builder:
             self.approx.append({"entity_id": eid, "reason": "instrument_tag_not_isa_form", "tag": n["tag"]})
             if n["tag"]:
                 _data(o, "ProcessInstrumentationFunctionNumber", n["tag"])
+        self.instrument_text[eid] = dexpi_import.instrument_tag(cat, num or n["tag"])
         if sensing:
             comp = _components(o, "ProcessSignalGeneratingFunctions")
             for e, loc in sensing:
@@ -703,10 +706,12 @@ class _Builder:
             mo = _obj(flows, "Plant/Instrumentation.MeasuringLineFunction", self.ids.take(e.get("source_object_id"), "MeasuringLine"))
             _refs(mo, "Source", self.psgf_of[e["entity_id"]])
             _refs(mo, "Target", p["id"])
+            self.signals.append((e, mo.get("id"), loc, eid))
         for e, src, dst, asid in signals:
             so = _obj(flows, "Plant/Instrumentation.SignalConveyingFunction", self.ids.take(e.get("source_object_id"), "SignalLine"))
             _refs(so, "Source", p["id"])
             _refs(so, "Target", self.plan[dst]["id"] if asid is None else self._af_id(asid))
+            self.signals.append((e, so.get("id"), eid, dst))
         self._extra_attributes(o, n, skip={"set_pressure"})
 
     def _actuating_system(self, parent, eid, asid):
@@ -729,49 +734,63 @@ class _Builder:
         ref = _obj(_components(o, "OperatedValveReference"), "Plant/Instrumentation.OperatedValveReference")
         _refs(ref, "Valve", p["id"])
 
-    # ----- 그림 위치
-    def _diagram(self, em, pm):
-        for eid, n in self.nodes.items():
-            if eid not in self.plan or not n.get("position"):
-                continue
+    # ----- 그림
+    def _diagram(self, em, pm, pipes):
+        pic, edges = self.picture, {e["entity_id"]: e for e in self.g["edges"]}
+        for eid, p in self.plan.items():
+            n = self.nodes[eid]
+            pic.symbol(n, p["id"], (n["kind"] or p["cls"]).upper() + "_SHAPE")
+        for x in self.excl_nodes:  # 방향을 모르는 도면 연결은 쓸 클래스가 없어 나가지 않는다. 자리와 글자를 곁 파일에 남긴다
+            if x["reason"] == "direction_unknown":
+                pic.leave_symbol(self.nodes[x["entity_id"]], x["reason"])
+        for pipe in pipes:
+            joins = tuple((self.plan[e]["id"], node) for e, (_item, node) in ((pipe["src_e"], pipe["src"]), (pipe["dst_e"], pipe["dst"])))
+            pic.line(pipe["seg"], pipe["id"], joins, backward=pipe["swapped"])
+        for e, oid, start, end in self.signals:
+            pic.line(e, oid, ((self.plan[start]["id"], None), (self.plan[end]["id"], None)), first=self.nodes[start]["local_id"], signal=True)
+        for x in self.excl_conn:  # 양 끝은 멀쩡한데 DEXPI의 신호선 끝 규칙에 맞지 않는 계장선
+            if x["reason"] in ("sensing_location_not_piping_component", "signal_end_not_instrument_or_actuator"):
+                pic.leave_line("signal", edges[x["entity_id"]], x["reason"])
+        for oid, line_no, pipe_ids in self.systems:
+            at = pic.middle(pipe_ids)
+            if at is not None:
+                pic.text(oid, line_no, (at[0], at[1] - dexpi_diagram.TEXT_MM))
+        owners, centers = [], []
+        for eid, p in self.plan.items():
             ids = [z["node"] for z in (self.noz.get(eid) or {}).values()] + self.node_ids.get(eid, [])
-            for nid in ids:
-                self.positions.setdefault(nid, self._xy(n["position"]))
-        if not self.positions:
-            return
-        diag = _obj(_components(em, "Diagram"), "Core/Diagram.Diagram")
-        groups = _components(diag, "Groups")
-        border = _obj(groups, "Core/Diagram.Border")
-        elements = _components(border, "Elements")
-        line = _obj(elements, "Core/Diagram.PolyLine")
-        pts = _el(line, "Data", property="Points")
-        for x, y in ((1.0, 1.0), (A3[0] - 1.0, A3[1] - 1.0)):
-            agg = _el(pts, "AggregatedDataValue", type="Core/Diagram.Point")
-            for prop, v in (("X", x), ("Y", y)):
-                _el(_el(agg, "Data", property=prop), "Double").text = repr(v)
-        group = _obj(groups, "Core/Diagram.RepresentationGroup")
-        node_pos = _components(group, "NodePositions")
-        for nid in sorted(self.positions, key=lambda x: (len(x), x)):
-            po = _obj(node_pos, "Plant/Diagram.PipingNodePosition", self.ids.take("Pos_" + (nid[3:] if nid.startswith("HZ_") else nid), "NodePosition"))
-            _refs(po, "Node", nid)
-            d = _el(po, "Data", property="Position")
-            agg = _el(d, "AggregatedDataValue", type="Core/Diagram.Point")
-            for prop, v in (("X", self.positions[nid][0]), ("Y", self.positions[nid][1])):
-                _el(_el(agg, "Data", property=prop), "Double").text = repr(float(v))
-        _refs(group, "Represents", pm.get("id"))
-        _refs(diag, "Represents", pm.get("id"))
+            owners.append((p["id"], ids))
+            if self.nodes[eid].get("position"):
+                centers += [(nid, self._xy(self.nodes[eid]["position"])) for nid in ids]
+        pic.write(em, pm.get("id"), self.name, self.ids, owners, pic.node_positions(self.positions, centers))
+
+    def _mark(self, xml, model, plain, entities, flows, problems):
+        """검사를 통과한 파일에 원래 값 표시를 얹고 다시 검사한다(§6.5-6) -> (바이트, 되읽은 추출 결과)."""
+        xml, again = dexpi_marks.write(xml, model, entities, flows, self.g, [(oid, e) for e, oid, _a, _b in self.signals])
+        root = dexpi_read.parse_safely(xml)
+        problems += [("표시", x) for x in dexpi_read.check_structure(root, definitions=True) + dexpi_read.check_references(root)]
+        entity_of = {x["dexpi_id"]: x["entity_id"] for x in entities + flows}
+        for u in again["validation"]["unknowns"]:
+            if u["check"] == dexpi_origin.CHECK and u.get("field"):  # 표준 값과 어긋나 되읽을 때 쓰이지 않을 칸
+                self.approx.append({"entity_id": entity_of.get(u["source_object_id"]), "reason": "origin_mark_not_accepted", "field": u["field"]})
+            elif u["check"] == dexpi_origin.CHECK:
+                problems.append(("표시", u["reason"]))
+        for key in ("nodes", "relations", "unresolved_connectors"):
+            if [(x["local_id"], x["source_object_id"], x.get("geometry")) for x in again[key]] != \
+                    [(x["local_id"], x["source_object_id"], x.get("geometry")) for x in plain[key]]:
+                problems.append(("표시", "표시를 얹은 뒤 %s의 id나 자리가 다름" % key))
+        return xml, again
 
     # ----- 5. 검사·곁 파일
     def _finish(self, xml, pipes, instr):
         root = dexpi_read.parse_safely(xml)
-        problems = [("스키마 규칙", x) for x in dexpi_read.check_structure(root)]
+        problems = [("스키마 규칙", x) for x in dexpi_read.check_structure(root, definitions=True)]
         for o in root.iter("Object"):
             if not dexpi_map.type_is_known(o.get("type", "")):
                 problems.append(("클래스 목록", "2.0.1 클래스 목록에 없음: %s" % o.get("type")))
         problems += [("참조", x) for x in dexpi_read.check_references(root)]
         exported = [e for e, p in self.plan.items()]
         try:
-            re_ex, _ = dexpi_import.extract_bytes(xml, self.name + ".dexpi.xml")
+            re_ex, model = dexpi_import.extract_bytes(xml, self.name + ".dexpi.xml")
         except dexpi_read.DexpiError as exc:
             problems.append(("되읽기", exc.reason))
             re_ex = None
@@ -787,41 +806,65 @@ class _Builder:
                 problems.append(("되읽기", "배관 연결 수 %d != 내보낸 %d" % (n_phys, len(pipes))))
             if want_tags != got_tags:
                 problems.append(("되읽기", "태그 목록이 다름"))
-        if problems:
-            raise ExportError(["%s: %s" % p for p in problems[:20]])
-        sha = hashlib.sha256(xml).hexdigest()
+            read_tags = {n["source_object_id"]: n["tag"] for n in re_ex["nodes"]}
+            problems += [("되읽기", "계기 태그 %s가 쓴 조각과 다름(%s != %s)" % (self.nodes[e]["tag"], read_tags.get(self.plan[e]["id"]), t))
+                         for e, t in self.instrument_text.items() if read_tags.get(self.plan[e]["id"]) != t]
+            problems += [("그림", x) for x in self.picture.problems(re_ex)]
         entities = []
         for eid, p in self.plan.items():
             n = self.nodes[eid]
             entities.append({"dexpi_id": p["id"], "dexpi_class": p["cls"], "entity_id": eid, "local_id": n["local_id"],
                              "kind": n["kind"], "tag": n["tag"], "origin": n["origin"], "human_edit": n.get("human_edit"),
-                             "attributes": n["attributes"]})
+                             "auto": list(n.get("auto") or []), "attributes": n["attributes"], **_grade(n)})
         flows = []
         for pipe in pipes:
             seg = pipe["seg"]
             flows.append({"dexpi_id": pipe["id"], "entity_id": seg["entity_id"], "local_id": seg["local_id"],
                           "line_no": seg.get("line_no"), "swapped": pipe["swapped"], "flow_direction": seg.get("flow_direction"),
-                          "attributes": seg.get("attributes")})
+                          "auto": list(seg.get("auto") or []), "attributes": seg.get("attributes"), **_grade(seg)})
+        if WRITE_MARKS and not problems:
+            xml, re_ex = self._mark(xml, model, re_ex, entities, flows, problems)
+        sha = hashlib.sha256(xml).hexdigest()
         sidecar = {"schema": SIDECAR_SCHEMA, "exporter_version": EXPORTER_VERSION, "dexpi_version": dexpi_map.DEXPI_VERSION,
                    "attribution": dexpi_map.ATTRIBUTION, "dexpi_sha256": sha, "graph_id": self.g["graph_id"],
                    "graph_version": self.g["graph_version"], "drawing_number": self.g["source"]["drawing_number"],
                    "extraction_run_id": self.g["source"].get("extraction_run_id"), "scale": self.sc,
                    "entities": entities, "pipes": flows, "check_directions": self.check_dirs,
-                   "unknowns": self.g["validation"]["unknowns"]}
+                   "unknowns": self.g["validation"]["unknowns"], "picture": self.picture.sidecar()}
+        if re_ex is not None:  # 곁 파일을 붙여 되읽으면 모든 태그가 원래대로여야 한다
+            dexpi_import.apply_sidecar(re_ex, sidecar, sha)
+            side_tags = {n["source_object_id"]: n["tag"] for n in re_ex["nodes"]}
+            problems += [("되읽기", "곁 파일을 붙여도 태그가 다름(%s != %s)" % (side_tags.get(x["dexpi_id"]), x["tag"])) for x in entities
+                         if (side_tags.get(x["dexpi_id"]) or None) != (x["tag"] or None)]
+        if problems:
+            raise ExportError(["%s: %s" % p for p in problems[:20]])
         flow_n = sum(1 for f in flows if f["flow_direction"])
         # '이대로 확인'으로 확정한 미분류 기호처럼 뺀 구성요소 때문에 끊긴 배관·계장선(INTENT §3.2: 빼고 내보내며 수를 적는다)
         cut = {"pipes": sum(1 for c in self.excl_conn if c["reason"] == "endpoint_excluded" and "excluded_ends" in c),
                "signal_lines": sum(1 for c in self.excl_conn if c["reason"] == "endpoint_excluded" and "excluded_ends" not in c)}
+        by_reason = dict(sorted(collections.Counter(x["reason"] for x in self.excl_nodes).items()))
         excluded = {"schema": EXCLUDED_SCHEMA, "drawing_number": self.g["source"]["drawing_number"],
                     "graph_version": self.g["graph_version"], "dexpi_version": dexpi_map.DEXPI_VERSION,
                     "excluded_components": self.excl_nodes, "excluded_connections": self.excl_conn,
                     "excluded_attributes": self.excl_attrs, "approximations": self.approx, "cut_by_excluded": cut,
+                    "excluded_by_reason": by_reason,
                     "notes": ([{"reason": "flow_direction_has_no_dexpi_slot", "count": flow_n}] if flow_n else [])}
         stats = {"components": len(exported), "connections": len(pipes), "excluded_components": len(self.excl_nodes),
                  "excluded_connections": len(self.excl_conn), "excluded_attributes": len(self.excl_attrs),
                  "approximations": len(self.approx), "cut_pipes": cut["pipes"], "cut_signal_lines": cut["signal_lines"],
-                 "bytes": len(xml), "dexpi_sha256": sha}
-        return Export(self.name, xml, excluded, sidecar, stats)
+                 "excluded_by_reason": by_reason, "picture": self.picture.counts(), "bytes": len(xml), "dexpi_sha256": sha}
+        pic = self.picture
+        drawn = {"nodes": {p["id"]: self.nodes[e]["local_id"] for e, p in self.plan.items()},
+                 "symbols": {o: pic.local[o] for o in pic.symbols}, "lines": {o: pic.local[o] for o in pic.lines},
+                 "in_file": {"nodes": [p["id"] for p in self.plan.values()],
+                             "relations": [x["id"] for x in pipes] + [oid for _e, oid, _a, _b in self.signals]}}
+        return Export(self.name, xml, excluded, sidecar, stats, drawn)
+
+
+def _grade(n):
+    """값의 출처 등급(dexpi_origin.grades_out). 파일에서 읽은 값뿐이면 칸이 없다."""
+    grade = dexpi_origin.grades_out(n)
+    return {"grade": grade} if grade else {}
 
 
 _PREFIX = {"equipment": "Equipment", "piping": "Piping", "offpage": "OffPage", "instrument": "ProcessInstrumentationFunction"}
@@ -868,13 +911,41 @@ def default_confirmation():
     return getattr(confirmation, "sheet_confirmation", None)
 
 
+DRAWING_SUFFIXES = (".dexpi.xml", ".excluded.json", ".hazop.json")
+STALE_REASON = "앞 내보내기에서 남은 파일이며 이번에 내지 않은 것이다. 지우지 않았으니 함께 보내지 않는다"
+EXPORT_LEVELS = ("human", "auto", "assumed")
+WAIT_TEXT = {"taken": "다른 파일이 같은 도면 번호를 씀", "scan": "그림 파일이라 자동으로 물을 수 없음", "no_image": "도면 조각을 그릴 수 없음",
+             "started": "자동 확정이 끝나지 않음", "error": "AI 호출 일부가 실패함", "error_final": "AI 호출이 이어서 실패함",
+             "no_connection": "AI 연결이 없음", "limit": "구독 한도에 닿음", "stopped": "자동 확정을 멈춤", "run_cap": "한 번에 부를 수 있는 수에 닿음",
+             "no_consent": "도면 조각을 보내는 데 동의하지 않음", "ai_off": "이 프로젝트는 AI로 보내지 않음", "images_off": "도면 조각 보내기를 끔"}
+
+
 def _gate(confirmation):
     """confirmation 인자 -> (함수 또는 None, 이름). 'auto'는 V3의 함수, 'assume'은 개발·시험용으로 모두 확정으로 본다."""
     if confirmation == "assume":
-        return (lambda name: {"state": "confirmed", "unconfirmed": [], "unplaced": []}), "assumed"
+        return (lambda name: {"state": "confirmed", "level": "assumed", "unconfirmed": [], "unplaced": []}), "assumed"
     if confirmation == "auto":
         return default_confirmation(), "sheet_confirmation"
     return confirmation, "injected"
+
+
+def _level(st):
+    """확정 수준. 수준을 모르는 함수(주입한 것)는 사람 확정만 안다."""
+    return st.get("level") or ("human" if st.get("state") == "confirmed" else "extracted")
+
+
+def _left(st):
+    """남은 미확인 수. 화면의 '미확인 n곳'과 같은 수(대상 단위)이고, 그 값을 주지 않는 함수는 줄 수."""
+    n = st.get("unconfirmed_targets")
+    return n if n is not None else len(st.get("unconfirmed") or []) + len(st.get("unplaced") or [])
+
+
+def _blocked(st):
+    """내보낼 수 없는 쪽이면 그 까닭 한 줄, 아니면 None."""
+    if _level(st) in EXPORT_LEVELS:
+        return None
+    wait = (st.get("auto") or {}).get("why")
+    return "쪽이 확정되지 않음(%s, 남은 미확인 %d)" % (st.get("state"), _left(st)) + (": " + WAIT_TEXT.get(wait, wait) if wait else "")
 
 
 def _engine(gate):
@@ -886,41 +957,105 @@ def _engine(gate):
     return confirmation if gate is not None and gate is getattr(confirmation, "sheet_confirmation", None) else None
 
 
-def _state(gate, name):
-    """쪽 확정 상태와 남은 미확인 수. 추출 결과가 없거나 깨진 파일이면 상태 'error'(내보내지 않음)."""
+class _Skip(Exception):
+    """한 쪽을 빼는 까닭: code(extracted_only·input_waiting·number_unconfirmed·check_failed·name_clash·changed·graph_error·error)와 문장."""
+
+    def __init__(self, code, reason, state=None):
+        Exception.__init__(self, reason)
+        self.code, self.reason, self.state = code, reason, state
+
+
+class _Page:
+    """내보내려는 쪽 하나. status는 읽을 때의 쪽 확정 답(읽지 못했으면 빈 dict)."""
+
+    def __init__(self, name):
+        self.name, self.drawing_number, self.status, self.export, self.rebuilt = name, None, {}, None, False
+
+    def row(self, skip=None):
+        st = self.status
+        out = {"name": self.name, "drawing_number": self.drawing_number, "state": st.get("state"), "level": _level(st), "unconfirmed": _left(st)}
+        if skip is not None:
+            out.update(state=skip.state or st.get("state"), code=skip.code, reason=skip.reason)
+        return out
+
+
+def _ask(gate, name):
+    """쪽 확정 함수의 답. 추출 결과가 없거나 깨졌거나 꼴이 틀리면 상태 'error'로 뺀다(그 쪽이 나머지를 막지 않게)."""
     try:
-        res = gate(name) or {}
-    except (OSError, ValueError):  # sheet_confirmation: 추출 결과 없음(FileNotFoundError)·깨진 파일(ValueError)
-        return "error", 0
-    return res.get("state"), len(res.get("unconfirmed") or []) + len(res.get("unplaced") or [])
+        got = gate(name) or {}
+        st = got[0] if isinstance(got, tuple) else got  # load_sheet는 (답, 추출, 고친 추출)
+        _level(st), _left(st)
+        return got
+    except Exception as exc:  # noqa: BLE001
+        raise _Skip("error", "쪽 확정을 읽을 수 없음(%s)" % exc, "error")
 
 
-def _confirmed_graph(cf, name, disk_graph):
-    """엔진의 쪽 확정으로 내보낼 때: 확정을 판정한 바로 그 세 파일 바이트(추출 결과·사람 수정·AI 후보)로 그래프를 만든다.
-    디스크의 graph.json은 AI 후보 수락처럼 그래프를 다시 만들지 않는 저장 뒤에 낡을 수 있어 내용으로 쓰지 않는다.
-    반환 (상태, 남은 미확인 수, 그래프 또는 None, 원본 추출 결과, 지문, 사유, 디스크 graph.json과 달라 다시 만들었는가).
-    그래프를 만들 수 없으면 상태 'graph_error'."""
+def _load(page, gate, cf, graph_root, extract_root):
+    """쪽 하나를 읽어 (그래프, 추출 결과). page의 status·drawing_number·rebuilt를 채운다. 내보내지 않을 쪽이면 _Skip.
+    엔진의 쪽 확정이면 확정을 판정한 바로 그 세 파일 바이트(추출 결과·사람 수정·AI 후보)로 그래프를 만든다. 디스크의 graph.json은 AI 후보
+    수락처럼 그래프를 다시 만들지 않는 저장 뒤에 낡을 수 있어 내용으로 쓰지 않는다."""
+    gp = os.path.join(graph_root, page.name, "graph.json")
+    disk, why = None, None
+    try:
+        disk = _read_json(gp)
+        page.drawing_number = disk["source"].get("drawing_number")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        disk, why = None, exc
+    if cf is None:
+        page.status = _ask(gate, page.name)
+    else:
+        loaded = _ask(cf.load_sheet, page.name)
+        page.status, original, corrected = loaded
+        page.drawing_number = (original.get("drawing") or {}).get("drawing_number") or page.drawing_number
+    blocked = _blocked(page.status)
+    if blocked:
+        raise _Skip("extracted_only", blocked)
+    if cf is None:
+        if disk is None:
+            raise _Skip("error", "그래프를 읽을 수 없음(%s)" % why, "error")
+        ex_path = os.path.join(extract_root, page.name, "extraction.json")
+        try:
+            return disk, _read_json(ex_path) if os.path.isfile(ex_path) else None
+        except (OSError, ValueError) as exc:
+            raise _Skip("error", "추출 결과를 읽을 수 없음(%s)" % exc, "error")
+    if ((corrected.get("corrections") or {}).get("inputs") or {}).get("waiting"):
+        raise _Skip("input_waiting", "도면 다시 읽기에 아직 반영되지 않은 사람 수정이 있음")
     from hazop.graph import build, project, sources
     try:
-        st, original, corrected = cf.load_sheet(name)
-    except (OSError, ValueError):
-        return "error", 0, None, None, None, None, False
-    left = len(st.get("unconfirmed") or []) + len(st.get("unplaced") or [])
-    if st["state"] != "confirmed":
-        return st["state"], left, None, None, None, None, False
-    try:
-        graph = build.build_graph(corrected, extraction_file=paths.rel_or_abs(cf.extraction_path(name), paths.work_root()),
+        graph = build.build_graph(corrected, extraction_file=paths.rel_or_abs(cf.extraction_path(page.name), paths.work_root()),
                                   graph_id=sources.sheet_name(project.project_id_of(corrected), corrected))  # 디스크 그래프와 같은 시트 이름
     except Exception as exc:  # noqa: BLE001 - 어떤 이유로든 다시 만들 수 없으면 그 쪽만 내보내지 않고 사유를 적는다
-        return "graph_error", left, None, None, st["fingerprint"], "확정한 자료로 그래프를 다시 만들 수 없음(%s)" % exc, False
-    rebuilt = disk_graph is None or disk_graph.get("graph_version") != graph.get("graph_version")
-    return "confirmed", left, graph, original, st["fingerprint"], None, rebuilt
+        raise _Skip("graph_error", "확정한 자료로 그래프를 다시 만들 수 없음(%s)" % exc, "graph_error")
+    page.rebuilt = disk is None or disk.get("graph_version") != graph.get("graph_version")
+    return graph, corrected  # 그림은 사람이 더하고 옮긴 자리로 그린다
+
+
+def _export_page(page, graph, extraction, require_confirmed_number):
+    try:
+        export = export_drawing(graph, extraction, require_confirmed_number=require_confirmed_number,
+                                drop_kind_unconfirmed=_level(page.status) == "auto")
+        export.files  # 파일로 만들 수 없는 쪽(JSON으로 못 쓰는 값)도 여기서 걸러 나머지 쪽이 나가게 한다
+        page.export = export
+    except ExportError as exc:
+        number = require_confirmed_number and any(r.startswith("도면 번호") for r in exc.reasons)
+        raise _Skip("number_unconfirmed" if number else "check_failed", "; ".join(exc.reasons))
+    except Exception as exc:  # noqa: BLE001 - 한 쪽의 쓰기 결함이 나머지 쪽을 막지 않게 까닭을 적고 뺀다
+        raise _Skip("check_failed", "내보내기 중 오류(%s: %s)" % (type(exc).__name__, exc))
+
+
+def _recheck(page, gate):
+    """쓰기 직전에 다시 확인한다: 수준과 세 파일의 지문이 읽을 때와 같아야 한다."""
+    now = _ask(gate, page.name)
+    before = page.status
+    page.status = now
+    if _level(now) != _level(before) or now.get("fingerprint") != before.get("fingerprint"):
+        raise _Skip("changed", "내보내기 직전에 쪽 확정이나 자료가 바뀜", "changed" if _level(now) in EXPORT_LEVELS else now.get("state"))
 
 
 def list_exportable(graph_root=None, extract_root=None, confirmation="auto"):
     """화면의 내보내기 대상 목록. output/graph 아래 도면마다 {name, drawing_number, confirmed(도면 번호를 등록에서 사람이 확정했는가),
-    graph_ok(그래프 구조 검증 통과), state(쪽 확정 상태 open·ready·confirmed, 함수가 없으면 None), unconfirmed(남은 미확인 수),
-    exportable(셋 다 통과), why(내보낼 수 없는 사유 목록)}. 파일을 쓰지 않는다."""
+    graph_ok(그래프 구조 검증 통과), state(쪽 확정 상태 open·ready·confirmed, 함수가 없으면 None), level(확정 수준 human·auto·extracted,
+    모르면 None), unconfirmed(남은 미확인 수), exportable(수준이 human·auto이고 나머지 둘도 통과), why(내보낼 수 없는 사유 목록)}. 파일을 쓰지 않는다."""
     graph_root = graph_root or paths.output_root("graph")
     extract_root = extract_root or paths.output_root("extract")
     gate, _ = _gate(confirmation)
@@ -932,49 +1067,63 @@ def list_exportable(graph_root=None, extract_root=None, confirmation="auto"):
         if not os.path.isfile(gp):
             continue
         try:
-            graph = _read_json(gp)
-            ep = os.path.join(extract_root, name, "extraction.json")
-            extraction = _read_json(ep) if os.path.isfile(ep) else None
-        except (OSError, ValueError) as exc:
-            rows.append({"name": name, "drawing_number": None, "confirmed": False, "graph_ok": False, "state": None,
+            rows.append(_list_row(name, gp, os.path.join(extract_root, name, "extraction.json"), gate))
+        except Exception as exc:  # noqa: BLE001 - 틀린 꼴 하나가 목록 전체를 막지 않게
+            rows.append({"name": name, "drawing_number": None, "confirmed": False, "graph_ok": False, "state": None, "level": None,
                          "unconfirmed": 0, "exportable": False, "why": ["그래프를 읽을 수 없음: %s" % exc]})
-            continue
-        dwg = graph.get("source", {}).get("drawing_number")
-        confirmed = bool(extraction) and (extraction.get("drawing") or {}).get("identification_basis") == "registration_confirmed"
-        graph_ok = graph.get("validation", {}).get("status") == "passed"
-        why = []
-        state, left = (None, 0)
-        if gate is None:
-            why.append("쪽 확정 함수(sheet_confirmation, 화면 규격 V3)가 아직 없음")
-        else:
-            state, left = _state(gate, name)
-            if state != "confirmed":
-                why.append("쪽이 확정되지 않음(%s, 남은 미확인 %d)" % (state, left))
-        if not graph_ok:
-            why.append("그래프가 구조 검증을 통과하지 못함")
-        if not dwg:
-            why.append("도면 번호가 없음")
-        elif not confirmed:
-            why.append("도면 번호가 등록에서 확정되지 않음")
-        rows.append({"name": name, "drawing_number": dwg, "confirmed": confirmed, "graph_ok": graph_ok, "state": state,
-                     "unconfirmed": left, "exportable": not why, "why": why})
     return rows
+
+
+def _list_row(name, graph_path, extraction_path, gate):
+    graph = _read_json(graph_path)
+    extraction = _read_json(extraction_path) if os.path.isfile(extraction_path) else None
+    dwg = graph.get("source", {}).get("drawing_number")
+    confirmed = bool(extraction) and (extraction.get("drawing") or {}).get("identification_basis") == "registration_confirmed"
+    graph_ok = graph.get("validation", {}).get("status") == "passed"
+    why = []
+    st = {}
+    if gate is None:
+        why.append("쪽 확정 함수(sheet_confirmation, 화면 규격 V3)가 아직 없음")
+    else:
+        try:
+            st = _ask(gate, name)
+            blocked = _blocked(st)
+        except _Skip as skip:
+            st, blocked = {"state": skip.state}, skip.reason
+        if blocked:
+            why.append(blocked)
+    if not graph_ok:
+        why.append("그래프가 구조 검증을 통과하지 못함")
+    if not dwg:
+        why.append("도면 번호가 없음")
+    elif not confirmed:
+        why.append("도면 번호가 등록에서 확정되지 않음")
+    return {"name": name, "drawing_number": dwg, "confirmed": confirmed, "graph_ok": graph_ok, "state": st.get("state"),
+            "level": _level(st) if st else None, "unconfirmed": _left(st), "exportable": not why, "why": why}
+
+
+def _stale_files(out_dir, fnames):
+    """out_dir에 있는 앞 내보내기의 도면 파일 가운데 이번에 쓰지 않는 것(Windows처럼 대소문자를 가리지 않고 견준다)."""
+    if not os.path.isdir(out_dir):
+        return []
+    new = {f.casefold() for f in fnames}
+    return sorted(f for f in os.listdir(out_dir) if f.endswith(DRAWING_SUFFIXES) and f.casefold() not in new)
 
 
 def export_names(names, out_dir, graph_root=None, extract_root=None, require_confirmed_number=True, now=None,
                  confirmation="auto", overwrite=False):
-    """화면이 부를 진입 함수. output/graph 아래 도면 이름들 가운데 **쪽 확정이 `confirmed`인 것만** 내보내 out_dir에 쓴다
-    (HZ-PLN-22 §6.1). 확정 전 쪽은 쓰지 않고 `manifest.json`의 `not_exported`에 상태와 남은 미확인 수를 적는다. 확정된 쪽이 하나도
-    없거나, 확정된 쪽 하나라도 검사(§6.5)에 걸리면 아무 파일도 쓰지 않고 ExportError(reasons에 도면별 사유)를 던진다.
+    """화면이 부를 진입 함수. output/graph 아래 도면 이름들 가운데 **확정 수준이 human(사람 확정)·auto(자동 확정)인 쪽만** 내보내 out_dir에
+    쓴다(HZ-PLN-22 §6.1). 나머지 쪽과 번호·검사(§6.5)에 걸린 쪽은 쓰지 않고 `manifest.json`의 `not_exported`에 수준·남은 미확인 수·까닭을
+    적으며, 한 쪽이 걸려도 나머지는 낸다. 낼 쪽이 하나도 없으면 아무 파일도 쓰지 않고 ExportError(reasons에 도면별 사유)를 던진다.
     names가 None이면 graph_root 아래 graph.json이 있는 모든 도면. confirmation: 'auto'(V3의 sheet_confirmation, 없으면 ExportError),
-    'assume'(개발·시험용으로 모두 확정으로 봄), 또는 함수(name) -> {"state", "unconfirmed", "unplaced"}.
+    'assume'(개발·시험용으로 모두 확정으로 봄, 수준 assumed), 또는 함수(name) -> {"state", "level"(없으면 state에서), "unconfirmed", "unplaced"}.
     'auto'(엔진의 쪽 확정)이면 내보내는 그래프는 디스크의 graph.json이 아니라 확정을 판정한 세 파일로 그 자리에서 만든 것이고,
-    쓰기 직전에 세 파일 지문이 그대로인지 다시 본다(바뀌었으면 그 쪽은 not_exported).
+    쓰기 직전에 수준과 세 파일 지문이 그대로인지 다시 본다(바뀌었으면 그 쪽은 not_exported).
     쓸 파일이 out_dir에 이미 있으면 overwrite가 참일 때만 덮는다(아니면 쓰지 않고 status 'exists'와 그 파일 목록을 돌려줌).
     파일은 out_dir 안 임시 폴더에 모두 쓴 뒤 바꿔 넣는다. 쓰기·바꿔 넣기가 실패하면 앞 내보내기 파일을 되돌려 두고 OSError.
-    반환: {"status": "written"|"exists", "manifest": 경로 또는 None, "existing": [파일 이름], "drawings": [{name, drawing_number,
-    files, graph_version, graph_rebuilt, source_fingerprint, stats}], "not_exported": [{name, drawing_number, state, unconfirmed,
-    reason?}]}."""
+    반환: {"status": "written"|"exists", "manifest": 경로 또는 None, "existing": [파일 이름], "drawings": [{name, drawing_number, state, level,
+    unconfirmed, auto_accepted, files, graph_version, graph_rebuilt, source_fingerprint, stats}], "not_exported": [{name, drawing_number,
+    state, level, unconfirmed, code, reason}], "stale_files": [앞 내보내기에서 남아 이번에 내지 않은 파일 이름. 지우지 않는다]}."""
     graph_root = graph_root or paths.output_root("graph")
     extract_root = extract_root or paths.output_root("extract")
     gate, gate_name = _gate(confirmation)
@@ -983,112 +1132,91 @@ def export_names(names, out_dir, graph_root=None, extract_root=None, require_con
     cf = _engine(gate)
     if names is None:
         names = sorted(d for d in os.listdir(graph_root) if os.path.isfile(os.path.join(graph_root, d, "graph.json")))
-    exports, errors, not_exported, sources = [], [], [], {}
-    for name in names:
-        gp = os.path.join(graph_root, name, "graph.json")
-        disk = _read_json(gp) if os.path.isfile(gp) or cf is None else None
-        dwg = (disk or {}).get("source", {}).get("drawing_number")
-        if cf is not None:
-            state, left, graph, extraction, fp, why, rebuilt = _confirmed_graph(cf, name, disk)
-        else:
-            (state, left), graph, fp, why, rebuilt = _state(gate, name), disk, None, None, False
-            ex_path = os.path.join(extract_root, name, "extraction.json")
-            extraction = _read_json(ex_path) if state == "confirmed" and os.path.isfile(ex_path) else None
-        if state != "confirmed":
-            row = {"name": name, "drawing_number": dwg, "state": state, "unconfirmed": left}
-            if why:
-                row["reason"] = why
-            not_exported.append(row)
-            continue
+    names = list(dict.fromkeys(names))
+    pages, not_exported = [], []
+
+    def step(page, fn, *args):
         try:
-            ex = export_drawing(graph, extraction, require_confirmed_number=require_confirmed_number)
-        except ExportError as exc:
-            errors.append("%s: %s" % (name, "; ".join(exc.reasons)))
-            continue
-        exports.append((name, ex))
-        sources[name] = (fp, rebuilt)
-    if errors:
-        raise ExportError(errors)
+            return fn(page, *args)
+        except _Skip as skip:
+            not_exported.append(page.row(skip))
+            return None
+
+    for name in names:
+        page = _Page(name)
+        got = step(page, _load, gate, cf, graph_root, extract_root)
+        if got is not None:
+            step(page, _export_page, got[0], got[1], require_confirmed_number)
+        if page.export is not None:
+            pages.append(page)
+    before = len(not_exported)
+    for page in pages:
+        step(page, _recheck, gate)
+    pages = [p for p in pages if p.name not in {x["name"] for x in not_exported[before:]}]
+    by_file = {}
+    for page in pages:  # 도면 번호가 같은 이름이 되면 파일이 겹친다. Windows 파일 이름은 대소문자를 가리지 않는다
+        by_file.setdefault(page.export.name.casefold(), []).append(page)
+    for same in by_file.values():  # 어느 쪽이 맞는지 정하지 않고 겹친 쪽을 모두 뺀다
+        if len(same) > 1:
+            text = "파일 이름이 겹침: " + ", ".join("%s(%s)" % (p.export.name, p.name) for p in same)
+            not_exported += [p.row(_Skip("name_clash", text)) for p in same]
+    exports = [same[0] for same in by_file.values() if len(same) == 1]
     if not exports:
-        raise ExportError(["확정된 쪽이 하나도 없어 내보낼 것이 없음: " + ", ".join(
-            "%s(%s, 남은 미확인 %d)" % (x["name"], x["state"], x["unconfirmed"]) for x in not_exported)])
-    for name, ex in list(exports):  # 쓰기 직전에 다시 확인한다(그 사이 세 파일이 바뀌면 확정이 풀린다)
-        if cf is not None:
-            try:
-                st = cf.sheet_confirmation(name)
-                state, left = st["state"], len(st.get("unconfirmed") or []) + len(st.get("unplaced") or [])
-                if state == "confirmed" and st["fingerprint"] != sources[name][0]:
-                    state = "changed"
-            except (OSError, ValueError):
-                state, left = "error", 0
-        else:
-            state, left = _state(gate, name)
-        if state != "confirmed":
-            exports.remove((name, ex))
-            not_exported.append({"name": name, "drawing_number": ex.sidecar["drawing_number"], "state": state, "unconfirmed": left})
-    if not exports:
-        raise ExportError(["내보내기 직전에 쪽 확정이 모두 풀려 내보낼 것이 없음"])
-    used = {}
-    for name, ex in exports:  # 도면 번호가 같은 이름이 되면 파일이 겹친다. Windows 파일 이름은 대소문자를 가리지 않는다
-        key = ex.name.casefold()
-        if key in used:
-            raise ExportError(["파일 이름이 겹침: %s(%s)와 %s(%s)" % (used[key][1], used[key][0], ex.name, name)])
-        used[key] = (name, ex.name)
-    fnames = [f for _, ex in exports for f in sorted(ex.files)] + ["manifest.json"]
+        head = [] if any(x["level"] in EXPORT_LEVELS for x in not_exported) else ["확정된 쪽이 하나도 없어 내보낼 것이 없음"]
+        raise ExportError(head + ["%s: %s" % (x["name"], x["reason"]) for x in not_exported])
+    fnames = [f for p in exports for f in sorted(p.export.files)] + ["manifest.json"]
     existing = [f for f in fnames if os.path.lexists(os.path.join(out_dir, f))]
     if existing and not overwrite:
-        return {"status": "exists", "manifest": None, "existing": existing, "drawings": [], "not_exported": not_exported}
+        return {"status": "exists", "manifest": None, "existing": existing, "drawings": [], "not_exported": not_exported,
+                "stale_files": []}
+    stale = _stale_files(out_dir, fnames)
     drawings = []
-    for name, ex in exports:
-        fp, rebuilt = sources[name]
-        drawings.append({"name": name, "drawing_number": ex.sidecar["drawing_number"], "files": sorted(ex.files),
-                         "graph_version": ex.sidecar["graph_version"], "graph_rebuilt": rebuilt, "source_fingerprint": fp,
-                         "stats": ex.stats})
+    for p in exports:
+        ex = p.export
+        drawings.append(dict(p.row(), drawing_number=ex.sidecar["drawing_number"], auto_accepted=p.status.get("auto_accepted") or 0,
+                             files=sorted(ex.files), graph_version=ex.sidecar["graph_version"], graph_rebuilt=p.rebuilt,
+                             source_fingerprint=p.status.get("fingerprint"), stats=ex.stats))
     manifest = {"schema": MANIFEST_SCHEMA, "exporter_version": EXPORTER_VERSION, "dexpi_version": dexpi_map.DEXPI_VERSION,
                 "attribution": dexpi_map.ATTRIBUTION, "exported_at": now or store_io.now_utc(), "confirmation": gate_name,
-                "drawings": drawings, "not_exported": not_exported}
+                "drawings": drawings, "not_exported": not_exported, "stale_files": stale,
+                "stale_reason": STALE_REASON if stale else None}
     os.makedirs(out_dir, exist_ok=True)
     stage = tempfile.mkdtemp(prefix=".hazop-dexpi-new-", dir=out_dir)
     try:
-        for _name, ex in exports:
-            write_drawing(ex, stage)
+        for p in exports:
+            write_drawing(p.export, stage)
         store_io.write_json(os.path.join(stage, "manifest.json"), manifest)
         _swap_in(stage, out_dir, fnames)
     finally:
         shutil.rmtree(stage, ignore_errors=True)
     return {"status": "written", "manifest": os.path.join(out_dir, "manifest.json"), "existing": existing,
-            "drawings": drawings, "not_exported": not_exported}
+            "drawings": drawings, "not_exported": not_exported, "stale_files": stale}
 
 
 def _swap_in(stage, out_dir, fnames):
     """stage에 다 쓴 파일들을 out_dir로 옮긴다. 있던 파일은 먼저 옆 임시 폴더로 비켜 두고, 하나라도 옮기지 못하면 새 파일을 지우고
-    비켜 둔 파일을 제자리로 돌린 뒤 OSError를 올린다(앞 내보내기를 잃지 않음)."""
+    비켜 둔 파일을 제자리로 돌린 뒤 그 예외를 올린다(앞 내보내기를 잃지 않음). 돌리지 못한 파일은 비켜 둔 폴더에 남긴다."""
     old = tempfile.mkdtemp(prefix=".hazop-dexpi-old-", dir=out_dir)
-    moved_old, moved_new = [], []
-    restored = True
     try:
         for f in fnames:
             if os.path.lexists(os.path.join(out_dir, f)):
                 os.replace(os.path.join(out_dir, f), os.path.join(old, f))
-                moved_old.append(f)
         for f in fnames:
             os.replace(os.path.join(stage, f), os.path.join(out_dir, f))
-            moved_new.append(f)
-    except OSError:
-        for f in moved_new:
+    except BaseException:  # 사람이 끊은 것(KeyboardInterrupt)도 되돌린다. 무엇을 옮겼는지는 폴더에 남은 것으로 안다
+        kept, left = set(os.listdir(old)), set(os.listdir(stage))
+        for f in fnames:
             try:
-                os.remove(os.path.join(out_dir, f))
+                if f in kept:
+                    os.replace(os.path.join(old, f), os.path.join(out_dir, f))
+                elif f not in left:
+                    os.remove(os.path.join(out_dir, f))
             except OSError:
                 pass
-        for f in moved_old:
-            try:
-                os.replace(os.path.join(old, f), os.path.join(out_dir, f))
-            except OSError:
-                restored = False
+        if not os.listdir(old):  # 되돌리지 못한 앞 파일이 있으면 그 폴더를 남긴다
+            os.rmdir(old)
         raise
-    finally:
-        if restored:
-            shutil.rmtree(old, ignore_errors=True)
+    shutil.rmtree(old, ignore_errors=True)
 
 
 def _read_json(path):

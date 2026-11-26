@@ -22,6 +22,7 @@ import os
 import re
 
 from hazop import store_io
+from hazop.graph import old_names
 from hazop.kg.inputs import (CANDIDATE_KEY_FIELDS, LINK_COLUMNS, NODE_COLUMNS, normalize_tag, normalize_text,
                              read_csv, text_sha256)
 
@@ -72,6 +73,9 @@ def _targets(graphs):
             if n.get("tag"):
                 out.append((g, n))
                 counts[(g["graph_id"], n["tag"])] = counts.get((g["graph_id"], n["tag"]), 0) + 1
+            old = old_names.old_tag(n)
+            if old:  # 다른 노드의 옛 태그와 같은 태그는 하나로 정해지지 않는다(hazop.kg.build._PidIndex)
+                counts[(g["graph_id"], old)] = counts.get((g["graph_id"], old), 0) + 1
     out.sort(key=lambda t: (t[0]["graph_id"], t[1]["source_object_id"]))
     return out, counts
 

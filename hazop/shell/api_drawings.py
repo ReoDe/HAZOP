@@ -112,7 +112,7 @@ def exportable(engine):
         gid = names.get(r["name"])
         if gid is None:
             continue
-        rows.append({"graph_id": gid, "name": r["name"], "display": display(engine, gid), "drawing_number": r.get("drawing_number"), "state": r.get("state"),
+        rows.append({"graph_id": gid, "name": r["name"], "display": display(engine, gid), "drawing_number": r.get("drawing_number"), "state": r.get("state"), "level": r.get("level"),
                      "unconfirmed": r.get("unconfirmed") or 0, "exportable": bool(r.get("exportable")), "why": list(r.get("why") or [])[:6]})
     return {"drawings": rows, "any": any(x["exportable"] for x in rows)}
 
@@ -307,15 +307,9 @@ def _export(engine, a):
         if gid not in by_gid:
             raise api.CommandError("not_found", "없는 도면")
         names.append(by_gid[gid])
-    rows = exportable(engine)
-    asked = [r for r in rows["drawings"] if r["name"] in names]
-    skipped = [r for r in asked if not r["exportable"]]          # 쪽 확정이 안 됐거나 도면 번호가 확정되지 않은 쪽: 막지 말고 사유와 함께 빼고 나머지는 낸다
-    names = [r["name"] for r in asked if r["exportable"]]
     if not names:
-        if skipped:
-            raise api.CommandError("failed", "내보낼 수 있는 쪽이 없습니다.\n" + "\n".join(
-                "%s: %s" % (r["display"], (r.get("why") or ["내보낼 수 없음"])[0]) for r in skipped[:12])[:700])
-        raise api.CommandError("failed", "확정된 쪽이 하나도 없어 내보낼 것이 없습니다. 도면에서 '쪽 확정'을 마친 쪽만 내보냅니다.")
+        raise api.CommandError("failed", "내보낼 도면이 없습니다.")
+    # 못 내는 쪽(확정이 안 됐거나 번호가 확정되지 않은 쪽)을 미리 빼지 않는다: 엔진이 쪽마다 수준·까닭을 not_exported에 적고 나머지는 낸다.
     pick = engine.hooks.get("save_dir")
     if pick is None:
         raise api.CommandError("failed", "저장 위치를 고를 수 없습니다.")
@@ -331,19 +325,20 @@ def _export(engine, a):
                 return {"cancelled": True, "overwrite_refused": True}
             res = dexpi_export.export_names(names, out_dir, overwrite=True)
     except dexpi_export.ExportError as exc:
-        raise api.CommandError("failed", "\n".join(exc.reasons)[:900])
+        # 엔진의 사유는 내부 이름으로 적혀 있다: 화면에는 사람용 도면 이름과 쪽별 사유로 다시 쓴다
+        lines = ["%s: %s" % (r["display"], (r.get("why") or ["내보낼 수 없음"])[0]) for r in exportable(engine)["drawings"] if r["name"] in names and not r["exportable"]]
+        raise api.CommandError("failed", ("내보낼 수 있는 쪽이 없습니다.\n" + "\n".join(lines[:12]))[:700] if lines else "\n".join(exc.reasons)[:900])
     except OSError as exc:
         raise api.CommandError("failed", "저장하지 못했습니다(%s)." % errtext.why(exc, 160))
     to_gid = {v: k for k, v in by_gid.items()}
     lb = labels(engine)
     not_exported = [{"graph_id": to_gid.get(x["name"]), "display": display(engine, to_gid.get(x["name"]), lb), "drawing_number": x.get("drawing_number"), "state": x.get("state"),
-                     "unconfirmed": x.get("unconfirmed") or 0, "reason": x.get("reason")} for x in res["not_exported"]]
-    not_exported += [{"graph_id": r["graph_id"], "display": r["display"], "drawing_number": r.get("drawing_number"), "state": r.get("state"),
-                      "unconfirmed": r.get("unconfirmed") or 0, "reason": (r.get("why") or [None])[0]} for r in skipped]
+                     "level": x.get("level"), "code": x.get("code"), "unconfirmed": x.get("unconfirmed") or 0, "reason": x.get("reason")} for x in res["not_exported"]]
     return {"cancelled": False, "folder": os.path.basename(out_dir.rstrip("\\/")),
             "drawings": [{"graph_id": to_gid.get(d["name"]), "display": display(engine, to_gid.get(d["name"]), lb), "drawing_number": d.get("drawing_number"), "files": d["files"], "stats": d.get("stats") or {},
+                          "state": d.get("state"), "level": d.get("level"), "unconfirmed": d.get("unconfirmed") or 0, "auto_accepted": d.get("auto_accepted") or 0,
                           "graph_rebuilt": bool(d.get("graph_rebuilt"))} for d in res["drawings"]],
-            "not_exported": not_exported}
+            "not_exported": not_exported, "stale_files": list(res.get("stale_files") or []), "stale_reason": res.get("stale_reason")}
 
 
 def _export_command(engine, a):
