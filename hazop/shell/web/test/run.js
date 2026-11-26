@@ -22,7 +22,10 @@ import { tests as titleblockTests } from "./titleblock.test.js";
 import { tests as extractCheckTests } from "./extract_check.test.js";
 import { tests as cleanPrefetchTests } from "./clean_prefetch.test.js";
 
-const all = [...storeTests, ...bridgeTests, ...cardTests, ...nodesTests, ...tableTests, ...cleanTests, ...editTests, ...resultsDetailTests, ...aiReviewTests, ...cleanDashedTests, ...lostTests, ...nextTests, ...queueTests, ...chipTests, ...reviewTests, ...sourcesTests, ...sheetconfTests, ...drawingsJobsTests, ...titleblockTests, ...extractCheckTests, ...cleanPrefetchTests];
+import { tests as lightDismissTests } from "./light_dismiss.test.js";
+
+// 바깥 누르면 닫기 시험은 맨 앞에서 돈다: 뒤의 시험들이 화면에 남긴 것이 다시 그리다 던지면 그 뒤의 화면 갱신이 멈춘다
+const all = [...lightDismissTests, ...storeTests, ...bridgeTests, ...cardTests, ...nodesTests, ...tableTests, ...cleanTests, ...editTests, ...resultsDetailTests, ...aiReviewTests, ...cleanDashedTests, ...lostTests, ...nextTests, ...queueTests, ...chipTests, ...reviewTests, ...sourcesTests, ...sheetconfTests, ...drawingsJobsTests, ...titleblockTests, ...extractCheckTests, ...cleanPrefetchTests];
 const results = [];
 
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assert 실패"); }

@@ -1,7 +1,8 @@
 // 도면 자리. 도면 구성요소(canvas/sheet.js, s-viewer가 만듦)가 있으면 그것을 쓰고, 아직 없으면 SVG 그림만 보이는 대역을 쓴다.
 // 경계는 canvas/README.md: props(sheet, mode, selection, marks, layers, command, viewport)와 이벤트 콜백.
+import { useLightDismiss } from "./ui/light_dismiss.js";
 import { Fragment, html } from "./ui/html.js";
-import { useEffect, useMemo, useState } from "../vendor/hooks.module.js";
+import { useEffect, useRef, useMemo, useState } from "../vendor/hooks.module.js";
 import { store, useStore } from "./store.js";
 import { read, ui } from "./bridge.js";
 import { Icon } from "./ui/icon.js";
@@ -58,13 +59,15 @@ function useViewRect(bubble) {
   return bubble && view ? viewRect(bubble.rect, bubble.view, view) : null;
 }
 
-function ItemBubble() {
+export function ItemBubble() {
   const b = useStore((s) => s.bubble);
   const rev = useStore((s) => s.drawings.rev);
   const row = useStore((s) => s.drawings.drawings.find((d) => b && d.graph_id === b.sheet));
   const [props, setProps] = useState(null);
   const [ai, setAi] = useState("");          // AI가 이 구성요소에 한 일 한 줄(없으면 빈 글)
   const live = useViewRect(b);               // 도면을 끌거나 확대할 때 말풍선이 같은 프레임에 따라간다
+  const card = useRef(null);
+  useLightDismiss(!!b, () => [card.current], () => store.set({ bubble: null }), { esc: true });
   useEffect(() => {
     if (!b) return undefined;
     let alive = true;
@@ -83,7 +86,7 @@ function ItemBubble() {
   const trace = () => { store.set({ bubble: null, panel: "results" }); R.loadTrace({ sheet: b.sheet, local: b.id }); };
   const from = row ? (row.display || row.drawing_number || "") : "";      // 도면 번호만(제목은 길다)
   const src = (x) => !x ? null : x.kind === "document" ? (x.name || "설계 문서") : from;
-  return html`<div class="float bubble props" role="dialog" aria-label="구성요소 속성" style=${style}>
+  return html`<div class="float bubble props" ref=${card} role="dialog" aria-label="구성요소 속성" style=${style}>
     <div><b>${b.tag || "태그 없음"}</b> ${b.kind_label || "종류 미확인"}</div>
     ${ai ? html`<div class="muted small">${ai}</div>` : null}
     <dl class="props-list">${((props && props.items) || []).map((it) => html`<${Fragment} key=${it.label}>

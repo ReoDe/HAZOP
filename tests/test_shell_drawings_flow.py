@@ -506,6 +506,56 @@ class ItemBubbleFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: (self.js(win, self.BOXES) or 0) == 0, 10), "구간 탭에는 추출 네모가 없다(구간 색만)")
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
 
+    PRESS = """(([id, dx]) => { const vp = document.querySelector('.hz-cv-vp'), v = vp.getBoundingClientRect();
+      let x = v.left + 4, y = v.bottom - 4;
+      if (id) { const r = document.querySelector('.hz-cv-marks [data-check="' + id + '"]').getBoundingClientRect(); x = r.left + r.width / 2; y = r.top + r.height / 2; }
+      const at = (type, ax) => vp.dispatchEvent(new PointerEvent(type, {bubbles: true, cancelable: true, clientX: ax, clientY: y, button: 0, pointerId: 9, isPrimary: true}));
+      at('pointerdown', x); if (dx) at('pointermove', x + dx); at('pointerup', x + dx); return true; })(%s)"""
+
+    def test_the_spec_bubble_closes_on_an_outside_press_and_is_replaced_by_another_component(self):
+        """실제 캔버스: 구성요소를 누르면 말풍선, 다른 구성요소를 누르면 그것으로 바뀌고, 빈 도면·머리 줄을 누르면 닫히며, 빈 도면을 끄는 것은 닫지 않는다."""
+        win = self.window()
+        pump(1.0)
+        self.js(win, "window.__hz.store.set({panel: 'drawings'})")      # 앞 시험이 저장한 패널 상태와 무관하게
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.drow-open') !== null") is True, 15))
+        self.assertTrue(self.click(win, ".drow-open"))
+        self.assertTrue(wait_for(lambda: (self.js(win, self.BOXES) or 0) > 1, 30))
+        self.js(win, "window.__hz.store.set({panel: null})")
+        pump(1.5)
+        from hazop.shell import api
+        gid = self.js(win, "window.__hz.store.get().sheet")
+        items = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"]
+        has = lambda i: self.js(win, "!!document.querySelector('.hz-cv-marks [data-check=\\'%s\\']')" % i)
+        symbols = [i["id"] for i in items if i.get("layer") == "symbol" and has(i["id"])]
+        picked = lambda: self.js(win, "(window.__hz.store.get().bubble || {}).id || ''")
+
+        def press(i=None, dx=0):
+            self.js(win, self.PRESS % json.dumps([i, dx]))
+            pump(0.5)
+
+        first = None
+        for i in symbols:
+            press(i)
+            if picked() == i:
+                first = i
+                break
+        self.assertTrue(first, "구성요소를 눌러 말풍선이 뜬다")
+        for i in symbols:
+            if i != first:
+                press(i)
+                if picked() == i:
+                    break
+        keep = picked()
+        self.assertTrue(keep and keep != first, "다른 구성요소를 누르면 그 말풍선으로 바뀐다: %r" % keep)
+        press(None, 40)
+        self.assertEqual(picked(), keep, "도면을 끄는 것은 닫지 않는다")
+        press()
+        self.assertEqual(picked(), "", "빈 도면을 한 번 누르면 닫힌다")
+        press(keep)
+        self.assertEqual(picked(), keep)
+        self.js(win, "(() => { const h = document.querySelector('header') || document.body; for (const t of ['pointerdown', 'pointerup']) h.dispatchEvent(new PointerEvent(t, {bubbles: true, clientX: 300, clientY: 5, button: 0})); })()")
+        self.assertTrue(wait_for(lambda: picked() == "", 10), "머리 줄을 누르면 닫힌다")
+
     def test_only_the_close_button_and_the_drawing_menu_button_close_the_drawing_panel(self):
         win = self.window()
         self.js(win, "window.__hz.store.set({panel: 'drawings'})")      # 앞 시험이 남긴 보기 상태와 무관하게

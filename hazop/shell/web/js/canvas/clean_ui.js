@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "../../vendor/hooks
 import { createStore, store as shell, useStore } from "../store.js";
 import { Icon } from "../ui/icon.js";
 import { Chip } from "../ui/parts.js";
+import { useLightDismiss } from "../ui/light_dismiss.js";
 import { defaultView } from "./clean_view.js";
 
 const cssHref = new URL("clean.css", import.meta.url).href;
@@ -123,6 +124,8 @@ function ViewSwitch({ gid }) {
   const built = useClean((s) => s.built[gid]);
   const ov = useClean((s) => s.overlay);
   const [open, setOpen] = useState(false);
+  const menu = useRef(null), menuBtn = useRef(null);
+  useLightDismiss(open, () => [menu.current, menuBtn.current], () => setOpen(false), { esc: true });
   const count = data ? data.counts.total : 0, fmt = data ? data.source_format : null;
   const dexpi = fmt === "dexpi";
   const waiting = useClean((s) => waitingClean(s, gid));
@@ -137,9 +140,9 @@ function ViewSwitch({ gid }) {
   return html`<div class="float viewswitch" role="group" aria-label="도면 보기">
     ${dexpi ? html`<span class="muted small" title="DEXPI에는 원본 도면 그림이 없습니다">원본 그림 없음 · DEXPI 변환</span>`
       : html`<div class="clean-toggle" role="group" aria-label="원본 또는 정리">${seg("orig", "원본")}${seg("clean", "정리")}</div>`}
-    ${data ? html`<button type="button" class="vm-btn" aria-expanded=${open ? "true" : "false"} aria-haspopup="true" title="보기 설정: 읽은 방법, 겹쳐 보기"
+    ${data ? html`<button type="button" class="vm-btn" ref=${menuBtn} aria-expanded=${open ? "true" : "false"} aria-haspopup="true" title="보기 설정: 읽은 방법, 겹쳐 보기"
       onClick=${() => setOpen(!open)}>보기 <${Icon} name="chevron-down" size=${14} />${lit || warn ? html`<span class=${"vm-dot" + (warn ? " warn" : "")} aria-label=${warn ? "알릴 것이 있음" : "켜 둔 겹쳐 보기가 있음"}></span>` : null}</button>` : null}
-    ${open && data ? html`<div class="float viewmenu" role="menu" aria-label="보기 설정">
+    ${open && data ? html`<div class="float viewmenu" ref=${menu} role="menu" aria-label="보기 설정">
       <div class=${"vm-info" + (fmt === "unknown" ? " warn" : "")} title="읽은 방법">${FORMAT_LABEL[fmt] || fmt}</div>
       ${unplaced ? html`<div class="vm-info warn" title="좌표가 없어 도면에 그리지 못한 것. 확정 전에 위치를 주거나 도면에 없음으로 정해야 합니다">위치 없음 ${unplaced}</div>` : null}
       ${count ? check(ov.unconfirmed, "속성 미확인 보기", "호박색 점선 네모: 읽지 못한 것이 아니라 속성만 확인되지 않은 곳(포트·흐름 방향·고장 위치 등)을 도면에 보입니다. 읽지 못한 기호·끊긴 연결은 늘 보입니다",
@@ -153,9 +156,11 @@ function Bubble({ gid }) {
   const b = useClean((s) => s.bubble);
   const data = useClean((s) => s.data[gid]);
   const cursor = useClean((s) => s.cursor);
+  const card = useRef(null);
+  useLightDismiss(!!b, () => [card.current], closeBubble, { esc: true });
   if (!b) return null;
   const total = data ? data.unconfirmed.length : 0, f = b.fragment;
-  return html`<div class="float cleanpop" role="dialog" aria-label="못 읽은 곳">
+  return html`<div class="float cleanpop" ref=${card} role="dialog" aria-label="못 읽은 곳">
     <div class="cp-h"><b>${REASON_TEXT[b.reason] || "못 읽은 곳"}</b>${total && cursor >= 0 ? html`<${Chip}>${cursor + 1} / ${total}<//>` : null}
       <button type="button" class="btn ghost sm icon" aria-label="닫기" title="닫기 (Esc)" onClick=${closeBubble}><${Icon} name="x" size=${15} /></button></div>
     ${f ? html`<div class="cp-frag" aria-label="원본의 그 자리"><svg viewBox=${f.box.x + " " + f.box.y + " " + f.box.w + " " + f.box.h} width="100%" preserveAspectRatio="xMidYMid meet">

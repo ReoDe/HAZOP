@@ -1,6 +1,7 @@
 // 초기사건 패널(규격 §2.1·§2.3 ⑥): 보기 셋 — 그룹(묶이지 않은 후보 + 그룹 목록 + 그룹 상세), 완전성 대조(범주 표), 품질 경고. 머리에 규칙 초안 만들기와
 // 인계 묶음 내보내기. 편집(A10)은 이전 화면 ⑥과 같은 엔진 함수를 부른다: 후보 묶기·옮기기·빼기, 그룹 고치기·나누기·지우기, 표제·최종상태·기본사건
 // 고치기·받아들이기·지우기, 빈 범주 판정. 저장하는 자료는 엔진만 쓰고 여기서는 보여 주고 명령만 보낸다. 모델·도면에서 온 글은 ${}로만 넣는다.
+import { useLightDismiss } from "../ui/light_dismiss.js";
 import { html } from "../ui/html.js";
 import { useEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { store } from "../store.js";
@@ -157,10 +158,12 @@ function RecordRow({ kind, id, label, sub, d }) {
     ${edit ? html`<${FieldForm} title=${id + " 고치기"} fields=${RECORD_FIELDS[kind]} values=${rec} choices=${d.choices} onSave=${(f) => I.editRecord(kind, id, f)} onCancel=${() => setEdit(false)} />` : null}</div>`;
 }
 
-function Detail({ s, d, gid }) {
+export function Detail({ s, d, gid }) {
   const busy = I.useIe((x) => x.busy);
   const [mode, setMode] = useState(null);       // null | "edit" | "heading" | "end_state"
   const [more, setMore] = useState(false);
+  const moreMenu = useRef(null);
+  useLightDismiss(more, () => [moreMenu.current, document.querySelector('.ndetail button[aria-label="그룹 동작 더 보기"]')], () => setMore(false), { esc: true });
   if (!d) return html`<div class="muted">불러오는 중…</div>`;
   const g = d.group;
   const st = STATUS[g.status] || [g.status, ""];
@@ -174,7 +177,7 @@ function Detail({ s, d, gid }) {
         <${Btn} sm=${true} label="그룹 고치기" disabled=${busy} onClick=${() => pick("edit")}>고치기<//>
         <${Btn} sm=${true} kind="ghost" label="그룹 동작 더 보기" aria-expanded=${more ? "true" : "false"} onClick=${() => setMore(!more)}>더 보기<//>
         <${Btn} sm=${true} kind="ghost" icon="x" label="그룹 상세 닫기" onClick=${() => I.ie.set({ active: null, detail: null, picked: [] })} /></span></div>
-    ${more ? html`<div class="acts-row ie-more" role="menu" aria-label="그룹 동작">
+    ${more ? html`<div class="acts-row ie-more" ref=${moreMenu} role="menu" aria-label="그룹 동작">
       <${Btn} sm=${true} label="표제 더하기" onClick=${() => pick("heading")}>표제 더하기<//>
       <${Btn} sm=${true} label="최종상태 더하기" onClick=${() => pick("end_state")}>최종상태 더하기<//>
       <${Btn} sm=${true} label="그룹 지우기" disabled=${busy || !draft} title=${draft ? "초안 그룹을 지웁니다(확인을 받습니다)" : "확정한 그룹은 먼저 확정을 풀어야 지울 수 있습니다"} onClick=${() => { setMore(false); I.deleteGroup(gid); }}>그룹 지우기<//></div>` : null}

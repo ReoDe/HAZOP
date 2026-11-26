@@ -250,10 +250,7 @@ function App() {
       else if ((e.ctrlKey && e.key === "0") || (e.key === "Escape" && !typing)) { if (store.get().panel && store.get().panel !== "drawings") { e.preventDefault(); store.set({ panel: null }); } }
     }
     window.addEventListener("keydown", key);
-    // Esc는 사양 카드를 먼저 닫는다: 다른 Esc 처리(패널 닫기·캔버스 강조 지우기)보다 앞에서 받고, 카드가 없으면 아무것도 하지 않는다
-    function escCard(e) { if (e.key === "Escape" && store.get().bubble) { e.preventDefault(); e.stopImmediatePropagation(); store.set({ bubble: null }); } }
-    window.addEventListener("keydown", escCard, true);
-    return () => { window.removeEventListener("keydown", key); window.removeEventListener("keydown", escCard, true); };
+    return () => { window.removeEventListener("keydown", key); };
   }, []);
   return html`<div class=${"app" + (collapsed && !queueOpen ? " chat-collapsed" : "") + (queueOpen ? " queue-open" : "")}>
     <${Rail} />

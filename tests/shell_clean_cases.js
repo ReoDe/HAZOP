@@ -20,7 +20,7 @@ async function body({ CV, MK, SheetCore }, data) {
   const sheetRect = (el) => { const r = el.getBoundingClientRect(), v = vpR(), k = core.view.k; return { x0: (r.left - v.left - core.view.x) / k, y0: (r.top - v.top - core.view.y) / k, x1: (r.right - v.left - core.view.x) / k, y1: (r.bottom - v.top - core.view.y) / k }; };
   const pe = (type, x, y, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, clientX: vpR().left + x, clientY: vpR().top + y, button: 0, pointerId: 1, isPrimary: true }, extra));
   const toScreen = (sx, sy) => ({ x: sx * core.view.k + core.view.x, y: sy * core.view.k + core.view.y });
-  const click = (sx, sy) => { const p = toScreen(sx, sy); vp.dispatchEvent(pe("pointerdown", p.x, p.y)); vp.dispatchEvent(pe("pointerup", p.x, p.y)); };
+  const click = (sx, sy, extra) => { const p = toScreen(sx, sy); vp.dispatchEvent(pe("pointerdown", p.x, p.y, extra)); vp.dispatchEvent(pe("pointerup", p.x, p.y, extra)); };
 
   // ---- 원본 보기
   core.update({ clean: data.clean, symbols, view: "orig" });
@@ -107,7 +107,7 @@ async function body({ CV, MK, SheetCore }, data) {
 
   // ---- 누르기·표시는 그린 자리(정돈 좌표)에서: 그려진 기호의 가운데를 누르면 그 기호가 골라진다
   core.update({ mode: "pick" });
-  const pickAt = (x, y) => { core.update({ selection: [] }); click(x, y); return core.sel.slice(); };
+  const pickAt = (x, y) => { core.update({ selection: [] }); click(x, y, { ctrlKey: true }); return core.sel.slice(); };      // 고르기는 Ctrl+누르기
   const tbOf = (it) => (ex[it.id] && ex[it.id].tbox) || it.bbox;
   const wrongPick = drawn.filter((it) => { const b = tbOf(it); return !pickAt((b[0] + b[2]) / 2, (b[1] + b[3]) / 2).includes(it.id); });
   t("정리 보기: 그려진 기호 " + drawn.length + "개 모두 그 가운데를 누르면 그 기호가 골라짐", wrongPick.length === 0, wrongPick.slice(0, 5).map((i) => i.id).join(","));

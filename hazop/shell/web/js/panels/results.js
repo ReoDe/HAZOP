@@ -1,8 +1,9 @@
 // 분석 결과 패널(규격 §2.1·§2.3 ⑤, 시안 4번): 구간×편차 행렬(가상 스크롤), 고른 칸의 워크시트와 행 동작 막대(승인·수정·기각·보류 + 사유),
 // 분석 실행·멈춤·한도 표시, 내보내기(Excel·초기사건 인계 묶음), 권고 목록과 추적(INTENT §3.6). 저장하는 자료는 엔진만 쓰고 여기서는 보여 주고 명령만 보낸다.
 // 모델·도면에서 온 글(원인·결과·권고·이름)은 ${}로만 넣는다(HTML로 해석되지 않는다).
+import { useLightDismiss } from "../ui/light_dismiss.js";
 import { html } from "../ui/html.js";
-import { useState } from "../../vendor/hooks.module.js";
+import { useRef, useState } from "../../vendor/hooks.module.js";
 import { store } from "../store.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
@@ -131,8 +132,10 @@ function ExportCard({ s, onDone }) {
       <${Btn} label="취소" onClick=${onDone}>취소<//></div></div>`;
 }
 
-function Header({ s }) {
+export function Header({ s }) {
   const [menu, setMenu] = useState(false);
+  const runMenu = useRef(null);
+  useLightDismiss(menu, () => [runMenu.current, document.querySelector('.res-head button[aria-label="분석 실행"]')], () => setMenu(false), { esc: true });
   const [exp, setExp] = useState(false);
   const exporting = R.useResults((x) => x.exporting);
   const view = R.useResults((x) => x.view);
@@ -148,7 +151,7 @@ function Header({ s }) {
       <${Btn} sm=${true} icon="file-export" label="Excel 내보내기 범위 고르기" title=${s.stale ? "도면 변경을 반영한 뒤 내보냅니다(검토구간 패널)" : null} disabled=${exporting || !!s.stale} onClick=${() => setExp(!exp)}>Excel<//>
       <${Btn} sm=${true} icon="file-export" label="초기사건 인계 묶음 내보내기" disabled=${exporting} onClick=${R.exportIe}>초기사건 인계<//></span></div>
     ${exp ? html`<${ExportCard} s=${s} onDone=${() => setExp(false)} />` : null}
-    ${menu ? html`<div class="acts-row runmenu" role="menu">
+    ${menu ? html`<div class="acts-row runmenu" ref=${runMenu} role="menu">
       <${Btn} sm=${true} label="모든 구간 분석" onClick=${() => { setMenu(false); R.planRun("all"); }}>모든 구간<//>
       <${Btn} sm=${true} label="고른 구간 분석" onClick=${() => { setMenu(false); R.planRun("node"); }}>고른 구간<//>
       <${Btn} sm=${true} label="고른 칸 분석" onClick=${() => { setMenu(false); R.planRun("cell"); }}>고른 칸<//>
