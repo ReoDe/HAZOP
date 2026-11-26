@@ -30,7 +30,7 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
       const typing = tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || (t && t.isContentEditable);
       const s = N.nodes.get();
       if (t && t.closest && t.closest(".newnode")) return;          // 카드 안의 키는 카드가 처리한다
-      const act = keyAction(e, { selection: s.selection, typing, panelWide: false, card: !!s.card });
+      const act = keyAction(e, { selection: N.pickedIds(s), typing, panelWide: false, card: !!s.card });
       if (!act) return;
       e.preventDefault();
       if (act === "fit") N.zoomToIds(s.selection);
@@ -47,9 +47,13 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
       onLinkClick: (link) => N.followLink(link),
       onSelection: (d) => N.setSelection(d.selected, d.truncated),
       onSegmentClick: (d) => { N.focusNode(d.node_id); N.openPanel(); },
-      onPlainClick: (d) => { if (!d.hit && shell.get().panel === "nodes") N.unfocus(); },      // 빈 곳을 누르면 구간 고름이 풀린다
+      onPlainClick: (d) => {
+        if (N.pickParts().length) N.clearSelection();                     // Ctrl 없이 한 번 누르면 묶어 둔 고름이 모두 풀린다
+        if (!d.hit && shell.get().panel === "nodes") N.unfocus();         // 빈 곳을 누르면 구간 고름도 풀린다
+      },
       onEsc: () => {
         const s = N.nodes.get(), step = escStep({ card: !!s.card, focus: s.focus, mode: s.mode, selection: s.selection });
+        if (step !== "card" && Object.keys(s.picks).length) N.nodes.set({ picks: {} });      // Esc: 다른 도면에서 묶어 둔 것도 푼다(이 도면 것은 도면 부품이 푼다)
         if (step === "card") N.closeCard();
         else if (step === "focus") N.focusNode(s.focus);
         else if (step === "pan") N.setMode("pan");
@@ -60,7 +64,9 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
 }
 
 function SelectionBar() {
-  const selection = N.useNodes((s) => s.selection);
+  const here = N.useNodes((s) => s.selection);
+  const picks = N.useNodes((s) => s.picks);
+  const selection = N.pickedIds({ selection: here, picks });      // 모든 도면에서 묶어 둔 것
   const focus = N.useNodes((s) => s.focus);
   const list = N.useNodes((s) => s.list.nodes);
   const card = N.useNodes((s) => s.card);

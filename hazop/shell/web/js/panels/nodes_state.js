@@ -14,6 +14,7 @@ export const nodes = createStore({
   detail: null,             // GET nodes/node/<id>
   mode: "pan",              // "pan" | "pick"
   selection: [],            // 지금 도면에서 고른 local_id
+  picks: {},                // 다른 도면에서 묶어 둔 고름: graph_id → local_id 목록(도면을 넘어가도 남는다)
   truncated: false,         // 2,000개를 넘겨 골라 앞 2,000개만 남았음
   focus: null,              // 강조한 구간 ID
   card: null,               // 새 구간 카드
@@ -87,7 +88,32 @@ export function setSelection(ids, truncated = false) {
   // 다음 구간을 고르기 시작하면 앞서 만든 구간의 카드는 닫는다(고친 것이 없으면 잃을 것이 없고, 고친 것은 저장을 눌러야 남는다)
   nodes.set((s) => ({ selection: ids, truncated: !!truncated, card: s.card && s.card.made && ids.length && s.card.name === s.card.saved.name && (s.card.intent || "") === (s.card.saved.intent || "") ? null : s.card }));
 }
-export function clearSelection() { nodes.set({ selection: [], truncated: false }); }
+export function clearSelection() { nodes.set({ selection: [], picks: {}, truncated: false }); }
+
+/** 묶어 둔 고름 전부 [{sheet, ids}]: 지금 도면 것이 앞이다. */
+export function pickParts(s = nodes.get()) {
+  const here = shell.get().sheet;
+  return (here && s.selection.length ? [{ sheet: here, ids: s.selection }] : [])
+    .concat(Object.entries(s.picks).filter(([g, ids]) => g !== here && ids.length).map(([sheet, ids]) => ({ sheet, ids })));
+}
+export const pickedIds = (s = nodes.get()) => pickParts(s).flatMap((p) => p.ids);
+
+/** 명령에 싣는 고름: 첫 도면은 sheet·ids, 나머지 도면은 more. 고름이 없으면 null. */
+function pickArgs() {
+  const [first, ...more] = pickParts();
+  return first ? Object.assign({ sheet: first.sheet, ids: first.ids }, more.length ? { more } : {}) : null;
+}
+
+/** 도면이 바뀔 때: 떠나는 도면의 고름은 남겨 두고, 여는 도면에서 묶던 것을 되살린다. */
+function swapPicks(from, to) {
+  nodes.set((s) => {
+    const picks = Object.assign({}, s.picks);
+    if (from) { if (s.selection.length) picks[from] = s.selection; else delete picks[from]; }
+    const selection = (to && picks[to]) || [];
+    if (to) delete picks[to];
+    return { picks, selection, card: null, sheetView: null };
+  });
+}
 
 /** 구간을 고른다(다시 고르면 푼다). show: 그 구간의 구성요소가 가장 많은 도면을 열고 도면 전체를 보이는 채로 강조한다(확대해 들어가지 않는다). */
 export function focusNode(id, { show = false } = {}) {
@@ -135,8 +161,17 @@ export async function goToSheet(graphId) {
 /** 다른 도면 연결(오각형)을 누름: 이어진 연결이면 맞은편 도면으로 간다. */
 export function followLink(link) {
   if (!link || link.status !== "linked" || !link.peer_graph_id) return false;
-  goToSheet(link.peer_graph_id);
+  const from = shell.get().sheet, target = link.peer_graph_id, picking = pickParts().length > 0;
+  goToSheet(target).then((ok) => { if (ok && picking && from && from !== target) markCameFrom(from, target); });
   return true;
+}
+
+/** 묶던 중에 넘어온 도면에서는 떠나온 도면을 가리키는 연결 기호를 묶음에 넣어, 어디서 왔는지 보이게 한다(구간에 넣을지는 엔진이 정한다). */
+function markCameFrom(from, target) {
+  const view = nodes.get().sheetView;
+  if (shell.get().sheet !== target || !view || view.graph_id !== target) return;
+  const back = (view.links || []).filter((l) => l.status === "linked" && l.peer_graph_id === from).map((l) => l.id);
+  if (back.length) nodes.set((s) => ({ selection: Array.from(new Set(s.selection.concat(back))) }));
 }
 
 export function dismissError() { nodes.set({ error: null, needArchive: null }); }
@@ -145,12 +180,12 @@ export function dismissError() { nodes.set({ error: null, needArchive: null }); 
 /** '구간 만들기'(또는 고른 뒤 Enter): 제안 이름으로 바로 만들고, 만든 구간의 이름·설계 의도를 고치는 카드를 연다(실제 창 4차: 2단 → 1단).
  *  잘못 만들었으면 그 카드의 '되돌리기'(만든 묶음 되돌리기)나 구간 패널의 지우기로 푼다. 제안 이름이 없으면 '구간 S<n>'. */
 export async function openCard() {
-  const { selection } = nodes.get(), sheet = shell.get().sheet;
-  if (!selection.length || !sheet) return;
+  const args = pickArgs();
+  if (!args) return;
   if (nodes.get().card && !nodes.get().card.made) return;      // 만드는 중
   nodes.set({ card: blankCard({ busy: true, loading: true }) });
   try {
-    const sg = await cmd("nodes.suggest", { project_id: nodes.get().list.project_id, sheet, ids: selection });
+    const sg = await cmd("nodes.suggest", Object.assign({ project_id: nodes.get().list.project_id }, args));
     if (!nodes.get().card) return null;                          // 그새 Esc로 닫음: 만들지 않는다
     const list = nodes.get().list.nodes;
     const fallback = "구간 S" + (Math.max(0, ...list.map((n) => parseInt(String(n.node_id).slice(1), 10) || 0)) + 1);
@@ -177,18 +212,18 @@ export async function undoMade() {
 }
 
 export async function submitCard() {
-  const { card, selection, list } = nodes.get(), sheet = shell.get().sheet;
+  const { card, selection, picks, list } = nodes.get(), args = pickArgs();
   if (card && card.loading) return null;                          // 만드는 중(제안 이름이 오면 저절로 만든다)
   if (!card || card.busy) return null;
   if (card.made) return saveMade(card);
   if (!card.name.trim()) { editCard({ error: "구간 이름을 입력하세요." }); return null; }
   editCard({ busy: true, error: null });
   try {
-    const r = await cmd("nodes.create", { project_id: list.project_id, sheet, ids: selection, name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev });
+    const r = await cmd("nodes.create", Object.assign({ project_id: list.project_id }, args, { name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev }));
     // 고르기 모드는 그대로: 다음 구간을 바로 끌어 고른다(HZ-DSN-06 U9, Esc·이동 단추로 끈다). 응답을 기다리는 사이 새로 고른 것은 남긴다
     const made = r.node_ids && r.node_ids[0];
     const after = made ? Object.assign(blankCard({ made, batch: r.batch_id, name: card.name.trim(), intent: card.intent || "", suggest: card.suggest }), { saved: { name: card.name.trim(), intent: card.intent || "" } }) : null;
-    nodes.set((s) => (s.selection === selection ? { card: after, selection: [], truncated: false } : { card: after }));
+    nodes.set((s) => (s.selection === selection && s.picks === picks ? { card: after, selection: [], picks: {}, truncated: false } : { card: after }));
     if (made) import("../next/next.js").then((m) => m.adjustDrafts(1)).catch(() => {});      // 한 줄의 수를 바로(엔진 읽기가 덮는다)
     await refresh();
     if (made) focusNode(made);
@@ -206,7 +241,7 @@ const DUPLICATE = /^(?:.*?: )?구성요소가 같은 구간 (\S+?)가 이미 있
 async function selectExisting(e) {
   const m = DUPLICATE.exec(String(errorText(e) || "").trim());
   if (!m) return false;
-  nodes.set({ card: null, selection: [], truncated: false, error: null, busy: false });
+  nodes.set({ card: null, selection: [], picks: {}, truncated: false, error: null, busy: false });
   await refresh();
   if (nodes.get().focus !== m[1]) focusNode(m[1]);
   return true;
@@ -321,22 +356,19 @@ export async function mergeChecked() {
 }
 
 export async function addSelectionTo(id) {
-  const { selection } = nodes.get();
-  const r = await run("add_members", { node_id: id, sheet: shell.get().sheet, ids: selection }, [id]);
+  const r = await run("add_members", Object.assign({ node_id: id }, pickArgs()), [id]);
   if (r) clearSelection();
   return r;
 }
 
 export async function removeSelectionFrom(id) {
-  const { selection } = nodes.get();
-  const r = await run("remove_members", { node_id: id, sheet: shell.get().sheet, ids: selection }, [id]);
+  const r = await run("remove_members", Object.assign({ node_id: id }, pickArgs()), [id]);
   if (r) clearSelection();
   return r;
 }
 
 export async function splitSelection(id, name) {
-  const { selection } = nodes.get();
-  const r = await run("split", { node_id: id, sheet: shell.get().sheet, ids: selection, name: name || undefined }, [id]);
+  const r = await run("split", Object.assign({ node_id: id, name: name || undefined }, pickArgs()), [id]);
   if (r) { clearSelection(); if (r.node_ids && r.node_ids[0]) focusNode(r.node_ids[0]); }
   return r;
 }
@@ -380,7 +412,7 @@ export function toggleChecked(id) {
 /** 프로젝트가 바뀌었다: 앞 프로젝트의 목록·고른 것·카드를 모두 비우고 새로 읽는다(낡은 판으로 쓰지 않게). */
 export function resetForProject() {
   seq++;                                  // 아직 오지 않은 앞 읽기의 답은 버린다
-  nodes.set({ list: EMPTY_LIST, sheetView: null, detail: null, selection: [], truncated: false, focus: null, card: null, checked: [], error: null, needArchive: null, busy: false });
+  nodes.set({ list: EMPTY_LIST, sheetView: null, detail: null, selection: [], picks: {}, truncated: false, focus: null, card: null, checked: [], error: null, needArchive: null, busy: false });
   refresh();
 }
 
@@ -393,11 +425,12 @@ export function wire() {
   onChanged((topic) => { if (topic === "nodes" || topic === "drawings" || topic === "sources" || topic === "links") refresh(); });
   on("chat.answer", () => { setTimeout(refresh, 150); });   // 채팅이 구간을 만들었을 수 있다
   let lastProject = shell.get().drawings.project_id;
-  let last = null;
+  let last = shell.get().sheet;
+  if (last) loadSheet(last);
   shell.subscribe((s) => {
     const pid = s.drawings.project_id;
     if (pid !== lastProject) { lastProject = pid; resetForProject(); }
-    if (s.sheet !== last) { last = s.sheet; nodes.set({ selection: [], truncated: false, card: null, sheetView: null }); loadSheet(s.sheet); }
+    if (s.sheet !== last) { const from = last; last = s.sheet; swapPicks(from, s.sheet); loadSheet(s.sheet); }
   });
   refresh();
 }

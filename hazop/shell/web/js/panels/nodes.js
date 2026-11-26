@@ -131,7 +131,9 @@ export function NodesPanel({ onClose }) {
   const busy = N.useNodes((s) => s.busy);
   const error = N.useNodes((s) => s.error);
   const needArchive = N.useNodes((s) => s.needArchive);
-  const selection = N.useNodes((s) => s.selection);
+  const here = N.useNodes((s) => s.selection);
+  const picks = N.useNodes((s) => s.picks);
+  const selection = N.pickedIds({ selection: here, picks });
   const confirmAsk = N.useNodes((s) => s.confirmAsk);
   const sheet = useStore((s) => s.sheet);
   const drafts = list.nodes.filter((n) => n.state === "applied").length;

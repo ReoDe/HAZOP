@@ -29,6 +29,7 @@ const CSS = `
 .hz-cv-chip { position: absolute; pointer-events: auto; cursor: pointer; font: 12px/18px var(--font, system-ui, sans-serif); padding: 0 8px;
   border-radius: 9px; border: 1.2px solid var(--ui, #0a5fc2); background: var(--card, #fff); color: var(--ui, #0a5fc2); font-weight: 700; white-space: nowrap; }
 .hz-cv-chip.warn { border-style: dashed; border-color: var(--warn-line, #a8740d); background: var(--warn-bg, #fdf0d2); color: var(--warn-ink, #74430a); }
+.hz-cv-chip.picked { border-color: var(--ui, #0a5fc2); background: var(--ui, #0a5fc2); color: #fff; }      /* 묶음에 든 연결 */
 .hz-cv-rubber { position: absolute; pointer-events: none; z-index: 5; border: 1.5px solid var(--ui, #0a5fc2); background: rgba(10,95,194,.10); box-sizing: border-box; }
 .hz-cv-rubber.minus { border-style: dashed; background: rgba(166,30,77,.08); }
 .hz-cv-legend { position: absolute; left: 16px; bottom: 64px; z-index: 4; display: none; max-width: calc(100% - 32px); box-sizing: border-box;
@@ -147,7 +148,8 @@ export class SheetCore {
     this.svg.setAttribute("viewBox", `0 0 ${this.size[0]} ${this.size[1]}`);
     this.world.style.width = this.size[0] + "px"; this.world.style.height = this.size[1] + "px";
     this.image.setAttribute("width", this.size[0]); this.image.setAttribute("height", this.size[1]);
-    this.sel = this.sel.filter((id) => this.index.has(id));
+    // 틀이 준 고름(다른 도면에서 되살린 것 포함)은 자료가 늦게 와도 잃지 않는다
+    this.sel = capSelection((this._selWanted || this.sel).filter((id) => this.index.has(id))).ids;
     this._cleanBuilt = false;        // 새 도면: 정리된 그림은 다시 만든다(자료는 update의 props로 새로 들어온다)
     this._leftBuilt = false;
     // 정리 자료·기호가 도면 자료보다 먼저 와 있었으면 지금에야 정리된 보기로 그릴 수 있다(뒤따르는 update는 같은 값이라 보기를 다시 고르지 않는다)
@@ -327,6 +329,7 @@ export class SheetCore {
     }
     if (p.selection && p.selection !== this._selProp) {
       this._selProp = p.selection;
+      this._selWanted = p.selection;
       this.sel = capSelection(p.selection.filter((id) => this.index.has(id))).ids;
       marksDirty = true;
     }
@@ -614,6 +617,7 @@ export class SheetCore {
     if (!ch) return null;
     const capped = capSelection(ch.selected);
     this.sel = capped.ids;
+    this._selWanted = capped.ids;
     const ev = selectionEvent({ selected: ch.selected, added: ch.added, removed: ch.removed }, via);
     if (capped.truncated) ev.truncated = true;
     this._renderMarks();
@@ -648,6 +652,7 @@ export class SheetCore {
     this.lastDraw = out;
     this._legend(seg);
     this._renderTags();
+    for (const b of this.chipsDiv.children) b.classList.toggle("picked", this.sel.includes(b.getAttribute("data-link")));
     // 표시 결과 알림: 바뀐(또는 새) 표시만
     if (this.cb.onMarkResult) {
       const now = new Map(this.marks.map((m) => [m.id, m]));
@@ -716,6 +721,8 @@ export class SheetCore {
       const b = this.doc.createElement("button");
       b.type = "button"; b.className = "hz-cv-chip" + (c.warn ? " warn" : "");
       b.textContent = c.text; b.title = c.title;
+      b.setAttribute("data-link", c.link.id);
+      if (this.sel.includes(c.link.id)) b.classList.add("picked");
       b.style.left = c.x + "px"; b.style.top = c.y + "px";
       b.addEventListener("click", (ev) => { ev.stopPropagation(); if (this.cb.onLinkClick) this.cb.onLinkClick(c.link); });
       const rect = this.index.rectOf(c.link.id);

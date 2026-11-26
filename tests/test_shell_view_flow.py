@@ -217,5 +217,106 @@ class FixedPanelTest(ViewBase):
             self.assertEqual(self.jsj(win, CLIPPED), [], name + " 패널에서 잘린 글")
 
 
+# 구성요소 가운데를 누른다([id, ctrl]). 도면 탭의 추출 네모(data-check)가 구성요소 자리다
+PRESS_ID = """(([id, ctrl]) => { const vp = document.querySelector('.hz-cv-vp'), el = document.querySelector('.hz-cv-marks [data-check="' + id + '"]'); if (!el) return false;
+  const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+  for (const t of ['pointerdown', 'pointerup']) vp.dispatchEvent(new PointerEvent(t, {bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 12, isPrimary: true, ctrlKey: ctrl}));
+  return true; })(%s)"""
+
+
+class CtrlPickTest(ViewBase):
+    def start(self):
+        win = self.open_app()
+        self.open_row(win, "SNP-M-101")
+        self.js(win, "window.__ns = null; import('hazop-app://shell/js/panels/nodes_state.js').then((m) => { window.__ns = m; })")
+        self.assertTrue(wait_for(lambda: self.js(win, "!!window.__ns") is True, 10))
+        return win
+
+    def sel(self, win):
+        return sorted(self.jsj(win, "window.__ns.nodes.get().selection") or [])
+
+    def parts(self, win):
+        """{graph_id: 고른 id들} (모든 도면)."""
+        return {p["sheet"]: sorted(p["ids"]) for p in self.jsj(win, "window.__ns.pickParts()") or []}
+
+    def press_id(self, win, local, ctrl):
+        self.assertTrue(wait_for(lambda: self.js(win, PRESS_ID % json.dumps([local, ctrl])) is True, 20), local)
+        pump(0.5)
+
+    def pickable(self, win, number, count):
+        """눌러서 바로 그 구성요소가 잡히는 id들(겹친 것은 건너뛴다)."""
+        out = []
+        for local in self.sheet_ids(win, number):
+            self.js(win, "window.__ns.clearSelection()")
+            pump(0.2)
+            if self.js(win, PRESS_ID % json.dumps([local, True])) is True:
+                pump(0.4)
+                if self.sel(win) == [local]:
+                    out.append(local)
+            if len(out) == count:
+                break
+        self.js(win, "window.__ns.clearSelection()")
+        pump(0.4)
+        self.assertEqual(len(out), count, "누를 수 있는 구성요소")
+        return out
+
+    def links_back(self, win, number, came_from):
+        data = json.loads(api.ReadApi(win.engine).read(["nodes", "sheet", self.gid[number]], {}).body.decode("utf-8"))
+        return sorted(r["id"] for r in data["links"] if r.get("status") == "linked" and r.get("peer_graph_id") == self.gid[came_from])
+
+    def test_a_plain_press_releases_every_pick_but_a_drag_does_not(self):
+        win = self.start()
+        a, b = self.pickable(win, "SNP-M-101", 2)
+        self.press_id(win, a, True)
+        self.press_id(win, b, True)
+        self.assertEqual(self.sel(win), sorted([a, b]))
+        self.js(win, PRESS_AT % json.dumps([0.01, 0.98, 40, False]))
+        pump(0.5)
+        self.assertEqual(self.sel(win), sorted([a, b]), "끌어 옮긴 것은 풀지 않는다")
+        self.js(win, PRESS_AT % json.dumps([0.01, 0.98, 0, False]))
+        self.assertTrue(wait_for(lambda: self.parts(win) == {}, 10), "빈 곳을 한 번 누르면 모두 풀린다: %s" % self.parts(win))
+        self.press_id(win, a, True)
+        self.press_id(win, b, False)
+        self.assertEqual(self.parts(win), {}, "Ctrl 없이 다른 구성요소를 눌러도 풀린다")
+        self.press_id(win, a, True)
+        self.assertEqual(self.sel(win), [a], "풀린 뒤에는 새로 묶는다(앞의 것이 남지 않는다)")
+        self.js(win, "document.querySelector('.hz-cv').dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+        self.assertTrue(wait_for(lambda: self.parts(win) == {}, 10), "Esc")
+
+    def test_picks_stay_with_their_drawing_show_where_you_came_from_and_make_one_node(self):
+        win = self.start()
+        g1, g2 = self.gid["SNP-M-101"], self.gid["SNP-M-102"]
+        self.click_chip(win, "SNP-M-102")
+        self.assertEqual(self.parts(win), {}, "묶던 것이 없으면 넘어가도 아무것도 고르지 않는다")
+        self.assertEqual(self.jsj(win, "[...document.querySelectorAll('.hz-cv-chip.picked')].length"), 0)
+        b = self.pickable(win, "SNP-M-102", 1)[0]
+        self.open_row(win, "SNP-M-101")
+        a = self.pickable(win, "SNP-M-101", 1)[0]
+        self.press_id(win, a, True)
+        back = self.links_back(win, "SNP-M-102", "SNP-M-101")
+        self.assertTrue(back, "시험 자료: 102에서 101을 가리키는 연결")
+        self.click_chip(win, "SNP-M-102")
+        self.assertTrue(wait_for(lambda: self.sel(win) == back, 15), "떠나온 도면을 가리키는 연결 기호가 묶음에 든다: %s / %s" % (self.sel(win), back))
+        self.assertEqual(self.parts(win).get(g1), [a], "앞 도면에서 묶은 것은 그 도면에 남는다")
+        chips = "[...document.querySelectorAll('.hz-cv-chip')].map((c) => [c.textContent, c.classList.contains('picked')])"
+        self.assertTrue(wait_for(lambda: any(on for _t, on in self.jsj(win, chips)) and all(("SNP-M-101" in t) == on for t, on in self.jsj(win, chips)), 10),
+                        "온 곳을 가리키는 칩만 묶음 색: %s" % self.jsj(win, chips))
+        self.press_id(win, b, True)
+        self.assertEqual(self.sel(win), sorted(back + [b]), "넘어온 도면에서 계속 더한다")
+        self.open_row(win, "SNP-M-101")
+        self.assertEqual(self.sel(win), [a], "돌아오면 그 도면의 묶음이 그대로")
+        self.press_id(win, a, True)
+        self.assertEqual(self.sel(win), [], "도면에 그려진 고름이라 Ctrl+누르기로 뺄 수 있다")
+        self.press_id(win, a, True)
+        self.assertEqual(self.parts(win), {g1: [a], g2: sorted(back + [b])})
+        total = 1 + len(back) + 1
+        self.assertTrue(wait_for(lambda: "%d개 고름" % total in self.text(win), 10), "막대의 수는 모든 도면의 합: %s" % total)
+        self.js(win, "document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}))")
+        self.assertTrue(wait_for(lambda: len(api_nodes.summary(win.engine)["nodes"]) == 1, 20), "여러 도면에 걸친 고름으로 구간 하나")
+        row = api_nodes.summary(win.engine)["nodes"][0]
+        self.assertEqual({x["graph_id"] for x in row["sheets"]}, {g1, g2}, row["sheets"])
+        self.assertTrue(wait_for(lambda: self.parts(win) == {}, 10), "만들면 고름은 비운다")
+
+
 if __name__ == "__main__":
     unittest.main()
