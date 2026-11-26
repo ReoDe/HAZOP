@@ -14,12 +14,11 @@ import { wirePrefetch } from "./clean_prefetch.js";
 import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
-import { Notices, addNotice, demotedNotice, lostNotice, refreshLostNotice } from "./notices.js";
+import { Notices, addNotice, lostNotice, refreshLostNotice } from "./notices.js";
 import { go as nextGo, next as nextStore, setGo, wireNotice as wireNextNotice } from "./next/next.js";
 import { closeQueue, openQueue, q as queueStore, useQueue, wire as wireQueue } from "./queue/queue.js";
 import { QueueCard, QueueLine } from "./queue/card.js";
 import { ReviewConfirm, setOpeners as setReviewOpeners, startReview, wire as wireReview } from "./review/review.js";
-import { ConfirmAllModal } from "./panels/nodes_confirm.js";
 import { RevertGuard } from "./review/revert_guard.js";
 import { locate } from "./locate.js";
 
@@ -36,7 +35,6 @@ setGo("panel:drawings#sources", () => {      // 같은 번호 자리의 파일·
   [80, 400, 1200].forEach((ms) => setTimeout(() => { const el = document.querySelector(".src-card"); if (el) el.scrollIntoView({ block: "start" }); }, ms));
 });
 // 확정 안 한 구간 목록을 보인 확인 카드(한 번에 확정). 구간 패널은 열지 않는다: 카드는 도면 위 창으로(실제 창 3차, 클릭 줄이기)
-setGo("confirm:nodes.confirm", async () => { const N = await import("./panels/nodes_state.js"); await N.refresh(); N.askConfirmAll(); });
 setGo("panel:nodes#pick", async () => { store.set({ panel: null }); const N = await import("./panels/nodes_state.js"); N.setMode("pick"); });      // 도면 위 안내 줄이 할 일을 보인다(nodes_canvas PickHint)
 setGo("confirm:inputs.build", (t) => cmd("inputs.build", t ? { graph_id: t } : {}).catch((e) => toast((e && e.message) || "다시 읽지 못했습니다.", "err")));      // 반영 전 수락이 남은 도면 다시 읽기(작업 줄에 진행)
 setGo("confirm:ie.suggest", async () => {      // 초기사건 규칙 초안 만들기(확정하지 않음, 두 번 해도 더하는 것이 없다): 패널을 열고 만든다
@@ -151,7 +149,7 @@ function wireEvents() {
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));
   on("app.notice", (d) => { if (!QUIET_NOTICES.some((re) => re.test(d.text || ""))) toast(d.text); });      // 할 일이 없는 엔진 알림은 거른다
-  on("study.lost", (d) => { for (const n of [lostNotice(d), demotedNotice(d)]) if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
+  on("study.lost", (d) => { const n = lostNotice(d); if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
   const job = (state) => (d) => store.set((s) => ({ jobs: Object.assign({}, s.jobs, { [d.id]: Object.assign({}, s.jobs[d.id], d, { state }) }) }));
   on("job.progress", job("running"));
   on("job.done", (d) => {
@@ -268,7 +266,7 @@ function App() {
     <${Rail} />
     <main class="center"><${TopBar} /><${Notices} /><${SheetHost} />
       ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name} data-panel=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
-      <${Toast} /><${ReviewConfirm} /><${ConfirmAllModal} /><${RevertGuard} /></main>
+      <${Toast} /><${ReviewConfirm} /><${RevertGuard} /></main>
     ${queueOpen ? html`<${QueueCard} onChat=${() => { closeQueue(); if (store.get().chatCollapsed) toggleChat(); }} />`
       : html`<${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />`}
   </div>`;      // 오른쪽 칸은 채팅 또는 대기열 카드 하나(HZ-DSN-06 §3.5)

@@ -653,7 +653,7 @@ def _run_plan(engine, a):
                 needs_terms=not terms, running=_run_state(engine)["running"], method=a.get("method"), left_out=left_out,
                 locked_out=_locked_out(_pg_, a["scope"]),
                 scope_fp=analysis_run.scope_fp(units, conn),     # 확인한 범위(칸·구간·호출 수·비용·모델)의 지문. 시작할 때 그대로 보낸다
-                empty_text=None if units else {"node": "분석할 구간의 행을 고르세요(확정한 구간만 분석합니다).",
+                empty_text=None if units else {"node": "분석할 구간의 행을 고르세요.",
                                               "failed": "다시 실행할 실패 칸이 없습니다.", "cell": "분석할 칸이 없습니다.",
                                               "resume": "이어서 실행할 칸이 없습니다."}.get(a["scope"], "분석할 칸이 없습니다."))
 

@@ -419,8 +419,8 @@ class NodeTrashTest(NodeListBase):
         self.assertTrue(wait_for(lambda: self.js(win, "!!" + undo) is True, 10), "지운 직후 되돌리기")
         self.js(win, undo + ".click()")
         self.assertTrue(wait_for(lambda: sorted(self.nodes(win)) == sorted([a, b, c]), 30), "되돌리면 돌아온다: %s" % sorted(self.nodes(win)))
-        self.assertTrue(wait_for(lambda: self.nodes(win)[b]["state"] == "confirmed", 20), "확정했던 구간은 다시 확정 상태: %s" % self.nodes(win)[b]["state"])
-        self.assertEqual((self.nodes(win)[a]["state"], self.nodes(win)[c]["state"]), ("applied", "locked"))
+        self.assertEqual((self.nodes(win)[a]["state"], self.nodes(win)[b]["state"], self.nodes(win)[c]["state"]), ("applied", "applied", "locked"),
+                         "되돌린 구간은 보통 구간이다(화면은 확정을 부르지 않는다)")
         self.assertTrue(wait_for(lambda: self.js(win, "!!" + undo) is False, 10), "한 번만")
 
 

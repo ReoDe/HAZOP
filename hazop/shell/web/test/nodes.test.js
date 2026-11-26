@@ -84,73 +84,8 @@ export const tests = [
     assert.equal(N.nodes.get().mode, "pick", "다음 구간을 바로 끌어 고른다");
     assert.equal(N.nodes.get().selection, [], "고른 것은 비운다");
   } },
-  { name: "모두 확정(U9): 목록을 먼저 보이고, 한 번에 보내 막히면 하나씩 다시 보내 안 된 것과 까닭을 알린다", async run(assert) {
-    await setup();
-    const n = N.askConfirmAll();
-    assert.equal(N.nodes.get().confirmAsk, ["S1", "S2"], "확정하지 않은 구간만(S3는 이미 확정)");
-    assert.equal(n, 2);
-    engine.reply = (name, args) => {
-      if (name !== "nodes.confirm") return { ok: true, data: {} };
-      if (args.node_ids.length > 1 || args.node_ids[0] === "S2") return { ok: false, error: { code: "failed", message: "겹치는 구간이 확정되어 있습니다" } };
-      return { ok: true, data: { set_rev: 5, node_ids: args.node_ids } };
-    };
-    const r = await N.confirmMany(N.nodes.get().confirmAsk);
-    assert.equal(r.ok, ["S1"]);
-    assert.equal(r.failed.map((f) => f.node_id), ["S2"]);
-    assert(N.nodes.get().error && N.nodes.get().error.includes("S2") && N.nodes.get().error.includes("겹치는"), N.nodes.get().error);
-    assert.equal(N.nodes.get().confirmAsk, null, "확인 카드는 닫힌다");
-    const sentConfirm = sent.filter((m) => m.name === "nodes.confirm").map((m) => m.args.node_ids);
-    assert.equal(sentConfirm, [["S1", "S2"], ["S1"], ["S2"]], "한 번에, 그다음 하나씩(지금 있는 nodes.confirm만 씀)");
-  } },
-  { name: "모두 확정(검토 차단): 카드를 연 뒤 다른 곳에서 바뀐 구간은 사람이 본 판으로만 보내고, 바뀐 것은 확정하지 않는다", async run(assert) {
-    await setup();
-    N.askConfirmAll();                                                       // 사람이 본 판: set_rev 4, S1 rev 2, S2 rev 1
-    engine.list.set_rev = 5;                                                  // 다른 곳에서 S2가 바뀜
-    engine.list.nodes = engine.list.nodes.map((n) => (n.node_id === "S2" ? Object.assign({}, n, { rev: 2 }) : n));
-    engine.reply = (name, args) => {                                          // 엔진 판 검사(api_nodes._check_targets)와 같은 대역
-      if (name !== "nodes.confirm") return { ok: true, data: {} };
-      if (args.set_rev !== engine.list.set_rev) return { ok: false, error: { code: "stale", message: "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요." } };
-      for (const t of args.targets || []) {
-        const n = engine.list.nodes.find((x) => x.node_id === t.node_id);
-        if (!n) return { ok: false, error: { code: "not_found", message: t.node_id + " 구간이 이미 없습니다." } };
-        if (n.rev !== t.rev || n.state !== t.state) return { ok: false, error: { code: "stale", message: t.node_id + " 구간이 다른 곳에서 바뀌어 저장하지 않았습니다." } };
-      }
-      engine.list.set_rev += 1;
-      engine.list.nodes = engine.list.nodes.map((n) => (args.node_ids.includes(n.node_id) ? Object.assign({}, n, { state: "confirmed" }) : n));
-      return { ok: true, data: { set_rev: engine.list.set_rev, node_ids: args.node_ids } };
-    };
-    const r = await N.confirmMany(N.nodes.get().confirmAsk);
-    assert.equal(r.ok, ["S1"], "바뀌지 않은 S1만");
-    assert.equal(r.failed.map((f) => f.node_id), ["S2"]);
-    const s2 = sent.filter((m) => m.name === "nodes.confirm" && m.args.node_ids.includes("S2")).flatMap((m) => m.args.targets.filter((t) => t.node_id === "S2").map((t) => t.rev));
-    assert(s2.every((rev) => rev === 1), "S2는 사람이 본 판(rev 1)으로만 보냄: " + JSON.stringify(s2));
-    assert(N.nodes.get().error.includes("바뀐 구간 1개는 확정하지 않았습니다"), N.nodes.get().error);
-  } },
-  { name: "모두 확정: 카드를 연 뒤 지워진 구간은 '이미 없습니다'로, 체크한 것이 확정된 구간뿐이면 아무것도 고르지 않는다", async run(assert) {
-    await setup();
-    N.askConfirmAll();
-    engine.list.nodes = engine.list.nodes.filter((n) => n.node_id !== "S2");
-    engine.list.set_rev = 5;
-    engine.reply = (name, args) => {
-      if (name !== "nodes.confirm") return { ok: true, data: {} };
-      if (args.set_rev !== engine.list.set_rev) return { ok: false, error: { code: "stale", message: "판이 다름" } };
-      const gone = (args.targets || []).find((t) => !engine.list.nodes.some((n) => n.node_id === t.node_id));
-      if (gone) return { ok: false, error: { code: "not_found", message: gone.node_id + " 구간이 이미 없습니다." } };
-      engine.list.set_rev += 1;
-      return { ok: true, data: { set_rev: engine.list.set_rev } };
-    };
-    const r = await N.confirmMany(N.nodes.get().confirmAsk);
-    assert.equal(r.failed.map((f) => [f.node_id, f.reason.includes("이미 없습니다")]), [["S2", true]]);
-    await setup();
-    N.nodes.set({ checked: ["S3"] });                                        // S3는 이미 확정
-    assert.equal(N.draftIds(), [], "체크한 것이 모두 확정됐으면 확정하지 않은 구간 전체로 넘어가지 않는다");
-  } },
-  { name: "구간 계산: 상태 칩(AI 적용됨·적용됨·확정·잠금)과 수정 가능 여부", run(assert) {
-    assert.equal(L.stateChip({ state: "applied", origin: "ai" }).label, "AI 적용됨");
-    assert.equal(L.stateChip({ state: "applied", origin: "user" }).label, "적용됨");
-    assert.equal(L.stateChip({ state: "confirmed", origin: "ai" }).label, "확정");
-    assert.equal(L.stateChip({ state: "locked" }).label, "잠금");
-    assert(L.canEdit({ state: "applied" }) && !L.canEdit({ state: "confirmed" }) && !L.canEdit({ state: "locked" }) && !L.canEdit(null));
+  { name: "구간 계산: 고치지 못하는 것은 잠긴 구간뿐", run(assert) {
+    assert(L.canEdit({ state: "applied" }) && L.canEdit({ state: "confirmed" }) && !L.canEdit({ state: "locked" }) && !L.canEdit(null));
   } },
   { name: "구간 계산: 도면에 칠할 구간은 강조한 것만 active, 색은 목록 자리 기준", run(assert) {
     const list = [{ node_id: "S1" }, { node_id: "S2" }];
@@ -268,27 +203,6 @@ export const tests = [
     }
     store.set({ panel: null });
   } },
-  { name: "모두 확정(실제 창 3차): 구간 패널을 열지 않고 도면 위 확인 창, Enter로 확정", async run(assert) {
-    await setup();
-    store.set({ panel: null });
-    const { ConfirmAllModal } = await import("../js/panels/nodes_confirm.js");
-    const host = mount(html`<${ConfirmAllModal} />`);
-    N.askConfirmAll();
-    await tick();
-    const m = host.querySelector(".na-modal");
-    assert(m && m.textContent.includes("2개 구간을 확정할까요?"), "확인 창");
-    assert.equal(store.get().panel, null, "패널은 열지 않음");
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await tick();
-    assert.equal(sent.filter((x) => x.name === "nodes.confirm").map((x) => x.args.node_ids), [["S1", "S2"]]);
-    assert(!host.querySelector(".na-modal"), "확정하면 닫힘");
-    N.askConfirmAll();
-    await tick();
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    await tick();
-    assert.equal(N.nodes.get().confirmAsk, null, "Esc는 취소");
-    host.remove();
-  } },
   { name: "구간 연결: 명령은 set_rev와 대상의 rev·state를 함께 보내고, 성공하면 다시 읽는다", async run(assert) {
     await setup();
     const reads = [];
@@ -385,22 +299,27 @@ export const tests = [
     assert.equal(opened.length, 2);
     host.remove();
   } },
-  { name: "구간 패널: 구간을 누르면 강조·상세, 확정 구간은 고치기가 막힘, AI 초안 표시", async run(assert) {
+  { name: "구간 패널: 구간을 누르면 강조·상세, 확정·적용됨 상태 단추와 글은 없고 잠긴 구간만 고치기가 막힌다, AI 초안 표시", async run(assert) {
     await setup();
     N.nodes.set({ scope: "all" });
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
     await tick();
+    const by = (label) => [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label);
     host.querySelectorAll(".nrow-b")[1].click();         // S2
-    await tick();
+    await tick(); await tick();
     assert.equal(N.nodes.get().focus, "S2");
-    const det = host.querySelector(".ndetail");
-    assert(det && det.textContent.includes("AI 초안"), "AI 초안 표시");
-    assert(det.textContent.includes("RC-RV01") && det.textContent.includes("겹침"), "경계·겹침");
-    host.querySelectorAll(".nrow-b")[2].click();         // S3 확정
+    assert(host.querySelector(".ndetail").textContent.includes("AI 초안"), "AI가 쓴 이름 표시");
+    host.querySelectorAll(".nrow-b")[2].click();         // S3: 옛 확정 기록이 있는 구간
+    await tick(); await tick();
+    const detail = host.querySelector(".ndetail").textContent;
+    assert(!/확정:|확정 해제|분석 마침|적용됨|홍길동/.test(detail), detail);
+    const edit = by("이름 고치기");
+    assert(edit && !edit.disabled, "옛 확정 구간도 바로 고친다");
+    assert(by("S3 지우기"), "바로 지울 수 있다");
+    engine.list.nodes = engine.list.nodes.map((n) => (n.node_id === "S3" ? Object.assign({}, n, { state: "locked" }) : n));
+    await N.refresh();
     await tick();
-    const edit = [...host.querySelectorAll(".ndetail button")].find((b) => b.getAttribute("aria-label") === "이름 고치기");
-    assert(edit && edit.disabled, "확정 구간은 이름 고치기가 꺼짐");
-    assert(host.textContent.includes("확정 해제") && host.textContent.includes("분석 마침"), "확정 구간 동작");
+    assert(by("이름 고치기").disabled && !by("S3 지우기") && by("S3 잠금 해제"), "잠긴 구간은 고치기·지우기가 없고 잠금 해제만 있다");
     host.remove();
   } },
   { name: "구간 패널: 이름 고치기 → 명령, 지우기가 판정 때문에 거절되면 보관 선택지", async run(assert) {
@@ -431,7 +350,7 @@ export const tests = [
     assert.equal([lastCmd().name, lastCmd().args.archive], ["nodes.remove", true]);
     host.remove();
   } },
-  { name: "구간 패널: 찾지 못한 구성요소를 골라 버리고, 확정 구간이면 단추 대신 까닭을 보인다", async run(assert) {
+  { name: "구간 패널: 찾지 못한 구성요소를 골라 버리고, 잠긴 구간이면 단추 대신 까닭을 보인다", async run(assert) {
     await setup();
     N.nodes.set({ scope: "all" });
     const plain = window.fetch;
@@ -459,11 +378,14 @@ export const tests = [
     by("S1 찾지 못한 구성요소 모두 버리기").click();
     await tick();
     assert.equal(JSON.stringify(lastCmd().args.keys), '["k1","k2"]');
-    host.querySelectorAll(".nrow-b")[2].click();         // S3 확정
+    engine.list.nodes = engine.list.nodes.map((n) => (n.node_id === "S3" ? Object.assign({}, n, { state: "locked" }) : n));
+    await N.refresh();
+    await tick();
+    host.querySelectorAll(".nrow-b")[2].click();         // S3 잠금
     await tick();
     const held = host.querySelector(".lost-items");
-    assert(held.textContent.includes("확정을 해제한 뒤에 버릴 수 있습니다"), "확정 구간 까닭");
-    assert(!by("S3 찾지 못한 구성요소 모두 버리기"), "확정 구간에는 버리기 단추가 없다");
+    assert(held.textContent.includes("잠금을 해제한 뒤에 버릴 수 있습니다"), "잠긴 구간 까닭");
+    assert(!by("S3 찾지 못한 구성요소 모두 버리기"), "잠긴 구간에는 버리기 단추가 없다");
     window.fetch = plain;
     host.remove();
   } },
@@ -511,22 +433,39 @@ export const tests = [
     assert(!host.querySelector(".newnode"), "카드가 닫힘");
     host.remove();
   } },
-  { name: "도면 고르기: 강조한 구간에 더하기·빼기는 적용됨 구간에서만, 확정이면 숨김", async run(assert) {
+  { name: "도면 고르기: 구간을 고른 구간 탭의 Ctrl 고름은 '구간 수정'(더함·뺌)이고, 구간이 없거나 잠겼거나 다른 탭이면 '구간 만들기'", async run(assert) {
     await setup();
+    store.set({ panel: "nodes" });
+    await N.loadSheet("graph-A");
+    N.focusNode("S1");
+    N.setSelection(["n1", "n9"]);      // n1은 S1의 구성원, n9는 아니다
+    assert.equal(N.editTarget().node_id, "S1");
+    const d = N.pickDiff();
+    assert.equal([d.added, d.removed, d.add, d.remove], [1, 1, [{ sheet: "graph-A", ids: ["n9"] }], [{ sheet: "graph-A", ids: ["n1"] }]]);
     const host = mount(html`<${NodeOverlay} />`);
+    await tick();
+    const bar = () => host.querySelector(".selbar");
+    assert(bar() && bar().textContent.includes("S1 수정 · 더함 1 · 뺌 1") && !bar().textContent.includes("구간 만들기"), bar() && bar().textContent);
+    await N.applyEdit();
+    await tick();
+    const m = sent.filter((x) => x.name === "nodes.edit_members").pop();
+    assert(m, "nodes.edit_members 한 번");
+    assert.equal([m.args.node_id, m.args.add, m.args.remove, m.args.targets.map((x) => x.node_id)],
+      ["S1", [{ sheet: "graph-A", ids: ["n9"] }], [{ sheet: "graph-A", ids: ["n1"] }], ["S1"]]);
+    assert.equal(N.nodes.get().selection, [], "저장하면 고름을 비운다");
+    N.setSelection(["n9"]);
+    N.focusNode("S2");
+    assert.equal(N.nodes.get().selection, [], "다른 구간을 고르면 고치던 것은 버린다");
+    N.unfocus();
+    N.setSelection(["n9"]);
+    await tick();
+    assert(!N.editTarget() && bar().textContent.includes("구간 만들기"), bar() && bar().textContent);
+    store.set({ panel: "drawings" });
     N.nodes.set({ focus: "S1" });
-    N.setSelection(["n9"]);
-    await tick();
-    const labels = () => [...host.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"));
-    assert(labels().includes("S1에 더하기") && labels().includes("S1에서 빼기"));
-    [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "S1에 더하기").click();
-    await tick();
-    assert.equal([lastCmd().name, lastCmd().args.node_id, lastCmd().args.ids, lastCmd().args.sheet], ["nodes.add_members", "S1", ["n9"], "graph-A"]);
-    N.nodes.set({ focus: "S3" });
-    N.setSelection(["n9"]);
-    await tick();
-    assert(!labels().includes("S3에 더하기"), "확정 구간에는 더하기가 없음");
+    assert(!N.editTarget(), "구간 탭이 아니면 고치기가 아니다");
+    N.clearSelection();
     host.remove();
+    store.set({ panel: null });
   } },
   { name: "도면 연결: 구간 칠하기는 이 도면의 구간·구간 밖을 <Sheet> props로, Esc는 카드→강조→이동 모드 순", async run(assert) {
     await setup();
@@ -587,14 +526,14 @@ export const tests = [
     assert(!host.textContent.includes("도면을 먼저 읽어야 합니다"), "열 때 읽은 목록을 보인다");
     host.remove();
   } },
-  { name: "구간 패널(측정 7): 열자마자 누른 확정은 열 때 읽는 목록을 기다려 지금 판으로 보낸다", async run(assert) {
+  { name: "구간 패널(측정 7): 열자마자 누른 이름 저장은 열 때 읽는 목록을 기다려 지금 판으로 보낸다", async run(assert) {
     await setup();
     N.nodes.set({ scope: "all", focus: "S1" });
     engine.list = Object.assign({}, engine.list, { set_rev: 7 });                  // 뒤에서 판 이전이 집합 판을 올렸다(알림 전)
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
-    N.confirm(["S1"]);                                                               // 그리자마자(열 때 읽기가 끝나기 전) 누름
+    N.rename("S1", "새 이름");                                                       // 그리자마자(열 때 읽기가 끝나기 전) 누름
     await tick();
-    const m = sent.filter((x) => x.name === "nodes.confirm").pop();
+    const m = sent.filter((x) => x.name === "nodes.rename").pop();
     assert(m, "명령을 보냄");
     assert.equal(m.args.set_rev, 7, "열 때 읽은 판으로 보낸다");
     host.remove();
@@ -603,7 +542,7 @@ export const tests = [
     await setup();
     store.set({ toast: null });
     engine.reply = () => ({ ok: false, error: { code: "stale", message: "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요." } });
-    const r = await N.confirm(["S1"]);
+    const r = await N.rename("S1", "새 이름");
     assert(r === null);
     const t = store.get().toast;
     assert(t && t.text.includes("바뀌어 저장하지 않았습니다") && t.kind === "err", JSON.stringify(t));
@@ -703,8 +642,8 @@ tests.push({ name: "구간 연결: 프로젝트가 바뀌면 앞 프로젝트의
   await tick();
   const s2 = N.nodes.get();
   assert.equal([s2.list.project_id, s2.list.set_rev, s2.list.nodes.map((n) => n.node_id)], ["Q", 9, ["S3"]]);
-  await N.confirm(["S3"]);
-  assert.equal([lastCmd().name, lastCmd().args.project_id, lastCmd().args.set_rev], ["nodes.confirm", "Q", 9]);
+  await N.rename("S3", "새 이름");
+  assert.equal([lastCmd().name, lastCmd().args.project_id, lastCmd().args.set_rev], ["nodes.rename", "Q", 9]);
   store.set({ drawings: Object.assign({}, store.get().drawings, { project_id: "P" }) });
   engine.list = Object.assign({}, engine.list, { project_id: "P" });
   await tick();

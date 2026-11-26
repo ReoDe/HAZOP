@@ -77,11 +77,6 @@ function RunState({ run }) {
   return html`<${Notice} kind=${l.reason === "stopped" ? "info" : "warn"} icon="alert-triangle">AI 분석${l.reason === "stopped" ? "을 멈췄습니다" : "에서 호출이 실패했습니다"}${l.failed_calls ? "(실패 " + l.failed_calls + "회)" : ""}.${test}${resume}<//>`;
 }
 
-/** 빠지는 구간 가운데 도면이 바뀌어 찾지 못한 구성요소가 남은 것(판 이전이 확정을 푼 구간): 그냥 초안과 갈라 말한다. */
-function leftLost(left) {
-  const n = left.filter((x) => x.lost > 0).length;
-  return n ? ". 그 가운데 " + n + "개는 도면이 바뀌어 찾지 못한 구성요소가 있어 확정이 풀렸습니다(구간에서 다시 확인한 뒤 확정하세요)" : "";
-}
 
 function PlanCard() {
   const p = R.useResults((s) => s.plan);
@@ -92,8 +87,6 @@ function PlanCard() {
     ${p.empty_text ? html`<p>${p.empty_text}</p>` : html`<p>${p.cells}칸을 ${p.calls}번 호출해 분석합니다(약 ${Math.max(1, Math.round(p.seconds / 60))}분).</p>
       ${p.conn ? html`<div class=${"small" + (p.conn.paid ? " conn-paid" : "")} aria-label="쓸 연결">${p.conn.method_name} · ${p.conn.model_name} · ${p.conn.cost_text}</div>` : null}
       ${p.locked_out ? html`<div class="muted small">잠근 구간 ${p.locked_out}개는 다시 분석하지 않습니다.</div>` : null}`}
-    ${p.left_out && p.left_out.length ? html`<${Notice} kind="warn" icon="alert-triangle">확정하지 않은 구간 ${p.left_out.length}개는 빠집니다: ${p.left_out.slice(0, 5).map((n) => n.node_id).join(", ")}${p.left_out.length > 5 ? " 외 " + (p.left_out.length - 5) + "개" : ""}${leftLost(p.left_out)}
-      <div class="acts-row"><${Btn} sm=${true} label="빠지는 구간 보기" onClick=${() => { R.closePlan(); store.set({ panel: "nodes" }); import("./nodes_state.js").then((N) => { if (N.nodes.get().focus !== p.left_out[0].node_id) N.focusNode(p.left_out[0].node_id); }); }}>구간 보기<//></div><//>` : null}
     ${!p.can_start && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.guide || "AI 연결을 쓸 수 없습니다."}<//>` : null}
     ${p.needs_terms && p.can_start ? html`<${Notice} kind="info">구독 사용 안내를 확인한 것으로 기록합니다.<//>` : null}
     ${paid && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.conn.confirm_text}
@@ -196,7 +189,7 @@ const text = (v) => (typeof v === "string" ? v : "");
 function Verdict({ e }) {
   const [st, label] = STATUS[e.status] || [e.status, ""];
   const v = e.verdict || {};
-  return html`<div><${Chip} kind=${label}>${st}<//>${v.by ? html` <span class="muted small">${v.by}</span>` : null}
+  return html`<div><${Chip} kind=${label}>${st}<//>${e.scope_changed ? html` <${Chip} kind="warn" title="구간 범위가 바뀐 뒤 아직 다시 확인하지 않은 항목">범위 바뀜<//>` : null}${v.by ? html` <span class="muted small">${v.by}</span>` : null}
     ${v.reason ? html`<div class="small reason">${v.reason}</div>` : null}</div>`;
 }
 

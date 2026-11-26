@@ -174,7 +174,9 @@ class CleanWithNodesTest(W.ShellBase):
         self.key_o(win)
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')") == "orig", 10), "o 키로 원본")
         self.key_o(win)
-        # 정리된 보기에서 네모 고르기 모드로 바꾸면 도구 막대가 눌린 상태이고 같은 저장소에 선택이 들어간다
+        # 정리된 보기에서도 Ctrl+끌기로 고른 것이 같은 저장소에 들어간다. 구간을 고른 채면 '구간 수정'이므로 고름을 풀고 확인한다
+        self.js(win, "(() => { const b = document.querySelector('.nrow .nrow-b[aria-pressed=\\'true\\']'); if (b) b.click(); })()")
+        pump(0.6)
         self.assertEqual(self.js(win, "document.querySelectorAll('.toolbar, button[aria-label=\\'전체 맞춤\\'], button[aria-label^=\\'네모로 고르기\\']').length"), 0, "이동·고르기·전체 맞춤 단추는 없다")
         self.js(win, "(() => { const vp = document.querySelector('.hz-cv-vp'); const r = vp.getBoundingClientRect();"
                      "const ev = (t, x, y) => vp.dispatchEvent(new PointerEvent(t, {clientX: x, clientY: y, pointerId: 1, bubbles: true, button: 0, buttons: 1, isPrimary: true, ctrlKey: true}));"

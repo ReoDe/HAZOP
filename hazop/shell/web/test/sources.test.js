@@ -55,8 +55,7 @@ export const tests = [
     assert.equal(choicesOf(Object.assign({}, FILE_ROW, { reason: "settle_rebuild_failed" })), []);
     assert(previewText(FILE_ROW).includes("구간 2개가 다시 확인 대상"), previewText(FILE_ROW));
     const firm = previewText(FILE_ROW, { recheck: 2, released: 1 });
-    assert(firm.includes("확정한 구간 1개는 확정이 풀립니다"), "확정이 풀린다고 미리 밝힌다(실제 창 4차): " + firm);
-    assert(!previewText(FILE_ROW, { recheck: 2, released: 0 }).includes("확정이 풀립니다"));
+    assert(!firm.includes("확정"), "확정 단계가 없어 확정이 풀린다는 말은 하지 않는다: " + firm);
   } },
   { name: "원본 고르기: 쓰기 → 미리 알림 → 바꾸기에서만 sources.choose(material_id)", async run(assert) {
     sent = [];

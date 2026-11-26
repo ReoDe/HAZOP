@@ -30,13 +30,6 @@ class NoticeBarTest(ShellBase):
         win.bridge.send(again)        # 다시 추출해 같은 수를 새로 잃었다: 판이 다르니 다시 알린다
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.notice-row').length") == 1, 10), "새 판에서 같은 글은 다시 뜬다")
 
-    def test_a_demoted_confirmed_section_gets_its_own_notice(self):
-        win = self.window()
-        win.bridge.send({"t": "event", "name": "study.lost", "data": {"sections": 0, "members": 0, "first_node": None, "demoted": ["S2"], "graph_version": "v-2"}})
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.notice-row').length") == 1, 10))
-        text = self.js(win, "document.querySelector('.notice-row .nt').textContent")
-        self.assertIn("확정했던 구간 S2의 확정을 해제했습니다", text)
-
 
 if __name__ == "__main__":
     unittest.main()

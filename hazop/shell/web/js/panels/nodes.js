@@ -1,4 +1,4 @@
-// 구간 패널(규격 §2.1·§2.3 ④): 구간 목록(S 번호 색, 이름, 도면 범위, 상태), 고른 구간의 상세와 고치기·확정·잠금, 묶음 되돌리기.
+// 구간 패널(규격 §2.1·§2.3 ④): 구간 목록(S 번호 색, 이름, 도면 범위, 상태), 고른 구간의 상세와 고치기, 묶음 되돌리기.
 // 이름·설계 의도·태그는 도면·모델에서 온 글이라 텍스트로만 넣는다. 엔진이 거절하면 그 사유를 그대로 보인다.
 import { html } from "../ui/html.js";
 import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
@@ -7,9 +7,8 @@ import { cmd } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { SelectAll } from "../ui/select_all.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
-import { canEdit, checkText, colorOf, confirmedLostText, discardLabel, rangeText, sheetName, stateChip } from "./nodes_logic.js";
+import { canEdit, checkText, colorOf, discardLabel, rangeText, sheetName } from "./nodes_logic.js";
 import * as N from "./nodes_state.js";
-import { ConfirmAllCard } from "./nodes_confirm.js";
 import { locate } from "../locate.js";
 
 const cssHref = new URL("nodes.css", import.meta.url).href;
@@ -58,7 +57,7 @@ function Editable({ label, value, multiline, disabled, onSave, hint, aiDraft }) 
         <${Btn} sm=${true} kind="ghost" icon="pencil" label=${label + " 고치기"} disabled=${disabled} title=${disabled ? hint : label + " 고치기"} onClick=${() => setText(value || "")} /></div>`}</div>`;
 }
 
-/** 찾지 못한 구성요소 목록과 버리기. 사람이 확인하고 버린 것만 버린다(고른 것, 또는 모두). 확정·잠금 구간이면 단추 대신 까닭을 보인다. */
+/** 찾지 못한 구성요소 목록과 버리기. 사람이 확인하고 버린 것만 버린다(고른 것, 또는 모두). 잠긴 구간이면 단추 대신 까닭을 보인다. */
 function LostItems({ n, d, busy }) {
   const [picked, setPicked] = useState([]);
   const items = (d && d.lost_items) || [];
@@ -66,12 +65,12 @@ function LostItems({ n, d, busy }) {
   const keys = items.map((x) => x.key).filter((k) => picked.includes(k));
   const toggle = (k) => setPicked(picked.includes(k) ? picked.filter((x) => x !== k) : picked.concat(k));
   const go = async (ks) => { const r = await N.discardLost(n.node_id, ks); if (r) setPicked([]); };
-  const held = n.state !== "applied";
+  const held = n.state === "locked";
   return html`<details class="field lost-items" open><summary>찾지 못한 구성요소 ${items.length}개</summary>
     <div class="muted small">다시 추출한 도면에서 같은 자리를 찾지 못한 구성요소입니다. 도면에서 실제로 없어진 것을 확인했으면 버리세요. 버린 것은 되돌리기 묶음으로 되살릴 수 있습니다.</div>
     <ul class="lost-list" aria-label="찾지 못한 구성요소">${items.map((x) => html`<li key=${x.key}><label>
       ${items.length > 1 ? html`<input type="checkbox" disabled=${held || busy} checked=${picked.includes(x.key)} onChange=${() => toggle(x.key)} />` : null} ${x.name}</label></li>`)}</ul>
-    ${held ? html`<div class="muted small">확정한 구간입니다. 확정을 해제한 뒤에 버릴 수 있습니다.</div>`
+    ${held ? html`<div class="muted small">잠긴 구간입니다. 잠금을 해제한 뒤에 버릴 수 있습니다.</div>`
       : html`<div class="acts-row">${items.length > 1 ? html`<${Btn} sm=${true} label=${n.node_id + " 찾지 못한 구성요소 " + discardLabel(keys.length, items.length)} disabled=${busy || !keys.length} onClick=${() => go(keys)}>${discardLabel(keys.length, items.length)}<//>` : null}
         <${Btn} sm=${true} kind="ghost" label=${n.node_id + " 찾지 못한 구성요소 모두 버리기"} disabled=${busy} onClick=${() => go(items.map((x) => x.key))}>${discardLabel(items.length, items.length)}<//></div>`}
     ${d.discarded ? html`<div class="muted small">이미 버린 것 ${d.discarded}개</div>` : null}</details>`;
@@ -81,25 +80,19 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
   const [reason, setReason] = useState("");
   const [unlocking, setUnlocking] = useState(false);
   const edit = canEdit(n);
-  const lockedHint = n.state === "locked" ? "잠긴 구간입니다. 먼저 잠금을 해제하세요." : "확정한 구간입니다. 먼저 확정을 해제하세요.";
-  const chip = stateChip(n);
+  const lockedHint = "잠긴 구간입니다. 먼저 잠금을 해제하세요.";
   const di = n.design_intent;
   const latest = d && d.history && d.history.length ? d.history[d.history.length - 1] : null;
   return html`<div class="card ndetail" aria-label=${n.node_id + " 상세"}>
     <div class="nd-h"><span class="seg-dot" style=${"background:" + colorOf(list, n.node_id)}></span><b>${n.node_id}</b>
-      <${Chip} kind=${chip.kind} icon=${chip.icon}>${chip.label}<//><${Chip}>구성요소 ${n.count}<//>
+      <${Chip}>구성요소 ${n.count}<//>
       <span class="muted nd-r">${n.rev > 1 ? "수정 " + (n.rev - 1) + "회" : ""}</span></div>
-    ${n.confirmed ? html`<div class="muted small">확정: ${n.confirmed.by} · ${when(n.confirmed.at)}</div>` : null}
-    ${n.locked ? html`<div class="muted small">잠금: ${n.locked.by} · ${when(n.locked.at)}</div>` : null}
     <div class="acts-row nd-acts">
-      ${n.state === "applied" ? html`<${Btn} kind="primary" icon="check" label=${n.node_id + " 확정"} disabled=${busy} onClick=${() => N.confirm([n.node_id])}>확정 <kbd>Ctrl+Enter</kbd><//>` : null}
-      ${n.state === "confirmed" ? html`<${Btn} label=${n.node_id + " 확정 해제"} disabled=${busy} onClick=${() => N.unconfirm([n.node_id])}>확정 해제<//>
-        <${Btn} icon="lock" label=${n.node_id + " 잠금"} disabled=${busy} onClick=${() => N.lock([n.node_id])}>분석 마침 · 잠금<//>` : null}
       ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 해제"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 해제<//>` : null}
       ${edit && selection.length ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
       ${edit ? html`<${Btn} kind="ghost" icon="trash" label=${n.node_id + " 지우기"} disabled=${busy} onClick=${() => N.removeNode(n.node_id, false)}>지우기<//>` : null}</div>
-    <${Editable} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} aiDraft=${n.name_by === "ai" && n.state === "applied"} />
-    <${Editable} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} aiDraft=${!!(di && di.by === "ai" && n.state === "applied")} />
+    <${Editable} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} aiDraft=${n.name_by === "ai" && edit} />
+    <${Editable} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} aiDraft=${!!(di && di.by === "ai" && edit)} />
     ${d && d.boundary && d.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${d.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
     ${n.span && n.span.spans ? html`<div class="field"><label>도면</label><div class="acts-row" role="group" aria-label="도면별로 보기">${n.sheets.map((sh, i) => html`<button type="button" class="chip id" key=${sh.graph_id}
       title=${"이 구간을 " + sheetName(sh.graph_id, drawings) + " 도면에서 보기"} onClick=${() => N.goToSheet(sh.graph_id)}>${sheetName(sh.graph_id, drawings)} · ${sh.n}</button>`)}</div></div>` : null}
@@ -142,19 +135,15 @@ export function NodesPanel({ onClose }) {
   const here = N.useNodes((s) => s.selection);
   const picks = N.useNodes((s) => s.picks);
   const selection = N.pickedIds({ selection: here, picks });
-  const confirmAsk = N.useNodes((s) => s.confirmAsk);
   const sheet = useStore((s) => s.sheet);
-  const drafts = list.nodes.filter((n) => n.state === "applied").length;
-  const scopeSheet = scope === "sheet" ? sheet : null;      // '이 도면' 범위면 그 도면 구간만 센다
   const drawings = useStore((s) => s.drawings.drawings);
   const shown = scope === "sheet" && sheet ? list.nodes.filter((n) => n.sheets.some((x) => x.graph_id === sheet)) : list.nodes;
   const focused = list.nodes.find((n) => n.node_id === focus);
   const removed = N.useNodes((s) => s.removed);
   const picked = shown.filter((n) => checked.includes(n.node_id)).map((n) => n.node_id);      // 지금 보이는 줄 가운데 고른 것
-  const open = (e) => { if (e.key === "Enter" && e.ctrlKey && focused && focused.state === "applied") { e.preventDefault(); N.confirm([focused.node_id]); } };
-  return html`<section class="panel" aria-label="구간" onKeyDown=${open}>
+  return html`<section class="panel" aria-label="구간">
     <div class="panel-h"><h2>구간</h2><${Chip}>${list.nodes.length}개<//>
-      ${list.outside.total ? html`<${Chip} title="어느 구간에도 속하지 않은 구성요소(확정을 막지 않습니다)">구간 밖 ${list.outside.count}<//>` : null}
+      ${list.outside.total ? html`<${Chip} title="어느 구간에도 속하지 않은 구성요소">구간 밖 ${list.outside.count}<//>` : null}
       </div>
     <div class="panel-b">
       ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span class="errtext">${error}</span> <button type="button" class="linkbtn" onClick=${N.dismissError}>닫기</button><//>` : null}
@@ -167,9 +156,7 @@ export function NodesPanel({ onClose }) {
       ${!list.available ? html`<${Notice}>도면을 먼저 읽어야 합니다.<//>` : null}
       <div class="acts-row"><div class="seg-toggle" role="group" aria-label="목록 범위">
         <button type="button" class=${scope === "sheet" ? "on" : ""} aria-pressed=${scope === "sheet" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "sheet" })}>이 도면</button>
-        <button type="button" class=${scope === "all" ? "on" : ""} aria-pressed=${scope === "all" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "all" })}>전체</button></div>
-        ${drafts ? html`<${Btn} sm=${true} kind="primary" icon="check" label="확정하지 않은 구간 모두 확정" disabled=${busy || !!confirmAsk || !N.draftIds(scopeSheet).length} onClick=${() => N.askConfirmAll(scopeSheet)}>모두 확정 (${N.draftIds(scopeSheet).length})<//>` : null}</div>
-      <${ConfirmAllCard} />
+        <button type="button" class=${scope === "all" ? "on" : ""} aria-pressed=${scope === "all" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "all" })}>전체</button></div></div>
       ${shown.length ? html`<${SelectAll} ids=${shown.filter((n) => n.state !== "locked").map((n) => n.node_id)} picked=${checked} label="구간 전체 선택" onChange=${N.setChecked} />` : null}
       ${picked.length ? html`<${NodePicks} ids=${picked} list=${list.nodes} busy=${busy} />` : null}
       ${removed ? html`<div class="acts-row"><${Btn} sm=${true} icon="arrow-back-up" label="지운 구간 되돌리기" disabled=${busy} onClick=${N.undoRemoved}>되돌리기<//></div>` : null}

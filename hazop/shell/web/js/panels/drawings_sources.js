@@ -16,9 +16,7 @@ export function previewText(c, x) {
   if (x && x.using) return "지금 쓰는 원본입니다. 사람이 고른 것으로 붙박을 뿐 도면과 구간은 그대로입니다.";
   if (unknownImpact(c, x)) return "구간 파일을 읽지 못해 이 원본으로 바꿨을 때 다시 확인할 구간이 몇 개인지 알 수 없습니다. 구간 패널에서 먼저 확인하거나, 영향을 모른 채 바꾸려면 아래에서 한 번 더 확인하세요.";
   const n = x && typeof x.recheck === "number" ? x.recheck : (c.nodes_on_sheet || 0);
-  const firm = x && typeof x.released === "number" ? x.released : (c.confirmed_on_sheet || 0);
   return n ? "이 원본으로 바꾸면 지금 도면 위의 구간 " + n + "개가 다시 확인 대상이 됩니다."
-      + (firm ? " 그 가운데 확정한 구간 " + firm + "개는 확정이 풀립니다(다시 확인한 뒤 확정하세요)." : "")
       + " 같은 기호로 증명되지 않는 구성요소는 '찾지 못한 구성요소'로 남습니다."
     : "이 도면에는 아직 구간이 없어 바꿔도 다시 확인할 것이 없습니다.";
 }

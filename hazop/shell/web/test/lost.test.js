@@ -1,7 +1,7 @@
 // 확인 필요 알림 글(찾지 못한 구성요소·다시 확인할 곳): 엔진이 센 값으로만 만들고 묘비 id를 글에 쓰지 않는다.
-import { catchUpText, checkText, confirmedLostText, demotedNoticeText, discardLabel, lostNoticeText, lostText } from "../js/panels/nodes_logic.js";
+import { catchUpText, checkText, discardLabel, lostNoticeText, lostText } from "../js/panels/nodes_logic.js";
 import { store } from "../js/store.js";
-import { addNotice, clearNotice, demotedNotice, dismissNotice, lostNotice } from "../js/notices.js";
+import { addNotice, clearNotice, dismissNotice, lostNotice } from "../js/notices.js";
 
 export const tests = [
   { name: "확인 필요: 구간 행 글은 '찾지 못한 구성요소 n개 · 다시 확인할 곳 m건'이고 없는 것은 뺀다", run(assert) {
@@ -24,11 +24,6 @@ export const tests = [
     assert(t.startsWith("도면 변경을 반영했습니다") && t.includes("이어진 구성요소 7개") && t.includes("찾지 못한 구성요소 2개"), t);
     assert(!catchUpText({ changed: true, matched: 3, tombstones: 0 }).includes("찾지 못한"), "묘비가 없으면 말하지 않는다");
     assert(catchUpText({ changed: false }).includes("이미 도면의 최신 모습으로 반영"), "같은 판");
-  } },
-  { name: "확정 구간: 잃은 구성요소를 둔 채 확정했으면 그렇게 보인다", run(assert) {
-    assert.equal(confirmedLostText({ confirmed: { lost: 2 } }), "잃은 구성요소 2개를 둔 채 확정함");
-    assert.equal(confirmedLostText({ confirmed: { by: "a" } }), "");
-    assert.equal(confirmedLostText({}), "");
   } },
   { name: "알림: 다시 추출 뒤 글은 '찾지 못한 구성요소 n개'(한 줄과 같은 단위)이고 확인할 곳이 없으면 비어 있다", run(assert) {
     const t = lostNoticeText({ sections: 3, members: 5 });
@@ -68,19 +63,5 @@ export const tests = [
     assert(t.includes("확인이 필요한 것이 있습니다"), t);
     assert(!/lost:|묘비|판 이전|그래프 판/.test(t), "내부 말이 없다");
   } },
-  { name: "알림: 도면 변경 반영이 확정을 푼 구간은 따로 알리고 그 자리로 간다", run(assert) {
-    assert.equal(demotedNoticeText([]), "");
-    const t = demotedNoticeText(["S1", "S3"]);
-    assert(t.includes("S1, S3") && t.includes("다시 확정해 주세요"), t);
-    assert(demotedNoticeText(["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]).includes("외 2개"));
-    const n = demotedNotice({ demoted: ["S3"], graph_version: "v-2" });
-    assert.equal(n.id, "demoted");
-    assert.equal(n.action.label, "그 자리로");
-    assert.equal(demotedNotice({ demoted: [] }), null);
-  } },
-  { name: "버리기 단추 글: 고른 수, 전부면 '모두', 고른 것이 없으면 기본 글", run(assert) {
-    assert.equal(discardLabel(0, 3), "고른 것 버리기");
-    assert.equal(discardLabel(2, 3), "고른 2개 버리기");
-    assert.equal(discardLabel(3, 3), "모두 버리기(3개)");
-  } },
+
 ];

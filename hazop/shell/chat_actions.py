@@ -657,7 +657,7 @@ def analysis_scope(engine, args):
 
 
 def analysis_details(item, snap, engine=None):
-    """분석 실행 확인 상자 줄: 호출 수 어림(규격 §4.2·§2.6)과 실제로 쓸 연결. API 키(과금)면 예상 비용 확인 글. 확정 구간만 분석한다."""
+    """분석 실행 확인 상자 줄: 호출 수 어림(규격 §4.2·§2.6)과 실제로 쓸 연결. API 키(과금)면 예상 비용 확인 글."""
     from hazop.shell import analysis_run
     ns = snap.node_set or {}
     ids = item.args.get("node_ids") or []
@@ -675,7 +675,7 @@ def analysis_details(item, snap, engine=None):
         LOG.exception("호출 수 어림을 만들지 못함")
         return [{"label": "호출 수 어림", "after": "셀 수 없음"}]
     if not n:
-        return [{"label": "호출 수 어림", "after": "0회(분석할 칸이 없음: 확정한 구간만 분석합니다)"}]
+        return [{"label": "호출 수 어림", "after": "0회(분석할 칸이 없음)"}]
     plan = analysis_conn(engine, item.args) if engine is not None else None
     if not isinstance(plan, dict):
         return [{"label": "호출 수 어림", "after": "약 %d회(구독 한도를 씁니다)" % n}]
