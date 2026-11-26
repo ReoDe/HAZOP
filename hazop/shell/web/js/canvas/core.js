@@ -67,6 +67,7 @@ export class SheetCore {
     this.marks = [];
     this.segments = [];
     this.outside = [];
+    this.leaving = [];
     this.viewWanted = "orig";        // 'orig' | 'clean'(정리된 보기). 정리된 자료·기호가 아직 없으면 원본으로 그린다
     this.clean = null;               // /api/clean 자료 {items, text_items, unconfirmed, ...}
     this.symbols = null;             // symbols.json의 symbols
@@ -326,6 +327,7 @@ export class SheetCore {
       this._fitNewPath();
     }
     if (p.outside && p.outside !== this._outProp) { this._outProp = p.outside; this.outside = p.outside; marksDirty = true; }
+    if (p.leaving && p.leaving !== this._leaveProp) { this._leaveProp = p.leaving; this.leaving = p.leaving; marksDirty = true; }
     if (p.segments && p.segments !== this._segProp) { this._segProp = p.segments; this.segments = p.segments; marksDirty = true; }
     if (p.viewport && p.viewport !== this._vpProp) {
       this._vpProp = p.viewport;
@@ -626,7 +628,7 @@ export class SheetCore {
     if (!this.data) return;
     const seg = this.segments.length ? buildSegments(this.segments, this.index) : null;
     const ctx = this._effective() === "clean" ? this._cleanCtx() : null;
-    const out = drawAll({ marks: this.marks, seg, outside: this.outside, selection: this.sel, index: this.index, k: this.view.k, size: this.size,
+    const out = drawAll({ marks: this.marks, seg, outside: this.outside, leaving: this.leaving, selection: this.sel, index: this.index, k: this.view.k, size: this.size,
       recolor: ctx ? (rec, color, width, opts) => recolor(ctx, rec, color, width, opts) : null, veil: ctx ? 0.62 : null });
     const g = this.marksG;
     while (g.firstChild) g.removeChild(g.firstChild);

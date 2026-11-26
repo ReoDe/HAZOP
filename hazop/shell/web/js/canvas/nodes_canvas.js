@@ -34,16 +34,22 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
       if (!act) return;
       e.preventDefault();
       if (act === "fit") N.fitSheet();      // F: 고른 것으로 확대하지 않고 도면 전체를 맞춘다
-      else if (act === "card") { if (N.editTarget()) N.applyEdit(); else N.openCard(); }      // Enter: 고치던 구간을 저장하거나 새 구간을 만든다
+      else if (act === "card") { if (N.editTarget()) N.applyEdit(); else if (!N.nodes.get().focus) N.openCard(); }      // Enter: 고치던 구간을 저장하거나 새 구간을 만든다
       else if (act === "submit") N.submitCard();
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
 
+  const members = N.useNodes((s) => s.members);
+  const leaving = useMemo(() => {
+    const have = new Set(panel === "nodes" && focus && list.some((n) => n.node_id === focus && n.state !== "locked") ? members[sheet] || [] : []);
+    return selection.filter((i) => have.has(i));
+  }, [selection, members, sheet, panel, focus, list]);
+
   return {
     props: {
-      mode, selection, segments, outside, links,
+      mode, selection, segments, outside, links, leaving,
       onLinkClick: (link) => N.followLink(link),
       onSelection: (d) => N.setSelection(d.selected, d.truncated),
       onSegmentClick: (d) => { N.focusNode(d.node_id); N.openPanel(); },
@@ -77,16 +83,16 @@ function SelectionBar() {
   const state = { selection: here, picks, members, focus, list };
   const selection = N.pickedIds(state);      // 모든 도면에서 묶어 둔 것
   if (!selection.length || card) return null;
-  const target = N.editTarget(state), diff = target ? N.pickDiff(state) : null;
+  const target = N.editTarget(state);
   const cut = truncated ? html`<${Chip} kind="warn" icon="alert-triangle" title="한 번에 고르는 수의 상한입니다. 네모를 나누어 고르세요.">앞 ${selection.length}개만 골랐습니다<//>` : null;
-  if (target) {
+  if (focus) {          // 구간을 고른 상태에서는 새로 만들지 않는다. 고칠 수 없으면(잠긴 구간·다른 탭) 번호와 X만
     return html`<div class="float selbar" role="group" aria-label="고치는 구간">
-      <span class="count"><span class="seg-dot" style=${"background:" + colorOf(list.nodes, target.node_id)}></span> ${target.node_id} 수정 · 더함 ${diff.added} · 뺌 ${diff.removed}</span>${cut}
-      <${Btn} kind="primary" icon="check" label="구간 수정" disabled=${busy} onClick=${() => N.applyEdit()}>구간 수정 <kbd>Enter</kbd><//>
+      <span class="count"><span class="seg-dot" style=${"background:" + colorOf(list.nodes, focus)}></span> ${focus}</span>${cut}
+      ${target ? html`<${Btn} kind="primary" icon="check" label="구간 수정" disabled=${busy} onClick=${() => N.applyEdit()}>구간 수정 <kbd>Enter</kbd><//>` : null}
       <${Btn} kind="ghost" sm=${true} icon="x" label="고치던 것 버리기" title="버리기 (Esc)" onClick=${() => N.clearSelection()} /></div>`;
   }
   return html`<div class="float selbar" role="group" aria-label="고른 것">
-    <span class="count">${selection.length}개 고름</span>${cut}
+    <span class="seg-dot" style="background:var(--accent, #0a5fc2)"></span>${cut}
     <${Btn} kind="primary" icon="plus" label="구간 만들기" onClick=${() => N.openCard()}>구간 만들기 <kbd>Enter</kbd><//>
     <${Btn} kind="ghost" sm=${true} icon="x" label="고른 것 비우기" title="비우기 (Esc)" onClick=${() => N.clearSelection()} /></div>`;
 }

@@ -10,6 +10,8 @@ import unittest
 from tests.test_shell_view_flow import BADGES, PRESS_AT, PRESS_ID, ViewBase
 from tests.test_shell_web import pump, wait_for
 
+from hazop.app import project_ctx
+from hazop.study import nodes as sn
 from hazop.shell import api, api_nodes, api_results
 
 # 화면에서 '확정·잠금' 단추와 상태 글을 찾는다(IE 그룹·쪽 확정은 구간 탭에 없다)
@@ -157,6 +159,10 @@ class LockedNodeTest(EditBase):
 
 
 class CtrlEditBase(EditBase):
+    def changes(self, win):
+        """저장 전에 모인 (더할 수, 뺄 수)."""
+        return tuple(self.jsj(win, "(() => { const d = window.__ns.pickDiff(); return [d.added, d.removed]; })()"))
+
     def prepare(self):
         win = self.start()
         self.nid = self.make_node(win, "고칠 구간", [("SNP-M-101", 4)])
@@ -166,6 +172,25 @@ class CtrlEditBase(EditBase):
         return win
 
 
+class CtrlEditLockedTest(CtrlEditBase):
+    def test_with_a_locked_node_picked_the_bar_never_offers_to_make_one_and_enter_makes_none(self):
+        win = self.prepare()
+        ns = sn.load(project_ctx.project_graph(win.engine.project_id()))
+        sn._find(ns, self.nid).update(state="locked", locked={"at": "2026-11-26T00:00:00Z", "by": "옛 검토자", "reason": None})
+        sn.save(ns)
+        win.engine.changed("nodes")
+        pump(1.5)
+        new = self.outside_ids(win, self.nid, "SNP-M-101", 1)[0]
+        self.press_id(win, new, True)
+        self.assertEqual(self.js(win, "window.__ns.nodes.get().focus"), self.nid)
+        self.assertNotIn("구간 만들기", self.bar(win))
+        self.assertEqual(self.bar(win).split(), [self.nid], "고칠 수 없으면 번호와 X만")
+        self.key(win, "Enter")
+        pump(1.0)
+        self.assertEqual(len(self.summary(win)), 1)
+        self.assertIsNone(self.jsj(win, "window.__ns.nodes.get().card"))
+
+
 class CtrlEditApplyTest(CtrlEditBase):
     def test_ctrl_press_and_drag_collect_adds_and_removes_and_enter_saves_them_at_once(self):
         win = self.prepare()
@@ -173,9 +198,8 @@ class CtrlEditApplyTest(CtrlEditBase):
         inside = self.pickable(win, before, 1)[0]
         new1, new2 = self.outside_ids(win, self.nid, "SNP-M-101", 2)
         self.press_id(win, new1, True)
-        self.assertIn("%s 수정 · 더함 1 · 뺌 0" % self.nid, self.bar(win))
-        self.assertIn("구간 수정", self.bar(win))
-        self.assertNotIn("구간 만들기", self.bar(win))
+        self.assertEqual(self.bar(win).split(), [self.nid, "구간", "수정", "Enter"], "줄은 구간 번호와 '구간 수정' 단추뿐(색 점·X)")
+        self.assertEqual(self.changes(win), (1, 0), "더할 것·뺄 것은 도면에만 보인다")
         layout = self.js(win, """(() => { const bar = document.querySelector('.selbar'), kids = [...bar.children].map((c) => c.getBoundingClientRect()).filter((r) => r.width);
           const mids = kids.map((r) => (r.top + r.bottom) / 2), bad = [];
           if (Math.max(...mids) - Math.min(...mids) > 6) bad.push('줄이 바뀜');
@@ -186,16 +210,20 @@ class CtrlEditApplyTest(CtrlEditBase):
         split = "[...document.querySelectorAll('.ndetail button')].some((x) => x.getAttribute('aria-label') === '고른 것을 떼어 새 구간으로')"
         self.assertFalse(self.js(win, split), "구간에 없는 것을 함께 골랐으면 나누기 단추는 없다")
         self.press_id(win, inside, True)
-        self.assertIn("더함 1 · 뺌 1", self.bar(win))
+        self.assertEqual(self.changes(win), (1, 1))
+        drawn = self.jsj(win, "[...document.querySelectorAll('.hz-cv svg [data-leaving]')].map((e) => [e.getAttribute('data-leaving'), e.getAttribute('stroke-dasharray'), e.getAttribute('fill')])")
+        self.assertTrue(drawn and all(i == inside and dash and fill == "none" for i, dash, fill in drawn), "뺄 것은 흐린 점선 테두리(칠 없음): %s" % drawn)
         self.press_id(win, inside, True)
-        self.assertIn("더함 1 · 뺌 0", self.bar(win), "다시 누르면 그 변경을 거둔다")
+        self.assertEqual(self.changes(win), (1, 0), "다시 누르면 그 변경을 거둔다")
+        self.assertEqual(self.jsj(win, "document.querySelectorAll('.hz-cv svg [data-leaving]').length"), 0)
         self.press_id(win, inside, True)
         self.js(win, DRAG_AROUND % json.dumps([new2]))
         pump(0.6)
         picked = {i for _s, i in self.picks(win)}
         self.assertTrue({new1, inside, new2} <= picked, picked)
         adds, removes = sorted(picked - set(before)), sorted(picked & set(before))
-        self.assertTrue(wait_for(lambda: "더함 %d · 뺌 %d" % (len(adds), len(removes)) in self.bar(win), 10), "끌기: 없던 것은 더함, 든 것은 뺌: %s / %s %s" % (self.bar(win), adds, removes))
+        self.assertTrue(wait_for(lambda: self.changes(win) == (len(adds), len(removes)), 10), "끌기: 없던 것은 더함, 든 것은 뺌: %s / %s %s" % (self.changes(win), adds, removes))
+        self.assertNotIn("구간 만들기", self.bar(win))
         self.assertEqual(self.members(win, self.nid, "SNP-M-101"), before, "적용 전에는 저장하지 않는다")
         batches = len(api_nodes.summary(win.engine)["batches"])
         rev = self.summary(win)[self.nid]["rev"]
@@ -245,7 +273,8 @@ class CtrlEditSheetsTest(CtrlEditBase):
         load_boxes(self, win, "SNP-M-102")
         self.assertEqual(self.picks(win), [(self.g1, new)], "넘어가며 저절로 더하지 않는다")
         other = self.pickable_keep(win, "SNP-M-102")
-        self.assertIn("%s 수정 · 더함 2 · 뺌 0" % self.nid, self.bar(win))
+        self.assertEqual(self.bar(win).split()[0], self.nid)
+        self.assertEqual(self.changes(win), (2, 0), "다른 도면에서 모은 것까지")
         self.key(win, "Enter")
         self.assertTrue(wait_for(lambda: self.members(win, self.nid, "SNP-M-102") == [other] and self.members(win, self.nid, "SNP-M-101") == sorted(before + [new]), 20),
                         "%s %s" % (self.members(win, self.nid, "SNP-M-101"), self.members(win, self.nid, "SNP-M-102")))
@@ -254,8 +283,7 @@ class CtrlEditSheetsTest(CtrlEditBase):
         pump(0.6)
         fresh = self.outside_ids(win, self.nid, "SNP-M-102", 1)[0]
         self.press_id(win, fresh, True)
-        self.assertIn("1개 고름", self.bar(win))
-        self.assertIn("구간 만들기", self.bar(win))
+        self.assertEqual(self.bar(win).split(), ["구간", "만들기", "Enter"], "수는 쓰지 않는다")
 
     def pickable_keep(self, win, number):
         """앞의 고름은 둔 채, 구간에 없는 구성요소 하나를 Ctrl로 더 고른다."""

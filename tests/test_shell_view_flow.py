@@ -312,7 +312,7 @@ class CtrlPickTest(ViewBase):
         self.press_id(win, a, True)
         self.assertEqual(self.parts(win), {g1: [a], g2: sorted(back + [b])})
         total = 1 + len(back) + 1
-        self.assertTrue(wait_for(lambda: "%d개 고름" % total in self.text(win), 10), "막대의 수는 모든 도면의 합: %s" % total)
+        self.assertTrue(wait_for(lambda: self.js(win, "import('hazop-app://shell/js/panels/nodes_state.js').then((m) => { window.__ps = m; }), window.__ps ? window.__ps.pickedIds().length : -1") == total, 10), "고름은 모든 도면의 합: %s" % total)
         self.js(win, "document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}))")
         self.assertTrue(wait_for(lambda: len(api_nodes.summary(win.engine)["nodes"]) == 1, 20), "여러 도면에 걸친 고름으로 구간 하나")
         row = api_nodes.summary(win.engine)["nodes"][0]
@@ -402,7 +402,7 @@ class NodeTrashTest(NodeListBase):
         self.assertEqual(self.boxes(win, "구간"), [True, False])
         ticked = "[...document.querySelectorAll('.nrow input[type=checkbox]')].map((x) => x.checked)"
         self.assertEqual(self.jsj(win, ticked), [True, True, False], "잠긴 구간은 전체 선택에서 빠진다")
-        self.assertIn("2개 고름", self.text(win))
+        self.assertIn("구간 만들기", self.text(win))
         self.check(win, "구간 전체 선택")
         self.assertEqual(self.jsj(win, ticked), [False, False, False], "다시 누르면 모두 해제")
         self.check(win, "구간 전체 선택")

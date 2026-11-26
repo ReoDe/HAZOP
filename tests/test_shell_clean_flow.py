@@ -181,7 +181,7 @@ class CleanWithNodesTest(W.ShellBase):
         self.js(win, "(() => { const vp = document.querySelector('.hz-cv-vp'); const r = vp.getBoundingClientRect();"
                      "const ev = (t, x, y) => vp.dispatchEvent(new PointerEvent(t, {clientX: x, clientY: y, pointerId: 1, bubbles: true, button: 0, buttons: 1, isPrimary: true, ctrlKey: true}));"
                      "ev('pointerdown', r.left + 5, r.top + 5); ev('pointermove', r.right - 5, r.bottom - 5); ev('pointerup', r.right - 5, r.bottom - 5); })()")
-        self.assertTrue(wait_for(lambda: "개 고름" in self.text(win), 10), "정리된 보기에서도 고른 것 막대가 뜬다")
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.selbar')") is True, 10), "정리된 보기에서도 고른 것 막대가 뜬다")
         from hazop.shell import api
         read_nodes = lambda: json.loads(api.ReadApi(win.engine).read(["nodes"], {}).body.decode("utf-8"))["nodes"]
         before = len(read_nodes())
