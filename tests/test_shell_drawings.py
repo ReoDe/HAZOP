@@ -303,7 +303,8 @@ class DexpiExportTest(Base):
         r = self.export([self.gid])
         self.assertTrue(r["ok"], r)
         d = self.default_dir()
-        self.assertTrue(d.startswith(os.path.join(self.tmp, "work", "output")), d)
+        from hazop import paths
+        self.assertTrue(d.startswith(paths.output_root("exports")), d)
         self.assertTrue(os.path.isfile(self.xml(d)) and os.path.isfile(os.path.join(d, "manifest.json")))
         self.assertEqual(r["data"]["folder"], os.path.basename(d))
         self.assertNotIn(self.tmp, json.dumps(r["data"], ensure_ascii=False), "저장 경로를 웹에 돌려주지 않는다")
