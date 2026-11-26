@@ -88,16 +88,6 @@ function SelectionBar() {
     <${Btn} kind="ghost" sm=${true} icon="x" label="고른 것 비우기" title="비우기 (Esc)" onClick=${() => N.clearSelection()} /></div>`;
 }
 
-function PickHint() {
-  const mode = N.useNodes((s) => s.mode);
-  const selection = N.useNodes((s) => s.selection);
-  const card = N.useNodes((s) => s.card);
-  if (mode !== "pick" || selection.length || card) return null;
-  return html`<div class="float selbar pickhint" role="status"><${Icon} name="select" size=${15} />
-    <span>구간에 넣을 구성요소를 도면에서 네모로 끌어 고르세요. 고른 뒤 Enter를 누르면 바로 만들고, 이름은 만든 뒤 고칠 수 있습니다.</span>
-    <${Btn} kind="ghost" sm=${true} label="고르기 그만두기" title="그만두기 (Esc)" onClick=${() => N.setMode("pan")}>그만두기<//></div>`;
-}
-
 function NewNodeCard() {
   const card = N.useNodes((s) => s.card);
   const list = N.useNodes((s) => s.list.nodes);
@@ -131,7 +121,8 @@ function OutsideChip() {
   const view = N.useNodes((s) => s.sheetView);
   const showOutside = N.useNodes((s) => s.showOutside);
   const sheet = shell.get().sheet;
-  if (!view || view.graph_id !== sheet || !view.segments.length) return null;
+  const panel = useStore((s) => s.panel);
+  if (panel !== "nodes" || !view || view.graph_id !== sheet || !view.segments.length) return null;      // 구간 탭에서만(도면 탭에는 없다)
   return html`<div class="float chipbar">
     <button type="button" class="chip" aria-pressed=${showOutside ? "true" : "false"} title="구간에 들지 않은 구성요소를 흐리게 보입니다" onClick=${() => N.nodes.set({ showOutside: !showOutside })}>
       <${Icon} name="eye" size=${14} /> 구간 밖 ${view.outside_ids.length}개</button></div>`;
@@ -139,5 +130,5 @@ function OutsideChip() {
 
 export function NodeOverlay() {
   N.wire();
-  return html`<${OutsideChip} /><${SelectionBar} /><${PickHint} /><${NewNodeCard} /><${Toolbar} />`;
+  return html`<${OutsideChip} /><${SelectionBar} /><${NewNodeCard} /><${Toolbar} />`;
 }

@@ -57,6 +57,7 @@ function ItemBubble() {
   }, [b && b.sheet, b && b.id, rev]);
   if (!b) return null;
   const r = b.rect || {};
+
   const style = "left:" + Math.max(8, Math.round((r.x || 0) + (r.w || r.width || 0) + 8)) + "px;top:" + Math.max(8, Math.round(r.y || 0)) + "px";
   const trace = () => { store.set({ bubble: null, panel: "results" }); R.loadTrace({ sheet: b.sheet, local: b.id }); };
   const from = row ? (row.display || row.drawing_number || "") : "";      // 도면 번호만(제목은 길다)

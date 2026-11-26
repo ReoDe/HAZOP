@@ -243,7 +243,7 @@ export async function run(hz, data, big) {
     await sleep(100);
     const spans = h2.querySelectorAll(".hz-cv-tag");
     t("보안: 태그 글자는 textContent로만(태그 요소가 생기지 않음)", spans.length === 1 && spans[0].textContent === evil && spans[0].querySelectorAll("*").length === 0, spans.length);
-    t("보안: 연결 칩 글자도 textContent로만", h2.querySelectorAll(".hz-cv-chip").length === 1 && h2.querySelector(".hz-cv-chip").querySelectorAll("*").length === 0);
+    t("보안: 도면 연결 칩은 그리지 않는다(글자가 HTML이 될 자리가 없다)", h2.querySelectorAll(".hz-cv-chip").length === 0);
     t("보안: 스크립트가 실행되지 않음", window.__xss === undefined);
     const bad = h2.querySelectorAll("img, b, script").length;
     t("보안: 도면 글자에서 img·b·script 요소가 생기지 않음", bad === 0, bad);
@@ -259,9 +259,7 @@ export async function run(hz, data, big) {
     c3.setData(withLinks);
     await sleep(200);
     const chips = h3.querySelectorAll(".hz-cv-chip");
-    t("연결 칩: 짝 있는 이동 칩만 그린다(미연결 칩은 없다)", chips.length === 1 && chips[0].textContent === "→ SNP-X" && !h3.textContent.includes("미연결"), Array.from(chips).map((x) => x.textContent).join("|"));
-    chips[0].click();
-    t("연결 칩: 누르면 onLinkClick", ev.link.length === 1 && ev.link[0].peer_graph_id === "graph-X");
+    t("연결 칩: 도면 위에는 이동 칩도 미연결 칩도 그리지 않는다(화면 단순화)", chips.length === 0 && !h3.textContent.includes("미연결") && !h3.textContent.includes("→ SNP-X"), Array.from(chips).map((x) => x.textContent).join("|"));
     c3.destroy();
     h3.remove();
   }

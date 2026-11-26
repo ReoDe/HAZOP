@@ -420,6 +420,19 @@ class ItemBubbleFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "results", 10))
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
 
+    def test_escape_closes_the_spec_card_first(self):
+        """사양 말풍선은 Esc로 닫힌다(패널은 남는다)."""
+        win = self.window()
+        gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
+        from hazop.shell import api
+        item = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"][0]
+        bubble = {"sheet": gid, "id": item["id"], "tag": "X", "kind": item["kind"], "kind_label": "밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
+        self.js(win, "window.__hz.store.set({sheet: %s, panel: 'drawings', bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble.props') !== null") is True, 15))
+        self.js(win, "document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")      # 실제 키처럼 문서에서 올라온다
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble.props') === null") is True, 10), "Esc로 닫힘")
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "패널은 그대로")
+
     def test_a_value_is_shown_with_its_source_next_to_it(self):
         """값 옆에 작은 글씨로 출처(도면 번호 또는 문서 이름)만 보이고, 값이 없는 항목은 '—'다."""
         from unittest import mock

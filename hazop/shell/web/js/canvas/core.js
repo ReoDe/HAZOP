@@ -5,7 +5,7 @@
 // 보안: 도면·모델에서 온 글(태그, 라벨, 이름)은 textContent로만 넣는다. innerHTML·dangerouslySetInnerHTML을 쓰지 않는다(정적 검사 대상).
 
 import { SpatialIndex, MAX_SELECTION, capSelection, changeSelection, selectionEvent, normRect } from "./index.js";
-import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags, badgeBoxes, placeChips } from "./marks.js";
+import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags, badgeBoxes } from "./marks.js";
 import { buildBase, recolor, fragmentBox, layoutLabels, labelDescriptor } from "./clean_view.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -708,18 +708,6 @@ export class SheetCore {
   }
 
   _renderChips() {
-    const box = this.chipsDiv;
-    box.textContent = "";
-    const all = this._links && this._links.length ? this._links : (this.data && Array.isArray(this.data.links) ? this.data.links : null);   // 도면 자료의 links 또는 구간 화면이 주는 links
-    if (!this.data || !all) return;
-    const linked = all.filter((l) => l && l.status === "linked");      // 짝이 없는 '미연결' 칩은 그리지 않는다(화면 단순화): 짝 있는 이동 칩만
-    for (const c of placeChips(linked, (id) => { const rect = this.index.rectOf(id); return rect ? this._toScreenRect(rect) : null; })) {
-      const b = this.doc.createElement("button");
-      b.type = "button"; b.className = "hz-cv-chip" + (c.warn ? " warn" : "");
-      b.textContent = c.text; b.title = c.title;
-      b.style.left = c.x + "px"; b.style.top = c.y + "px";
-      b.addEventListener("click", (ev) => { ev.stopPropagation(); if (this.cb.onLinkClick) this.cb.onLinkClick(c.link); });
-      box.appendChild(b);
-    }
+    this.chipsDiv.textContent = "";      // 도면 위의 도면 연결 칩('→ SNP-…'·'미연결')은 그리지 않는다(화면 단순화). 칩 놓기 계산(marks.js placeChips)은 남겨 둔다
   }
 }

@@ -240,18 +240,33 @@ export const tests = [
     assert.equal(N.nodes.get().card, null, "안 고친 카드는 다음 고르기에서 닫힌다");
     N.setMode("pan");
   } },
-  { name: "구간 만들기: 고르기 모드에서 고른 것이 없으면 할 일을 한 줄로 안내한다", async run(assert) {
+  { name: "고르기 모드의 안내 말풍선은 없다(고르기를 끈 뒤에도 남는 것이 없다)", async run(assert) {
     await setup();
     N.setMode("pick");
     const host = mount(html`<${NodeOverlay} />`);
     await tick();
-    const h = host.querySelector(".pickhint");
-    assert(h && h.textContent.includes("네모로 끌어 고르세요"), "안내 줄");
+    assert(!host.querySelector(".pickhint") && !host.textContent.includes("네모로 끌어"), host.textContent);
     N.setSelection(["n1"]);
     await tick();
-    assert(!host.querySelector(".pickhint"), "고르면 'n개 고름' 막대로 바뀐다");
+    N.setSelection([]);
     N.setMode("pan");
+    await tick();
+    assert(!host.textContent.includes("네모로 끌어"), "끈 뒤에도 없다");
     host.remove();
+  } },
+  { name: "'구간 밖 n개' 칩은 구간 탭에서만: 도면 탭·패널이 닫힌 도면에는 없다", async run(assert) {
+    await setup();
+    const slow = () => new Promise((r) => setTimeout(r, 60));      // 갈고리의 구독은 그린 뒤에 잇는다
+    for (const [panel, want] of [["drawings", false], [null, false], ["nodes", true]]) {
+      store.set({ panel, sheet: "graph-A" });
+      await N.loadSheet("graph-A");
+      const host = mount(html`<${NodeOverlay} />`);
+      await slow(); await tick();
+      const bar = host.querySelector(".chipbar");
+      assert(want ? !!bar && bar.textContent.includes("구간 밖") : !bar, String(panel) + " 칩: " + host.textContent);
+      host.remove();
+    }
+    store.set({ panel: null });
   } },
   { name: "모두 확정(실제 창 3차): 구간 패널을 열지 않고 도면 위 확인 창, Enter로 확정", async run(assert) {
     await setup();
