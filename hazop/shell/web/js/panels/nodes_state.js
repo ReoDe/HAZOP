@@ -89,17 +89,30 @@ export function setSelection(ids, truncated = false) {
 }
 export function clearSelection() { nodes.set({ selection: [], truncated: false }); }
 
-export function focusNode(id, { zoom = false } = {}) {
+/** 구간을 고른다(다시 고르면 푼다). show: 그 구간의 구성요소가 가장 많은 도면을 열고 도면 전체를 보이는 채로 강조한다(확대해 들어가지 않는다). */
+export function focusNode(id, { show = false } = {}) {
   const same = nodes.get().focus === id;
   nodes.set({ focus: same ? null : id, detail: same ? null : nodes.get().detail, error: null, needArchive: null });
   if (same) return;
   loadDetail(id);
-  if (zoom) zoomToNode(id);
+  if (show) showNode(id);
 }
 
-export function zoomToNode(id) {
-  const v = nodes.get().sheetView, seg = v && v.segments.find((s) => s.node_id === id);
-  if (seg && seg.ids.length) shell.set((s) => ({ command: { seq: s.command.seq + 1, type: "zoomTo", ids: seg.ids.slice(0, 400), pad: 0.1 } }));
+export function unfocus() { if (nodes.get().focus) nodes.set({ focus: null, detail: null }); }
+
+const fitSheet = () => shell.set((s) => ({ command: { seq: s.command.seq + 1, type: "fit" } }));
+
+/** 구성요소가 가장 많은 도면(같으면 지금 도면, 그다음 앞의 것). */
+export function mainSheetOf(row, current) {
+  const sheets = (row && row.sheets) || [];
+  let best = null;
+  for (const x of sheets) if (!best || x.n > best.n || (x.n === best.n && x.graph_id === current)) best = x;
+  return best ? best.graph_id : null;
+}
+
+export function showNode(id) {
+  const target = mainSheetOf(nodes.get().list.nodes.find((n) => n.node_id === id), shell.get().sheet);
+  if (target) goToSheet(target);
 }
 
 export function zoomToIds(ids) {
@@ -108,27 +121,21 @@ export function zoomToIds(ids) {
 
 export function openPanel() { shell.set({ panel: "nodes" }); }
 
-/** 다른 도면으로 가서 그 도면의 구간을 읽고, ids(맞은편 연결·구간)로 확대한다. 도면을 바꾸는 길은 분석 결과의 '도면에서 보기'와 같다. */
-export async function goToSheet(graphId, { ids = null, node = null } = {}) {
+/** 도면으로 간다(같은 도면이면 전체 맞춤). 도면을 바꾸는 길은 분석 결과의 '도면에서 보기'와 같고, 새 도면은 늘 전체 맞춤으로 열린다.
+ *  고른 구간은 그대로라 넘어간 도면에서도 강조가 보인다. */
+export async function goToSheet(graphId) {
   if (!graphId) return false;
   if (shell.get().sheet !== graphId) {
     if (!openSheetVia(graphId)) return false;
-  }
+  } else fitSheet();
   await loadSheet(graphId);
-  const v = nodes.get().sheetView;
-  const target = ids || (node && v && v.segments.find((s) => s.node_id === node) ? v.segments.find((s) => s.node_id === node).ids : null);
-  if (target && target.length) {
-    const go = () => shell.set((s) => ({ command: { seq: s.command.seq + 1, type: "zoomTo", ids: target.slice(0, 400), pad: ids ? 0.6 : 0.1 } }));
-    go();
-    setTimeout(go, 500);                      // 새 도면의 그림이 자리 잡은 뒤에도 한 번 더(처음 명령이 도면 자료보다 빠를 수 있다)
-  }
   return true;
 }
 
-/** 다른 도면 연결(오각형)을 누름: 이어진 연결이면 맞은편 도면의 맞은편 연결로 간다. */
+/** 다른 도면 연결(오각형)을 누름: 이어진 연결이면 맞은편 도면으로 간다. */
 export function followLink(link) {
   if (!link || link.status !== "linked" || !link.peer_graph_id) return false;
-  goToSheet(link.peer_graph_id, { ids: link.peer_id ? [link.peer_id] : null });
+  goToSheet(link.peer_graph_id);
   return true;
 }
 

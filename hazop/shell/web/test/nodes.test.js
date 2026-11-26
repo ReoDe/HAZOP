@@ -333,7 +333,7 @@ export const tests = [
     assert.equal(host.querySelectorAll(".nrow").length, 3);
     host.remove();
   } },
-  { name: "여러 도면 구간: 목록은 '[101 → 102]'와 ⇄, 상세는 도면별 칩·이어짐 칩, 칩을 누르면 그 도면을 열고 그 구간으로 확대", async run(assert) {
+  { name: "여러 도면 구간: 목록은 '[101 → 102]'와 ⇄, 상세는 도면별 칩·이어짐 칩, 칩을 누르면 그 도면을 연다(확대해 들어가지 않음)", async run(assert) {
     await setup();
     N.nodes.set({ scope: "all" });
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
@@ -354,10 +354,11 @@ export const tests = [
     chips[1].click();
     await tick();
     assert.equal(opened, ["graph-B"]);
-    assert(store.get().command.seq > seq0 && store.get().command.type === "zoomTo", "구간으로 확대 명령");
+    assert(!(store.get().command.seq > seq0 && store.get().command.type === "zoomTo"), "확대해 들어가지 않는다(새 도면은 전체 맞춤으로 열린다)");
+    assert.equal(N.nodes.get().focus, "S2", "넘어가도 구간 고름은 그대로");
     host.remove();
   } },
-  { name: "다른 도면 연결: 이어진 연결을 따라가면 맞은편 도면을 열고 맞은편 연결로 확대, 미이어짐은 가지 않음", async run(assert) {
+  { name: "다른 도면 연결: 이어진 연결을 따라가면 맞은편 도면을 연다(확대 명령 없음), 미이어짐은 가지 않음", async run(assert) {
     await setup();
     const opened = [];
     const R = await import("../js/panels/results_state.js");
@@ -368,7 +369,7 @@ export const tests = [
     await tick();
     assert.equal(opened, ["graph-B"]);
     const c = store.get().command;
-    assert(c.type === "zoomTo" && c.ids.join() === "p9", JSON.stringify(c));
+    assert(!(c.type === "zoomTo" && (c.ids || []).join() === "p9"), JSON.stringify(c));
     let props = null;
     engine.sheet = Object.assign({}, engine.sheet, { graph_id: "graph-A", links: [{ id: "c1", status: "linked", peer_graph_id: "graph-B", peer_id: "p9", label: "SNP-M-102" }] });
     store.set({ sheet: "graph-A" });
@@ -534,14 +535,22 @@ export const tests = [
     await tick();
     assert.equal([props.segments, props.outside], [[], []], "도면 탭에는 구간 색 강조가 없다(화면 단순화)");
     await new Promise((r) => setTimeout(r, 300));      // 구독이 붙을 때까지
+    // 구간 탭에서의 값은 그 상태로 새로 얹어 읽는다(숨은 페이지는 구독 효과가 늦게 붙는다)
+    const again = async () => { render(null, host); render(html`<${Probe} />`, host); await tick(); };
     store.set({ panel: "nodes" });
-    for (let i = 0; i < 40 && !props.segments.length; i++) await new Promise((r) => setTimeout(r, 50));      // 숨은 페이지는 구독 효과가 늦다
-    assert.equal(props.segments.map((s) => [s.node_id, s.ids, s.active]), [["S1", ["n1", "n2"], false], ["S2", ["n2", "n3"], false]]);
-    assert.equal(props.outside, ["n4", "n5"]);
+    await again();
+    assert.equal([props.segments, props.outside], [[], []], "구간을 고르지 않으면 구간 색도 흐림도 없다(도면 기본 모습)");
     assert.equal(props.mode, "pan");
     N.nodes.set({ focus: "S2", mode: "pick" });
-    await tick();
-    assert.equal(props.segments.map((s) => s.active), [false, true]);
+    await again();
+    assert.equal(props.segments.map((s) => [s.node_id, s.ids, s.active]), [["S2", ["n2", "n3"], true]], "고른 구간만 그린다");
+    assert.equal(props.outside, ["n4", "n5"]);
+    props.onPlainClick({ hit: true });
+    assert.equal(N.nodes.get().focus, "S2", "구성요소를 누른 것은 구간 고름을 풀지 않는다");
+    props.onPlainClick({ hit: false });
+    assert.equal(N.nodes.get().focus, null, "빈 곳을 누르면 풀린다");
+    N.nodes.set({ focus: "S2" });
+    await again();
     props.onEsc();                                  // 강조를 끈다
     assert.equal(N.nodes.get().focus, null);
     props.onEsc();                                  // 고른 것이 없으니 이동 모드로

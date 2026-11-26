@@ -120,15 +120,13 @@ export async function openDocument(materialId) {
 export async function viewOnSheet(nodeId) {
   const N = await import("./nodes_state.js");
   const row = N.nodes.get().list.nodes.find((n) => n.node_id === nodeId);
-  const sheets = (row && row.sheets) || [];
-  if (!sheets.length) { results.set({ error: "이 구간의 구성요소가 놓인 도면을 찾지 못했습니다." }); return false; }
   const cur = store.get().sheet;
-  const target = sheets.some((s) => s.graph_id === cur) ? cur : sheets[0].graph_id;
+  const target = N.mainSheetOf(row, cur);
+  if (!target) { results.set({ error: "이 구간의 구성요소가 놓인 도면을 찾지 못했습니다." }); return false; }
   if (target !== cur && openSheetFn) openSheetFn(target);
-  store.set({ panel: null, backTo: "results" });
+  store.set({ panel: "nodes", backTo: "results" });      // 구간 강조는 구간 탭에서 그린다
   N.nodes.set({ focus: null, detail: null });
-  await N.loadSheet(target);
-  N.focusNode(nodeId, { zoom: true });
+  N.focusNode(nodeId, { show: true });
   return true;
 }
 

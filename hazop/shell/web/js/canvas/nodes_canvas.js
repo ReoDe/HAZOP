@@ -19,9 +19,10 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
   const list = N.useNodes((s) => s.list.nodes);
   const focus = N.useNodes((s) => s.focus);
   const showOutside = N.useNodes((s) => s.showOutside);
-  const segments = useMemo(() => (panel === "nodes" && sheetView && sheetView.graph_id === sheet ? sheetSegments(sheetView, list, focus) : []), [panel, sheetView, list, focus, sheet]);
+  // 고른 구간 하나만 그린다(나머지는 흐리게). 고른 것이 없으면 구간 색·S 배지 없이 도면 기본 모습
+  const segments = useMemo(() => (panel === "nodes" && focus && sheetView && sheetView.graph_id === sheet ? sheetSegments(sheetView, list, focus).filter((s) => s.active) : []), [panel, sheetView, list, focus, sheet]);
   const links = useMemo(() => (sheetView && sheetView.graph_id === sheet && Array.isArray(sheetView.links) ? sheetView.links : []), [sheetView, sheet]);
-  const outside = useMemo(() => (panel === "nodes" && showOutside && sheetView && sheetView.graph_id === sheet && sheetView.segments.length ? sheetView.outside_ids : []), [panel, sheetView, showOutside, sheet]);
+  const outside = useMemo(() => (panel === "nodes" && showOutside && sheetView && sheetView.graph_id === sheet && segments.length ? sheetView.outside_ids : []), [panel, sheetView, showOutside, sheet, segments]);
 
   useLayoutEffect(() => {          // 그린 바로 뒤에 키를 잇는다(끌기 → Enter가 바로 먹게)
     function key(e) {
@@ -46,6 +47,7 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
       onLinkClick: (link) => N.followLink(link),
       onSelection: (d) => N.setSelection(d.selected, d.truncated),
       onSegmentClick: (d) => { N.focusNode(d.node_id); N.openPanel(); },
+      onPlainClick: (d) => { if (!d.hit && shell.get().panel === "nodes") N.unfocus(); },      // 빈 곳을 누르면 구간 고름이 풀린다
       onEsc: () => {
         const s = N.nodes.get(), step = escStep({ card: !!s.card, focus: s.focus, mode: s.mode, selection: s.selection });
         if (step === "card") N.closeCard();

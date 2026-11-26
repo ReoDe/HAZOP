@@ -80,9 +80,12 @@ function saveUi() {
   cmd("ui.save", { state: { sheet: s.sheet, chat_collapsed: s.chatCollapsed, panel: s.panel } }).catch(() => {});
 }
 
-/** 도면을 열 때 도면 패널이 떠 있으면 그대로 둔다(닫는 것은 패널의 X와 왼쪽 메뉴의 도면 단추뿐). 다른 패널은 도면을 가리므로 닫는다. */
-const keptPanel = () => (store.get().panel === "drawings" ? "drawings" : null);
+/** 도면을 열 때 도면·구간 패널(늘 고정)은 그대로 둔다. 다른 패널은 도면을 가리므로 닫는다. */
+const FIXED_PANELS = ["drawings", "nodes"];
+const fitSheet = () => store.set((s) => ({ command: { seq: s.command.seq + 1, type: "fit" } }));
+const keptPanel = () => (FIXED_PANELS.includes(store.get().panel) ? store.get().panel : null);
 export function openSheet(graphId) {
+  if (store.get().sheet === graphId) fitSheet();      // 다른 도면은 도면 부품이 자료를 읽으며 맞춘다
   store.set({ sheet: graphId, panel: keptPanel(), marks: { rid: null, bySheet: {} } });
   cmd("sheet.open", { graph_id: graphId }).catch(() => {});
   saveUi();

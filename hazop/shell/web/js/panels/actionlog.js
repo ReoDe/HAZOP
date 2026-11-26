@@ -61,7 +61,7 @@ export function go(t, onOpen) {
     store.set({ panel: null });
     return true;
   }
-  if (t.kind === "node") { store.set({ panel: "nodes" }); if (N.nodes.get().focus !== t.node_id) N.focusNode(t.node_id, { zoom: true }); return true; }
+  if (t.kind === "node") { store.set({ panel: "nodes" }); if (N.nodes.get().focus !== t.node_id) N.focusNode(t.node_id, { show: true }); return true; }
   if (t.kind === "cell") { store.set({ panel: "results" }); R.openCell(t.cell[0], t.cell[1]); return true; }
   return false;
 }

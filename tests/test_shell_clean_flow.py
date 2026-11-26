@@ -166,6 +166,7 @@ class CleanWithNodesTest(W.ShellBase):
         self.assertTrue(r["ok"], r)
         self.open_clean_sheet(win)
         self.js(win, "window.__hz.store.set({panel: 'nodes'})")      # 구간 색은 구간 탭에서만 나온다(화면 단순화)
+        self.assertTrue(wait_for(lambda: self.js(win, "(() => { const b = document.querySelector('.nrow .nrow-b'); if (!b) return false; if (b.getAttribute('aria-pressed') !== 'true') b.click(); return true; })()") is True, 20), "구간을 고른다(고른 구간만 강조)")
         # 정리된 자료·기호가 올 때까지는 원본으로 그리므로(core.js _effective) 바뀔 때까지 기다린 뒤 읽는다
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')") == "clean", 20), "정리된 보기로 바뀐다")
         self.assertTrue(wait_for(lambda: "S1" in (self.js(win, "document.querySelector('.hz-cv-vp').textContent") or "") or

@@ -110,8 +110,20 @@ export async function run(hz, data, big) {
   const vpEl = host.querySelector(".hz-cv-vp");
   const rect = vpEl.getBoundingClientRect();
   const content = data.items.filter((i) => i.layer !== "tag").reduce((c, i) => ({ x0: Math.min(c.x0, i.bbox[0]), y0: Math.min(c.y0, i.bbox[1]), x1: Math.max(c.x1, i.bbox[2]), y1: Math.max(c.y1, i.bbox[3]) }), { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 });
-  t("도면: 맞춤 — 그려진 내용(기호·배관)이 화면을 채우고 모두 보임", core.view.k > 0 && content.x0 * core.view.k + core.view.x >= -1 && content.y0 * core.view.k + core.view.y >= -1 && content.x1 * core.view.k + core.view.x <= rect.width + 1 && content.y1 * core.view.k + core.view.y <= rect.height + 1
-    && ((content.x1 - content.x0) * core.view.k > rect.width * 0.6 || (content.y1 - content.y0) * core.view.k > rect.height * 0.6), JSON.stringify(core.view));
+  const left = core.view.x, top = core.view.y, right = left + data.width * core.view.k, bottom = top + data.height * core.view.k;
+  t("도면: 맞춤 — 도면 한 장 전체가 칸 안 가운데에 한눈에 들어옴", core.view.k > 0 && left >= -1 && top >= -1 && right <= rect.width + 1 && bottom <= rect.height + 1
+    && Math.abs(left - (rect.width - right)) < 2 && Math.abs(top - (rect.height - bottom)) < 2 && (right - left > rect.width * 0.75 || bottom - top > rect.height * 0.75), JSON.stringify([core.view, content, [rect.width, rect.height]]));
+  core.view = { k: core.view.k * 3, x: -400, y: -300 }; core._applyView();
+  core.setData(Object.assign({}, data, { graph_id: data.graph_id + "-other" }));
+  await sleep(120);
+  t("도면: 다른 도면을 열면 앞 도면의 확대·자리를 물려받지 않음", Math.abs(core.view.x - left) < 1 && Math.abs(core.view.y - top) < 1, JSON.stringify(core.view));
+  core.view = { k: core.view.k * 3, x: -400, y: -300 }; core._applyView();
+  const kept = JSON.stringify(core.view);
+  core.setData(Object.assign({}, data, { graph_id: data.graph_id + "-other" }));
+  await sleep(120);
+  t("도면: 같은 도면을 고쳐 다시 읽으면 보던 자리·확대를 지킴", JSON.stringify(core.view) === kept, JSON.stringify(core.view));
+  core.setData(data);
+  await sleep(120);
   t("도면: 바탕 SVG는 <image> 하나(구성요소마다 DOM 없음)", host.querySelectorAll("image").length === 1 && host.querySelectorAll("rect.sym, .sym").length === 0);
   const pe = (type, x, y, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, clientX: rect.left + x, clientY: rect.top + y, button: 0, pointerId: 1, isPrimary: true }, extra));
   const toScreen = (sx, sy) => ({ x: sx * core.view.k + core.view.x, y: sy * core.view.k + core.view.y });
@@ -290,9 +302,11 @@ export async function run(hz, data, big) {
     t("끄는 중간 프레임: 칩이 도면과 같은 만큼 움직임", Math.abs((mid.left - before.left) - (sMid.x - sBefore.x)) < 1.5 && Math.abs((mid.top - before.top) - (sMid.y - sBefore.y)) < 1.5 && Math.abs(sMid.x - sBefore.x - 60) < 1.5, JSON.stringify({ d: [mid.left - before.left, mid.top - before.top], s: [sMid.x - sBefore.x, sMid.y - sBefore.y] }));
     pt("pointerup", 460, 330);
     const wheelAt = () => vp.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -100, clientX: vr.left + 400, clientY: vr.top + 300 }));
+    const offOf = () => { const c = chip().getBoundingClientRect(), q = c3._toScreenRect(rec); return [c.left - (vr.left + q.x + q.w / 2), c.top - (vr.top + q.y + q.h)]; };      // 기호 아래 가운데에서 칩까지
+    const offBefore = offOf();
     wheelAt();
-    const z = chip().getBoundingClientRect(), sz = c3._toScreenRect(rec);
-    t("확대 직후(다시 그리기 전): 칩이 새 도면 자리의 아래 가운데를 따라감", Math.abs((z.left + z.width / 2) - (vr.left + sz.x + sz.w / 2)) < 3, JSON.stringify({ chip: z.left + z.width / 2, sym: vr.left + sz.x + sz.w / 2 }));
+    const z = chip().getBoundingClientRect(), sz = c3._toScreenRect(rec), offAfter = offOf();
+    t("확대 직후(다시 그리기 전): 칩이 기호 아래 가운데와의 화면 거리를 지킨 채 새 자리를 따라감", Math.abs(offAfter[0] - offBefore[0]) < 1.5 && Math.abs(offAfter[1] - offBefore[1]) < 1.5, JSON.stringify([offBefore, offAfter, [z.left, sz.x]]));
     c3.destroy();
     h3.remove();
   }

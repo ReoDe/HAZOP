@@ -535,7 +535,7 @@ class WebUnitTest(ShellBase):
         p2 = LogPage(win.view.profile)   # 틀 창의 전용 프로필(처리기가 붙어 있다)
         out = []
         p2.load(QUrl("hazop-app://shell/test/run.html"))
-        end = time.monotonic() + 60     # 숨은 페이지는 타이머가 느려 시험이 늘면 30초를 넘는다(2026-11-24)
+        end = time.monotonic() + 120    # 숨은 페이지는 타이머가 느려 시험이 늘면 30초를 넘는다(2026-11-24), 2026-11-26에는 60초 안팎
         while time.monotonic() < end:
             res = []
             p2.runJavaScript("JSON.stringify(window.__results || null)", 0, res.append)   # 배열은 문자열로 받는다

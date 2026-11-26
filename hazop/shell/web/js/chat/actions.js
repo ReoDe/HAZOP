@@ -53,7 +53,7 @@ export function applyDisplay(it, rid) {
     store.set((s) => ({ layers: Object.assign({ symbol: true, pipe: true, tag: true }, s.layers, { [it.layer]: !!it.on }) }));
   } else if (it.op === "panel") {
     store.set({ panel: it.panel, backTo: null });
-    if (it.node_id && N.nodes.get().focus !== it.node_id) N.focusNode(it.node_id, { zoom: true });
+    if (it.node_id && N.nodes.get().focus !== it.node_id) N.focusNode(it.node_id, { show: true });
     if (it.cell) R.openCell(it.cell[0], it.cell[1]);
     if (it.panel === "aireview" && it.sheet) import("../panels/aireview_state.js").then((A) => A.pickDrawing(it.sheet)).catch(() => {});
   }
@@ -182,7 +182,7 @@ function AppliedBox({ it, onAsk }) {
       ${it.batch_id ? html`<span class="chip id">묶음 ${it.batch_id}</span>` : null}</div>
     <p>${undone ? "묶음 " + it.batch_id + "을(를) 되돌렸습니다." : it.text}</p>
     ${undone ? null : html`<div class="acts-row">
-      ${it.node_ids.length ? html`<${Btn} sm=${true} label="구간 보기" onClick=${() => { store.set({ panel: "nodes" }); N.focusNode(it.node_ids[0], { zoom: true }); }}>구간 보기<//>` : null}
+      ${it.node_ids.length ? html`<${Btn} sm=${true} label="구간 보기" onClick=${() => { store.set({ panel: "nodes" }); N.focusNode(it.node_ids[0], { show: true }); }}>구간 보기<//>` : null}
       ${canUndo ? html`<${Btn} sm=${true} label="이 요청 되돌리기" onClick=${undo}>이 요청 되돌리기<//>` : null}
       ${added ? html`<${Btn} sm=${true} label="나머지도 나누기" onClick=${() => onAsk(REST_QUESTION)}>나머지도 나누기<//>` : null}</div>`}
     <${LogError} it=${it} />

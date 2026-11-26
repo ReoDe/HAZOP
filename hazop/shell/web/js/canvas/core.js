@@ -159,7 +159,7 @@ export class SheetCore {
     this.image.addEventListener("load", once, { once: true });
     this.image.addEventListener("error", once, { once: true });
     if (href) this.image.setAttribute("href", href); else once();
-    if (!this._viewGiven && !again) this.fit();
+    if (!again) { this._viewGiven = false; this.fit(); }      // 다른 도면을 열면 앞 도면의 확대·자리를 물려받지 않는다
     this._renderChips();
   }
 
@@ -369,27 +369,14 @@ export class SheetCore {
   }
 
   // ------------------------------------------------------------ 보기(이동·확대)
-  /** 그려진 내용(기호·배관)의 범위 + 여백. 도면 용지의 여백이 커도 내용이 화면을 채우게 맞추는 기준이다. 내용이 없으면 도면 전체. */
-  _contentRect() {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const rec of this.index.items) {
-      if (rec.layer === "tag") continue;
-      x0 = Math.min(x0, rec.rect.x0); y0 = Math.min(y0, rec.rect.y0); x1 = Math.max(x1, rec.rect.x1); y1 = Math.max(y1, rec.rect.y1);
-    }
-    if (!isFinite(x0)) return { x0: 0, y0: 0, x1: this.size[0], y1: this.size[1] };
-    const pad = 16;
-    return { x0: Math.max(0, x0 - pad), y0: Math.max(0, y0 - pad), x1: Math.min(this.size[0], x1 + pad), y1: Math.min(this.size[1], y1 + pad) };
-  }
-
+  /** 도면 한 장 전체가 도면 칸 가운데에 한눈에 들어오게 맞춘다. 위아래 여백은 같게 두어(보기 단추 줄이 위에 겹친다) 가운데가 칸의 가운데다. */
   fit() {
     const r = this._rect();
     if (!r.width || !r.height || !this.data) return;
-    const c = this._contentRect(), cw = Math.max(c.x1 - c.x0, 1), ch = Math.max(c.y1 - c.y0, 1);
-    // 겹치는 화면 요소(위 보기 단추 줄, 아래 도구 막대, 표시가 있을 때의 범례)가 차지하는 자리만 빼고 그려진 내용의 둘레에 맞춘다
-    const top = Math.min(60, r.height * 0.09), bottom = Math.min(this.marks.length ? 108 : 64, r.height * 0.15);
-    const availH = Math.max(r.height - top - bottom, 1);
-    const k = Math.min(r.width / cw, availH / ch) * 0.985;
-    this.view = { k, x: (r.width - cw * k) / 2 - c.x0 * k, y: top + (availH - ch * k) / 2 - c.y0 * k };
+    const [sw, sh] = this.size;
+    const mx = Math.min(16, r.width * 0.02), my = Math.min(60, r.height * 0.09);
+    const k = Math.min(Math.max(r.width - 2 * mx, 1) / sw, Math.max(r.height - 2 * my, 1) / sh);
+    this.view = { k, x: (r.width - sw * k) / 2, y: (r.height - sh * k) / 2 };
     this._applyView();
     this._viewChanged(true);
   }
@@ -520,6 +507,7 @@ export class SheetCore {
       if (hit) this._change([hit.id], "toggle", "click");
       return;
     }
+    if (this.cb.onPlainClick) this.cb.onPlainClick({ hit: !!hit });      // 묶어 둔 고름·구간 고름을 푸는 신호
     if (!hit) return;
     const reason = this.cb.onUnconfirmedClick ? this._unconfirmedAt(hit.id) : null;
     if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }

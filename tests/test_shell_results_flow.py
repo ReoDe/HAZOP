@@ -312,7 +312,7 @@ class ResultsToSheetTest(W.ShellBase):
         res.save_fp(doc, ns.get("project_id"), expect=fp if fp else __import__("hazop.store_io", fromlist=["ANY"]).ANY)
         return row["node_id"], local
 
-    def test_view_on_sheet_closes_the_panel_shows_a_back_chip_and_returns(self):
+    def test_view_on_sheet_shows_the_node_panel_and_a_back_chip_and_returns(self):
         win = self.window()
         self.switch_project(win, "SNP")
         node, _local = self.make_confirmed_node_with_a_recommendation(win)
@@ -322,7 +322,7 @@ class ResultsToSheetTest(W.ShellBase):
         self.js(win, "(() => { const e = document.querySelector('.vg-cell[style*=\"top: 0px; left: 0px\"]'); if (e) e.click(); })()")
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.worksheet').length") or 0) == 1, 10), self.text(win)[-300:])
         self.assertTrue(self.click(win, "button[aria-label='도면에서 보기']"))
-        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.panel').length") or 0) == 0, 10), "패널이 닫힌다")
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "nodes", 10), "분석 결과 패널이 닫히고 구간 강조가 보이는 구간 패널이 남는다")
         self.assertTrue(wait_for(lambda: "분석 결과로 돌아가기" in self.text(win), 10), self.text(win)[:300])
         self.assertEqual(self.js(win, "window.__hz.store.get().sheet"), self.S101, "구간의 구성요소가 놓인 도면이 열린다")
         self.assertTrue(self.click(win, "button[aria-label='분석 결과로 돌아가기']"))
