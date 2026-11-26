@@ -80,8 +80,10 @@ function saveUi() {
   cmd("ui.save", { state: { sheet: s.sheet, chat_collapsed: s.chatCollapsed, panel: s.panel } }).catch(() => {});
 }
 
+/** 도면을 열 때 도면 패널이 떠 있으면 그대로 둔다(닫는 것은 패널의 X와 왼쪽 메뉴의 도면 단추뿐). 다른 패널은 도면을 가리므로 닫는다. */
+const keptPanel = () => (store.get().panel === "drawings" ? "drawings" : null);
 export function openSheet(graphId) {
-  store.set({ sheet: graphId, panel: null, marks: { rid: null, bySheet: {} } });
+  store.set({ sheet: graphId, panel: keptPanel(), marks: { rid: null, bySheet: {} } });
   cmd("sheet.open", { graph_id: graphId }).catch(() => {});
   saveUi();
 }
@@ -111,7 +113,7 @@ function onChip(chip) {
 function onSheet(msg, pathIndex, sheet) {
   const path = msg.card.paths[pathIndex];
   const bySheet = (path && path.marks) || {};
-  store.set({ sheet, panel: null, marks: { rid: msg.key, bySheet } });
+  store.set({ sheet, panel: keptPanel(), marks: { rid: msg.key, bySheet } });
   cmd("sheet.open", { graph_id: sheet }).catch(() => {});
 }
 
@@ -218,7 +220,7 @@ function TopBar() {
   const queueOpen = useQueue((s) => s.open);
   const row = d.drawings.find((x) => x.graph_id === sheet);
   return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
-    <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => togglePanel("drawings")}>${row ? (row.display || row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
+    <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => store.set({ panel: "drawings" })}>${row ? (row.display || row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
     ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div>
     ${queueOpen ? html`<${QueueLine} />` : null}</header>`;     // 도면 제목은 도면 번호에 마우스를 올리면 보인다. '다음에 할 일' 한 줄은 화면에서 내렸다(화면 단순화, 코드는 next/에 남김)
 }
@@ -245,7 +247,7 @@ function App() {
         if (store.get().chatCollapsed) toggleChat();
         setTimeout(() => { const el = document.querySelector(".chat-input"); if (el) el.focus(); }, 0);
       } else if (e.ctrlKey && PANELS.some((p) => p.key === e.key)) { e.preventDefault(); togglePanel(PANELS.find((p) => p.key === e.key).name); }
-      else if ((e.ctrlKey && e.key === "0") || (e.key === "Escape" && !typing)) { if (store.get().panel) { e.preventDefault(); store.set({ panel: null }); } }
+      else if ((e.ctrlKey && e.key === "0") || (e.key === "Escape" && !typing)) { if (store.get().panel && store.get().panel !== "drawings") { e.preventDefault(); store.set({ panel: null }); } }
     }
     window.addEventListener("keydown", key);
     // Esc는 사양 카드를 먼저 닫는다: 다른 Esc 처리(패널 닫기·캔버스 강조 지우기)보다 앞에서 받고, 카드가 없으면 아무것도 하지 않는다
@@ -256,7 +258,7 @@ function App() {
   return html`<div class=${"app" + (collapsed && !queueOpen ? " chat-collapsed" : "") + (queueOpen ? " queue-open" : "")}>
     <${Rail} />
     <main class="center"><${TopBar} /><${Notices} /><${SheetHost} />
-      ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
+      ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name} data-panel=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
       <${Toast} /><${ReviewConfirm} /><${ConfirmAllModal} /><${RevertGuard} /></main>
     ${queueOpen ? html`<${QueueCard} onChat=${() => { closeQueue(); if (store.get().chatCollapsed) toggleChat(); }} />`
       : html`<${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />`}

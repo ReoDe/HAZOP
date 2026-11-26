@@ -235,6 +235,7 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
   const nodes = [], missing = new Map();
   // 정리된 보기(recolor 있음)에서는 상자를 덧그리지 않고 그 객체의 색을 바꾼다(규격 §10.5). 못 그리는 층(태그 상자)은 그리지 않는다
   const mk = (item, w, extra, fillOpacity) => {
+    if (item.thin) return item.rec.layer === "tag" ? [] : shapeOf(item, k, w, Object.assign({ "data-check": item.id }, extra || {}));      // 추출 확인 네모는 정리 보기에서도 정리한 자리의 상자로 그린다(색 바꾸기 아님)
     if (!recolor) return shapeOf(item, k, w, extra);
     if (item.rec.layer === "tag") return [];
     const got = recolor(item.rec, item.color, w, { dashed: !!(extra && extra["stroke-dasharray"]) || !!item.dashed, fill: fillOpacity ? item.color : null, fillOpacity });

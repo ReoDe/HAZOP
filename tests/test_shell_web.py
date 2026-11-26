@@ -300,7 +300,7 @@ class ShellWindowTest(ShellBase):
         self.assertTrue(self.click(win, ".panel .row button[aria-label$=' 열기']"))
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().sheet") is not None, 10))
         pump(0.5)
-        self.assertTrue(self.js(win, "window.__hz.store.get().panel === null"))
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "도면을 열어도 도면 패널은 그대로")
         self.assertEqual(win.engine.current_sheet, self.js(win, "window.__hz.store.get().sheet"))
         src = self.js(win, "(document.querySelector('.canvas img') || {}).src || ''")
         self.assertTrue(src == "" or src.startswith("hazop-app://shell/api/sheet/"), src)
@@ -310,6 +310,9 @@ class ShellWindowTest(ShellBase):
         win = self.window()
         key = ("window.dispatchEvent(new KeyboardEvent('keydown', {key: %s, ctrlKey: %s, altKey: %s, bubbles: true}))")
         self.js(win, key % ('"Escape"', "false", "false"))
+        pump(0.2)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "도면 패널은 Esc로 닫히지 않는다(X와 도면 메뉴만)")
+        self.js(win, key % ('"1"', "true", "false"))          # 왼쪽 메뉴의 도면 단추와 같은 단축키
         pump(0.2)
         self.assertTrue(self.js(win, "window.__hz.store.get().panel === null"))
         self.js(win, key % ('"1"', "true", "false"))
