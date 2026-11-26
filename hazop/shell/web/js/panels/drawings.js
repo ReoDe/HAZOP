@@ -7,6 +7,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { SourceConflicts, choicesCount } from "./drawings_sources.js";
 import { DrawingPicks, useRemovedDrawings } from "./nodes_screen.js";
+import { SelectAll } from "../ui/select_all.js";
 import { OpenFolder } from "./open_folder.js";
 import { ConsentAsk, UNREAD_TEXT, useAuto, waitsOf } from "./auto_state.js";
 
@@ -93,7 +94,9 @@ export function DrawingsPanel({ onOpen, onClose }) {
           <b>${j.label}</b><span class="muted small">${j.state === "failed" ? j.message : (j.text || "")}</span>
           ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}
           <${Btn} sm=${true} kind="ghost" icon="x" label=${j.label + " 알림 닫기"} title="닫기" onClick=${() => dismissJob(id)} /></div>`)}</details>` : null}
-      <div>${picked.length ? html`<${DrawingPicks} ids=${picked} onDone=${() => setPicked([])} />` : null}
+      <div>${shown.length ? html`<${SelectAll} ids=${shown.filter((d) => d.drawing_number).map((d) => d.graph_id)} picked=${picked} label="도면 전체 선택"
+        onChange=${(ids, on) => setPicked((p) => (on ? Array.from(new Set(p.concat(ids))) : p.filter((x) => !ids.includes(x))))} />` : null}
+        ${picked.length ? html`<${DrawingPicks} ids=${picked} onDone=${() => setPicked([])} />` : null}
         ${shown.length === 0 && !unread.length ? html`<${Notice}>등록된 도면이 없습니다.<//>` : html`<div class="list">
           ${shown.map((d) => html`<div key=${d.graph_id} class=${"row drow" + (d.graph_id === sheet ? " on" : "")} onClick=${(e) => { if (!e.target.closest("input,label,.acts-end")) onOpen(d.graph_id); }}>
             <input type="checkbox" aria-label=${d.display + " 고르기"} checked=${picked.includes(d.graph_id)} onChange=${() => toggle(d.graph_id)} />

@@ -52,6 +52,9 @@ select:disabled { color: var(--faint); cursor: not-allowed; }
 :root { --fixed-panel-w: calc(var(--panel-w) * 0.8); }      /* 늘 고정인 도면·구간 패널은 좁게: 가운데 도면 칸을 넓힌다 */
 .pwrap:is([data-panel="drawings"], [data-panel="nodes"]) { width: var(--fixed-panel-w); }
 .center:has(> .pwrap:is([data-panel="drawings"], [data-panel="nodes"])) > .canvas { margin-left: var(--fixed-panel-w); }      /* 도면 패널은 떠 있고 도면 칸은 남은 폭으로 좁아진다(left로 밀면 폭이 그대로라 범례·보기 단추가 채팅 밑으로 간다) */
+.selall { display: flex; align-items: center; gap: 8px; padding: 2px 12px; }
+.nrow .warn-mark { color: var(--warn-ink, #74430a); display: inline-flex; }
+.nrow .lock-mark { color: var(--muted); display: inline-flex; }
 .pwrap > .panel { position: static; width: auto; flex: 1; min-height: 0; box-shadow: none; border-right: 0; }
 .ptabs { display: flex; gap: 2px; padding: var(--sp-2) var(--sp-3) 0; border-bottom: 1px solid var(--line); flex: none; background: var(--surface); }
 .ptabs button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: var(--r-sm) var(--r-sm) 0 0; font-size: var(--fs-sm); color: var(--muted); border-bottom: 2px solid transparent; }

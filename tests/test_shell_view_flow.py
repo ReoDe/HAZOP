@@ -71,12 +71,12 @@ class ViewBase(W.ShellBase):
         self.assertTrue(r["ok"], r)
         return r["data"]
 
-    def make_node(self, win, name, parts):
-        """parts: [(도면 번호, 구성요소 수)] 순서대로 한 구간을 만든다(첫 도면에서 만들고 다른 도면 것은 더한다)."""
+    def make_node(self, win, name, parts, skip=0):
+        """skip: 첫 도면에서 앞 skip개를 건너뛴다. parts: [(도면 번호, 구성요소 수)] 순서대로 한 구간을 만든다(첫 도면에서 만들고 다른 도면 것은 더한다)."""
         pid = win.engine.project_id()
         first, n = parts[0]
         data = self.cmd(win, "nodes.create", {"project_id": pid, "set_rev": api_nodes.summary(win.engine)["set_rev"], "sheet": self.gid[first],
-                                              "ids": self.sheet_ids(win, first)[:n], "name": name})
+                                              "ids": self.sheet_ids(win, first)[skip:skip + n], "name": name})
         nid = data["node_ids"][0]
         for number, count in parts[1:]:
             row = next(x for x in api_nodes.summary(win.engine)["nodes"] if x["node_id"] == nid)
@@ -316,6 +316,128 @@ class CtrlPickTest(ViewBase):
         row = api_nodes.summary(win.engine)["nodes"][0]
         self.assertEqual({x["graph_id"] for x in row["sheets"]}, {g1, g2}, row["sheets"])
         self.assertTrue(wait_for(lambda: self.parts(win) == {}, 10), "만들면 고름은 비운다")
+
+
+class NodeListBase(ViewBase):
+    ROW = "(() => { const r = [...document.querySelectorAll('.nrow')].find((x) => x.querySelector('.nrow-b').getAttribute('aria-label').startsWith(%s)); return r || null; })()"
+
+    def nodes(self, win):
+        return {n["node_id"]: n for n in api_nodes.summary(win.engine)["nodes"]}
+
+    def start(self):
+        win = self.open_app()
+        self.open_row(win, "SNP-M-101")
+        return win
+
+    def show_nodes(self, win, count):
+        self.js(win, "window.__hz.store.set({panel: 'nodes'})")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.nrow').length") == count, 30), self.text(win)[-400:])
+
+    BOX = "[...document.querySelectorAll('.pwrap input[type=checkbox]')].find((x) => x.getAttribute('aria-label') === %s)"
+
+    def check(self, win, label):
+        js = "(() => { const b = " + self.BOX % json.dumps(label) + "; if (!b) return false; b.click(); return true; })()"
+        self.assertTrue(wait_for(lambda: self.js(win, js) is True, 20), label)
+        pump(0.4)
+
+    def boxes(self, win, kind):
+        """맨 위 전체 선택의 [체크됨, 중간]."""
+        return self.jsj(win, "(() => { const b = " + self.BOX % json.dumps(kind + " 전체 선택") + "; return b ? [b.checked, b.indeterminate] : null; })()")
+
+    def lock(self, win, nid):
+        """저장 파일을 직접 잠금 상태로 바꾼다(잠금은 분석을 모두 마쳐야 해서 화면 시험에서는 이렇게 만든다)."""
+        from hazop import store_io
+        from hazop.app import project_ctx
+        from hazop.study import nodes as sn
+        pg = project_ctx.project_graph(win.engine.project_id())
+        path = sn.store_path(pg["project_id"], pg["graph_id"])
+        raw = json.loads(store_io.read_bytes(path)[0].decode("utf-8"))
+        row = next(x for x in raw["nodes"] if x["node_id"] == nid)
+        row["state"], row["locked"] = "locked", {"at": "2026-11-26T00:00:00Z", "by": "검토자A", "reason": None}
+        store_io.write_json(path, raw, sort_keys=False)
+        win.engine.changed("nodes")
+
+
+class NodeRowTest(NodeListBase):
+    def test_rows_show_only_the_dot_number_name_range_and_count_and_there_is_no_merge(self):
+        win = self.start()
+        a = self.make_node(win, "첫 구간", [("SNP-M-101", 3), ("SNP-M-102", 3)])
+        b = self.make_node(win, "둘째 구간", [("SNP-M-101", 3)], skip=3)
+        self.cmd(win, "nodes.confirm", {"project_id": win.engine.project_id(), "set_rev": api_nodes.summary(win.engine)["set_rev"], "node_ids": [b],
+                                        "targets": [{"node_id": b, "rev": self.nodes(win)[b]["rev"], "state": "applied"}]})
+        win.engine.changed("nodes")
+        self.show_nodes(win, 2)
+        pump(1.0)
+        self.assertEqual(self.js(win, "document.querySelectorAll('.nrow .chip, .nrow .span-mark').length"), 0, "줄에 상태 꼬리표·기호가 없다")
+        row = self.js(win, "document.querySelector('.nrow').innerText")
+        self.assertNotIn("⇄", row)
+        for word in ("확정", "적용됨", "겹침"):
+            self.assertNotIn(word, self.js(win, "[...document.querySelectorAll('.nrow')].map((r) => r.innerText).join(' ')"))
+        self.assertIn("구성요소", row)
+        self.lock(win, b)
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.nrow svg.lock-mark, .nrow .lock-mark').length") == 1, 20), "잠긴 구간은 자물쇠 하나")
+        self.check(win, "%s 고르기" % a)
+        self.check(win, "%s 고르기" % b)
+        self.assertFalse(self.js(win, "[...document.querySelectorAll('.pwrap button')].some((x) => /합치|병합/.test((x.textContent || '') + (x.getAttribute('aria-label') || '') + (x.title || '')))"), "합치는 길이 없다")
+
+
+class NodeTrashTest(NodeListBase):
+    def test_select_all_and_the_trash_delete_everything_but_locked_nodes_and_undo_brings_them_back(self):
+        win = self.start()
+        a = self.make_node(win, "지울 구간", [("SNP-M-101", 3)])
+        b = self.make_node(win, "확정해 둔 구간", [("SNP-M-101", 3), ("SNP-M-102", 2)], skip=3)
+        c = self.make_node(win, "잠긴 구간", [("SNP-M-101", 3)], skip=6)
+        for nid in (b,):
+            self.cmd(win, "nodes.confirm", {"project_id": win.engine.project_id(), "set_rev": api_nodes.summary(win.engine)["set_rev"], "node_ids": [nid],
+                                            "targets": [{"node_id": nid, "rev": self.nodes(win)[nid]["rev"], "state": "applied"}]})
+        self.lock(win, c)
+        self.show_nodes(win, 3)
+        pump(1.0)
+        self.assertEqual(self.boxes(win, "구간"), [False, False])
+        self.check(win, "%s 고르기" % a)
+        self.assertEqual(self.boxes(win, "구간"), [False, True], "일부만 고르면 중간 상태")
+        self.check(win, "구간 전체 선택")
+        self.assertEqual(self.boxes(win, "구간"), [True, False])
+        ticked = "[...document.querySelectorAll('.nrow input[type=checkbox]')].map((x) => x.checked)"
+        self.assertEqual(self.jsj(win, ticked), [True, True, False], "잠긴 구간은 전체 선택에서 빠진다")
+        self.assertIn("2개 고름", self.text(win))
+        self.check(win, "구간 전체 선택")
+        self.assertEqual(self.jsj(win, ticked), [False, False, False], "다시 누르면 모두 해제")
+        self.check(win, "구간 전체 선택")
+        self.js(win, "(() => { const x = document.querySelector('.nrow .nrow-b'); x.click(); })()")
+        self.assertTrue(wait_for(lambda: self.jsj(win, BADGES) == [a], 15), "지울 구간을 강조해 둔다")
+        trash = """document.querySelector('.pwrap .picks button[aria-label="삭제"]')"""
+        self.assertTrue(self.js(win, "!!%s && !%s.textContent.trim() && %s.title === '삭제'" % (trash, trash, trash)), "휴지통은 아이콘만")
+        self.js(win, trash + ".click()")
+        self.assertTrue(wait_for(lambda: sorted(self.nodes(win)) == [c], 30), "고른 구간만 지워진다: %s" % sorted(self.nodes(win)))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.nrow').length") == 1, 20))
+        self.assertTrue(wait_for(lambda: self.jsj(win, BADGES) == [], 15), "도면 강조도 사라진다")
+        self.assertNotIn("보관하고 지우기", self.text(win), "확인 창이 없다")
+        undo = """document.querySelector('.pwrap button[aria-label="지운 구간 되돌리기"]')"""
+        self.assertTrue(wait_for(lambda: self.js(win, "!!" + undo) is True, 10), "지운 직후 되돌리기")
+        self.js(win, undo + ".click()")
+        self.assertTrue(wait_for(lambda: sorted(self.nodes(win)) == sorted([a, b, c]), 30), "되돌리면 돌아온다: %s" % sorted(self.nodes(win)))
+        self.assertTrue(wait_for(lambda: self.nodes(win)[b]["state"] == "confirmed", 20), "확정했던 구간은 다시 확정 상태: %s" % self.nodes(win)[b]["state"])
+        self.assertEqual((self.nodes(win)[a]["state"], self.nodes(win)[c]["state"]), ("applied", "locked"))
+        self.assertTrue(wait_for(lambda: self.js(win, "!!" + undo) is False, 10), "한 번만")
+
+
+class DrawingSelectAllTest(NodeListBase):
+    def test_select_all_in_the_drawing_list_leaves_out_drawings_without_a_number(self):
+        win = self.open_app()
+        self.js(win, """(() => { const d = window.__hz.store.get().drawings; window.__hz.store.set({ drawings: Object.assign({}, d, { drawings: d.drawings.concat([{ graph_id: 'g-blank', display: 'SIS.pdf · 1쪽', drawing_number: null, number_state: 'unconfirmed', title: null, material_id: 'm9', unknowns: 0 }]) }) }); })()""")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.drow input[type=checkbox]').length") == 3, 20))
+        ticked = "[...document.querySelectorAll('.drow input[type=checkbox]')].map((x) => x.checked)"
+        self.assertEqual(self.boxes(win, "도면"), [False, False])
+        self.check(win, "도면 전체 선택")
+        self.assertEqual(self.jsj(win, ticked), [True, True, False], "번호가 빈 도면은 빠진다")
+        self.assertEqual(self.boxes(win, "도면"), [True, False])
+        self.js(win, "document.querySelector('.drow input[type=checkbox]').click()")
+        pump(0.4)
+        self.assertEqual(self.boxes(win, "도면"), [False, True])
+        self.check(win, "도면 전체 선택")
+        self.check(win, "도면 전체 선택")
+        self.assertEqual(self.jsj(win, ticked), [False, False, False])
 
 
 if __name__ == "__main__":

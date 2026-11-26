@@ -318,14 +318,16 @@ export const tests = [
     assert(reads >= 1, "stale이면 다시 읽음");
     assert(N.nodes.get().error.includes("바뀌어 저장하지 않았습니다"));
   } },
-  { name: "구간 패널: 목록(상태 칩·겹침·도면 범위)이 이 도면 구간만, 이름은 글로만", async run(assert) {
+  { name: "구간 패널: 목록은 이 도면 구간만, 줄에는 번호·이름·도면 범위·구성요소 수만(상태 꼬리표 없음), 이름은 글로만", async run(assert) {
     await setup();
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
     await tick();
     const rows = host.querySelectorAll(".nrow");
     assert.equal(rows.length, 2);                       // 이 도면(graph-A)의 S1·S2, S3은 graph-B
     const text = host.textContent;
-    assert(text.includes("AI 적용됨") && text.includes("겹침 1") && text.includes("[101 → 102]") && text.includes("구간 밖 30"), text.slice(0, 300));
+    const rowText = [...rows].map((r) => r.textContent).join(" ");
+    assert(!/적용됨|겹침|⇄/.test(rowText) && !host.querySelector(".nrow .chip"), rowText);
+    assert(text.includes("[101 → 102]") && text.includes("구간 밖 30") && rowText.includes("구성요소"), text.slice(0, 300));
     assert(text.includes("<b>RC-L003</b>") && !host.querySelector(".nrow b b"), "이름의 태그가 HTML로 해석되지 않음");
     assert(!text.includes("아직 확인 전입니다"), "AI 구간 안내 줄은 없다(화면 단순화)");
     N.nodes.set({ scope: "all" });
@@ -333,14 +335,14 @@ export const tests = [
     assert.equal(host.querySelectorAll(".nrow").length, 3);
     host.remove();
   } },
-  { name: "여러 도면 구간: 목록은 '[101 → 102]'와 ⇄, 상세는 도면별 칩·이어짐 칩, 칩을 누르면 그 도면을 연다(확대해 들어가지 않음)", async run(assert) {
+  { name: "여러 도면 구간: 목록은 '[101 → 102]', 상세는 도면별 칩·이어짐 칩, 칩을 누르면 그 도면을 연다(확대해 들어가지 않음)", async run(assert) {
     await setup();
     N.nodes.set({ scope: "all" });
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
     await tick();
     const text = host.textContent;
     assert(text.includes("[101 → 102]") && !text.includes("SNP-M-101 외 1장"), text.slice(0, 300));
-    assert.equal(host.querySelectorAll(".span-mark").length, 1);
+    assert.equal(host.querySelectorAll(".span-mark").length, 0, "여러 도면 기호는 없다(도면 범위 글이 말한다)");
     N.focusNode("S2");
     await tick();
     const chips = [...host.querySelectorAll('[aria-label="도면별로 보기"] button')];

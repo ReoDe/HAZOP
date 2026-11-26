@@ -5,6 +5,7 @@ import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { store, useStore } from "../store.js";
 import { cmd } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
+import { SelectAll } from "../ui/select_all.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { canEdit, checkText, colorOf, confirmedLostText, discardLabel, rangeText, sheetName, stateChip } from "./nodes_logic.js";
 import * as N from "./nodes_state.js";
@@ -22,18 +23,24 @@ const OP_LABEL = { add: "만듦", edit: "고침", remove: "지움" };
 const KIND_LABEL = { "discard_lost": "찾지 못한 구성요소 버림" };
 const opsText = (ops, kind) => KIND_LABEL[kind] || (ops || []).map((o) => OP_LABEL[o] || o).join("·");
 
+/** 구간 한 줄: 색 점·번호·이름·도면 범위·구성요소 수만. 잠긴 구간은 자물쇠, 도면과 어긋난 구간은 경고 아이콘 하나씩만 더한다. */
 function Row({ n, list, drawings, on, checked }) {
-  const chip = stateChip(n);
+  const broken = [n.lost ? "찾지 못한 구성요소 " + n.lost + "개" : "", n.broken ? "끊긴 구성원 " + n.broken : ""].filter(Boolean).join(" · ");
   return html`<div class=${"row nrow" + (on ? " on" : "")} key=${n.node_id}>
-    <input type="checkbox" aria-label=${n.node_id + " 합치기에 고르기"} checked=${checked} onChange=${() => N.toggleChecked(n.node_id)} />
+    <input type="checkbox" aria-label=${n.node_id + " 고르기"} checked=${checked} onChange=${() => N.toggleChecked(n.node_id)} />
     <button type="button" class="nrow-b" aria-pressed=${on ? "true" : "false"} aria-label=${n.node_id + " " + (n.name || "")} onClick=${() => N.focusNode(n.node_id, { show: true })}>
       <span class="seg-dot" style=${"background:" + colorOf(list, n.node_id)}></span>
-      <span class="main"><b>${n.node_id} <span class="nm">${n.name || "(이름 없음)"}</span></b><span>${rangeText(n, drawings)}${n.span && n.span.spans ? html` <span class="span-mark" title="여러 도면에 걸친 구간">⇄</span>` : null} · 구성요소 ${n.count}</span></span></button>
-    ${n.lost ? html`<${Chip} kind="warn" icon="alert-triangle" title="다시 추출한 도면에서 같은 자리의 구성요소를 찾지 못했습니다. 이 구간의 구성요소를 확인하세요">찾지 못한 구성요소 ${n.lost}개<//>` : null}
-    ${confirmedLostText(n) ? html`<${Chip} kind="warn" title="확정할 때 찾지 못한 구성요소가 남아 있었습니다">${confirmedLostText(n)}<//>` : null}
-    ${n.broken ? html`<${Chip} kind="warn" icon="alert-triangle" title="도면을 고치거나 다시 추출해 도면에서 사라진 구성원입니다. 구간에서 빼거나 다시 넣으세요">끊긴 구성원 ${n.broken}<//>` : null}
-    ${n.overlaps.length ? html`<${Chip} kind="warn" title=${"겹치는 구간: " + n.overlaps.map((o) => o.node_id + "(" + o.shared + ")").join(", ")}>겹침 ${n.overlaps.length}<//>` : null}
-    <${Chip} kind=${chip.kind} icon=${chip.icon}>${chip.label}<//></div>`;
+      <span class="main"><b>${n.node_id} <span class="nm">${n.name || "(이름 없음)"}</span></b><span>${rangeText(n, drawings)} · 구성요소 ${n.count}</span></span></button>
+    ${broken ? html`<span class="warn-mark" role="img" title=${broken} aria-label=${n.node_id + ": " + broken}><${Icon} name="alert-triangle" size=${15} /></span>` : null}
+    ${n.state === "locked" ? html`<span class="lock-mark" role="img" title="잠긴 구간" aria-label=${n.node_id + ": 잠긴 구간"}><${Icon} name="lock" size=${15} /></span>` : null}</div>`;
+}
+
+/** 체크로 고른 구간에 할 일: 도면 목록과 같은 꼴(n개 고름 · 휴지통 · 해제). 잠긴 구간은 지우지 않는다. */
+function NodePicks({ ids, list, busy }) {
+  const deletable = ids.filter((id) => list.some((n) => n.node_id === id && n.state !== "locked"));
+  return html`<div class="picks" role="toolbar" aria-label="고른 구간에 할 일"><span class="small muted">${ids.length}개 고름</span>
+    ${deletable.length ? html`<${Btn} sm=${true} kind="ghost" icon="trash" label="삭제" disabled=${busy} onClick=${() => N.removeMany(deletable)} />` : null}
+    <${Btn} sm=${true} kind="ghost" label="고르기 해제" disabled=${busy} onClick=${() => N.setChecked(ids, false)}>해제<//></div>`;
 }
 
 function Editable({ label, value, multiline, disabled, onSave, hint, aiDraft }) {
@@ -141,6 +148,8 @@ export function NodesPanel({ onClose }) {
   const drawings = useStore((s) => s.drawings.drawings);
   const shown = scope === "sheet" && sheet ? list.nodes.filter((n) => n.sheets.some((x) => x.graph_id === sheet)) : list.nodes;
   const focused = list.nodes.find((n) => n.node_id === focus);
+  const removed = N.useNodes((s) => s.removed);
+  const picked = shown.filter((n) => checked.includes(n.node_id)).map((n) => n.node_id);      // 지금 보이는 줄 가운데 고른 것
   const open = (e) => { if (e.key === "Enter" && e.ctrlKey && focused && focused.state === "applied") { e.preventDefault(); N.confirm([focused.node_id]); } };
   return html`<section class="panel" aria-label="구간" onKeyDown=${open}>
     <div class="panel-h"><h2>구간</h2><${Chip}>${list.nodes.length}개<//>
@@ -158,9 +167,11 @@ export function NodesPanel({ onClose }) {
       <div class="acts-row"><div class="seg-toggle" role="group" aria-label="목록 범위">
         <button type="button" class=${scope === "sheet" ? "on" : ""} aria-pressed=${scope === "sheet" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "sheet" })}>이 도면</button>
         <button type="button" class=${scope === "all" ? "on" : ""} aria-pressed=${scope === "all" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "all" })}>전체</button></div>
-        ${checked.length >= 2 ? html`<${Btn} sm=${true} icon="plus" label="체크한 구간 합치기" disabled=${busy} onClick=${N.mergeChecked}>${checked.length}개 합치기<//>` : null}
         ${drafts ? html`<${Btn} sm=${true} kind="primary" icon="check" label="확정하지 않은 구간 모두 확정" disabled=${busy || !!confirmAsk || !N.draftIds(scopeSheet).length} onClick=${() => N.askConfirmAll(scopeSheet)}>모두 확정 (${N.draftIds(scopeSheet).length})<//>` : null}</div>
       <${ConfirmAllCard} />
+      ${shown.length ? html`<${SelectAll} ids=${shown.filter((n) => n.state !== "locked").map((n) => n.node_id)} picked=${checked} label="구간 전체 선택" onChange=${N.setChecked} />` : null}
+      ${picked.length ? html`<${NodePicks} ids=${picked} list=${list.nodes} busy=${busy} />` : null}
+      ${removed ? html`<div class="acts-row"><${Btn} sm=${true} icon="arrow-back-up" label="지운 구간 되돌리기" disabled=${busy} onClick=${N.undoRemoved}>되돌리기<//></div>` : null}
       ${shown.length === 0 ? html`<${Notice}>${list.nodes.length ? "이 도면에는 구간이 없습니다." : "구간이 없습니다."}<//>`
         : html`<div class="list" role="list">${shown.map((n) => html`<${Row} key=${n.node_id} n=${n} list=${list.nodes} drawings=${drawings} on=${n.node_id === focus} checked=${checked.includes(n.node_id)} />`)}</div>`}
       ${focused ? html`<${Detail} n=${focused} d=${detail} list=${list.nodes} drawings=${drawings} selection=${selection} busy=${busy} needArchive=${needArchive} />` : null}

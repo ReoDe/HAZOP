@@ -20,7 +20,8 @@ export const nodes = createStore({
   card: null,               // 새 구간 카드
   scope: "sheet",           // 목록 범위: "sheet"(이 도면) | "all"
   showOutside: true,        // 구간 밖 구성요소를 흐리게
-  checked: [],              // 합치기용으로 체크한 구간
+  checked: [],              // 줄 옆 체크로 고른 구간(지우기·모두 확정)
+  removed: null,            // 방금 지운 것(한 번 되돌리기): {batches, confirmed}
   confirmAsk: null,         // '모두 확정' 확인 중인 구간 ID 목록
   confirmSeen: null,        // 그 카드를 열 때 사람이 본 판 {set_rev, targets}
   busy: false,
@@ -347,12 +348,37 @@ export const undo = (batchId) => run("undo", { batch_id: batchId });
 /** 찾지 못한 구성요소를 사람이 확인하고 버린다(keys는 상세의 lost_items key). 되돌리기 묶음으로 남는다. */
 export const discardLost = (id, keys) => run("discard_lost", { node_id: id, keys }, [id]);
 
-export async function mergeChecked() {
-  const ids = nodes.get().checked.slice();
-  if (ids.length < 2) return null;
-  const r = await run("merge", { node_ids: ids }, ids);
-  if (r) nodes.set({ checked: [] });
-  return r;
+/** 줄 옆 체크로 여러 구간을 한 번에 고르거나 해제한다. */
+export function setChecked(ids, on) {
+  nodes.set((s) => ({ checked: on ? Array.from(new Set(s.checked.concat(ids))) : s.checked.filter((x) => !ids.includes(x)) }));
+}
+
+/** 고른 구간을 확인 창 없이 지운다. 잠긴 구간은 건드리지 않는다. 확정 구간은 확정을 해제한 뒤 지우고, 분석 칸에 판정이 있으면
+ *  엔진의 '보관하고 지우기'를 쓴다(칸은 결과 파일의 보관 목록으로 간다). 지운 묶음을 기억해 한 번 되돌릴 수 있게 한다. */
+export async function removeMany(ids) {
+  const done = { batches: [], confirmed: [] };
+  nodes.set({ removed: null });
+  for (const id of ids) {
+    const row = nodes.get().list.nodes.find((n) => n.node_id === id);
+    if (!row || row.state === "locked") continue;
+    if (row.state === "confirmed" && !(await unconfirm([id]))) break;
+    let r = await run("remove", { node_id: id }, [id]);
+    if (r && r.needs_archive) r = await run("remove", { node_id: id, archive: true }, [id]);
+    if (!r) break;
+    if (r.batch_id) done.batches.push(r.batch_id);
+    if (row.state === "confirmed") done.confirmed.push(id);
+  }
+  nodes.set((s) => ({ checked: s.checked.filter((x) => s.list.nodes.some((n) => n.node_id === x && n.state === "locked")), removed: done.batches.length ? done : null }));
+  if (!nodes.get().list.nodes.some((n) => n.node_id === nodes.get().focus)) nodes.set({ focus: null, detail: null });
+}
+
+/** 방금 지운 구간을 되돌린다(한 번): 지운 묶음을 뒤에서부터 되돌리고, 확정했던 구간은 다시 확정한다. */
+export async function undoRemoved() {
+  const gone = nodes.get().removed;
+  if (!gone) return;
+  nodes.set({ removed: null });
+  for (const batch of gone.batches.slice().reverse()) if (!(await undo(batch))) return;
+  if (gone.confirmed.length) await confirm(gone.confirmed);
 }
 
 export async function addSelectionTo(id) {
@@ -412,7 +438,7 @@ export function toggleChecked(id) {
 /** 프로젝트가 바뀌었다: 앞 프로젝트의 목록·고른 것·카드를 모두 비우고 새로 읽는다(낡은 판으로 쓰지 않게). */
 export function resetForProject() {
   seq++;                                  // 아직 오지 않은 앞 읽기의 답은 버린다
-  nodes.set({ list: EMPTY_LIST, sheetView: null, detail: null, selection: [], picks: {}, truncated: false, focus: null, card: null, checked: [], error: null, needArchive: null, busy: false });
+  nodes.set({ list: EMPTY_LIST, sheetView: null, detail: null, selection: [], picks: {}, truncated: false, focus: null, card: null, checked: [], removed: null, error: null, needArchive: null, busy: false });
   refresh();
 }
 

@@ -104,6 +104,33 @@ class LegacyScreenTest(Base):
                          "승인 항목이 그대로 돌아온다")
 
 
+class DeleteJudgedNodeTest(Base):
+    def test_deleting_a_confirmed_node_keeps_its_judged_cells_in_the_archive_and_undo_does_not_bring_them_back(self):
+        """구간 목록의 휴지통이 부르는 차례(확정 해제 → 지우기 → 칸에 판정이 있으면 보관하고 지우기)와 그 뒤 분석 칸의 행방.
+        칸은 결과 파일의 보관 목록(archived_cells)으로 간다. 되돌리기는 구간만 미확정으로 되살리고 보관한 칸은 다시 붙이지 않는다."""
+        nid = self.confirmed_node()
+        self.approve_one(nid)
+
+        def results_doc():
+            return res.load_fp(nodes.load(self.pg))[0]
+
+        self.assertTrue(self.call("unconfirm", {"node_ids": [nid]})["ok"])
+        r = self.call("remove", {"node_id": nid})
+        self.assertTrue(r["ok"] and r["data"]["needs_archive"] and r["data"]["batch_id"] is None, r)
+        r = self.call("remove", {"node_id": nid, "archive": True})
+        self.assertTrue(r["ok"], r)
+        self.assertNotIn(nid, self.rows(), "분석 행에서 사라진다")
+        doc = results_doc()
+        self.assertEqual([c for c in doc["cells"] if c["node_id"] == nid], [])
+        kept = [x["cell"] for x in doc["archived_cells"] if x["cell"]["node_id"] == nid]
+        self.assertEqual([e["status"] for c in kept for e in c["entries"]], ["approved"], "판정은 보관 목록에 남는다")
+        self.assertTrue(self.call("undo", {"batch_id": r["data"]["batch_id"]})["ok"])
+        self.assertEqual(self.node(nid)["state"], "applied")
+        doc = results_doc()
+        self.assertEqual([e for c in doc["cells"] if c["node_id"] == nid for e in c.get("entries") or []], [], "되돌려도 보관한 판정은 칸에 다시 붙지 않는다")
+        self.assertTrue([x for x in doc["archived_cells"] if x["cell"]["node_id"] == nid], "보관 목록에는 그대로 남는다")
+
+
 class DrawingExcludeTest(Base):
     def test_exclude_and_restore_a_drawing(self):
         self.assertFalse(self.drawings()[S102]["excluded"])
