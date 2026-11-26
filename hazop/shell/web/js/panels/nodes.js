@@ -1,7 +1,7 @@
 // 구간 패널(규격 §2.1·§2.3 ④): 구간 목록(S 번호 색, 이름, 도면 범위, 상태), 고른 구간의 상세와 고치기, 묶음 되돌리기.
 // 이름·설계 의도·태그는 도면·모델에서 온 글이라 텍스트로만 넣는다. 엔진이 거절하면 그 사유를 그대로 보인다.
 import { html } from "../ui/html.js";
-import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
+import { useLayoutEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { store, useStore } from "../store.js";
 import { cmd } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
@@ -43,18 +43,33 @@ function NodePicks({ ids, list, busy }) {
     <${Btn} sm=${true} kind="ghost" label="고르기 해제" disabled=${busy} onClick=${() => N.setChecked(ids, false)}>해제<//></div>`;
 }
 
-function Editable({ label, value, multiline, disabled, onSave, hint, aiDraft }) {
+/** 연필을 누르면 그 자리에서 바로 고친다. 이름은 Enter, 설계 의도는 Ctrl+Enter로 저장하고, 둘 다 바깥을 누르면(초점이 나가면) 저장한다.
+ *  Esc는 버린다. 구간마다 따로 그려(key) 고치던 글이 다른 구간에 들어가지 않는다. */
+function Editable({ label, value, multiline, disabled, onSave, hint, aiDraft, required }) {
   const [text, setText] = useState(null);
   const editing = text !== null;
-  const save = () => { const t = text; setText(null); if (t !== (value || "")) onSave(t); };
+  const box = useRef(null);
+  const done = useRef(true);          // 한 번만 끝낸다(Enter·Esc 뒤에 따라오는 초점 잃음이 다시 저장하지 않게)
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (editing && el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }, [editing]);
+  const finish = (keep) => {
+    if (done.current) return;
+    done.current = true;
+    const t = box.current ? box.current.value : text;
+    setText(null);
+    if (keep && !(required && !t.trim()) && t !== (value || "")) onSave(t);
+  };
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+    else if (e.key === "Enter" && (!multiline || e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); e.stopPropagation(); finish(true); }
+  };
+  const props = { class: "textbox", "aria-label": label, value: text, onInput: (e) => setText(e.target.value), onKeyDown, onBlur: () => finish(true) };
   return html`<div class="field"><label>${label}${aiDraft ? html` <${Chip} kind="ai" icon="sparkles">AI 초안<//>` : null}</label>
-    ${editing ? html`<div class="acts-col">${multiline
-      ? html`<textarea class="textbox" rows="3" maxlength="2000" value=${text} aria-label=${label} onInput=${(e) => setText(e.target.value)}></textarea>`
-      : html`<input class="textbox" maxlength="120" value=${text} aria-label=${label} onInput=${(e) => setText(e.target.value)}
-          onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); save(); } else if (e.key === "Escape") { e.stopPropagation(); setText(null); } }} />`}
-      <div class="acts-row"><${Btn} sm=${true} kind="primary" label=${label + " 저장"} onClick=${save}>저장<//><${Btn} sm=${true} label="취소" onClick=${() => setText(null)}>취소<//></div></div>`
+    ${editing ? (multiline ? html`<textarea ref=${box} rows="3" maxlength="2000" ...${props}></textarea>` : html`<input ref=${box} maxlength="120" ...${props} />`)
     : html`<div class="kv"><span class=${"val" + (aiDraft ? " draft" : "")}>${value || html`<span class="muted">비어 있음</span>`}</span>
-        <${Btn} sm=${true} kind="ghost" icon="pencil" label=${label + " 고치기"} disabled=${disabled} title=${disabled ? hint : label + " 고치기"} onClick=${() => setText(value || "")} /></div>`}</div>`;
+        <${Btn} sm=${true} kind="ghost" icon="pencil" label=${label + " 고치기"} disabled=${disabled} title=${disabled ? hint : label + " 고치기"} onClick=${() => { done.current = false; setText(value || ""); }} /></div>`}</div>`;
 }
 
 /** 찾지 못한 구성요소 목록과 버리기. 사람이 확인하고 버린 것만 버린다(고른 것, 또는 모두). 잠긴 구간이면 단추 대신 까닭을 보인다. */
@@ -93,8 +108,8 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
       ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 해제"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 해제<//>` : null}
       ${edit && selection.length && !added ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
       ${edit ? html`<${Btn} kind="ghost" icon="trash" label=${n.node_id + " 지우기"} disabled=${busy} onClick=${() => N.removeNode(n.node_id, false)}>지우기<//>` : null}</div>
-    <${Editable} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} aiDraft=${n.name_by === "ai" && edit} />
-    <${Editable} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} aiDraft=${!!(di && di.by === "ai" && edit)} />
+    <${Editable} key=${"name-" + n.node_id} required=${true} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} aiDraft=${n.name_by === "ai" && edit} />
+    <${Editable} key=${"intent-" + n.node_id} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} aiDraft=${!!(di && di.by === "ai" && edit)} />
     ${d && d.boundary && d.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${d.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
     ${n.span && n.span.spans ? html`<div class="field"><label>도면</label><div class="acts-row" role="group" aria-label="도면별로 보기">${n.sheets.map((sh, i) => html`<button type="button" class="chip id" key=${sh.graph_id}
       title=${"이 구간을 " + sheetName(sh.graph_id, drawings) + " 도면에서 보기"} onClick=${() => N.goToSheet(sh.graph_id)}>${sheetName(sh.graph_id, drawings)} · ${sh.n}</button>`)}</div></div>` : null}

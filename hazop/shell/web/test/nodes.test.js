@@ -335,7 +335,7 @@ export const tests = [
     input.value = "고친 이름";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await tick();
-    by("이름 저장").click();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     await tick();
     assert.equal([lastCmd().name, lastCmd().args.name], ["nodes.rename", "고친 이름"]);
     engine.reply = () => ({ ok: true, data: { set_rev: 4, batch_id: null, node_ids: ["S1"], needs_archive: true, skipped: 0 } });   // 엔진이 코드로 알림: 아무것도 지우지 않음
