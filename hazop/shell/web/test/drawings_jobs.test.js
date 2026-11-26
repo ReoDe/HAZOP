@@ -8,6 +8,29 @@ import { DrawingsPanel } from "../js/panels/drawings.js";
 const tick = async () => { for (let i = 0; i < 400; i++) await Promise.resolve(); };
 
 export const tests = [
+  { name: "번호가 빈 도면 줄은 파일 이름 한 줄(굵게)이고 '· 1쪽' 꼬리와 주황 점이 없다. 같은 파일에 여러 쪽이면 쪽은 남는다", async run(assert) {
+    const real = window.fetch;
+    const auto = { consent: { allow: false, asked: false }, ask: false, sheets: [{ graph_id: "g-new", result: "waiting", why: "no_consent" }] };
+    window.fetch = async (u) => (String(u) === "/api/aireview/auto" ? { ok: true, status: 200, json: async () => auto } : { ok: false, status: 404, json: async () => ({}) });
+    window.hazopBridge = { send() {}, setHandler() {} };
+    const rows = [{ graph_id: "g-new", display: "SNP-M-101_RCS-main-loop.drawio · 1쪽", drawing_number: null, number_state: "unconfirmed", title: null, material_id: "m1", unknowns: 0 },
+      { graph_id: "g-p1", display: "manual.pdf · 1쪽", drawing_number: null, number_state: "unconfirmed", material_id: "m2", unknowns: 0 },
+      { graph_id: "g-p2", display: "manual.pdf · 2쪽", drawing_number: null, number_state: "unconfirmed", material_id: "m2", unknowns: 0 }];
+    store.set({ jobs: {}, drawings: { drawings: rows, documents: [], project_id: "P", rev: "r" } });
+    const host = document.createElement("div"); document.body.appendChild(host);
+    render(html`<${DrawingsPanel} onOpen=${() => {}} onClose=${() => {}} />`, host);
+    try {
+      await new Promise((r) => setTimeout(r, 80));
+      const lines = [...host.querySelectorAll(".drow")];
+      assert.equal(lines[0].querySelector("b").textContent, "SNP-M-101_RCS-main-loop.drawio");
+      assert.equal(lines[0].querySelectorAll(".drow-open span").length, 0, "한 줄");
+      assert.equal(lines[0].querySelectorAll(".drow-dot").length, 0, "주황 점 없음");
+      assert.equal([lines[1].querySelector("b").textContent, lines[2].querySelector("b").textContent], ["manual.pdf · 1쪽", "manual.pdf · 2쪽"]);
+    } finally {
+      window.fetch = real; render(null, host); host.remove();
+      store.set({ drawings: { drawings: [], documents: [], project_id: null, rev: null } });
+    }
+  } },
   { name: "도면 패널(실제 창 4차 결함 4): AI 검토 작업은 칩이 보이니 줄이 없고, 도는 작업은 한 줄, 끝난 작업은 접힌 묶음·닫기, 추출 설정은 목록 뒤", async run(assert) {
     window.fetch = async () => ({ ok: true, status: 200, json: async () => ({ drawings: [] }) });
     window.hazopBridge = { send() {}, setHandler() {} };

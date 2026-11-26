@@ -45,6 +45,12 @@ function DexpiExport() {
     ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">${error}</span><//>` : null}</div>`;
 }
 
+/** 번호가 아직 빈 도면 줄은 파일 이름 한 줄(굵게)이다: 같은 파일의 줄이 하나뿐이면 '· 1쪽' 꼬리를 뗀다(여러 쪽이면 어느 쪽인지 알아야 해 둔다). */
+export function blankNumberName(d, rows) {
+  const only = !d.material_id || rows.filter((x) => x.material_id === d.material_id).length < 2;
+  return only ? String(d.display).replace(/ · 1쪽$/, "") : d.display;
+}
+
 /** 끝난 작업 카드를 닫는다(작업 기록은 엔진에 그대로). */
 function dismissJob(id) { store.set((s) => { const j = Object.assign({}, s.jobs); delete j[id]; return { jobs: j }; }); }
 
@@ -89,11 +95,13 @@ export function DrawingsPanel({ onOpen, onClose }) {
         ${data.drawings.length === 0 && !unread.length ? html`<${Notice}>등록된 도면이 없습니다.<//>` : html`<div class="list">
           ${data.drawings.map((d) => html`<div key=${d.graph_id} class=${"row drow" + (d.graph_id === sheet ? " on" : "")} onClick=${(e) => { if (!e.target.closest("input,label,.acts-end")) onOpen(d.graph_id); }}>
             <input type="checkbox" aria-label=${d.display + " 고르기"} checked=${picked.includes(d.graph_id)} onChange=${() => toggle(d.graph_id)} />
-            <button type="button" class="main drow-open" aria-label=${d.display + (d.title ? " " + d.title : "") + " 열기"}><b>${d.display}</b><span>${d.title || ""}</span></button>
+            ${d.number_state === "unconfirmed" && !d.drawing_number
+              ? html`<button type="button" class="main drow-open" aria-label=${blankNumberName(d, data.drawings) + " 열기"}><b>${blankNumberName(d, data.drawings)}</b></button>`
+              : html`<button type="button" class="main drow-open" aria-label=${d.display + (d.title ? " " + d.title : "") + " 열기"}><b>${d.display}</b><span>${d.title || ""}</span></button>`}
             <span class="acts-end">
               ${many[d.graph_id] ? html`<${Btn} sm=${true} kind="ghost" label=${d.display + " 원본 " + many[d.graph_id] + "개, 고르기 카드로 가기"}
                 title="같은 도면 자리에 원본이 둘 이상 있습니다. 분석에 쓸 원본은 아래 원본 고르기 카드에서 고릅니다." onClick=${toCard}>원본 ${many[d.graph_id]}개<//>` : null}
-              ${waits[d.graph_id] ? html`<span class="drow-dot" role="img" tabindex="0" title=${waits[d.graph_id]} aria-label=${d.display + ": " + waits[d.graph_id]}></span>` : null}
+              ${waits[d.graph_id] && !(d.number_state === "unconfirmed" && !d.drawing_number) ? html`<span class="drow-dot" role="img" tabindex="0" title=${waits[d.graph_id]} aria-label=${d.display + ": " + waits[d.graph_id]}></span>` : null}
               <${DrawingExcludedChip} graphId=${d.graph_id} />
               </span></div>`)}
           ${unread.map((d) => html`<div key=${d.material_id} class="row drow"><div class="main"><b>${d.name || d.material_id}</b></div>
