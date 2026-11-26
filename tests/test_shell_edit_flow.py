@@ -176,6 +176,15 @@ class CtrlEditApplyTest(CtrlEditBase):
         self.assertIn("%s 수정 · 더함 1 · 뺌 0" % self.nid, self.bar(win))
         self.assertIn("구간 수정", self.bar(win))
         self.assertNotIn("구간 만들기", self.bar(win))
+        layout = self.js(win, """(() => { const bar = document.querySelector('.selbar'), kids = [...bar.children].map((c) => c.getBoundingClientRect()).filter((r) => r.width);
+          const mids = kids.map((r) => (r.top + r.bottom) / 2), bad = [];
+          if (Math.max(...mids) - Math.min(...mids) > 6) bad.push('줄이 바뀜');
+          const l = document.querySelector('.hz-cv-legend'), b = bar.getBoundingClientRect();
+          if (l && getComputedStyle(l).display !== 'none') { const q = l.getBoundingClientRect(); if (q.left < b.right && q.right > b.left && q.top < b.bottom && q.bottom > b.top) bad.push('범례를 덮음'); }
+          return bad.join(','); })()""")
+        self.assertEqual(layout, "", "고름 줄은 한 줄이고 범례를 덮지 않는다")
+        split = "[...document.querySelectorAll('.ndetail button')].some((x) => x.getAttribute('aria-label') === '고른 것을 떼어 새 구간으로')"
+        self.assertFalse(self.js(win, split), "구간에 없는 것을 함께 골랐으면 나누기 단추는 없다")
         self.press_id(win, inside, True)
         self.assertIn("더함 1 · 뺌 1", self.bar(win))
         self.press_id(win, inside, True)

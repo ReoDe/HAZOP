@@ -80,6 +80,8 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
   const [reason, setReason] = useState("");
   const [unlocking, setUnlocking] = useState(false);
   const edit = canEdit(n);
+  const members = N.useNodes((s) => s.members);
+  const added = N.pickDiff({ selection: N.useNodes((s) => s.selection), picks: N.useNodes((s) => s.picks), members }).added;      // 고른 것 가운데 이 구간에 없는 수
   const lockedHint = "잠긴 구간입니다. 먼저 잠금을 해제하세요.";
   const di = n.design_intent;
   const latest = d && d.history && d.history.length ? d.history[d.history.length - 1] : null;
@@ -89,7 +91,7 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
       <span class="muted nd-r">${n.rev > 1 ? "수정 " + (n.rev - 1) + "회" : ""}</span></div>
     <div class="acts-row nd-acts">
       ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 해제"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 해제<//>` : null}
-      ${edit && selection.length ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
+      ${edit && selection.length && !added ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
       ${edit ? html`<${Btn} kind="ghost" icon="trash" label=${n.node_id + " 지우기"} disabled=${busy} onClick=${() => N.removeNode(n.node_id, false)}>지우기<//>` : null}</div>
     <${Editable} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} aiDraft=${n.name_by === "ai" && edit} />
     <${Editable} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} aiDraft=${!!(di && di.by === "ai" && edit)} />
