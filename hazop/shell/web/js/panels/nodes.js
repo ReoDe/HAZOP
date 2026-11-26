@@ -3,7 +3,6 @@
 import { html } from "../ui/html.js";
 import { useLayoutEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { store, useStore } from "../store.js";
-import { cmd } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { SelectAll } from "../ui/select_all.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
@@ -18,10 +17,6 @@ if (typeof document !== "undefined" && !document.querySelector('link[data-nodes-
   document.head.appendChild(l);
 }
 
-const when = (t) => (t ? String(t).replace("T", " ").replace(/:\d\d(\.\d+)?Z?$/, "") : "");
-const OP_LABEL = { add: "만듦", edit: "고침", remove: "지움" };
-const KIND_LABEL = { "discard_lost": "찾지 못한 구성요소 버림" };
-const opsText = (ops, kind) => KIND_LABEL[kind] || (ops || []).map((o) => OP_LABEL[o] || o).join("·");
 
 /** 구간 한 줄: 색 점·번호·이름·도면 범위·구성요소 수만. 잠긴 구간은 자물쇠, 도면과 어긋난 구간은 경고 아이콘 하나씩만 더한다. */
 function Row({ n, list, drawings, on, checked }) {
@@ -99,11 +94,9 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
   const added = N.pickDiff({ selection: N.useNodes((s) => s.selection), picks: N.useNodes((s) => s.picks), members }).added;      // 고른 것 가운데 이 구간에 없는 수
   const lockedHint = "잠긴 구간입니다. 먼저 잠금을 해제하세요.";
   const di = n.design_intent;
-  const latest = d && d.history && d.history.length ? d.history[d.history.length - 1] : null;
   return html`<div class="card ndetail" aria-label=${n.node_id + " 상세"}>
     <div class="nd-h"><span class="seg-dot" style=${"background:" + colorOf(list, n.node_id)}></span><b>${n.node_id}</b>
-      <${Chip}>구성요소 ${n.count}<//>
-      <span class="muted nd-r">${n.rev > 1 ? "수정 " + (n.rev - 1) + "회" : ""}</span></div>
+      </div>
     <div class="acts-row nd-acts">
       ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 해제"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 해제<//>` : null}
       ${edit && selection.length && !added ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
@@ -111,9 +104,8 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
     <${Editable} key=${"name-" + n.node_id} required=${true} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} aiDraft=${n.name_by === "ai" && edit} />
     <${Editable} key=${"intent-" + n.node_id} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} aiDraft=${!!(di && di.by === "ai" && edit)} />
     ${d && d.boundary && d.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${d.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
-    ${n.span && n.span.spans ? html`<div class="field"><label>도면</label><div class="acts-row" role="group" aria-label="도면별로 보기">${n.sheets.map((sh, i) => html`<button type="button" class="chip id" key=${sh.graph_id}
+    ${n.sheets.length ? html`<div class="field"><label>도면</label><div class="acts-row" role="group" aria-label="도면별로 보기">${n.sheets.map((sh, i) => html`<button type="button" class="chip id" key=${sh.graph_id}
       title=${"이 구간을 " + sheetName(sh.graph_id, drawings) + " 도면에서 보기"} onClick=${() => N.goToSheet(sh.graph_id)}>${sheetName(sh.graph_id, drawings)} · ${sh.n}</button>`)}</div></div>` : null}
-    ${n.span && n.span.continuations && n.span.continuations.length ? html`<div class="field"><label>이어짐</label><div class="acts-row">${n.span.continuations.map((c, i) => html`<span class="chip" key=${i}>${c.chip}</span>`)}</div></div>` : null}
     ${d && d.majors_total > 2 ? html`<div class="muted small">주요 기기 ${d.majors_total}개: ${d.majors.join(", ")}${d.majors_total > d.majors.length ? " …" : ""}</div>` : null}
     ${n.overlaps.length ? html`<div class="field"><label>겹침</label><div class="acts-row">${n.overlaps.map((o) => html`<button type="button" class="chip warn" onClick=${() => N.focusNode(o.node_id, { show: true })} title="이 구간으로 가기">${o.node_id} · ${o.shared}개</button>`)}</div></div>` : null}
     <${LostItems} key=${n.node_id} n=${n} d=${d} busy=${busy} />
@@ -123,19 +115,7 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
       <input id="unlock-reason" class="textbox" value=${reason} onInput=${(e) => setReason(e.target.value)} />
       <div class="acts-row"><${Btn} kind="primary" sm=${true} disabled=${busy || !reason.trim()} label="잠금 해제 실행" onClick=${async () => { const r = await N.unlock([n.node_id], reason.trim()); if (r) { setUnlocking(false); setReason(""); } }}>해제<//></div></div>` : null}
     ${needArchive === n.node_id ? html`<${Notice} kind="warn" icon="alert-triangle">이 구간의 분석 칸에 판정이 있습니다. 보관하고 지우면 칸은 결과 파일의 보관 목록으로 옮겨집니다.
-      <div class="acts-row"><${Btn} sm=${true} label="보관하고 지우기" disabled=${busy} onClick=${() => N.removeNode(n.node_id, true)}>보관하고 지우기<//></div><//>` : null}
-    ${d && d.history && d.history.length ? html`<div class="field"><label>이 구간을 건드린 묶음</label>${d.history.slice(-4).reverse().map((h) => html`<div class="kv" key=${h.batch_id}>
-      <span class="small"><b>${h.batch_id}</b> ${h.origin === "ai" ? "채팅" : "사람"} · ${opsText(h.ops, h.kind)}${h.undone ? " · 되돌림" : ""}</span></div>`)}</div>` : null}</div>`;
-}
-
-function BatchStrip({ list, busy }) {
-  const batches = list.batches.filter((b) => !b.undone).slice(0, 3);
-  if (!batches.length) return null;
-  const askRest = () => cmd("chat.ask", { text: "나머지 구간도 나눠 줘" }).catch((e) => N.nodes.set({ error: e.message }));
-  return html`<div class="card"><h3>최근 묶음</h3>${batches.map((b, i) => html`<div class="kv" key=${b.batch_id}>
-    <div class="k"><b>${b.batch_id} · ${b.origin === "ai" ? "채팅" : "사람"} ${opsText(b.ops, b.kind)}</b><span>${b.node_ids.join(", ")}${b.request_text ? " · “" + b.request_text + "”" : ""} · ${when(b.at)}</span></div>
-    <div class="acts-row">${b.origin === "ai" && i === 0 && list.pending_ai > 0 ? html`<${Btn} sm=${true} label="나머지도 나누기" title="채팅에 나머지 구간을 나누도록 시킵니다" onClick=${askRest}>나머지도 나누기<//>` : null}
-      <${Btn} sm=${true} icon="arrow-back-up" label=${b.batch_id + " 되돌리기"} disabled=${busy} onClick=${() => N.undo(b.batch_id)}>되돌리기<//></div></div>`)}</div>`;
+      <div class="acts-row"><${Btn} sm=${true} label="보관하고 지우기" disabled=${busy} onClick=${() => N.removeNode(n.node_id, true)}>보관하고 지우기<//></div><//>` : null}</div>`;
 }
 
 export function NodesPanel({ onClose }) {
@@ -156,7 +136,6 @@ export function NodesPanel({ onClose }) {
   const drawings = useStore((s) => s.drawings.drawings);
   const shown = scope === "sheet" && sheet ? list.nodes.filter((n) => n.sheets.some((x) => x.graph_id === sheet)) : list.nodes;
   const focused = list.nodes.find((n) => n.node_id === focus);
-  const removed = N.useNodes((s) => s.removed);
   const picked = shown.filter((n) => checked.includes(n.node_id)).map((n) => n.node_id);      // 지금 보이는 줄 가운데 고른 것
   return html`<section class="panel" aria-label="구간">
     <div class="panel-h"><h2>구간</h2><${Chip}>${list.nodes.length}개<//>
@@ -176,9 +155,7 @@ export function NodesPanel({ onClose }) {
         <button type="button" class=${scope === "all" ? "on" : ""} aria-pressed=${scope === "all" ? "true" : "false"} onClick=${() => N.nodes.set({ scope: "all" })}>전체</button></div></div>
       ${shown.length ? html`<${SelectAll} ids=${shown.filter((n) => n.state !== "locked").map((n) => n.node_id)} picked=${checked} label="구간 전체 선택" onChange=${N.setChecked} />` : null}
       ${picked.length ? html`<${NodePicks} ids=${picked} list=${list.nodes} busy=${busy} />` : null}
-      ${removed ? html`<div class="acts-row"><${Btn} sm=${true} icon="arrow-back-up" label="지운 구간 되돌리기" disabled=${busy} onClick=${N.undoRemoved}>되돌리기<//></div>` : null}
       ${shown.length === 0 ? html`<${Notice}>${list.nodes.length ? "이 도면에는 구간이 없습니다." : "구간이 없습니다."}<//>`
         : html`<div class="list" role="list">${shown.map((n) => html`<${Row} key=${n.node_id} n=${n} list=${list.nodes} drawings=${drawings} on=${n.node_id === focus} checked=${checked.includes(n.node_id)} />`)}</div>`}
-      ${focused ? html`<${Detail} n=${focused} d=${detail} list=${list.nodes} drawings=${drawings} selection=${selection} busy=${busy} needArchive=${needArchive} />` : null}
-      <${BatchStrip} list=${list} busy=${busy} /></div></section>`;
+      ${focused ? html`<${Detail} n=${focused} d=${detail} list=${list.nodes} drawings=${drawings} selection=${selection} busy=${busy} needArchive=${needArchive} />` : null}</div></section>`;
 }

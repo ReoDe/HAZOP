@@ -21,7 +21,6 @@ export const nodes = createStore({
   scope: "sheet",           // 목록 범위: "sheet"(이 도면) | "all"
   showOutside: true,        // 구간 밖 구성요소를 흐리게
   checked: [],              // 줄 옆 체크로 고른 구간(지우기·모두 확정)
-  removed: null,            // 방금 지운 것(한 번 되돌리기): {batches}
   members: {},              // 고른 구간의 구성원: graph_id → local_id 목록(Ctrl로 고칠 때 더함·뺌을 가른다)
   busy: false,
   error: null,              // 마지막 거절 사유(엔진 문장)
@@ -342,28 +341,20 @@ export function setChecked(ids, on) {
 }
 
 /** 고른 구간을 확인 창 없이 지운다. 잠긴 구간은 건드리지 않는다. 분석 칸에 판정이 있으면 엔진의 '보관하고 지우기'를 쓴다(칸은 결과 파일의
- *  보관 목록으로 간다). 지운 묶음을 기억해 한 번 되돌릴 수 있게 한다. */
+ *  보관 목록으로 간다). → 지운 묶음 ID 목록. */
 export async function removeMany(ids) {
-  const done = { batches: [] };
-  nodes.set({ removed: null });
+  const batches = [];
   for (const id of ids) {
     const row = nodes.get().list.nodes.find((n) => n.node_id === id);
     if (!row || row.state === "locked") continue;
     let r = await run("remove", { node_id: id }, [id]);
     if (r && r.needs_archive) r = await run("remove", { node_id: id, archive: true }, [id]);
     if (!r) break;
-    if (r.batch_id) done.batches.push(r.batch_id);
+    if (r.batch_id) batches.push(r.batch_id);
   }
-  nodes.set((s) => ({ checked: s.checked.filter((x) => s.list.nodes.some((n) => n.node_id === x && n.state === "locked")), removed: done.batches.length ? done : null }));
+  nodes.set((s) => ({ checked: s.checked.filter((x) => s.list.nodes.some((n) => n.node_id === x && n.state === "locked")) }));
   if (!nodes.get().list.nodes.some((n) => n.node_id === nodes.get().focus)) nodes.set({ focus: null, detail: null, members: {} });
-}
-
-/** 방금 지운 구간을 되돌린다(한 번): 지운 묶음을 뒤에서부터 되돌린다. */
-export async function undoRemoved() {
-  const gone = nodes.get().removed;
-  if (!gone) return;
-  nodes.set({ removed: null });
-  for (const batch of gone.batches.slice().reverse()) if (!(await undo(batch))) return;
+  return batches;
 }
 
 export async function splitSelection(id, name) {
@@ -411,7 +402,7 @@ export function toggleChecked(id) {
 /** 프로젝트가 바뀌었다: 앞 프로젝트의 목록·고른 것·카드를 모두 비우고 새로 읽는다(낡은 판으로 쓰지 않게). */
 export function resetForProject() {
   seq++;                                  // 아직 오지 않은 앞 읽기의 답은 버린다
-  nodes.set({ list: EMPTY_LIST, sheetView: null, detail: null, selection: [], picks: {}, truncated: false, focus: null, members: {}, card: null, checked: [], removed: null, error: null, needArchive: null, busy: false });
+  nodes.set({ list: EMPTY_LIST, sheetView: null, detail: null, selection: [], picks: {}, truncated: false, focus: null, members: {}, card: null, checked: [], error: null, needArchive: null, busy: false });
   refresh();
 }
 

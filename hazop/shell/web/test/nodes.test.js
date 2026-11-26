@@ -261,7 +261,7 @@ export const tests = [
     await tick();
     const chips = [...host.querySelectorAll('[aria-label="도면별로 보기"] button')];
     assert.equal(chips.map((c) => c.textContent.trim()), ["SNP-M-101 · 3", "SNP-M-102 · 2"]);
-    assert(host.textContent.includes("S3 → SNP-M-102에서 계속"), "이어짐 칩");
+    assert(!host.textContent.includes("S3 → SNP-M-102에서 계속"), "이어짐 칩은 없다(도면 칩이 말한다)");
     const opened = [];
     const R = await import("../js/panels/results_state.js");
     R.setOpenSheet((g) => { opened.push(g); store.set({ sheet: g }); });
@@ -389,9 +389,14 @@ export const tests = [
     window.fetch = plain;
     host.remove();
   } },
-  { name: "구간 패널: 최근 묶음 되돌리기와 나머지도 나누기(채팅)", async run(assert) {
+  { name: "작업 기록(설정): 묶음 되돌리기와 나머지도 나누기(채팅), 구간 패널에는 묶음 목록이 없다", async run(assert) {
     await setup();
-    const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    const panel = mount(html`<${NodesPanel} onClose=${() => {}} />`);
+    await tick();
+    assert(!panel.textContent.includes("최근 묶음") && !panel.textContent.includes("작업 기록"), "구간 패널에는 묶음 목록이 없다");
+    panel.remove();
+    const { WorkLog } = await import("../js/panels/worklog.js");
+    const host = mount(html`<${WorkLog} />`);
     await tick();
     const by = (label) => [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label);
     by("B2 되돌리기").click();

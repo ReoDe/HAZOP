@@ -415,13 +415,7 @@ class NodeTrashTest(NodeListBase):
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.nrow').length") == 1, 20))
         self.assertTrue(wait_for(lambda: self.jsj(win, BADGES) == [], 15), "도면 강조도 사라진다")
         self.assertNotIn("보관하고 지우기", self.text(win), "확인 창이 없다")
-        undo = """document.querySelector('.pwrap button[aria-label="지운 구간 되돌리기"]')"""
-        self.assertTrue(wait_for(lambda: self.js(win, "!!" + undo) is True, 10), "지운 직후 되돌리기")
-        self.js(win, undo + ".click()")
-        self.assertTrue(wait_for(lambda: sorted(self.nodes(win)) == sorted([a, b, c]), 30), "되돌리면 돌아온다: %s" % sorted(self.nodes(win)))
-        self.assertEqual((self.nodes(win)[a]["state"], self.nodes(win)[b]["state"], self.nodes(win)[c]["state"]), ("applied", "applied", "locked"),
-                         "되돌린 구간은 보통 구간이다(화면은 확정을 부르지 않는다)")
-        self.assertTrue(wait_for(lambda: self.js(win, "!!" + undo) is False, 10), "한 번만")
+        self.assertEqual(self.js(win, """document.querySelectorAll('.pwrap button[aria-label="지운 구간 되돌리기"]').length"""), 0, "되돌리기는 Ctrl+Z와 설정의 작업 기록")
 
 
 class DrawingSelectAllTest(NodeListBase):

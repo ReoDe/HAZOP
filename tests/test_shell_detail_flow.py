@@ -112,5 +112,50 @@ class InlineEditTest(DetailBase):
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
 
 
+DETAIL = """(() => { const d = document.querySelector('.ndetail'); if (!d) return null;
+  return {text: d.innerText, labels: [...d.querySelectorAll('.field > label, .field > summary')].map((x) => x.textContent.trim()),
+          sheets: [...d.querySelectorAll('[aria-label="도면별로 보기"] button')].map((b) => b.textContent.trim()),
+          open: [...d.querySelectorAll('details')].map((x) => x.open)}; })()"""
+
+
+class SlimDetailTest(DetailBase):
+    def test_the_detail_keeps_what_people_use_and_the_batch_history_moves_to_the_settings(self):
+        win, (a, b) = self.start(("두 도면 구간", [("SNP-M-101", 3), ("SNP-M-102", 4)], 0), ("한 도면 구간", [("SNP-M-101", 3)], 3))
+        self.js(win, "[...document.querySelectorAll('.pwrap .seg-toggle button')].find((x) => x.textContent.trim() === '전체').click()")      # 두 구간을 함께 본다
+        pump(0.8)
+        self.focus(win, a)
+        d = self.jsj(win, DETAIL)
+        for gone in ("이어짐", "에서 계속", "이 구간을 건드린 묶음", "확정", "적용됨", "수정 1회", "만듦"):
+            self.assertNotIn(gone, d["text"], gone)
+        for kept in ("이름", "설계 의도"):
+            self.assertIn(kept, d["labels"])
+        self.assertEqual(d["sheets"], ["SNP-M-101 · 3", "SNP-M-102 · 4"])
+        self.assertTrue(any(x.startswith("구성요소 ") for x in d["labels"]), d["labels"])
+        self.assertEqual(d["open"], [False], "구성요소 목록은 접혀 있다")
+        self.focus(win, b)
+        self.assertEqual(self.jsj(win, DETAIL)["sheets"], ["SNP-M-101 · 3"], "도면이 하나여도 도면 칩을 둔다")
+        # 도면 칩: 그 도면을 전체 맞춤으로 열고 구간 강조
+        self.focus(win, a)
+        self.ready(win, "SNP-M-102")
+        self.zoom_away(win)
+        self.js(win, "[...document.querySelectorAll('[aria-label=\"도면별로 보기\"] button')].find((x) => x.textContent.includes('SNP-M-101')).click()")
+        self.ready(win, "SNP-M-101")
+        self.fitted(win, "도면 칩")
+        self.assertTrue(wait_for(lambda: self.jsj(win, BADGES) == [a], 15))
+        # 구간 탭에는 묶음 목록도 되돌리기 단추도 없다
+        panel = self.js(win, "document.querySelector('.pwrap').innerText")
+        self.assertNotIn("최근 묶음", panel)
+        self.assertEqual(self.js(win, "[...document.querySelectorAll('.pwrap button')].filter((x) => /되돌리기/.test((x.getAttribute('aria-label') || '') + x.textContent)).length"), 0)
+        # 설정의 '작업 기록'에서 묶음 단위로 되돌린다
+        count = len(api_nodes.summary(win.engine)["nodes"])
+        self.js(win, "window.__hz.store.set({panel: 'settings'})")
+        self.assertTrue(wait_for(lambda: "작업 기록" in self.text(win), 20), self.text(win)[-300:])
+        last = next(x for x in api_nodes.summary(win.engine)["batches"] if not x["undone"])
+        js = "(() => { const b = document.querySelector('.settings button[aria-label=\"%s 되돌리기\"]'); if (!b || b.disabled) return false; b.click(); return true; })()" % last["batch_id"]
+        self.assertTrue(wait_for(lambda: self.js(win, js) is True, 20), "작업 기록의 되돌리기 %s" % last["batch_id"])
+        self.assertTrue(wait_for(lambda: len(api_nodes.summary(win.engine)["nodes"]) == count - 1, 20), "묶음 되돌리기")
+        self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
+
+
 if __name__ == "__main__":
     unittest.main()
