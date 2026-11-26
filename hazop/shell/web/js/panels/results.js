@@ -241,7 +241,7 @@ function Worksheet() {
     <div class="nd-h"><b>${c.node.node_id}</b> ${c.node.name || ""} <span class="muted">›</span> <b>${c.deviation.label || c.deviation.deviation_id}</b>${c.deviation.label_en ? html` <span class="muted en">${c.deviation.label_en}</span>` : null}
       <span class="muted small">가이드워드 ${withEn(c.deviation.guideword || "", c.deviation.guideword_en)}</span>
       <${Chip}>${cell.state === "analyzed" ? "분석함" : cell.state === "excluded" ? "제외" : "분석 전"}<//>
-      ${c.intent ? html`<div class="small intent"><span class="muted">설계 의도</span> ${c.intent.text} <span class="muted">(${c.intent.source})</span></div>` : html`<div class="small muted intent">설계 의도: 적힌 것 없음</div>`}
+      ${c.intent ? html`<div class="small intent"><span class="muted">설계 의도</span> ${c.intent.text}</div>` : html`<div class="small muted intent">설계 의도: 적힌 것 없음</div>`}
       ${cell.scope_changed ? html`<${Chip} kind="warn" title="구간 범위가 바뀐 뒤 아직 다시 확인하지 않은 칸">범위 바뀜<//>` : null}
       <span class="acts"><${Btn} sm=${true} label="도면에서 보기" title="패널을 닫고 이 구간을 도면에서 봅니다" onClick=${() => R.viewOnSheet(c.node.node_id)}>도면에서 보기<//>
         <${Btn} sm=${true} kind="ghost" icon="x" label="워크시트 닫기" onClick=${() => R.results.set({ active: null, cell: null })} /></span></div>
