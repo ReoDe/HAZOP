@@ -71,8 +71,9 @@ GLOSSARY = (
 
 def approved_entries(results, node_set):
     """([(node_id, 편차, 항목)] 확정 근거가 되는 승인 항목을 묶음 순서대로, 넣지 않은 항목 수).
-    확정·잠금 구간의 보관되지 않은 칸만 보고, '범위 바뀜' 승인과 확정·잠금이 아닌 구간의 항목은 넣지 않은 수에 센다.
-    그룹 확정 근거(model.is_evidence)도 같은 기준이다. 옛 '분석 제외' 구간은 집합을 읽을 때 미확정으로 내려온다(nodes.settle_screen)."""
+    분석에 드는 구간(nodes.is_active, 구간 확정 단계를 없애 모든 구간)의 보관되지 않은 칸에서 사람이 승인한 항목만 넣는다. '범위 바뀜'
+    승인, 승인 전 항목(AI 초안 포함), 집합에 없는 구간의 항목은 넣지 않은 수에 센다. AI가 만든 구간도 이 규칙으로만 인계에 든다.
+    그룹 확정 근거(model.is_evidence)도 같은 기준이다. 옛 '분석 제외' 구간은 읽을 때 분석 판이 올라 판정이 '범위 바뀜'이 된다(nodes.settle_screen)."""
     from hazop.study import nodes
     cells = {(c["node_id"], c["deviation_id"]): c for c in results["cells"]}
     picked, left_out = [], 0

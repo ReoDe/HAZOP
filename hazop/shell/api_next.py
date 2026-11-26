@@ -121,7 +121,6 @@ def facts(engine):
     rs = _safe(lambda: api_results.summary(engine), "분석 결과") if names else None
     if ns and ns.get("available"):
         f["nodes_total"] = len(ns["nodes"])
-        f["nodes_draft"] = sum(1 for n in ns["nodes"] if n["state"] == "applied")
         f["apply_failed"] = bool(ns.get("stale")) and not engine.catching(f["project_id"])
         f["lost_members"] = sum((ns.get("check") or {}).get("lost_members", {}).values())
         f["lost_nodes"] = sorted((ns.get("check") or {}).get("lost_members", {}))
@@ -192,8 +191,7 @@ RULES = (
      lambda f, n: "원본과 견주어 확정할 쪽이 %d장 있습니다" % n, "쪽 확정", "panel:drawings#sheetconf", ""),
     ("nodes_none", lambda f: 1 if _n(f, "sheets_confirmed") and f.get("nodes_total") == 0 else 0,
      lambda f, n: "검토구간을 만들 차례입니다. 도면에서 네모로 끌어 고르세요", "구간 만들기", "panel:nodes#pick", ""),
-    ("nodes_draft", lambda f: _n(f, "nodes_draft"),
-     lambda f, n: "확정하지 않은 검토구간이 %d개 있습니다" % n, "모두 확정", "confirm:nodes.confirm", ""),
+    # '확정하지 않은 검토구간'(nodes_draft) 줄은 뺐다: 구간은 만들면 곧바로 분석에 든다(구간 규격 §0.2)
     ("nodes_unrun", lambda f: _n(f, "nodes_unrun"),
      lambda f, n: "분석하지 않은 검토구간이 %d개 있습니다" % n, "분석 실행", "panel:results#run", ""),
     ("results_unjudged", lambda f: _n(f, "results_unjudged"),

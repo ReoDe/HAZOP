@@ -249,12 +249,12 @@ class SegmentTest(unittest.TestCase):
     def test_the_tag_in_the_file_itself_changed(self):
         old = small()
         new = named(old, PIF1={"tag": "PIC-101", origin.PLAIN: {"tag": "T999"}})
-        self.assertIn("applied", self.after(old, new)[0].values())
+        self.assertTrue(self.after(old, new)[1], "재확인(상태는 그대로, 분석 판을 올림: 구간 확정 단계를 없앰, 구간 규격 §0.2)")
 
     def test_the_kind_changed(self):
         old = small()
         new = named(old, Pump1={"kind": "compressor", origin.PLAIN: {"kind": "pump"}})
-        self.assertIn("applied", self.after(old, new)[0].values())
+        self.assertTrue(self.after(old, new)[1], "재확인(상태는 그대로, 분석 판을 올림: 구간 확정 단계를 없앰, 구간 규격 §0.2)")
 
     REASON = "구성요소의 종류·태그·흐름·연결·정상 위치·고장 위치가 바뀜"
 
@@ -285,11 +285,11 @@ class SegmentTest(unittest.TestCase):
         seg = next(n for n in new["nodes"] if n["node_type"] == "pipe_segment" and not n["flow_direction"])
         a, b = [e["node"] for e in new["edges"] if e.get("segment") == seg["entity_id"]]
         seg["flow_direction"] = {"from": a, "to": b, "from_end": "source", "to_end": "target", "basis": "human"}
-        self.assertIn("applied", self.after(old, new)[0].values())
+        self.assertTrue(self.after(old, new)[1], "재확인(상태는 그대로, 분석 판을 올림: 구간 확정 단계를 없앰, 구간 규격 §0.2)")
 
     def test_a_changed_tag_without_a_mark(self):
         old = small()
-        self.assertIn("applied", self.after(old, named(old, PIF1={"tag": "PIC-101"}))[0].values())
+        self.assertTrue(self.after(old, named(old, PIF1={"tag": "PIC-101"}))[1], "재확인(구간 확정 단계를 없앰, 구간 규격 §0.2)")
 
     def test_the_sheet_it_was_exported_from_is_not_touched(self):
         s = sheet()

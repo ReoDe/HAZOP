@@ -150,35 +150,34 @@ class ApplyTest(Base):
         super().setUp()
         self.cands = nt.make_candidates(self.pg, self.ns, limit=30)["candidates"]
 
-    def test_representative_then_rest_after_a_new_message_then_undo_only_that_request(self):
+    def test_ai_nodes_apply_without_the_five_cap_then_undo_only_that_request(self):
+        """'확인 전 AI 구간 5개'와 '대표 뒤 나머지'를 없앴다(구간 확정 단계를 없앰, 구간 규격 §0.2). 같은 질문에서도 바로 들어가고, 요청 하나는 묶음 하나다."""
         ns, _r, b1 = self.ai(self.ns, self.adds(self.cands, 4), "q-1", "u-1")
         made = [n for n in ns["nodes"] if n["batch_id"] == b1]
         self.assertEqual(len(made), 4)
-        self.assertTrue(all(n["origin"] == "ai" and n["state"] == "applied" for n in made))
+        self.assertTrue(all(n["origin"] == "ai" and n["state"] == "applied" and sn.is_active(n) for n in made))
         self.assertEqual(made[0]["design_intent"], {"text": "흐름을 보냄", "by": "ai"})
         self.assertEqual(nt.pending_ai(ns), 4)
-        with self.assertRaises(nt.Refused):  # 같은 메시지 안에서 나머지로 넘어가지 못함(나누기로 상한 피하기 막음)
-            self.ai(ns, self.adds(self.cands[4:], 2), "q-2", "u-1", rest=True)
-        with self.assertRaises(nt.Refused):  # 새 메시지라도 사람이 확인 상자를 누르지 않았으면 거절
-            self.ai(ns, self.adds(self.cands[4:], 2), "q-2", "u-2")
+        more, _r, _b = self.ai(ns, self.adds(self.cands[4:], 2), "q-2", "u-1")  # 같은 메시지 안에서도 바로
+        self.assertEqual(len(more["nodes"]), 6)
         human = sn.set_design_intent(ns, made[0]["node_id"], "사람이 고친 설계 의도", at=AT)
         self.assertEqual(sn._find(human, made[0]["node_id"])["design_intent"]["by"], "user")
         self.assertEqual(nt.pending_ai(human), 3, "사람이 손댄 구간은 확인한 것으로 셈")
-        rest, _r, b2 = self.ai(human, self.adds(self.cands[4:], 20), "q-3", "u-2", rest=True)
-        self.assertEqual(nt.pending_ai(rest), 20, "확인 상자를 누르면 앞 묶음은 확인됨")
+        rest, _r, b2 = self.ai(human, self.adds(self.cands[4:], 20), "q-3", "u-2")
+        self.assertEqual(nt.pending_ai(rest), 23, "확인 상자가 없어 앞 묶음을 확인됨으로 바꾸지 않음")
         with self.assertRaises(nt.Refused):
-            self.ai(rest, self.adds(self.cands[24:], 1), "q-3", "u-3", rest=True)  # 요청 하나 = 묶음 하나
+            self.ai(rest, self.adds(self.cands[24:], 1), "q-3", "u-3")  # 요청 하나 = 묶음 하나
         undone, _d = nt.undo_batch(rest, res.empty_results(rest, DEVS), b2, rest["set_rev"], "AI", "ai", at=AT)
         self.assertEqual(len(undone["nodes"]), 4)
         self.assertEqual(sn._find(undone, made[0]["node_id"])["design_intent"]["text"], "사람이 고친 설계 의도")
 
-    def test_8_more_than_five_at_once_and_more_than_thirty_are_refused(self):
-        with self.assertRaises(nt.Refused):
-            self.ai(self.ns, self.adds(self.cands, 6), "q-1", "u-1")
+    def test_8_more_than_thirty_are_refused(self):
+        six, _r, _b = self.ai(self.ns, self.adds(self.cands, 6), "q-1", "u-1")
+        self.assertEqual(len(six["nodes"]), 6, "6개도 한 번에(구간 확정 단계를 없앰, 구간 규격 §0.2)")
         with self.assertRaises(nt.Refused):
             more = nt.make_candidates(self.pg, self.ns, granularity="fine", limit=30)["candidates"]
             more += nt.make_candidates(self.pg, self.ns, granularity="fine", limit=30, cursor="30")["candidates"]
-            self.ai(self.ns, self.adds(more, 31), "q-1", "u-1", rest=True)
+            self.ai(self.ns, self.adds(more, 31), "q-2", "u-1")
 
     def test_4_old_cand_id_after_graph_change_is_refused(self):
         changed = copy.deepcopy(self.pg)
@@ -195,8 +194,10 @@ class ApplyTest(Base):
             self.ai(self.ns, [{"op": "add", "cand_id": self.cands[0]["cand_id"], "name": "ZZ-999 펌프"}], "q", "u")
         ns, _r, _b = self.ai(self.ns, self.adds(self.cands, 1), "q-1", "u-1")
         conf = sn.confirm_nodes(ns, self.pg, ["S1"], "검토자", at=AT)
+        self.ai(conf, [{"op": "edit", "node_id": "S1", "name": "바꿈"}], "q-2", "u-2")  # 옛 확정 AI 구간은 보통 구간(구간 확정 단계를 없앰, 구간 규격 §0.2)
+        sn._find(conf, "S1").update(state="locked", locked={"at": AT, "by": "검토자", "reason": None})
         with self.assertRaises(nt.Refused):
-            self.ai(conf, [{"op": "edit", "node_id": "S1", "name": "바꿈"}], "q-2", "u-2")
+            self.ai(conf, [{"op": "edit", "node_id": "S1", "name": "바꿈"}], "q-2b", "u-2")
         with self.assertRaises(nt.Refused):
             nt.apply_nodes(ns, res.empty_results(ns, DEVS), self.pg, self.adds(self.cands[1:], 1),
                            {"request_id": "q-3", "user_turn": "u-3"}, "ai", ns["set_rev"] - 1, at=AT)
@@ -234,7 +235,7 @@ class CommandTest(Base):
         self.assertTrue(undo["ok"], undo)
         lock = self.run_cmd("lock", {"node_ids": [nid]})
         self.assertEqual((lock["ok"], lock["refused"][0]["code"]), (False, "rule"))
-        self.assertEqual(sorted(cmd.COMMANDS), sorted(["create", "add_members", "remove_members", "rename",
+        self.assertEqual(sorted(cmd.COMMANDS), sorted(["create", "add_members", "remove_members", "edit_members", "rename",
                                                        "set_design_intent", "merge", "split", "remove", "confirm",
                                                        "unconfirm", "lock", "unlock", "undo", "discard_lost"]))
         self.assertEqual(self.run_cmd("explode", {})["refused"][0]["code"], "unknown_command")
@@ -306,10 +307,11 @@ class CommandTest(Base):
         ns = sn.load(self.pg)
         self.assertEqual({(n["origin"], n["name_by"]) for n in ns["nodes"] if n["node_id"] in made["node_ids"]},
                          {("ai", "ai")})
-        self.assertEqual(nt.pending_ai(ns), 5, "사람이 확인 상자를 눌러도 AI 상한에 셈")
+        self.assertEqual(nt.pending_ai(ns), 5, "사람이 확인 상자를 눌러도 AI 구간으로 셈")
         more = self.run_cmd("create", {"items": [{"cand_id": cands[7]["cand_id"], "name": "AI 6"}]}, author="ai",
-                            confirmed_by="검토자", request={"request_id": "q-2", "user_turn": "u-1", "confirmed_rest": True})
-        self.assertFalse(more["ok"], "같은 질문 안에서 6번째는 거절")
+                            confirmed_by=None, request={"request_id": "q-2", "user_turn": "u-1"})
+        self.assertTrue(more["ok"], "6번째도 확인 없이 들어감(구간 확정 단계를 없앰, 구간 규격 §0.2)")
+        self.assertEqual({n["origin"] for n in sn.load(self.pg)["nodes"] if n["node_id"] in more["node_ids"]}, {"ai"})
 
     def test_r5_ai_cannot_undo_a_batch_a_person_confirmed(self):
         cands = nt.make_candidates(self.pg, self.ns, limit=5)["candidates"]

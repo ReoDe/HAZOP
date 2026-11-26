@@ -113,12 +113,15 @@ class DiscardLostTest(unittest.TestCase):
             sn.discard_lost(ns, "S1", by=" ")
         self.assertIn(s2_tomb, node(ns, "S1")["lost"], "겹친 구간의 같은 묘비는 S1에서도 버릴 수 있음")
 
-    def test_confirmed_and_locked_nodes_refuse(self):
+    def test_locked_nodes_refuse_and_old_confirmed_nodes_do_not(self):
+        """옛 확정 구간은 바로 버린다. 잠긴 구간만 거절한다(구간 확정 단계를 없앰, 구간 규격 §0.2)."""
         _g1, g2, ns = lost_world()
         done = sn.confirm_nodes(ns, g2, ["S1"], "김검토", at="t1")
+        self.assertFalse(node(sn.discard_lost(done, "S1", by="김검토", at="t2"), "S1").get("lost"))
+        sn._find(done, "S1").update(state="locked", locked={"at": "t1", "by": "김검토", "reason": None})
         with self.assertRaises(ValueError) as cm:
             sn.discard_lost(done, "S1", by="김검토")
-        self.assertIn("확정", str(cm.exception))
+        self.assertIn("잠긴", str(cm.exception))
 
     def test_undo_brings_the_tomb_back(self):
         _g1, _g2, ns = lost_world()

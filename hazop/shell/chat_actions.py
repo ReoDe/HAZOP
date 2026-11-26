@@ -20,7 +20,7 @@ from hazop.chat import actions_log
 from hazop.shell import auto_flow, chat_edits, chat_screens
 
 LOG = logging.getLogger("hazop.shell.chat_actions")
-NODE_ACTIONS = ("nodes.apply", "nodes.undo", "nodes.confirm", "nodes.unconfirm", "nodes.lock")
+NODE_ACTIONS = ("nodes.apply", "nodes.undo")  # 확정·확정 해제·잠금은 뺐다(구간 규격 §0.2)
 # A11 1차: 화면·엔진에 이미 있는 기능을 잇는 실행 동작(엔진 함수는 api_results·api_drawings·data를 부르기만 한다)
 RUN_ACTIONS = ("analysis.run", "results.set_status", "results.edit", "export.excel", "export.ie_bundle",
                "register.extract", "register.reextract", "sheet.confirm", "dexpi.export")
@@ -491,7 +491,7 @@ def _title(item):
     return TITLES.get(name, name or "동작")
 
 
-TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정", "nodes.unconfirm": "구간 확정 해제", "nodes.lock": "분석 마침 · 잠금",
+TITLES = {"nodes.undo": "묶음 되돌리기",
           "analysis.run": "AI 분석 실행", "results.set_status": "결과 판정", "results.edit": "결과 항목 고치기",
           "export.excel": "Excel로 내보내기", "export.ie_bundle": "초기사건 인계 묶음 내보내기", "register.extract": "추출",
           "register.reextract": "다시 추출", "sheet.confirm": "도면 쪽 확정", "dexpi.export": "DEXPI로 내보내기",
@@ -530,7 +530,7 @@ def _done_text(item, out):
         tail = (" · 묶음 " + batch) if batch else ""
         label = (": " + ", ".join(str(n) for n in names[:6]) + (" …" if len(names) > 6 else "")) if names and kinds == {"add"} else ""
         return _clip(head + label + tail + ".")
-    return {"nodes.confirm": "확정했습니다.", "nodes.unconfirm": "확정을 해제했습니다.", "nodes.lock": "잠갔습니다."}.get(name, "처리했습니다.")
+    return "처리했습니다."
 
 
 def _label(node_id, names):

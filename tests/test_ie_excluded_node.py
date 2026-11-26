@@ -55,16 +55,23 @@ class ExcludedNodeGroupTest(Base):
         self.assertNotEqual(b1["groups"][0]["status"], "confirmed", "확정 근거가 빠진 그룹을 확정으로 넘김")
         self.assertTrue(any(iec in p for p in model.confirm_problems(ie2, gid, doc, node_set=ns)), "그룹 확정 조건에 이유를 보인다")
 
-    def test_unconfirming_the_node_drops_the_member_and_the_confirmation(self):
-        """검토 재현 repro_b2_bundle: 구간 확정을 풀면 묶음 후보에서 빠진 IEC를 확정 그룹이 그대로 가리키던 것."""
+    def test_changing_the_members_drops_the_member_and_the_confirmation(self):
+        """검토 재현 repro_b2_bundle을 새 규칙(구간 규격 §0.2)으로: 확정 해제 대신 구성요소를 고치면 그 판정에 '범위 바뀜'이 붙어
+        묶음 후보에서 빠지고, 확정 그룹도 그 IEC를 가리킨 채 확정으로 남지 않는다."""
         nid, ie, iec, gid = self._confirmed_group()
-        self.assertTrue(self.call("unconfirm", {"node_ids": [nid]})["ok"])
         ns = nodes.load(self.pg)
-        self.assertFalse(nodes.is_active(next(n for n in ns["nodes"] if n["node_id"] == nid)))
+        node = next(n for n in ns["nodes"] if n["node_id"] == nid)
+        extra = next(x["entity_id"] for x in self.pg["nodes"] if x["entity_id"] not in node["members"])
+        from hazop.study import node_commands
+        out = node_commands.execute(self.pg, "edit_members", {"node_id": nid, "add": [extra]}, author="user", confirmed_by="검토자")
+        self.assertTrue(out["ok"], out)
+        ns = nodes.load(self.pg)
+        self.assertTrue(nodes.is_active(next(n for n in ns["nodes"] if n["node_id"] == nid)), "구간은 분석에 그대로 듦")
         self._check_left_out(ie, iec, gid, ns, res.load_fp(ns)[0])
 
     def test_old_screen_exclusion_reads_as_unconfirmed_and_drops_the_member(self):
-        """0.2 집합의 옛 '분석 제외' 판정은 읽을 때 미확정으로 내려오므로(nodes.settle_screen) 같은 결과다."""
+        """0.2 집합의 옛 '분석 제외' 판정은 읽을 때 적용됨으로 내려오고 분석 판이 올라(nodes.settle_screen) 판정이 '범위 바뀜'이 되므로
+        같은 결과다(구간 규격 §0.2)."""
         nid, ie, iec, gid = self._confirmed_group()
         ns = nodes.load(self.pg)
         next(n for n in ns["nodes"] if n["node_id"] == nid)["screen"] = {"status": "excluded", "by": "human", "reason": "범위 밖"}

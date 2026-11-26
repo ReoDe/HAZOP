@@ -7,7 +7,8 @@
   구간 밖 구성요소가 늘거나 줄어도 재확인 사유가 아니다(§1 #17·#18).
 - 판 이전은 모든 구간에 적용하고 재확인은 구간마다 정한다. 구간마다 내용 지문(md3-: 그 구간 구성요소와 거기 닿는 관계의
   종류·태그·배관 번호·흐름·정상 위치·고장 위치)을 남기고, 지문이 바뀌었거나 구성요소를 잃었거나 되찾은 구간만 rev를
-  올린다. 그 구간이 확정이면 적용됨으로 내리고(⑤ 칸은 보관), 잠금이면 잠금을 두고 version_changed를 단다(§5.3).
+  올린다. 상태는 내리지 않는다(확정 단계를 없앰, 규격 §0.2): rev가 올라 ⑤ 칸의 판정에 '범위 바뀜'이 붙고, 잃은 구성요소는
+  묘비(lost)로 남아 그 둘이 재확인을 알린다. 재확인 사유는 이력(recheck)에 남는다. 잠금이면 잠금을 두고 version_changed를 단다(§5.3).
 - ⑤ 결과는 판 이전 줄 번호(step)로 따라간다. 결과에 마지막으로 적용한 줄 번호를 적고 그 뒤 줄만 적용한다(앞 판으로 돌아온
   뒤 그 판에서 단 참조를 되돌아감에 다시 넣지 않음). 줄에는 그대로 이어진 것도 적어, 늦게 따라와도 즉시 옮긴 것과 같은 표다.
 - 0.1 파일의 함수(member_refs·member_digest·legacy_steps·legacy_migrate_results)는 0.1 결과를 처음 이을 때만 쓴다.
@@ -203,13 +204,15 @@ def filling_new_fields():
 
 
 def with_refs(node_set, graph):
-    """판이 같은 집합을 묘비 꼴로 바꾸고, 판 사진이나 확정·잠금 구간의 지문(md3-)이 모자라면 채운 사본. 할 일이 없으면
+    """판이 같은 집합을 묘비 꼴로 바꾸고, 판 사진이나 구간 지문(md3-)이 모자라면 채운 사본. 할 일이 없으면
     입력 그대로. 묘비를 만들지 않는다(읽기만으로 구성요소를 잃지 않음)."""
     if not _usable(node_set, graph) or node_set.get("graph_version") != graph["graph_version"]:
         return node_set
     out = _upgrade(node_set)
     have = out.get("member_digest") or {}
-    todo = {n["node_id"]: n["members"] for n in out["nodes"]  # 적용됨 구간은 지문이 없어도 됨(판이 바뀌면 rev만 오름)
+    # 읽을 때는 확정·잠금 구간의 지문만 채운다(적용됨까지 채우면 고칠 때마다 다음 읽기가 파일을 다시 쓰고 백업을 남긴다). 구간 명령은
+    # 고칠 때 지문을 바로 센다(node_commands). 지문이 없는 구간은 판이 바뀌면 재확인으로 간다(plan의 '기록 없음')
+    todo = {n["node_id"]: n["members"] for n in out["nodes"]
             if n.get("state") in ("confirmed", "locked") and not str(have.get(n["node_id"]) or "").startswith("md3-")}
     fresh = node_digests(graph, todo) if todo else {}
     if out is node_set and not fresh and idmap.has_snapshot(node_set, graph, strict=getattr(_STRICT, "on", False)):
@@ -268,8 +271,8 @@ def plan(node_set, graph):
                 if rec == before_marks.get(nid):  # 원래 값 표시가 바꾼 것뿐임
                     what = _marked_changes([marked[e] for e in moved[nid] if e in marked])
                     recheck[nid] += " (원래 값 표시: %s)" % ", ".join(what) if what else ""
-        elif not legacy_same and n.get("state") in ("confirmed", "locked"):
-            recheck[nid] = "옛 판의 구간 내용 기록이 없음"  # 확정한 적 없는 적용됨 구간은 분석 전이라 판만 옮김
+        elif not legacy_same:
+            recheck[nid] = "옛 판의 구간 내용 기록이 없음"  # 적용됨 구간도 분석했을 수 있어 기록이 없으면 다시 확인(규격 §0.2)
     members = {m for n in ns["nodes"] for m in n["members"]}
     matched = sum(1 for m in members if not idmap.is_tomb(eid.get(m, m)))
     return dict(out, state="kept", matched=matched, table=table, recheck=recheck)
@@ -282,8 +285,8 @@ def _marked_changes(nodes):
 
 
 def migrate_set(node_set, graph, at=None):
-    """(집합, plan). 판 이전을 적용한 사본 또는 입력 그대로. 재확인 구간은 rev가 오르고, 확정이면 적용됨으로 내리며,
-    잠금이면 잠금을 두고 version_changed를 단다. 이미 적용됨인 구간도 구성요소 ID는 새 판으로 바뀐다."""
+    """(집합, plan). 판 이전을 적용한 사본 또는 입력 그대로. 재확인 구간은 rev가 오르고(상태는 그대로, 규격 §0.2),
+    잠금이면 잠금을 두고 version_changed를 단다. 모든 구간의 구성요소 ID는 새 판으로 바뀐다."""
     p = plan(node_set, graph)
     if p["state"] != "kept":
         return node_set, p
@@ -292,7 +295,6 @@ def migrate_set(node_set, graph, at=None):
     table = p["table"]
     out, rep = idmap.apply(_upgrade(node_set), idmap.SET, table)
     old_version = out.get("graph_version")
-    demoted = []
     for n in out["nodes"]:
         why = p["recheck"].get(n["node_id"])
         if why is None:
@@ -301,9 +303,6 @@ def migrate_set(node_set, graph, at=None):
             n["version_changed"] = {"from": old_version, "to": graph["graph_version"], "reason": why, "at": at}
             continue
         n["rev"] = (n.get("rev") or 1) + 1
-        if n.get("state") == "confirmed":
-            n["state"], n["confirmed"] = "applied", None
-            demoted.append(n["node_id"])
     tombs = dict(out.get("tombstones") or {})
     for t, rec in table["new_tombs"].items():  # 있는 묘비 id는 new_tombs에 들지 않아 앞 기록을 덮지 않는다
         tombs[t] = dict(rec, at=at)
@@ -322,7 +321,7 @@ def migrate_set(node_set, graph, at=None):
     out["set_rev"] = (out.get("set_rev") or 0) + 1
     detail = {"from": old_version, "to": graph["graph_version"], "matched": p["matched"], "step": len(lines(out)) + 1}
     detail.update(idmap.record(table))
-    detail.update(unregistered=rep["unregistered"], recheck=dict(sorted(p["recheck"].items())), demoted=demoted)
+    detail.update(unregistered=rep["unregistered"], recheck=dict(sorted(p["recheck"].items())), demoted=[])  # 확정을 푸는 일이 없어짐(옛 읽는 쪽을 위해 빈 목록)
     out["history"].append(store_io.history_row(OP, {"detail": detail}, at))
     return out, p
 
@@ -452,7 +451,7 @@ def notice(node_set):
                         for a, b in sorted((d.get("sheets") or {}).items()))
     return "%s그래프 판이 바뀌어(%s → %s) 구성요소 %d개를 새 판에 다시 맞췄습니다. %s" % (
         "도면 이름이 바뀐 것(%s)을 따라 옮겼습니다. " % renamed if renamed else "", d["from"], d["to"], d["matched"],
-        "내용이 바뀐 구간 %d개만 다시 확인이 필요합니다." % again if again else "확정은 그대로입니다.")
+        "내용이 바뀐 구간 %d개만 다시 확인이 필요합니다('범위 바뀜' 판정)." % again if again else "구간 내용은 그대로입니다.")
 
 
 BACKUP_LABEL = "판이전"

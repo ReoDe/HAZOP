@@ -31,11 +31,11 @@ LATER = "later"              # 아직 화면이 없어 채팅으로 할 수 없�
 CLASS_NAMES = {DISPLAY: "표시", AUTO: "바로", CANDIDATE: "후보", CONFIRM: "확인", NEVER: "안 함", LATER: "아직"}
 NOT_YET = "아직 채팅으로 할 수 없는 동작입니다(화면이 생기면 잇습니다)"
 MAX_ACTIONS = 20             # 한 답의 동작 수(§4.1)
-PENDING_LIMIT = 5            # 사람 확인 전 AI 구간 상한(§4.5 대표 단계)
-REST_LIMIT = 30              # '나머지' 단계 한 요청 상한(§4.5)
+REST_LIMIT = 30              # 한 요청에서 AI가 만드는 새 구간 상한(§4.5. '확인 전 5개'는 확정 단계와 함께 없앰, 구간 규격 §0.2)
 APPROVAL_TTL = 600           # 승인 표지 유효 시간(초, §4.6)
-# 엔진이 사람만 받는 구간 상태 동작(node_commands.STATE_COMMANDS 가운데 채팅이 제안할 수 있는 것). 확인 상자로만 실행된다
-STATE_ACTIONS = frozenset(("nodes.confirm", "nodes.unconfirm", "nodes.lock"))
+# 엔진이 사람만 받는 구간 상태 동작 가운데 채팅이 제안할 수 있는 것. 확정 단계를 없애 확정·확정 해제·잠금을 채팅 동작에서 뺐다
+# (구간 규격 §0.2, 2026-11-26). 엔진 명령은 옛 기록·시험을 위해 남는다
+STATE_ACTIONS = frozenset()
 # 모델이 넣으면 그 동작을 거절하는 키(§4.1, 차단 11). 기록의 신뢰 필드는 앱이 만든다
 FORGED_KEYS = frozenset(("request_id", "answer_id", "action_key", "batch_id", "result", "confirmed_by", "confirmed_at",
                          "approval_digest", "conversation_id", "by", "origin", "reviewer", "accepted_by", "proposed_by",
@@ -174,17 +174,11 @@ ACTIONS = {a.name: a for a in (
            "지식그래프를 다시 만듭니다. 사람 지식과 언급 판단 파일은 그대로 두고, 판이 바뀐 사람 확인은 후보로 돌아갑니다."),
     # ④
     Action("nodes.apply", AUTO, _spec(("set_rev", "int"), ("ops", "list"), graph_id="id"), "④",
-           "§4.3 표·§4.5 상한. 구간 규격 apply_nodes",
-           "AI가 만든 구간 {pending}개를 아직 확인하지 않았습니다. 이 요청으로 {adds}개를 더 만들고 {edits}개를 바꿉니다."),
+           "§4.3 표·§4.5 상한(한 요청 30개). 구간 규격 apply_nodes",
+           "이 요청으로 구간 {adds}개를 만들고 {edits}개를 바꿉니다."),
     Action("nodes.undo", AUTO, _spec(("batch_id_to_undo", "id"), ("set_rev", "int")), "④", "§4.3 표. 구간 규격 undo_batch",
            "묶음 {batch}를 되돌립니다."),
-    Action("nodes.confirm", CONFIRM, _spec(("node_ids", "ids")), "④", "사람 판단. 실행하면 by에 검토자",
-           "구간 {node_ids}을 확정합니다."),
-    # unconfirm·lock은 node_commands와 같이 node_ids 목록(node-commands.md §2, a9c0193)
-    Action("nodes.unconfirm", CONFIRM, _spec(("node_ids", "ids")), "④", "사람 판단",
-           "구간 {node_ids}의 확정을 해제합니다."),
-    Action("nodes.lock", CONFIRM, _spec(("node_ids", "ids")), "④", "분석 마침·잠금. 구간 규격 §5.1 조건을 채운 구간만",
-           "구간 {node_ids}을 분석 마침으로 잠급니다. 잠금은 ④에서 이유를 적어야만 풀립니다."),
+    # nodes.confirm·unconfirm·lock은 뺐다(구간 확정 단계를 없앰, 구간 규격 §0.2). 모델이 내면 '모르는 동작'으로 거절된다
     Action("nodes.unlock", NEVER, _spec(), "④", "차단 9", where="④ 검토구간에서 사람이 이유를 적고 푼다"),
     # ⑤
     Action("analysis.run", CONFIRM, _spec(("node_ids", "ids"), cell_ids="ids"), "⑤",
@@ -498,7 +492,6 @@ class ActionPlanner:
         self._lock = threading.RLock()
         self.done_keys = set()           # 실행(또는 결론)한 action_key: 두 번 실행하지 않는다
         self.conv_batches = set()        # 이번 대화에서 AI가 만든 묶음
-        self.last_add_turn = None        # 마지막으로 AI 구간을 바로 적용한 사용자 질문 번호
         self.exec_seq = 0                # 실행한 동작 수(표지 사이에 다른 동작이 실행됐는지)
         self.requests = {}               # answer_id -> (request_id, request_text, turn)
         self.closed = False
@@ -680,15 +673,6 @@ class ActionPlanner:
                 raise _Reject("%s 구간은 이 동작을 할 수 없음: %s" % (node_state(n), nid))
         item.targets = list(ids)
 
-    def _check_nodes_confirm(self, item, snap):
-        self._need_nodes(item, snap, ("applied",))
-
-    def _check_nodes_unconfirm(self, item, snap):
-        self._need_nodes(item, snap, ("confirmed",))
-
-    def _check_nodes_lock(self, item, snap):
-        self._need_nodes(item, snap, ("confirmed",))
-
     def _check_analysis_run(self, item, snap):
         self._need_nodes(item, snap)
 
@@ -749,8 +733,8 @@ class ActionPlanner:
         nodes = _nodes(snap)
         for o in b.get("ops") or []:
             n = nodes.get(o.get("node_id"))
-            if n is not None and node_state(n) in ("confirmed", "locked"):
-                raise _Reject("확정·잠금 구간이 든 묶음(%s)" % n["node_id"], "④에서 확정 해제 뒤 다시 요청")
+            if n is not None and node_state(n) == "locked":
+                raise _Reject("잠긴 구간이 든 묶음(%s)" % n["node_id"], "④에서 사람이 이유를 적고 잠금을 푼 뒤 다시 요청")
             if n is not None and has_cells(snap, n["node_id"]):
                 raise _Reject("⑤ 칸이 있는 구간이 든 묶음(%s)" % n["node_id"])
         item.targets = sorted({o.get("node_id") for o in b.get("ops") or []})
@@ -815,26 +799,15 @@ class ActionPlanner:
             if op["op"] == "split":  # 나누기로 생기는 구간도 새 AI 구간으로 센다(엔진과 같은 셈, 검토 3)
                 adds += 1
             edits += 1
-        pending = pending_ai(snap)
-        stage = "representative"
-        if adds:
-            if pending + adds > PENDING_LIMIT:
-                if self.last_add_turn is not None and turn <= self.last_add_turn:
-                    raise _Reject("대표 구간 확인 전에는 같은 질문에서 구간을 더 만들지 않음(새 질문 뒤 확인을 받아 진행)")
-                if pending == 0 and adds > PENDING_LIMIT and self.last_add_turn is None:
-                    raise _Reject("대표 구간은 한 번에 %d개까지(먼저 대표 구간을 만들고 사람이 확인)" % PENDING_LIMIT)
-                if adds > REST_LIMIT:
-                    raise _Reject("한 요청에서 만들 수 있는 구간은 %d개" % REST_LIMIT)
-                stage, klass = "rest", CONFIRM
-        item.stage, item.klass, item.targets = stage, klass, sorted(set(targets))
+        if adds > REST_LIMIT:
+            raise _Reject("한 요청에서 만들 수 있는 구간은 %d개" % REST_LIMIT)
+        item.stage, item.klass, item.targets = None, klass, sorted(set(targets))
         if klass == CONFIRM:
-            item.confirm_text = _fill(ACTIONS["nodes.apply"].confirm_text,
-                                      {"pending": pending, "adds": adds, "edits": edits})
+            item.confirm_text = _fill(ACTIONS["nodes.apply"].confirm_text, {"adds": adds, "edits": edits})
 
     def _node_class(self, n, op, snap):
         """§4.3 표 한 칸: AUTO | CONFIRM | "rejected"."""
-        state = node_state(n)
-        if state in ("confirmed", "locked"):
+        if node_state(n) == "locked":
             return "rejected"
         members_change = op["op"] in ("merge", "split", "remove") or bool(op.get("add") or op.get("remove"))
         if has_cells(snap, n["node_id"]):
@@ -848,8 +821,6 @@ class ActionPlanner:
         state = node_state(n)
         if state == "locked":
             return "잠긴 구간(%s)은 채팅으로 바꾸지 않음. ④에서 사람이 이유를 적고 해제해야 함" % n["node_id"]
-        if state == "confirmed":
-            return "확정 구간(%s)은 사람이 확정을 해제한 뒤에 바꿀 수 있음" % n["node_id"]
         return "⑤ 칸이 있는 구간(%s)의 구성요소는 채팅으로 바꾸지 않음" % n["node_id"]
 
     # ---- 승인 표지(§4.6)
@@ -1038,8 +1009,6 @@ class ActionPlanner:
         batch = out.get("batch_id")
         if item.action == "nodes.apply" and batch:
             self.conv_batches.add(batch)
-            if any(isinstance(o, dict) and o.get("op") in ("add", "split") for o in item.args["ops"]):
-                self.last_add_turn = turn
         targets = out.get("node_ids") or out.get("targets") or item.targets
         result = "candidate" if item.klass == CANDIDATE else "ok"
         rec = self._write(item, result, batch_id=batch, targets=targets, confirmed=confirmed, confirmed_by=confirmed_by,
@@ -1251,12 +1220,7 @@ def node_executors(pg, execute):
         return execute(pg, "undo", {"batch_id": args.get("batch_id_to_undo")}, set_rev=args.get("set_rev"),
                        **call.engine_kwargs())
 
-    def state(cmd):
-        return lambda args, call: execute(pg, cmd, {"node_ids": list(args.get("node_ids") or [])}, set_rev=None,
-                                          **call.engine_kwargs())
-
-    return {"nodes.apply": apply, "nodes.undo": undo, "nodes.confirm": state("confirm"),
-            "nodes.unconfirm": state("unconfirm"), "nodes.lock": state("lock")}
+    return {"nodes.apply": apply, "nodes.undo": undo}
 
 
 def result_executors(pg, execute):

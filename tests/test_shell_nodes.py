@@ -73,6 +73,14 @@ class Env(unittest.TestCase):
             args["targets"] = [{"node_id": i, "rev": rows[i]["rev"], "state": rows[i]["state"]} for i in wanted if i in rows]
         return self.engine.dispatch("nodes." + name, dict(args, **kw))
 
+    def lock_directly(self, nid):
+        """잠금은 분석 칸을 다 채워야 해서, 저장본에 잠금 상태를 바로 적는다(옛 잠금 자료와 같은 모양)."""
+        ns = nodes.load(self.pg)
+        n = next(x for x in ns["nodes"] if x["node_id"] == nid)
+        n.update(state="locked", confirmed={"at": "2026-11-26T00:00:00Z", "by": "옛 검토자", "rev": n.get("rev") or 1},
+                 locked={"at": "2026-11-26T00:00:00Z", "by": "옛 검토자", "reason": None})
+        nodes.save(ns)
+
     def create(self, name="구간 가", a=0, b=6, sheet=S101, **kw):
         return self.call("create", {"sheet": sheet, "ids": self.local(sheet, a, b), "name": name}, **kw)
 
@@ -156,16 +164,20 @@ class CommandTest(Env):
         self.assertEqual(api_nodes.summary(self.engine)["nodes"], [])
 
     def test_locked_and_confirmed_refusals_carry_engine_reason(self):
+        """옛 확정 구간은 바로 고친다(구간 확정 단계를 없앰, 규격 §0.2). 잠긴 구간만 엔진 사유와 함께 locked로 거절한다."""
         self.create()
-        self.call("confirm", {"node_ids": ["S1"]})
+        self.assertTrue(self.call("confirm", {"node_ids": ["S1"]})["ok"], "옛 길(엔진 명령)은 남음")
         r = self.call("rename", {"node_id": "S1", "name": "x"})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(api_nodes.summary(self.engine)["nodes"][0]["state"], "confirmed")
+        self.lock_directly("S1")
+        r = self.call("rename", {"node_id": "S1", "name": "y"})
         self.assertFalse(r["ok"])
         self.assertEqual(r["error"]["code"], "locked")
-        self.assertIn("확정 구간", r["error"]["message"])
+        self.assertIn("잠긴 구간", r["error"]["message"])
         r = self.call("unlock", {"node_ids": ["S1"], "reason": "x"})
-        self.assertFalse(r["ok"])
-        self.assertTrue(self.call("unconfirm", {"node_ids": ["S1"]})["ok"])
-        self.assertEqual(api_nodes.summary(self.engine)["nodes"][0]["state"], "applied")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(api_nodes.summary(self.engine)["nodes"][0]["state"], "confirmed")
 
     def test_lock_needs_reason_to_unlock_and_engine_checks_cells(self):
         self.create()
@@ -372,7 +384,7 @@ class CommandTableTest(unittest.TestCase):
         if True:
             names = sorted(k for k in api.COMMANDS if k.startswith("nodes."))
             self.assertEqual(names, ["nodes." + x for x in sorted(
-                ["create", "add_members", "remove_members", "rename", "set_intent", "merge", "split", "remove", "confirm", "unconfirm",
+                ["create", "add_members", "remove_members", "edit_members", "rename", "set_intent", "merge", "split", "remove", "confirm", "unconfirm",
                  "lock", "unlock", "undo", "suggest", "migrate", "catch_up", "exclude_drawing", "discard_lost"])])
             for k in names:
                 spec = api.COMMANDS[k].spec
@@ -550,15 +562,15 @@ class ReviewFixTest(Env):
 
     def test_locked_is_decided_by_state_not_by_wording(self):
         self.create()
-        self.call("confirm", {"node_ids": ["S1"]})
+        self.lock_directly("S1")
         with mock.patch.object(node_commands, "execute", lambda *a, **k: {"ok": False, "refused": [{"target": "x", "code": "rule", "reason": "전혀 다른 문장"}]}):
             r = self.call("rename", {"node_id": "S1", "name": "x"})
             self.assertEqual(r["error"]["code"], "locked")
             self.assertEqual(r["error"]["message"], "전혀 다른 문장")
-        self.call("unconfirm", {"node_ids": ["S1"]})
-        with mock.patch.object(node_commands, "execute", lambda *a, **k: {"ok": False, "refused": [{"target": "x", "code": "rule", "reason": "확정 구간은 이렇게 적혀도"}]}):
+        self.call("unlock", {"node_ids": ["S1"], "reason": "고침"})
+        with mock.patch.object(node_commands, "execute", lambda *a, **k: {"ok": False, "refused": [{"target": "x", "code": "rule", "reason": "잠긴 구간은 이렇게 적혀도"}]}):
             r = self.call("rename", {"node_id": "S1", "name": "x"})
-            self.assertEqual(r["error"]["code"], "failed")     # 문구에 '확정'이 있어도 적용됨 구간이면 locked가 아니다
+            self.assertEqual(r["error"]["code"], "failed")     # 문구에 '잠긴'이 있어도 잠금이 아닌 구간이면 locked가 아니다(옛 확정도 보통 구간)
         with mock.patch.object(node_commands, "execute", lambda *a, **k: {"ok": False, "refused": [{"target": "x", "code": "conflict", "reason": "x"}]}):
             self.assertEqual(self.call("rename", {"node_id": "S1", "name": "x"})["error"]["code"], "stale")
 

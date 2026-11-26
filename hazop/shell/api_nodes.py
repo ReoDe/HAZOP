@@ -371,7 +371,7 @@ def _drawing_texts():
 PROJECT_TEXT = "프로젝트가 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
 STALE_TEXT = "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
 SKIP_TEXT = "고른 것 가운데 %d개는 구성요소가 아닌 선(신호선·계측선)이라 뺐습니다."
-EDIT_COMMANDS = ("add_members", "remove_members", "rename", "set_design_intent", "merge", "split", "remove")
+EDIT_COMMANDS = ("add_members", "remove_members", "edit_members", "rename", "set_design_intent", "merge", "split", "remove")
 
 
 def _error(out, ns, targets, name):
@@ -386,13 +386,13 @@ def _error(out, ns, targets, name):
         return _api().CommandError("failed", text)
     if codes & {"bad_actor", "unknown_command", "bad_args"}:
         return _api().CommandError("bad_args", DISCARD_BAD if name == "discard_lost" else text)
-    held = [t["node_id"] for t in targets if nodes.node_state(node_tools._node(ns, t["node_id"]) or {}) != "applied"]
+    held = [t["node_id"] for t in targets if nodes.node_state(node_tools._node(ns, t["node_id"]) or {}) == "locked"]
     if name in EDIT_COMMANDS + ("discard_lost",) and held:
         return _api().CommandError("locked", DISCARD_HELD if name == "discard_lost" else text)
     return _api().CommandError("failed", DISCARD_GONE if name == "discard_lost" else text)
 
 
-DISCARD_HELD = "확정했거나 잠근 구간입니다. 확정을 해제한 뒤에 찾지 못한 구성요소를 버릴 수 있습니다."
+DISCARD_HELD = "잠근 구간입니다. 잠금을 푼 뒤에 찾지 못한 구성요소를 버릴 수 있습니다."
 DISCARD_GONE = "고른 구성요소를 이 구간의 찾지 못한 목록에서 찾지 못했습니다. 목록을 다시 읽었으니 다시 골라 주세요."
 DISCARD_BAD = "버릴 구성요소를 다시 골라 주세요."
 
@@ -435,6 +435,24 @@ def _members(pg, a):
     if not members:
         raise _api().CommandError("bad_args", "고른 것 가운데 구간에 넣을 수 있는 구성요소가 없습니다(신호선·계측선은 넣지 않습니다).")
     return members, len({(x["sheet"], i) for x in parts for i in x["ids"]}) - len(members)
+
+
+def _side(pg, parts):
+    """[{sheet, ids}] -> (프로젝트 구성요소 ID 목록, 고른 수). 신호선·계측선처럼 구성요소가 아닌 것은 빠진다."""
+    members = list(dict.fromkeys(m for x in parts or [] for m in chatview.lift(pg, x["sheet"], x["ids"])))
+    return members, len({(x["sheet"], i) for x in parts or [] for i in x["ids"]})
+
+
+def _edit_members_args(pg, a):
+    """nodes.edit_members 인자: add·remove는 도면별 고름 [{sheet, ids}]. 더하기·빼기를 한 번에 저장한다(묶음 하나)."""
+    add, picked_add = _side(pg, a.get("add"))
+    remove, picked_remove = _side(pg, a.get("remove"))
+    if not add and not remove:
+        raise _api().CommandError("bad_args", "더하거나 뺄 구성요소가 없습니다(신호선·계측선은 구간에 넣지 않습니다).")
+    both = set(add) & set(remove)
+    if both:
+        raise _api().CommandError("bad_args", "같은 구성요소를 더하고 빼려 했습니다. 다시 골라 주세요.")
+    return {"node_id": a["node_id"], "add": add, "remove": remove}, picked_add + picked_remove - len(add) - len(remove)
 
 
 def _judged(pg, ns, nid):
@@ -578,6 +596,9 @@ def register(commands):
         lambda pg, a: _create_args(pg, a), "고른 구성요소로 구간을 만든다", needs_target=False)
     add("add_members", dict(node_id=nid, sheet=sheet, ids=ids, more=more), with_members(lambda a: {"node_id": a["node_id"]}), "구간에 구성요소를 더한다")
     add("remove_members", dict(node_id=nid, sheet=sheet, ids=ids, more=more), with_members(lambda a: {"node_id": a["node_id"]}), "구간에서 구성요소를 뺀다")
+    side = (v_list(whole_part, 60), False)          # 도면별 고름 [{sheet, ids}]
+    add("edit_members", dict(node_id=nid, add=side, remove=side), _edit_members_args,
+        "구간에 구성요소를 더하고 빼기를 한 번에 저장한다(묶음 하나. 하나라도 걸리면 아무것도 바꾸지 않음)")
     add("rename", dict(node_id=nid, name=(v_str(1, 120), True)), lambda pg, a: ({"node_id": a["node_id"], "name": a["name"]}, 0), "구간 이름을 고친다")
     add("set_intent", dict(node_id=nid, text=(v_str(0, 2000), True)), lambda pg, a: ({"node_id": a["node_id"], "text": a["text"]}, 0),
         "설계 의도를 고친다(빈 글이면 지움)")
@@ -586,9 +607,10 @@ def register(commands):
         with_members(lambda a: {"node_id": a["node_id"], "name": a.get("name")}), "고른 구성요소를 떼어 새 구간으로 나눈다")
     add("remove", dict(node_id=nid, archive=(v_bool(), False)), lambda pg, a: ({"node_id": a["node_id"], "archive": bool(a.get("archive"))}, 0),
         "구간을 지운다(분석 칸에 판정이 있으면 지우지 않고 needs_archive를 답한다)")
-    add("confirm", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "구간을 확정한다")
-    add("unconfirm", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "구간 확정을 푼다")
-    add("lock", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "분석을 마치고 구간을 잠근다")
+    # 확정·확정 해제·잠금은 화면이 부르지 않는다(구간 확정 단계를 없앰, 규격 §0.2). 옛 기록·시험을 위해 명령은 남긴다
+    add("confirm", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "(옛 길) 구간을 확정한다. 화면은 부르지 않음")
+    add("unconfirm", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "(옛 길) 구간 확정을 푼다. 화면은 부르지 않음")
+    add("lock", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "(옛 길) 분석을 마치고 구간을 잠근다. 화면은 부르지 않음")
     add("unlock", dict(node_ids=nids, reason=(v_str(1, 500), True)), lambda pg, a: ({"node_ids": a["node_ids"], "reason": a["reason"]}, 0),
         "잠금을 푼다(이유를 적어야 함)")
     add("discard_lost", dict(node_id=nid, keys=(v_list(v_str(1, 100), 500), False)),

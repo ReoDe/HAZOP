@@ -92,9 +92,12 @@ def check_round_trip(g, s):
     hit = set(sn.nodes_of(done, gone))
     near = {x for e in g["edges"] if gone in (e.get("nodes") or []) for x in e["nodes"]}  # 그 요소에 닿는 관계도 내용
     touched = {n["node_id"] for n in done["nodes"] if near & set(n["members"])}
-    states = {n["node_id"]: n["state"] for n in after["nodes"]}
-    if sn.is_stale(after, changed) or any(states[nid] != "applied" for nid in hit)             or any(states[nid] != "confirmed" for nid in states if nid not in hit | touched):
-        f.append("구성요소가 바뀐 그래프 판에서 그 구간만 재확인으로 내리지 못함(%s)" % sorted(hit))
+    states = {n["node_id"]: (n["state"], n["rev"]) for n in after["nodes"]}
+    rev0 = {n["node_id"]: n.get("rev") or 1 for n in done["nodes"]}
+    # 재확인 구간은 상태를 내리지 않고 분석 판(rev)을 올린다(구간 확정 단계를 없앰, 구간 규격 §0.2)
+    if sn.is_stale(after, changed) or any(states[nid] != ("confirmed", rev0[nid] + 1) for nid in hit) \
+            or any(states[nid] != ("confirmed", rev0[nid]) for nid in states if nid not in hit | touched):
+        f.append("구성요소가 바뀐 그래프 판에서 그 구간만 재확인(분석 판 올림)으로 표시하지 못함(%s)" % sorted(hit))
     sn.save(done)
     newer = dict(g, graph_version=g["graph_version"] + "-new")
     moved = sn.load(newer)

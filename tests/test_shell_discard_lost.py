@@ -92,15 +92,20 @@ class DiscardTest(Base):
 
 
 class RefusalTest(Base):
-    def test_a_confirmed_section_is_refused_as_locked_with_screen_words(self):
+    def test_a_locked_section_is_refused_as_locked_with_screen_words(self):
+        """옛 확정 구간은 바로 버린다(구간 확정 단계를 없앰, 구간 규격 §0.2). 잠긴 구간만 locked로 거절한다."""
         self.unconfirm_if_needed()
         out = self.cmd("confirm", {"node_ids": [self.nid]})
         self.assertTrue(out["ok"], out)
+        ns = sn.read_as_is(self.g)
+        n = next(x for x in ns["nodes"] if x["node_id"] == self.nid)
+        n.update(state="locked", locked={"at": "2026-11-26T00:00:00Z", "by": "옛 검토자", "reason": None})
+        sn.save(ns)
         key = self.detail()["lost_items"][0]["key"]
         out = self.cmd("discard_lost", {"node_id": self.nid, "keys": [key]})
         self.assertFalse(out["ok"])
         self.assertEqual(out["error"]["code"], "locked")
-        self.assertIn("확정을 해제한 뒤", out["error"]["message"])
+        self.assertIn("잠금을 푼 뒤", out["error"]["message"])
         self.assertEqual(len(self.detail()["lost_items"]), self.row()["lost"])
 
     def test_an_unknown_key_is_refused_without_internal_words(self):

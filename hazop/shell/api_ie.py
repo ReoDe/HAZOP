@@ -64,7 +64,7 @@ def _context(engine):
     if nodes.is_stale(ns, pg):  # 다시 추출 뒤 판 이전 전: 옛 판 참조를 새 판 그래프로 보거나 고치지 않는다(hazop.study.follow)
         return None, follow.STALE + "."
     if not [n for n in ns["nodes"] if nodes.is_active(n)]:
-        return None, "확정한 구간이 아직 없습니다. 구간을 확정하고 분석한 뒤 초기사건을 봅니다."
+        return None, "구간이 아직 없습니다. 구간을 만들고 분석한 뒤 초기사건을 봅니다."
     try:
         doc, _fp = R._load(ns)
     except (OSError, ValueError) as exc:

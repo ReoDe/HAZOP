@@ -92,18 +92,27 @@ class ChatToPanelTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: len(self.sessions[-1].asked) == before + 1, 10))
         self.assertIn("나머지 구간도 나눠 주세요", self.sessions[-1].asked[-1][0])
 
+    def rename_action(self, target, name):
+        """앞 대화의 AI 구간 이름 고치기: 사람 확인이 필요한 구간 동작(옛 시험은 nodes.confirm을 썼다. 구간 확정 단계를 없앰, 구간 규격 §0.2)."""
+        return {"action": "nodes.apply", "args": {"set_rev": self.ns()["set_rev"],
+                                                  "ops": [{"op": "edit", "node_id": target, "name": name}]}, "why": "이름 고침"}
+
+    def name_of(self, target):
+        return next(n for n in self.ns()["nodes"] if n["node_id"] == target)["name"]
+
     def test_confirm_box_runs_only_after_the_button_and_uses_the_reviewer(self):
         win = self.window()
         self.switch_project(win, "SNP")
         self.propose(win, [self.apply_action(self.cands(3))])
         target = self.ns()["nodes"][0]["node_id"]
-        self.propose(win, [{"action": "nodes.confirm", "args": {"node_ids": [target]}, "why": "확정"}], "S1 확정해 줘")
+        win.chat.new_conversation()                      # 앞 대화의 AI 묶음 -> 고치려면 사람 확인
+        self.propose(win, [self.rename_action(target, "확인한 새 이름")], "S1 이름 고쳐 줘")
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.actbox.confirm').length") or 0) == 1, 10), self.text(win)[-400:])
-        self.assertFalse(next(n for n in self.ns()["nodes"] if n["node_id"] == target).get("confirmed"), "누르기 전에는 확정하지 않는다")
+        self.assertEqual(self.name_of(target), "대표 구간 1", "누르기 전에는 고치지 않는다")
         self.assertTrue(self.click(win, "button[aria-label='실행']"))
-        self.assertTrue(wait_for(lambda: bool(next(n for n in self.ns()["nodes"] if n["node_id"] == target).get("confirmed")), 10))
+        self.assertTrue(wait_for(lambda: self.name_of(target) == "확인한 새 이름", 10))
         node = next(n for n in self.ns()["nodes"] if n["node_id"] == target)
-        self.assertEqual(node["confirmed"]["by"], "검토자A")
+        self.assertEqual((node["name_by"], node["state"], node["confirmed"]), ("ai", "applied", None), "글은 AI 것, 확정자 이름은 남지 않음")
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.actbox.confirm').length") or 0) == 0, 10))
 
     def test_decline_leaves_everything_as_it_was(self):
@@ -111,11 +120,12 @@ class ChatToPanelTest(W.ShellBase):
         self.switch_project(win, "SNP")
         self.propose(win, [self.apply_action(self.cands(3))])
         target = self.ns()["nodes"][0]["node_id"]
-        self.propose(win, [{"action": "nodes.confirm", "args": {"node_ids": [target]}, "why": "확정"}], "S1 확정해 줘")
+        win.chat.new_conversation()
+        self.propose(win, [self.rename_action(target, "확인한 새 이름")], "S1 이름 고쳐 줘")
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.actbox.confirm').length") or 0) == 1, 10))
         self.assertTrue(self.click(win, "button[aria-label='하지 않음']"))
         self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.actbox.confirm').length") or 0) == 0, 10))
-        self.assertFalse(next(n for n in self.ns()["nodes"] if n["node_id"] == target).get("confirmed"))
+        self.assertEqual(self.name_of(target), "대표 구간 1")
 
     def test_confirm_box_lists_the_real_targets_and_expands_many(self):
         win = self.window()

@@ -84,8 +84,8 @@ def _screen_status(n):
 
 
 def scope_rows(ns):
-    """행렬 행이 되는 구간 = 확정·잠금 구간 전부(규격 study-node-segmentation §0 D6·S4). 등급 '낮음'은 정렬에만 써 맨 아래로 둔다.
-    v2에는 스크리닝 제외 구간이 없다: 옛 제외 구간은 집합을 읽을 때 미확정으로 내려온다(nodes.settle_screen)."""
+    """행렬 행이 되는 구간 = 분석에 드는 구간 전부(확정 단계를 없애 모든 구간, 규격 study-node-segmentation §0.2). 등급 '낮음'은
+    정렬에만 써 맨 아래로 둔다. v2에는 스크리닝 제외 구간이 없다: 옛 제외 구간은 읽을 때 적용됨으로 내려와 행에 든다(nodes.settle_screen)."""
     shown = [n for n in ns["nodes"] if nodes.is_active(n)]
     return [n for n in shown if _screen_status(n) != "low"] + [n for n in shown if _screen_status(n) == "low"]
 
@@ -182,7 +182,7 @@ def summary(engine):
             "stale": nodes.is_stale(ns, pg)}       # 다시 추출로 그래프 판이 바뀌었는데 구간 집합이 아직 판 이전 전이면 True: 옛 참조의 자리를 새 그래프로 확인하지 않는다
     if legacy or not active:
         return dict(base, empty=True, nodes=[], deviations=[], matrix={}, ver="none", kpi=_kpi(None),
-                    reason="구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요." if legacy else "확정한 구간이 아직 없습니다.")
+                    reason="구간이 이전 형식으로 저장돼 있습니다. 구간 패널에서 '새 형식으로 바꾸기'를 먼저 눌러 주세요." if legacy else "구간이 아직 없습니다.")
     try:
         doc, fp = _load(ns)
     except (OSError, ValueError) as exc:
@@ -618,17 +618,9 @@ def _plan(engine, a):
 
 
 def _left_out(pg, scope):
-    """확정하지 않아 이번 실행에서 빠지는 구간 [{node_id, name}](전체 실행일 때만). 실행 확인 카드가 말없이 빼지 않게 이름을 보인다(HZ-DSN-06 U9)."""
-    if scope != "all":
-        return []
-    from hazop.study import nodes
-    try:
-        full, _legacy = _node_set(pg)
-    except Exception:  # noqa: BLE001 - 안내 한 줄: 못 읽으면 비운다
-        return []
-    # lost: 도면이 바뀌어 찾지 못한 구성요소가 남은 구간(판 이전이 확정을 푼 구간이 대개 이것). 화면이 '그냥 초안'과 갈라 말한다
-    return [{"node_id": n["node_id"], "name": n.get("name") or n["node_id"], "lost": len(n.get("lost") or [])}
-            for n in full.get("nodes") or [] if nodes.node_state(n) == "applied"]
+    """이번 전체 실행에서 빠지는 미확정 구간 [{node_id, name, lost}]. 확정 단계를 없애(규격 §0.2) 늘 빈 목록이다.
+    실행 확인 카드(HZ-DSN-06 U9)가 읽는 키라 꼴은 남긴다. 잠긴 구간은 _locked_out이 센다."""
+    return []
 
 
 def _locked_out(pg, scope):
