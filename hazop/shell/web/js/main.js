@@ -21,6 +21,7 @@ import { QueueCard, QueueLine } from "./queue/card.js";
 import { ReviewConfirm, setOpeners as setReviewOpeners, startReview, wire as wireReview } from "./review/review.js";
 import { RevertGuard } from "./review/revert_guard.js";
 import { locate } from "./locate.js";
+import { wireUndo } from "./undo.js";
 
 // '다음에 할 일' 단추가 가는 자리(엔진 next의 go). 도면 위 자리로 갈 때는 열린 패널을 닫는다(가리지 않게). 패널 모듈은 누를 때 읽는다
 setGo("panel:drawings#titleblock", async (t) => { const m = await import("./panels/titleblock.js"); if (t) m.focusMaterial(t); else store.set({ panel: "titleblock" }); });
@@ -283,6 +284,7 @@ async function boot() {
   setReviewOpeners(openQueue, openSheet, (gid) => queueStore.get().open && queueStore.get().kind === "ai" && queueStore.get().gid === gid);
   wireReview();
   pinFixedPanels();
+  wireUndo();
   render(html`<${App} />`, document.getElementById("app"));
   loadPanelCss();
   await loadIcons();

@@ -265,6 +265,7 @@ export async function submitCard() {
   editCard({ busy: true, error: null });
   try {
     const r = await cmd("nodes.create", Object.assign({ project_id: list.project_id }, args, { name: card.name.trim(), design_intent: card.intent.trim() || undefined, set_rev: list.set_rev }));
+    remember("create", [r && r.batch_id]);
     // 고르기 모드는 그대로: 다음 구간을 바로 끌어 고른다(HZ-DSN-06 U9, Esc·이동 단추로 끈다). 응답을 기다리는 사이 새로 고른 것은 남긴다
     const made = r.node_ids && r.node_ids[0];
     const after = made ? Object.assign(blankCard({ made, batch: r.batch_id, name: card.name.trim(), intent: card.intent || "", suggest: card.suggest }), { saved: { name: card.name.trim(), intent: card.intent || "" } }) : null;
@@ -304,6 +305,16 @@ async function saveMade(card) {
   return true;
 }
 
+// ---------------------------------------------------------------- 되돌리기 잇기(undo.js가 건다)
+let history = null;
+export function setHistory(h) { history = h; }
+/** 저장에 성공한 묶음들을 한 단계의 '되돌리기'로 쌓는다: 뒤 묶음부터 되돌린다. */
+function remember(label, batches) {
+  const list = batches.filter(Boolean);
+  if (!history || !list.length) return;
+  history.push(label, async () => { for (const b of list.slice().reverse()) if (!(await undo(b))) return false; return true; }, list);
+}
+
 // ---------------------------------------------------------------- 명령
 async function afterError(e) {
   nodes.set({ error: errorText(e), busy: false });
@@ -312,7 +323,7 @@ async function afterError(e) {
 }
 
 /** 구간 명령 하나. 화면이 본 판(set_rev, 대상 rev·state)을 함께 보낸다. 거절되면 엔진 사유를 error에 둔다. */
-export async function run(name, args, targetIds) {
+export async function run(name, args, targetIds, { keep = true } = {}) {
   nodes.set({ busy: true, error: null, needArchive: null });
   if (reading) { try { await reading; } catch (e) { /* 읽기 실패: 가진 판으로 보낸다(엔진이 판을 대조한다) */ } }   // 패널을 열며 읽는 중이면 그 판으로 보낸다
   const { list } = nodes.get();
@@ -320,6 +331,7 @@ export async function run(name, args, targetIds) {
     const r = await cmd("nodes." + name, Object.assign({ project_id: list.project_id, set_rev: list.set_rev }, args, targetIds && targetIds.length ? { targets: targetsOf(list.nodes, targetIds) } : {}));
     nodes.set({ busy: false });
     if (r && r.skipped_text) shell.set({ toast: { text: r.skipped_text, kind: "info" } });   // 구성요소가 아니라 뺀 선이 있으면 알린다
+    if (keep && name !== "undo" && r && r.batch_id) remember(name, [r.batch_id]);
     await refresh();
     return r;
   } catch (e) {
@@ -331,7 +343,11 @@ export async function run(name, args, targetIds) {
 export const rename = (id, name) => run("rename", { node_id: id, name }, [id]);
 export const setIntent = (id, text) => run("set_intent", { node_id: id, text }, [id]);
 export const unlock = (ids, reason) => run("unlock", { node_ids: ids, reason }, ids);
-export const undo = (batchId) => run("undo", { batch_id: batchId });
+export async function undo(batchId) {
+  const r = await run("undo", { batch_id: batchId });
+  if (r && history) history.forget(batchId);      // 작업 기록·카드에서 되돌린 묶음은 Ctrl+Z 쌓임에서도 뺀다
+  return r;
+}
 /** 찾지 못한 구성요소를 사람이 확인하고 버린다(keys는 상세의 lost_items key). 되돌리기 묶음으로 남는다. */
 export const discardLost = (id, keys) => run("discard_lost", { node_id: id, keys }, [id]);
 
@@ -347,13 +363,14 @@ export async function removeMany(ids) {
   for (const id of ids) {
     const row = nodes.get().list.nodes.find((n) => n.node_id === id);
     if (!row || row.state === "locked") continue;
-    let r = await run("remove", { node_id: id }, [id]);
-    if (r && r.needs_archive) r = await run("remove", { node_id: id, archive: true }, [id]);
+    let r = await run("remove", { node_id: id }, [id], { keep: false });
+    if (r && r.needs_archive) r = await run("remove", { node_id: id, archive: true }, [id], { keep: false });
     if (!r) break;
     if (r.batch_id) batches.push(r.batch_id);
   }
   nodes.set((s) => ({ checked: s.checked.filter((x) => s.list.nodes.some((n) => n.node_id === x && n.state === "locked")) }));
   if (!nodes.get().list.nodes.some((n) => n.node_id === nodes.get().focus)) nodes.set({ focus: null, detail: null, members: {} });
+  remember("remove", batches);
   return batches;
 }
 

@@ -347,6 +347,11 @@ export class SheetCore {
   _command(c) {
     if (c.type === "zoomTo") this.zoomTo(c.ids || [], c.pad);
     else if (c.type === "fit") this.fit();
+    else if (c.type === "view" && c.view && c.view.k > 0) {      // 되돌리기: 보던 자리·배율 그대로
+      this.view = { x: c.view.x, y: c.view.y, k: Math.min(Math.max(c.view.k, K_MIN), K_MAX) };
+      this._applyView();
+      this._viewChanged(true);
+    }
     else if (c.type === "clearMarks") {
       this.marks = c.id == null ? [] : this.marks.filter((m) => String(m.id).split("#")[0] !== String(c.id).split("#")[0]);
       this._renderMarks();
