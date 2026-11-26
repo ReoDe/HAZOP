@@ -112,18 +112,15 @@ function NewNodeCard() {
   }
   return html`<form class="float newnode" role="dialog" aria-label=${"새 구간 " + nextNo} onSubmit=${submit}
     onKeyDown=${(e) => { if (e.key === "Escape") { e.stopPropagation(); N.closeCard(); } else if (e.key === "Enter" && (e.ctrlKey || e.target.tagName !== "TEXTAREA")) { e.preventDefault(); N.submitCard(); } }}>
-    <div class="nn-h"><span class="seg-dot" style=${"background:" + colorOf(list.concat([{ node_id: nextNo }]), nextNo)}></span><b>구간 ${nextNo}을 만들었습니다</b>
-      ${sg ? html`<${Chip}>구성요소 ${sg.count}<//>` : null}<${Btn} kind="ghost" sm=${true} icon="x" label="카드 닫기" title="닫기 (Esc)" onClick=${N.closeCard} /></div>
+    <div class="nn-h"><span class="seg-dot" style=${"background:" + colorOf(list.concat([{ node_id: nextNo }]), nextNo)}></span><b>${nextNo}</b>
+      <${Btn} kind="ghost" sm=${true} icon="x" label="카드 닫기" title="닫기 (Esc)" onClick=${N.closeCard} /></div>
     <div class="field"><label for="nn-name">이름</label>
       <input id="nn-name" class="textbox" autofocus value=${card.name} maxlength="120" onInput=${(e) => N.editCard({ name: e.target.value })} /></div>
     <div class="field"><label for="nn-intent">설계 의도</label>
       <textarea id="nn-intent" class="textbox" rows="3" maxlength="2000" value=${card.intent} onInput=${(e) => N.editCard({ intent: e.target.value })}></textarea></div>
     ${sg && sg.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${sg.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
     ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//>` : null}
-    <div class="muted small">이름과 설계 의도는 여기서 고칠 수 있습니다. 그대로 두려면 Esc나 다음 구간 고르기로 닫으세요.</div>
-    <div class="acts-row"><${Btn} kind="primary" icon="check" label="이름·설계 의도 저장" disabled=${card.busy || !card.name.trim()} onClick=${submit}>저장 <kbd>Enter</kbd><//>
-      <${Btn} label="이 구간 만들기 되돌리기" disabled=${card.busy} onClick=${N.undoMade}>되돌리기<//>
-      <${Btn} kind="ghost" label="카드 닫기" onClick=${N.closeCard}>닫기<//></div></form>`;
+    <div class="acts-row"><${Btn} kind="primary" icon="check" label="이름·설계 의도 저장" disabled=${card.busy || !card.name.trim()} onClick=${submit}>저장 <kbd>Enter</kbd><//></div></form>`;
 }
 
 function OutsideChip() {

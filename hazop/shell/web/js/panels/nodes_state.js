@@ -223,7 +223,7 @@ export function dismissError() { nodes.set({ error: null, needArchive: null }); 
 
 // ---------------------------------------------------------------- 카드
 /** '구간 만들기'(또는 고른 뒤 Enter): 제안 이름으로 바로 만들고, 만든 구간의 이름·설계 의도를 고치는 카드를 연다(실제 창 4차: 2단 → 1단).
- *  잘못 만들었으면 그 카드의 '되돌리기'(만든 묶음 되돌리기)나 구간 패널의 지우기로 푼다. 제안 이름이 없으면 '구간 S<n>'. */
+ *  잘못 만들었으면 Ctrl+Z나 구간 패널의 지우기로 푼다. 제안 이름이 없으면 '구간 S<n>'. */
 export async function openCard() {
   const args = pickArgs();
   if (!args) return;
@@ -245,16 +245,6 @@ export async function openCard() {
 
 export function editCard(patch) { nodes.set((s) => ({ card: s.card ? Object.assign({}, s.card, patch) : s.card })); }
 export function closeCard() { nodes.set({ card: null }); }
-
-/** 만든 구간 카드의 '되돌리기': 만든 묶음을 되돌린다(구간이 사라진다). */
-export async function undoMade() {
-  const c = nodes.get().card;
-  if (!c || !c.made || c.busy) return null;
-  editCard({ busy: true });
-  const r = c.batch ? await undo(c.batch) : null;
-  nodes.set({ card: null });
-  return r;
-}
 
 export async function submitCard() {
   const { card, selection, picks, list } = nodes.get(), args = pickArgs();
@@ -330,7 +320,6 @@ export async function run(name, args, targetIds, { keep = true } = {}) {
   try {
     const r = await cmd("nodes." + name, Object.assign({ project_id: list.project_id, set_rev: list.set_rev }, args, targetIds && targetIds.length ? { targets: targetsOf(list.nodes, targetIds) } : {}));
     nodes.set({ busy: false });
-    if (r && r.skipped_text) shell.set({ toast: { text: r.skipped_text, kind: "info" } });   // 구성요소가 아니라 뺀 선이 있으면 알린다
     if (keep && name !== "undo" && r && r.batch_id) remember(name, [r.batch_id]);
     await refresh();
     return r;
@@ -345,7 +334,9 @@ export const setIntent = (id, text) => run("set_intent", { node_id: id, text }, 
 export const unlock = (ids, reason) => run("unlock", { node_ids: ids, reason }, ids);
 export async function undo(batchId) {
   const r = await run("undo", { batch_id: batchId });
-  if (r && history) history.forget(batchId);      // 작업 기록·카드에서 되돌린 묶음은 Ctrl+Z 쌓임에서도 뺀다
+  if (r && history) history.forget(batchId);      // 작업 기록에서 되돌린 묶음은 Ctrl+Z 쌓임에서도 뺀다
+  const card = nodes.get().card;
+  if (r && card && card.made && card.batch === batchId) nodes.set({ card: null });
   return r;
 }
 /** 찾지 못한 구성요소를 사람이 확인하고 버린다(keys는 상세의 lost_items key). 되돌리기 묶음으로 남는다. */

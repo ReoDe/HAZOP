@@ -402,7 +402,7 @@ class NodeTrashTest(NodeListBase):
         self.assertEqual(self.boxes(win, "구간"), [True, False])
         ticked = "[...document.querySelectorAll('.nrow input[type=checkbox]')].map((x) => x.checked)"
         self.assertEqual(self.jsj(win, ticked), [True, True, False], "잠긴 구간은 전체 선택에서 빠진다")
-        self.assertIn("구간 만들기", self.text(win))
+        self.assertIn("2개 고름", self.text(win))
         self.check(win, "구간 전체 선택")
         self.assertEqual(self.jsj(win, ticked), [False, False, False], "다시 누르면 모두 해제")
         self.check(win, "구간 전체 선택")

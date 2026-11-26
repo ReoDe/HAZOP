@@ -252,10 +252,10 @@ class CreateUndoTest(UndoBase):
         self.key(win, "Enter", ctrl=False)
         self.assertTrue(wait_for(lambda: len(self.summary(win)) == 1, 20))
         pump(SETTLE)
-        self.js(win, "window.__ns.closeCard()")
-        pump(0.5)
+        self.assertTrue(self.js(win, "!!document.querySelector('.newnode') && !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)"), "만든 직후 카드는 열려 있고 초점은 입력 칸에 없다")
         self.undo(win)
-        self.assertTrue(wait_for(lambda: len(self.summary(win)) == 0, 20), "만든 구간이 한 번에 사라진다")
+        self.assertTrue(wait_for(lambda: len(self.summary(win)) == 0, 20), "카드가 열려 있어도 Ctrl+Z 한 번에 만든 구간이 사라진다")
+        self.assertTrue(wait_for(lambda: self.js(win, "!document.querySelector('.newnode')") is True, 10), "카드도 닫힌다")
         self.undo(win)
         self.assertEqual(self.picks(win), [a], "그 앞의 행동(둘째 Ctrl 고름)")
 

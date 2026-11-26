@@ -63,7 +63,7 @@ function Editable({ label, value, multiline, disabled, onSave, hint, required })
   const props = { class: "textbox", "aria-label": label, value: text, onInput: (e) => setText(e.target.value), onKeyDown, onBlur: () => finish(true) };
   return html`<div class="field"><label>${label}</label>
     ${editing ? (multiline ? html`<textarea ref=${box} rows="3" maxlength="2000" ...${props}></textarea>` : html`<input ref=${box} maxlength="120" ...${props} />`)
-    : html`<div class="kv"><span class="val">${value || html`<span class="muted">비어 있음</span>`}</span>
+    : html`<div class="kv"><span class="val">${value || ""}</span>
         <${Btn} sm=${true} kind="ghost" icon="pencil" label=${label + " 고치기"} disabled=${disabled} title=${disabled ? hint : label + " 고치기"} onClick=${() => { done.current = false; setText(value || ""); }} /></div>`}</div>`;
 }
 
@@ -105,8 +105,7 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
     <${Editable} key=${"intent-" + n.node_id} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} />
     ${d && d.boundary && d.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${d.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
     ${n.sheets.length ? html`<div class="field"><label>도면</label><div class="acts-row" role="group" aria-label="도면별로 보기">${n.sheets.map((sh, i) => html`<button type="button" class="chip id" key=${sh.graph_id}
-      title=${"이 구간을 " + sheetName(sh.graph_id, drawings) + " 도면에서 보기"} onClick=${() => N.goToSheet(sh.graph_id)}>${sheetName(sh.graph_id, drawings)} · ${sh.n}</button>`)}</div></div>` : null}
-    ${d && d.majors_total > 2 ? html`<div class="muted small">주요 기기 ${d.majors_total}개: ${d.majors.join(", ")}${d.majors_total > d.majors.length ? " …" : ""}</div>` : null}
+      title=${"이 구간을 " + sheetName(sh.graph_id, drawings) + " 도면에서 보기"} onClick=${() => N.goToSheet(sh.graph_id)}>${sheetName(sh.graph_id, drawings)}</button>`)}</div></div>` : null}
     ${n.overlaps.length ? html`<div class="field"><label>겹침</label><div class="acts-row">${n.overlaps.map((o) => html`<button type="button" class="chip warn" onClick=${() => N.focusNode(o.node_id, { show: true })} title="이 구간으로 가기">${o.node_id} · ${o.shared}개</button>`)}</div></div>` : null}
     <${LostItems} key=${n.node_id} n=${n} d=${d} busy=${busy} />
     ${d && d.members.length ? html`<details class="field"><summary>구성요소 ${d.members_total}개${d.members_total > d.members.length ? " (앞 " + d.members.length + "개)" : ""}</summary>

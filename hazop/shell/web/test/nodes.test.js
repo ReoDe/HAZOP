@@ -158,7 +158,7 @@ export const tests = [
     assert.equal(N.nodes.get().card, null, "저장하면 닫힌다");
     host.remove();
   } },
-  { name: "구간 만들기(실제 창 4차): 만든 카드의 되돌리기는 만든 묶음을 되돌리고, 안 고친 카드는 다음 고르기에서 닫힌다", async run(assert) {
+  { name: "구간 만들기(실제 창 4차): 만든 카드에는 되돌리기 단추가 없고, 만든 묶음을 되돌리면 카드가 닫히며, 안 고친 카드는 다음 고르기에서 닫힌다", async run(assert) {
     await setup();
     engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "", count: 1, asked: 1, boundary: [], overlaps: [] } }
       : name === "nodes.create" ? { ok: true, data: { set_rev: 5, node_ids: ["S4"], batch_id: "B9" } } : { ok: true, data: { set_rev: 6 } });
@@ -166,7 +166,8 @@ export const tests = [
     N.setSelection(["n1"]);
     await N.openCard();
     assert.equal(sent.find((m) => m.name === "nodes.create").args.name, "구간 S4", "제안 이름이 없으면 기본 이름");
-    await N.undoMade();
+    assert(!N.undoMade, "카드의 되돌리기 길은 없다(Ctrl+Z)");
+    await N.undo("B9");
     assert.equal(sent.filter((m) => m.name === "nodes.undo").map((m) => m.args.batch_id), ["B9"]);
     assert.equal(N.nodes.get().card, null);
     N.setSelection(["n2"]);
@@ -260,7 +261,7 @@ export const tests = [
     N.focusNode("S2");
     await tick();
     const chips = [...host.querySelectorAll('[aria-label="도면별로 보기"] button')];
-    assert.equal(chips.map((c) => c.textContent.trim()), ["SNP-M-101 · 3", "SNP-M-102 · 2"]);
+    assert.equal(chips.map((c) => c.textContent.trim()), ["SNP-M-101", "SNP-M-102"]);
     assert(!host.textContent.includes("S3 → SNP-M-102에서 계속"), "이어짐 칩은 없다(도면 칩이 말한다)");
     const opened = [];
     const R = await import("../js/panels/results_state.js");
@@ -425,7 +426,7 @@ export const tests = [
     assert.equal(N.nodes.get().selection, []);
     assert.equal(N.nodes.get().focus, "S4");
     const card = host.querySelector(".newnode");
-    assert(card && card.textContent.includes("구간 S4을 만들었습니다") && !card.textContent.includes("겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
+    assert(card && !/만들었습니다|여기서 고칠 수|구성요소 3|되돌리기/.test(card.textContent) && card.textContent.includes("S4") && !card.textContent.includes("겹칩니다") && card.querySelector("#nn-name").value === "RC-RV01 → RC-SG01", "카드 " + (card && card.textContent));
     const intent = card.querySelector("#nn-intent");
     intent.value = "원자로 출구를 증기발생기로 보냄";
     intent.dispatchEvent(new Event("input", { bubbles: true }));
@@ -614,12 +615,12 @@ tests.push({ name: "고르기: 2,000개를 넘겨 잘렸다는 사실을 막대�
   host.remove();
 } });
 
-tests.push({ name: "구간 연결: 뺀 선(신호선·계측선)이 있으면 답의 문장을 알림으로 보인다", async run(assert) {
+tests.push({ name: "구간 연결: 뺀 선(신호선·계측선)이 있으면 알림을 띄우지 않고 결과만 보인다", async run(assert) {
   await setup();
   store.set({ toast: null });
   engine.reply = () => ({ ok: true, data: { set_rev: 5, batch_id: "B3", node_ids: ["S1"], skipped: 2, skipped_text: "고른 것 가운데 2개는 구성요소가 아닌 선(신호선·계측선)이라 뺐습니다." } });
   await N.run("add_members", { node_id: "S1", sheet: "graph-A", ids: ["n1", "n2", "s1", "s2"] }, ["S1"]);
-  assert.equal(store.get().toast && store.get().toast.text, "고른 것 가운데 2개는 구성요소가 아닌 선(신호선·계측선)이라 뺐습니다.");
+  assert.equal(store.get().toast, null, "뺀 선은 알리지 않는다(화면 원칙 2.2)");
   store.set({ toast: null });
 } });
 

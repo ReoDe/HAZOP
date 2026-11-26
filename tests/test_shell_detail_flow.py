@@ -129,11 +129,13 @@ class SlimDetailTest(DetailBase):
             self.assertNotIn(gone, d["text"], gone)
         for kept in ("이름", "설계 의도"):
             self.assertIn(kept, d["labels"])
-        self.assertEqual(d["sheets"], ["SNP-M-101 · 3", "SNP-M-102 · 4"])
+        self.assertEqual(d["sheets"], ["SNP-M-101", "SNP-M-102"])
         self.assertTrue(any(x.startswith("구성요소 ") for x in d["labels"]), d["labels"])
         self.assertEqual(d["open"], [False], "구성요소 목록은 접혀 있다")
         self.focus(win, b)
-        self.assertEqual(self.jsj(win, DETAIL)["sheets"], ["SNP-M-101 · 3"], "도면이 하나여도 도면 칩을 둔다")
+        self.assertEqual(self.jsj(win, DETAIL)["sheets"], ["SNP-M-101"], "도면이 하나여도 도면 칩을 둔다")
+        text = self.js(win, "document.querySelector('.ndetail').innerText")
+        self.assertNotRegex(text, "비어 있음|주요 기기", "자리표 글과 요약 줄은 없다")
         # 도면 칩: 그 도면을 전체 맞춤으로 열고 구간 강조
         self.focus(win, a)
         self.ready(win, "SNP-M-102")
