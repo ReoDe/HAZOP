@@ -249,6 +249,96 @@ class EditTest(Base):
         self.assertEqual(self.handed(ns, doc), [])
 
 
+class OldPathDropTest(Base):
+    """검토 차단 1 재현: 결과를 받지 않는 옛 편집 길(nodes.merge·remove_member·remove_empty, 이전 Qt 화면이 부름)이 확정한 적
+    없는 구간의 판정을 '없는 검토구간 참조'로 떨어뜨리지 않는다. 결과 파일을 읽어 판정이 있으면 거절하고, 읽지 못하면 다 거절한다."""
+
+    def setUp(self):
+        super().setUp()
+        self.a = self.make("탱크", "TK", "V1")
+        self.b = self.make("밸브", "V2", "L2")
+        self.c = self.make("펌프", "PP")
+        self.d = self.make("계기", "LT")
+        self.put_entries(self.b, [entry("e-b")])
+        self.put_entries(self.c, [entry("e-c")])
+        self.ns = sn.load(self.g)
+
+    def test_merge_that_drops_a_judged_node_is_refused(self):
+        with self.assertRaises(ValueError):
+            sn.merge(self.ns, [self.a, self.b], at=AT)
+        self.assertEqual(self.handed(), ["e-b", "e-c"])
+        ns, doc = self.loaded()
+        self.assertEqual(res.check(doc, ns), [], "없는 검토구간 참조가 생기지 않음")
+
+    def test_removing_the_last_member_of_a_judged_node_is_refused(self):
+        with self.assertRaises(ValueError):
+            sn.remove_member(self.ns, self.c, eid(self.g, "PP"), at=AT)
+
+    def test_removing_an_empty_node_with_verdicts_is_refused(self):
+        sn._find(self.ns, self.c)["members"] = []
+        with self.assertRaises(ValueError):
+            sn.remove_empty(self.ns, self.c, at=AT)
+
+    def test_unreadable_results_refuse_every_drop(self):
+        path = res.store_path(None, self.g["graph_id"])
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{깨진 파일")
+        with self.assertRaises(ValueError):
+            sn.merge(self.ns, [self.a, self.d], at=AT)
+
+    def test_dropping_an_unjudged_node_still_works(self):
+        out = sn.merge(self.ns, [self.a, self.d], at=AT)
+        self.assertEqual([n["node_id"] for n in out["nodes"]], [self.a, self.b, self.c])
+
+
+class HeldReleaseTest(Base):
+    """검토 차단 2 재현: 예전에 확정을 풀어 보관(hold) 중이던 승인 항목이, 구성원이 그대로여도 사람이 다시 보기 전에는 인계로
+    돌아오지 않는다. 보관을 풀 때 '범위 바뀜'을 한 번만 붙인다. 지금의 확정 해제(unconfirm)도 같다."""
+
+    def old_held(self):
+        nid = self.make("탱크 출구", "TK", "V1")
+        ns = sn.load(self.g)
+        doc = res.empty_results(ns, DEVS)
+        doc["cells"][0].update(state="analyzed", hold=True, entries=[entry("e1")])
+        res.save(doc, ns.get("project_id"))
+        return nid
+
+    def test_held_approval_with_same_members_does_not_come_back_silently(self):
+        nid = self.old_held()
+        ns, doc = self.loaded()
+        cell = doc["cells"][0]
+        self.assertEqual((cell["node_id"], cell["hold"], cell["node_rev"], self.node(nid, ns)["rev"]), (nid, False, 1, 1),
+                         "시험 전제: 구성원이 그대로(rev 같음)")
+        self.assertTrue(cell["entries"][0].get("scope_changed"), "보관을 풀 때 '범위 바뀜'을 붙임")
+        self.assertEqual(self.handed(ns, doc), [], "사람이 다시 보기 전에는 인계에 없음")
+        facts = ie_model.entry_facts(doc, ns)
+        self.assertFalse(any(ie_model.is_evidence(f) for f in facts.values()), "초기사건 그룹 확정 근거도 아님")
+
+    def test_mark_is_put_once_and_reading_does_not_rewrite(self):
+        nid = self.old_held()
+        ns, doc = self.loaded()
+        res.save(doc, ns.get("project_id"))
+        path = res.store_path(None, self.g["graph_id"])
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        ns, again = self.loaded()
+        self.assertIs(res.reconcile(again, ns, DEVS), again, "저장한 뒤에는 맞출 것이 없음")
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), raw, "읽기만으로 파일을 다시 쓰지 않음")
+        back = res.set_status(again, nid, "D01", "e1", "approved", at=AT, node_set=ns, by=BY)
+        res.save(back, ns.get("project_id"))
+        self.assertEqual(self.handed(), ["e1"], "사람이 다시 승인하면 돌아오고, 다시 표시되지 않음")
+
+    def test_unconfirm_also_needs_a_person_to_look_again(self):
+        nid = self.make("탱크 출구", "TK", "V1")
+        self.put_entries(nid, [entry("e1")])
+        ns = sn.load(self.g)
+        sn.save(sn.confirm_nodes(ns, self.g, [nid], "옛 검토자", at=AT))
+        self.assertEqual(self.handed(), ["e1"])
+        self.assertTrue(self.run_cmd("unconfirm", {"node_ids": [nid]})["ok"])
+        self.assertEqual(self.handed(), [], "확정을 풀면 사람이 다시 볼 때까지 인계에서 빠짐")
+
+
 class OldDataTest(Base):
     def test_stored_states_read_under_the_new_rule(self):
         a = self.make("적용됨", "TK", "V1")
