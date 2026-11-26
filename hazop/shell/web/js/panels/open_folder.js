@@ -7,5 +7,5 @@ import { Btn } from "../ui/parts.js";
 const fail = (e) => store.set({ toast: { text: (e && e.message) || "폴더를 열지 못했습니다.", kind: "err" } });
 
 export function OpenFolder({ kind }) {
-  return html`<${Btn} sm=${true} kind="ghost" icon="folder-open" label="내보낸 폴더 열기" onClick=${() => cmd("export.open_folder", { kind }).catch(fail)}>폴더 열기<//>`;
+  return html`<${Btn} sm=${true} icon="folder-open" label="내보낸 폴더 열기" onClick=${() => cmd("export.open_folder", { kind }).catch(fail)}>폴더 열기<//>`;
 }

@@ -31,6 +31,10 @@ class Hooks(dict):
         self.picked = {}          # (프로젝트, 종류) → [(쓸 파일, 대화상자를 닫은 시각)]
         self._project = project_fn
 
+    def note(self, kind, path):
+        """대화상자 없이 쓴 자리도 '폴더 열기'가 열 수 있게 적는다."""
+        self.picked.setdefault((self._project(), kind), []).append((path, time.time()))
+
     def __setitem__(self, key, fn):
         if key == "save_path" and fn is not None:
             fn = self._noted(fn, lambda kind, path: path)

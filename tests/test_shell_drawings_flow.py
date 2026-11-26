@@ -344,7 +344,6 @@ class DexpiLineTest(W.ShellBase):
         os.makedirs(out, exist_ok=True)
         with mock.patch.object(dexpi_export, "list_exportable", lambda *a, **k: rows), mock.patch.object(dexpi_export, "export_names", lambda *a, **k: res):
             win = self.window()
-            win._save_dir = lambda kind: out
             self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='DEXPI로 내보내기']\").disabled") is False, 15))
             self.assertTrue(self.click(win, "button[aria-label='DEXPI로 내보내기']"))
             self.assertTrue(wait_for(lambda: "내보냈습니다" in self.text(win), 30), self.text(win)[-400:])

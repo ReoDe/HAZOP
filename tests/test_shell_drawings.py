@@ -278,12 +278,90 @@ class DexpiExportTest(Base):
         self.assertEqual(r["data"], {"cancelled": True})
         self.assertEqual(os.listdir(self.out), [])
 
-    def test_unknown_graph_id_and_no_dialog_are_refused(self):
+    def test_unknown_graph_id_is_refused(self):
         self.assertEqual(self.call("dexpi.export", {"graph_ids": ["graph-없음"]})["error"]["code"], "not_found")
+
+    # -- 대화상자 없이 기본 폴더(작업 폴더의 내보내기 폴더 아래)에 쓴다. 우리가 앞서 낸 파일만 바꾸고 그 밖의 파일은 덮지 않는다.
+    def ready_for_default(self):
         self.confirm_page()
         self.mark_number_confirmed()
         del self.engine.hooks["save_dir"]
-        self.assertFalse(self.export([self.gid])["ok"])
+
+    def default_dir(self):
+        from hazop.shell import api_drawings
+        return api_drawings.dexpi_folder(self.engine.project_id())
+
+    def xml(self, folder):
+        return os.path.join(folder, self.name + ".dexpi.xml")
+
+    def read_bytes(self, path):
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    def test_without_a_dialog_it_writes_into_the_project_export_folder_and_open_folder_knows_it(self):
+        self.ready_for_default()
+        r = self.export([self.gid])
+        self.assertTrue(r["ok"], r)
+        d = self.default_dir()
+        self.assertTrue(d.startswith(os.path.join(self.tmp, "work", "output")), d)
+        self.assertTrue(os.path.isfile(self.xml(d)) and os.path.isfile(os.path.join(d, "manifest.json")))
+        self.assertEqual(r["data"]["folder"], os.path.basename(d))
+        self.assertNotIn(self.tmp, json.dumps(r["data"], ensure_ascii=False), "저장 경로를 웹에 돌려주지 않는다")
+        self.assertEqual(self.asked, [], "덮어쓰기를 묻지 않는다")
+        from hazop.shell import export_folder
+        self.assertEqual(os.path.normcase(export_folder.folder(self.engine, "dexpi")), os.path.normcase(d))
+
+    def test_exporting_again_replaces_our_own_files_in_the_same_folder_and_leaves_other_files(self):
+        self.ready_for_default()
+        self.assertTrue(self.export([self.gid])["ok"])
+        d = self.default_dir()
+        other = os.path.join(d, "memo.txt")
+        with open(other, "wb") as fh:
+            fh.write(b"mine")
+        os.utime(self.xml(d), (1000000000, 1000000000))
+        r = self.export([self.gid])
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["data"]["folder"], os.path.basename(d), "같은 폴더")
+        self.assertGreater(os.path.getmtime(self.xml(d)), 1000000001, "우리가 앞서 낸 파일은 바꾼다")
+        self.assertEqual(self.read_bytes(other), b"mine", "다른 파일은 그대로")
+        self.assertFalse(os.path.exists(d + "-2"))
+
+    def test_a_foreign_file_with_the_same_name_is_not_overwritten_a_new_folder_is_used(self):
+        self.ready_for_default()
+        d = self.default_dir()
+        os.makedirs(d)
+        with open(self.xml(d), "wb") as fh:
+            fh.write(b"<keep/>")
+        r = self.export([self.gid])
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(self.read_bytes(self.xml(d)), b"<keep/>", "우리 것이 아닌 파일은 덮지 않는다")
+        self.assertEqual(r["data"]["folder"], os.path.basename(d) + "-2")
+        self.assertTrue(os.path.isfile(self.xml(d + "-2")))
+        self.assertEqual(os.listdir(d), [self.name + ".dexpi.xml"], "앞 폴더에는 아무것도 더 쓰지 않는다")
+
+    def test_an_exported_file_the_user_changed_is_kept(self):
+        self.ready_for_default()
+        self.assertTrue(self.export([self.gid])["ok"])
+        d = self.default_dir()
+        with open(self.xml(d), "ab") as fh:
+            fh.write(b"<!-- my edit -->")
+        edited = self.read_bytes(self.xml(d))
+        r = self.export([self.gid])
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(self.read_bytes(self.xml(d)), edited, "사람이 고친 파일은 덮지 않는다")
+        self.assertEqual(r["data"]["folder"], os.path.basename(d) + "-2")
+
+    def test_a_foreign_manifest_is_not_overwritten(self):
+        self.ready_for_default()
+        d = self.default_dir()
+        os.makedirs(d)
+        foreign = json.dumps({"schema": "someone-else/1"}).encode()
+        with open(os.path.join(d, "manifest.json"), "wb") as fh:
+            fh.write(foreign)
+        r = self.export([self.gid])
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(self.read_bytes(os.path.join(d, "manifest.json")), foreign)
+        self.assertEqual(r["data"]["folder"], os.path.basename(d) + "-2")
 
 
 class DexpiExportMixTest(Base):

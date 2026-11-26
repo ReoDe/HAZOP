@@ -260,7 +260,6 @@ class ShellWindow(QMainWindow):
         self.engine.hooks["conn_guide"] = self._conn_guide
         self.engine.hooks["save_path"] = self._save_path
         self.gui_call.connect(self._run_gui_call, Qt.BlockingQueuedConnection)
-        self.engine.hooks["save_dir"] = lambda kind: self._on_gui(lambda: self._save_dir(kind))      # 내보내기는 작업 스레드에서 도니 대화상자는 화면 스레드에서 연다
         self.engine.hooks["confirm_overwrite_files"] = lambda names: self._on_gui(lambda: self._ask_overwrite_files(names))
         self.engine.hooks["explore"] = lambda path: self._on_gui(lambda: self._explore(path))      # 내보낸 폴더 열기(폴더인지는 export_folder가 확인)
         self.engine.hooks["jobs_idle"] = self.jobs_idle.emit
@@ -379,15 +378,6 @@ class ShellWindow(QMainWindow):
             return None
         self._export_dir = os.path.dirname(path)
         return path
-
-    def _save_dir(self, kind):
-        """DEXPI 내보내기 저장 폴더를 묻는다(웹은 경로를 보내지 않는다). 취소하면 None."""
-        from PySide6.QtCore import QStandardPaths
-        start = getattr(self, "_export_dir", None) or QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
-        folder = QFileDialog.getExistingDirectory(self, "DEXPI로 내보낼 폴더 고르기", start)
-        if folder:
-            self._export_dir = folder
-        return folder or None
 
     def _ask_overwrite_files(self, names):
         """같은 이름의 파일이 있으면 덮어쓸지 묻는다(시험은 seam을 바꿔 끼운다). True면 덮어씀."""

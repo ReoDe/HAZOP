@@ -12,7 +12,7 @@ import { ConsentAsk, UNREAD_TEXT, useAuto, waitsOf } from "./auto_state.js";
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
-/** DEXPI 내보내기(항목 11): 단추 하나. 내보낼 수 있는(쪽 확정을 마친) 쪽을 모두 한 번에 낸다. 저장 폴더는 창이 대화상자로 한 번 묻고 웹은 경로를 보내지 않는다.
+/** DEXPI 내보내기(항목 11): 단추 하나. 내보낼 수 있는(쪽 확정을 마친) 쪽을 모두 한 번에 낸다. 대화상자 없이 작업 폴더의 내보내기 폴더에 쓰고(우리가 앞서 낸 파일만 바꾼다) 웹은 경로를 보내지 않는다.
  *  고르는 창·설명 줄은 없다. 낼 수 있는 쪽이 없으면 단추가 꺼져 있다. 끝나면 한 줄로 몇 쪽을 어느 폴더에 냈는지와 내보내지 못한 쪽 수만 보인다. */
 function DexpiExport() {
   const [info, setInfo] = useState(null);
