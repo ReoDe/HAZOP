@@ -26,7 +26,7 @@ const opsText = (ops, kind) => KIND_LABEL[kind] || (ops || []).map((o) => OP_LAB
 /** 구간 한 줄: 색 점·번호·이름·도면 범위·구성요소 수만. 잠긴 구간은 자물쇠, 도면과 어긋난 구간은 경고 아이콘 하나씩만 더한다. */
 function Row({ n, list, drawings, on, checked }) {
   const broken = [n.lost ? "찾지 못한 구성요소 " + n.lost + "개" : "", n.broken ? "끊긴 구성원 " + n.broken : ""].filter(Boolean).join(" · ");
-  return html`<div class=${"row nrow" + (on ? " on" : "")} key=${n.node_id}>
+  return html`<div class=${"row nrow noderow" + (on ? " on" : "")} key=${n.node_id}>
     <input type="checkbox" aria-label=${n.node_id + " 고르기"} checked=${checked} onChange=${() => N.toggleChecked(n.node_id)} />
     <button type="button" class="nrow-b" aria-pressed=${on ? "true" : "false"} aria-label=${n.node_id + " " + (n.name || "")} onClick=${() => N.focusNode(n.node_id, { show: true })}>
       <span class="seg-dot" style=${"background:" + colorOf(list, n.node_id)}></span>
