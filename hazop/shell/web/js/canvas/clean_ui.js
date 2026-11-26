@@ -1,12 +1,10 @@
-// 정리된 보기의 화면 쪽(규격 §10.4·§10.5): 원본|정리 단추(키 O), '미확인 n곳' 칩(키 N·Shift+N), 못 읽은 곳의 원본 조각 말풍선, 기본 보기 규칙.
+// 정리된 보기의 화면 쪽(규격 §10.4·§10.5): 원본|정리 단추(키 O), 겹쳐 보기(키 L), 기본 보기 규칙.
 // 보기 선택은 앱을 닫을 때까지만 기억한다(프로젝트 파일에 저장하지 않음). SheetHost가 `useCleanCanvas(sheet)`의 props를 <Sheet>에 펼치고
 // `<CleanOverlay />`를 도면 자리 안에 그린다. 도면·모델에서 온 글(태그)은 htm이 이스케이프하는 텍스트로만 넣는다.
-import { fixFor, noFragmentText } from "../fix_actions.js";      // 미확인 곳을 푸는 단추(U8)
 import { html } from "../ui/html.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { createStore, store as shell, useStore } from "../store.js";
 import { Icon } from "../ui/icon.js";
-import { Chip } from "../ui/parts.js";
 import { useLightDismiss } from "../ui/light_dismiss.js";
 import { defaultView } from "./clean_view.js";
 
@@ -22,8 +20,6 @@ export const clean = createStore({
   lastByFormat: {},  // 읽은 방법 → 사람이 마지막에 고른 보기: 아직 고르지 않은 같은 형식의 쪽도 이것으로 연다(PDF 쪽마다 '정리'를 다시 누르지 않게)
   data: {},          // graph_id → /api/clean 자료(없으면 null)
   built: {},         // graph_id → {ms, elements, missingKinds, placeholders}
-  bubble: null,      // {id, reason, fragment}
-  cursor: -1,        // 다음 미확인 위치
   overlay: { leftovers: false, original: false, unconfirmed: false },   // 원본에 남은 것 겹치기(L)·원본 겹쳐 보기(30%)
 });
 
@@ -39,10 +35,6 @@ export function useClean(selector) {
   useLayoutEffect(() => { const next = selector(clean.get()); setValue((prev) => (Object.is(prev, next) ? prev : next)); });   // 선택 함수가 바뀌면(도면을 바꾸면) 바로 다시 고른다
   return value;
 }
-
-export const REASON_TEXT = {
-  unknown_symbol: "종류를 못 읽은 기호", open_end: "끊긴 연결", missing_tag: "태그가 없음", ai_candidate: "AI 후보(수락 전)",
-};
 
 /** 지금 이 도면의 보기. 사람이 바꾼 것이 먼저, 없으면 읽은 방법에 따른 기본(drawio·dexpi는 정리, PDF는 원본). 정리 자료가 없으면 원본. */
 export function viewOf(state, gid) {
@@ -70,28 +62,9 @@ export function toggleView(gid) {
   setView(gid, viewOf(s, gid) === "clean" ? "orig" : "clean");
 }
 
-export function onClean(gid, data) { clean.set((s) => ({ data: Object.assign({}, s.data, { [gid]: data }), cursor: -1, bubble: null })); }
+export function onClean(gid, data) { clean.set((s) => ({ data: Object.assign({}, s.data, { [gid]: data }) })); }
 
-export function openBubble(d) { clean.set({ bubble: { id: d.id, reason: d.reason, fragment: d.fragment || null } }); }
-export function closeBubble() { clean.set({ bubble: null }); }
-
-let locator = null;
-export function setLocator(fn) { locator = fn; }
-
-/** 다음(+1)·앞(-1) 미확인으로 옮긴다: 도면 전체를 보인 채 그 자리를 강조하고 말풍선을 연다. 순서는 엔진이 준 위→아래, 왼→오른 순서다. */
-export function stepUnconfirmed(gid, step = 1) {
-  const s = clean.get(), list = (s.data[gid] && s.data[gid].unconfirmed) || [];
-  if (!list.length) return null;
-  if (!s.overlay.unconfirmed) clean.set({ overlay: Object.assign({}, s.overlay, { unconfirmed: true }) });     // 미확인을 찾아 가면 속성 미확인 자리도 함께 보인다
-  const at = ((s.cursor + step) % list.length + list.length) % list.length, u = list[at];
-  clean.set({ cursor: at });
-  const inspect = () => shell.set((st) => ({ command: { seq: st.command.seq + 1, type: "inspect", id: u.id, reason: u.reason } }));
-  if (locator) locator({ sheet: gid, ids: [u.id], fit: false });      // 그 자리만 강조(틀의 locate.js가 잇는다)
-  inspect();                                                          // 도면 전체를 맞추고 원본 조각 말풍선을 연다
-  return u;
-}
-
-/** <Sheet>에 펼칠 props와 키(O·N). */
+/** <Sheet>에 펼칠 props와 키(O·L). */
 export function useCleanCanvas(sheet) {
   const view = useClean((s) => (sheet ? viewOf(s, sheet) : "orig"));
   const overlays = useClean((s) => s.overlay);
@@ -103,19 +76,15 @@ export function useCleanCanvas(sheet) {
       if (!g) return;
       const k = (e.key || "").toLowerCase();
       if (k === "o") { e.preventDefault(); toggleView(g); }
-      else if (k === "n") { e.preventDefault(); stepUnconfirmed(g, e.shiftKey ? -1 : 1); }
       else if (k === "l") { e.preventDefault(); toggleOverlay("leftovers"); }
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
   return {
-    /** Esc: 열린 말풍선을 닫으면 true(그러면 다른 Esc 동작은 하지 않는다). */
-    closeIfOpen: () => { if (!clean.get().bubble) return false; closeBubble(); return true; },
     props: {
       view, overlays,
       onClean: (gid, data) => onClean(gid, data),
-      onUnconfirmedClick: (d) => openBubble(d),
       onCleanBuilt: (info) => { const g = shell.get().sheet; if (g) clean.set((s) => ({ built: Object.assign({}, s.built, { [g]: info }) })); },
     },
   };
@@ -157,26 +126,8 @@ function ViewSwitch({ gid }) {
       ${!dexpi ? check(ov.original, "원본 겹쳐 보기", "원본 도면을 옅게(30%) 겹쳐 어긋난 곳을 찾습니다", () => toggleOverlay("original")) : null}</div>` : null}</div>`;
 }
 
-function Bubble({ gid }) {
-  const b = useClean((s) => s.bubble);
-  const data = useClean((s) => s.data[gid]);
-  const cursor = useClean((s) => s.cursor);
-  const card = useRef(null);
-  useLightDismiss(!!b, () => [card.current], closeBubble, { esc: true });
-  if (!b) return null;
-  const total = data ? data.unconfirmed.length : 0, f = b.fragment;
-  return html`<div class="float cleanpop" ref=${card} role="dialog" aria-label="못 읽은 곳">
-    <div class="cp-h"><b>${REASON_TEXT[b.reason] || "못 읽은 곳"}</b>${total && cursor >= 0 ? html`<${Chip}>${cursor + 1} / ${total}<//>` : null}
-      <button type="button" class="btn ghost sm icon" aria-label="닫기" title="닫기 (Esc)" onClick=${closeBubble}><${Icon} name="x" size=${15} /></button></div>
-    ${f ? html`<div class="cp-frag" aria-label="원본의 그 자리"><svg viewBox=${f.box.x + " " + f.box.y + " " + f.box.w + " " + f.box.h} width="100%" preserveAspectRatio="xMidYMid meet">
-      <image href=${f.href} x="0" y="0" width=${f.size[0]} height=${f.size[1]} /></svg><div class="muted small">원본에서 그 자리 둘레(사방 24 단위)</div></div>` : html`<div class="muted small">${noFragmentText(b.reason)}</div>`}
-    ${fixFor(b.reason) ? html`<div class="acts-row"><button type="button" class="btn sm primary" aria-label=${fixFor(b.reason).label} onClick=${() => { closeBubble(); fixFor(b.reason).run(gid); }}>${fixFor(b.reason).label}</button></div>` : null}
-    <div class="acts-row"><button type="button" class="btn sm" aria-label="앞 미확인" onClick=${() => stepUnconfirmed(gid, -1)}>앞 <kbd>Shift+N</kbd></button>
-      <button type="button" class="btn sm" aria-label="다음 미확인" onClick=${() => stepUnconfirmed(gid, 1)}>다음 <kbd>N</kbd></button></div></div>`;
-}
-
 export function CleanOverlay() {
   const gid = useStore((s) => s.sheet);
   if (!gid) return null;
-  return html`<${ViewSwitch} gid=${gid} /><${Bubble} gid=${gid} />`;
+  return html`<${ViewSwitch} gid=${gid} />`;
 }

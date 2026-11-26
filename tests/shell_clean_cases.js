@@ -13,7 +13,7 @@ async function body({ CV, MK, SheetCore }, data) {
   const items = data.sheet.items, symbols = data.symbols, ex = data.clean.items;
   const ev = { unconf: [], built: [] };
   const host = mount();
-  const core = new SheetCore(host, { onUnconfirmedClick: (d) => ev.unconf.push(d), onCleanBuilt: (i) => ev.built.push(i), onReady: () => {} });
+  const core = new SheetCore(host, { onCleanBuilt: (i) => ev.built.push(i), onReady: () => {} });
   core.setData(data.sheet);
   await sleep(200);
   const vp = host.querySelector(".hz-cv-vp"), vpR = () => vp.getBoundingClientRect();
@@ -88,26 +88,8 @@ async function body({ CV, MK, SheetCore }, data) {
   t("흐름 화살촉은 기호 둘레와 겹치지 않음", clean.querySelectorAll("polygon").length >= 5 && arrowsInSymbols === 0, arrowsInSymbols);
   t("정돈 품질: 서버가 센 정돈 결과가 0(이어짐·이동·직각·축·크기·연결점·겹침)", !!data.clean.layout_lint && ["topology_changed", "moved_too_far", "off_axis", "inline_off_center", "size_mismatch", "port_miss", "symbol_overlap", "pipe_through_symbol", "pipe_overlap", "crossing_without_hop"].every((k) => data.clean.layout_lint[k] === 0), JSON.stringify(data.clean.layout_lint));
 
-  // ---- 누르기: 미확인 자리 → 원본 조각
   core.update({ mode: "pan" });
-  const ub = items.find((i) => i.id === "x-unknown").bbox;
-  click((ub[0] + ub[2]) / 2, (ub[1] + ub[3]) / 2);
-  const last = ev.unconf[ev.unconf.length - 1];
-  t("미확인 기호를 누르면 onUnconfirmedClick(id·reason·원본 조각)", !!last && last.id === "x-unknown" && last.reason === "unknown_symbol" && !!last.fragment, JSON.stringify(last && last.reason));
-  const fb = last.fragment.box;
-  const ex0 = Math.max(0, ub[0] - 24), ex1 = Math.min(data.sheet.width, ub[2] + 24);
-  t("원본 조각은 bbox를 사방 24 단위 넓힌(도면 안으로 자른) viewBox, 같은 도면 SVG 주소", Math.abs(fb.x - ex0) < 0.01 && Math.abs(fb.w - (ex1 - ex0)) < 0.01 && last.fragment.href === data.sheet.svg, JSON.stringify(fb));
-  core.update({ command: { seq: 1, type: "inspect", id: "x-open", reason: "open_end", pad: 0.5 } });
-  const insp = ev.unconf[ev.unconf.length - 1];
-  t("명령 inspect(N 키): 그 자리로 가서 같은 신호를 보냄", insp.id === "x-open" && insp.reason === "open_end" && !!insp.fragment);
-  const atInspect = JSON.stringify(core.view);
-  core.fit();
-  t("명령 inspect(N 키): 확대해 들어가지 않고 도면 전체 맞춤", JSON.stringify(core.view) === atInspect, atInspect);
   core.zoomTo(["x-open"], 0.5);      // 아래 누르기·글자 검사는 확대한 보기에서 한다
-  const nBefore = ev.unconf.length;
-  const nk = items.find((i) => i.kind === "pump"), nb = nk.bbox;
-  click((nb[0] + nb[2]) / 2, (nb[1] + nb[3]) / 2);
-  t("읽은 기호를 누르면 미확인 신호는 없음", ev.unconf.length === nBefore);
 
   // ---- 누르기·표시는 그린 자리(정돈 좌표)에서: 그려진 기호의 가운데를 누르면 그 기호가 골라진다
   core.update({ mode: "pick" });

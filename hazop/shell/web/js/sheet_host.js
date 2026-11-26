@@ -113,8 +113,8 @@ export function SheetHost() {
   // 그 밖의 패널에서는 추적·채팅 강조가 있으면 끈다.
   const onDrawingTab = !panel || panel === "drawings";
   const check = useExtractCheck(sheet, rev, !!sheet && panel !== "nodes" && (onDrawingTab || !(chatMarks0 && chatMarks0.length)), sv && sv.graph_id === sheet && Array.isArray(sv.links) ? sv.links : undefined);
-  const cc = useCleanCanvas(sheet);          // 원본·정리 보기, 미확인 칩, 못 읽은 곳 말풍선(s-viewer의 clean_ui.js)
-  const nc = useNodeCanvas(sheet, { onEsc: () => { if (!cc.closeIfOpen()) store.set({ marks: { rid: null, bySheet: {} } }); } });
+  const cc = useCleanCanvas(sheet);          // 원본·정리 보기와 겹쳐 보기(clean_ui.js)
+  const nc = useNodeCanvas(sheet, { onEsc: () => store.set({ marks: { rid: null, bySheet: {} } }) });
   const chatMarks = marks.bySheet && marks.bySheet[sheet];
   const items = useMemo(() => (check.mark ? [check.mark] : []).concat((chatMarks || []).map((m, i) => Object.assign({ id: (marks.rid || "m") + (i ? "#" + i : "") }, m))), [chatMarks, marks.rid, check.mark]);      // 추출 네모를 먼저 그려 강조·구간 표시가 그 위에 온다
   useEffect(() => { loadCanvas().then((c) => { if (c) setComp(() => c); store.set({ canvasReady: !!c }); }); }, []);

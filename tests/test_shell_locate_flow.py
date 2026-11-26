@@ -122,18 +122,36 @@ class LocateReleaseTest(LocateBase):
 
 
 class LocateKeysTest(LocateBase):
-    def test_the_n_key_member_chips_the_trace_button_double_click_and_f_do_not_zoom_in(self):
+    def test_member_chips_the_trace_button_double_click_and_f_do_not_zoom_in_and_there_is_no_unread_popup_or_n_key(self):
         win = self.start()
-        # N 키: 읽지 못한 곳으로 — 확대하지 않고 그 자리만 강조, 원본 조각 말풍선은 연다
+        # 못 읽은 곳 말풍선과 N·Shift+N은 없다(잘못 읽은 것은 채팅으로 고친다). 빨간 추출 네모는 남는다
         self.assertTrue(wait_for(lambda: self.js(win, "!!window.__m.CL.clean.get().data[%s]" % json.dumps(self.g1)) is True, 30))
-        first = self.jsj(win, "window.__m.CL.clean.get().data[%s].unconfirmed.map((u) => u.id)" % json.dumps(self.g1))
-        self.assertTrue(first, "시험 자료: 읽지 못한 곳")
+        unread = self.jsj(win, "window.__m.CL.clean.get().data[%s].unconfirmed.map((u) => u.id)" % json.dumps(self.g1))
+        self.assertTrue(unread, "시험 자료: 읽지 못한 곳")
+        reds = "[...document.querySelectorAll('.hz-cv-marks [data-check]')].filter((e) => (e.getAttribute('stroke') || '').includes('chk-unknown')).length"
+        self.assertTrue(wait_for(lambda: (self.js(win, reds) or 0) > 0, 20), "못 읽은 구성요소의 빨간 추출 네모")
         self.zoom_away(win)
-        self.dirty(win)
-        self.js(win, "window.dispatchEvent(new KeyboardEvent('keydown', {key: 'n', bubbles: true}))")
-        self.located(win, "N 키", "SNP-M-101", [first[0]])
-        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.cleanpop')") is True, 10), "원본 조각 말풍선")
-        self.js(win, "window.__m.CL.closeBubble(); window.__hz.store.set({marks: {rid: null, bySheet: {}}})")
+        before = self.js(win, VIEW)
+        for shift in ("false", "true"):
+            self.js(win, "window.dispatchEvent(new KeyboardEvent('keydown', {key: 'n', shiftKey: %s, bubbles: true}))" % shift)
+        pump(1.0)
+        self.assertEqual((self.js(win, VIEW), self.jsj(win, LIT)), (before, []), "N 키는 아무 일도 하지 않는다")
+        self.assertFalse(self.js(win, "!!document.querySelector('.cleanpop')"))
+        # 못 읽은 구성요소를 눌러도 뜨는 것은 속성 말풍선 하나뿐
+        self.back_to(win)
+        self.js(win, "window.__hz.store.set({panel: 'drawings'})")
+        pressed = None
+        for local in unread:
+            if self.js(win, PRESS_ID % json.dumps([local, False])) is True:
+                pump(0.8)
+                if self.js(win, "(window.__hz.store.get().bubble || {}).id") == local:
+                    pressed = local
+                    break
+        self.assertTrue(pressed, "못 읽은 구성요소를 누름")
+        self.assertEqual(self.js(win, "document.querySelectorAll('.cleanpop').length"), 0)
+        self.assertEqual(self.js(win, "document.querySelectorAll('.float.bubble').length"), 1, "말풍선은 하나")
+        self.assertGreater(self.js(win, reds), 0)
+        self.js(win, "window.__hz.store.set({bubble: null, panel: 'drawings'})")
         # 구간 상세의 구성요소 칩(다른 도면의 것도 그 도면으로 가서)
         other = self.make_node(win, "두 도면", [("SNP-M-101", 2), ("SNP-M-102", 1)])
         self.js(win, "window.__hz.store.set({panel: 'nodes'}); window.__m.N.nodes.set({scope: 'all'})")

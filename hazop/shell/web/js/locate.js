@@ -5,7 +5,6 @@ import { store } from "./store.js";
 import { cmd } from "./bridge.js";
 import * as N from "./panels/nodes_state.js";
 import { openSheet } from "./panels/results_state.js";
-import { closeBubble, setLocator } from "./canvas/clean_ui.js";
 
 const NONE = () => ({ rid: null, bySheet: {} });
 let seq = 0;
@@ -14,7 +13,6 @@ let seq = 0;
 export function resetHighlights() {
   N.unfocus();
   N.clearSelection();
-  closeBubble();
   store.set({ marks: NONE(), bubble: null });
 }
 
@@ -22,26 +20,24 @@ export const clearTempHighlight = () => store.set({ marks: NONE() });
 
 const fitSheet = () => store.set((s) => ({ command: { seq: s.command.seq + 1, type: "fit" } }));
 
-/** 도면을 전체 맞춤으로 보인다: 다른 도면이면 연다(새 도면은 도면 부품이 전체 맞춤으로 연다), 같은 도면이면 fit일 때 다시 맞춘다. */
-function showSheet(target, fit) {
+/** 도면을 전체 맞춤으로 보인다: 다른 도면이면 연다(새 도면은 도면 부품이 전체 맞춤으로 연다), 같은 도면이면 다시 맞춘다. */
+function showSheet(target) {
   if (!target) return;
-  if (store.get().sheet === target) { if (fit) fitSheet(); return; }
+  if (store.get().sheet === target) { fitSheet(); return; }
   if (!openSheet(target)) { store.set({ sheet: target }); cmd("sheet.open", { graph_id: target }).catch(() => {}); }
 }
 
 /**
  * 대상으로 간다. sheet: 대상 도면(없으면 지금 도면). ids: 강조할 구성요소. marks: 도면별 표시(경로의 차례 번호 등)가 있으면 그것을 그린다.
- * rid: 표시 묶음 이름. patch: 함께 바꿀 화면 상태(패널·돌아가기 칩). fit: 같은 도면에서 전체 맞춤 명령을 보낼지(뒤에 다른 명령을 보낼 때 끈다).
+ * rid: 표시 묶음 이름. patch: 함께 바꿀 화면 상태(패널·돌아가기 칩).
  */
-export function locate({ sheet = null, ids = [], marks = null, rid = null, patch = null, fit = true } = {}) {
+export function locate({ sheet = null, ids = [], marks = null, rid = null, patch = null } = {}) {
   resetHighlights();
   const target = sheet || store.get().sheet;
-  showSheet(target, fit);
+  showSheet(target);
   if (patch) store.set(patch);
   const bySheet = marks && Object.keys(marks).length ? marks
     : (ids.length && target ? { [target]: [{ op: "mark", groups: [{ ids: ids.slice(0, 400), style: "focus" }], dim_others: true, center: false }] } : {});
   store.set({ marks: Object.keys(bySheet).length ? { rid: rid || "locate-" + (++seq), bySheet } : NONE() });
   return true;
 }
-
-setLocator(locate);

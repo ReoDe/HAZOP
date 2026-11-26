@@ -6,7 +6,7 @@
 
 import { SpatialIndex, MAX_SELECTION, capSelection, changeSelection, selectionEvent, normRect } from "./index.js";
 import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags, badgeBoxes, placeChips } from "./marks.js";
-import { buildBase, recolor, fragmentBox, layoutLabels, labelDescriptor } from "./clean_view.js";
+import { buildBase, recolor, layoutLabels, labelDescriptor } from "./clean_view.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const K_MIN = 0.05, K_MAX = 12;
@@ -53,7 +53,7 @@ function build(desc, doc) {
 export class SheetCore {
   /**
    * @param {HTMLElement} host 마운트할 상자
-   * @param {object} cb 콜백: onReady, onItemClick, onItemDblClick, onHover, onSelection, onViewport, onMarkResult, onEsc, onLinkClick, onClearMarks, onSegmentClick, onUnconfirmedClick, onCleanBuilt
+   * @param {object} cb 콜백: onReady, onItemClick, onItemDblClick, onHover, onSelection, onViewport, onMarkResult, onEsc, onLinkClick, onClearMarks, onSegmentClick, onCleanBuilt
    */
   constructor(host, cb = {}) {
     this.host = host;
@@ -143,7 +143,6 @@ export class SheetCore {
     this._origIndex = new SpatialIndex(Array.isArray(data.items) ? data.items : []);
     this._ctxFor = null;
     this._syncIndex();
-    this._unconf = null;
     this.svg.setAttribute("width", this.size[0]); this.svg.setAttribute("height", this.size[1]);
     this.svg.setAttribute("viewBox", `0 0 ${this.size[0]} ${this.size[1]}`);
     this.world.style.width = this.size[0] + "px"; this.world.style.height = this.size[1] + "px";
@@ -208,7 +207,6 @@ export class SheetCore {
     this._applyOverlays(eff);
     this.tagsDiv.style.display = eff === "clean" ? "none" : "";
     this.host.setAttribute("data-view", eff);
-    this._unconf = null;
   }
 
   _buildClean() {
@@ -298,18 +296,6 @@ export class SheetCore {
     }
   }
 
-  /** 못 읽은 곳의 원본 조각: 같은 도면 SVG 주소와 잘라 보일 viewBox. 자료가 없으면 null. */
-  fragmentOf(id) {
-    const r = (this._origIndex || this.index).rectOf(id);         // 원본 조각은 늘 읽은 좌표로 자른다
-    if (!r || !this.data || !this.data.svg) return null;
-    return { href: this.data.svg, size: this.size.slice(), box: fragmentBox([r.x0, r.y0, r.x1, r.y1], this.size) };
-  }
-
-  _unconfirmedAt(id) {
-    if (!this._unconf) this._unconf = new Map(((this.clean && this.clean.unconfirmed) || []).map((u) => [u.id, u.reason]));
-    return this._unconf.get(id) || null;
-  }
-
   // ------------------------------------------------------------ 입력(props)
   update(p) {
     let marksDirty = false;
@@ -360,10 +346,6 @@ export class SheetCore {
 
   _command(c) {
     if (c.type === "zoomTo") this.zoomTo(c.ids || [], c.pad);
-    else if (c.type === "inspect") {          // 미확인 곳의 원본 조각 말풍선을 연다(N 키). 확대하지 않고 도면 전체를 맞춘다
-      this.fit();
-      if (this.cb.onUnconfirmedClick) this.cb.onUnconfirmedClick({ id: c.id, reason: this._unconfirmedAt(c.id) || c.reason, fragment: this.fragmentOf(c.id), rect: null });
-    }
     else if (c.type === "fit") this.fit();
     else if (c.type === "clearMarks") {
       this.marks = c.id == null ? [] : this.marks.filter((m) => String(m.id).split("#")[0] !== String(c.id).split("#")[0]);
@@ -512,8 +494,6 @@ export class SheetCore {
     }
     if (this.cb.onPlainClick) this.cb.onPlainClick({ hit: !!hit });      // 묶어 둔 고름·구간 고름을 푸는 신호
     if (!hit) return;
-    const reason = this.cb.onUnconfirmedClick ? this._unconfirmedAt(hit.id) : null;
-    if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }
     const rect = this.index.rectOf(hit.id), rec = (this.index.byId.get(hit.id) || [])[0];
     if (this.cb.onItemClick) this.cb.onItemClick({ view: { x: this.view.x, y: this.view.y, k: this.view.k }, id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, link: this._linkOf(hit.id), rect: rect ? this._toScreenRect(rect) : null, via: "click" });
   }

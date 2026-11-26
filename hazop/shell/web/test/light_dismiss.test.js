@@ -105,17 +105,6 @@ const cases = [
       assert(!store.get().bubble, "X");
     } finally { window.fetch = real; store.set({ bubble: null }); drop(host); }
   } },
-  { name: "바깥 누르면 닫기: 못 읽은 곳 말풍선", async run(assert) {
-    const open = async () => { C.openBubble({ id: "x", reason: "missing_tag" }); await wait(); };
-    store.set({ sheet: "g1" });
-    const host = mount(html`<${C.CleanOverlay} />`);
-    await open();
-    await rules(assert, () => !!C.clean.get().bubble && !!host.querySelector(".cleanpop"), open, () => host.querySelector(".cleanpop b"));
-    esc();
-    await wait();
-    assert(!C.clean.get().bubble, "Esc");
-    drop(host);
-  } },
   { name: "바깥 누르면 닫기: 보기 설정 메뉴(원본·정리 단추를 눌러도 닫힘)", async run(assert) {
     store.set({ sheet: "g-vm" });
     C.onClean("g-vm", { source_format: "drawio", counts: { total: 0, unplaced: 0 }, unconfirmed: [], leftovers: null });
