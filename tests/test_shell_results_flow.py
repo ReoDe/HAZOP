@@ -248,7 +248,7 @@ class ResultsPanelTest(W.ShellBase):
         self.assertIn("없는 ID 참조", self.text(win))
         self.assertTrue(self.click(win, "button[aria-label='근거 경로 1']"))
         self.assertTrue(wait_for(lambda: self.js(win, "JSON.stringify(window.__hz.store.get().marks.rid)") == '"results-basis"', 10))
-        self.assertIs(self.js(win, "window.__hz.store.get().panel === null"), True, "패널을 닫고 도면에서 보인다")
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "분석 결과를 닫고 도면에서 보인다(고정 패널이 남는다)")
         before = self.entry(self.span_node, "D01", "a1")
         self.assertTrue(self.click(win, ".rail button", 2))
         self.click_cell(win, self.span_node, "D01")

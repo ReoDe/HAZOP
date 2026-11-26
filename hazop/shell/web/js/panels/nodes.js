@@ -143,7 +143,7 @@ export function NodesPanel({ onClose }) {
   return html`<section class="panel" aria-label="구간" onKeyDown=${open}>
     <div class="panel-h"><h2>구간</h2><${Chip}>${list.nodes.length}개<//>
       ${list.outside.total ? html`<${Chip} title="어느 구간에도 속하지 않은 구성요소(확정을 막지 않습니다)">구간 밖 ${list.outside.count}<//>` : null}
-      <span class="acts"><${Btn} kind="ghost" icon="x" label="패널 닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
+      </div>
     <div class="panel-b">
       ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span class="errtext">${error}</span> <button type="button" class="linkbtn" onClick=${N.dismissError}>닫기</button><//>` : null}
       ${list.legacy ? html`<${Notice} kind="warn" icon="alert-triangle">이 도면의 구간은 이전 형식으로 저장돼 있습니다. 읽기만 해서는 바꾸지 않습니다. 새 형식으로 바꾸면 한 번 저장합니다.

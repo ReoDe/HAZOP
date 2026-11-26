@@ -22,7 +22,7 @@ FITTED = """(() => { const w = document.querySelector('.hz-cv-world'), v = docum
   return bad.length ? bad.join(',') + ' ' + JSON.stringify([a, b]) : ''; })()"""
 # 구간 색으로 그린 것: S 배지 글자와 지금 그린 구간 구성요소
 BADGES = "[...document.querySelectorAll('.hz-cv-marks text')].map((t) => t.textContent).filter((t) => /^S\\d+/.test(t))"
-SEG_LEGEND = "(() => { const l = document.querySelector('.hz-cv-legend'); return !!l && getComputedStyle(l).display !== 'none' && /구간/.test(l.textContent); })()"
+SEG_LEGEND = "(() => { const l = document.querySelector('.hz-cv-legend'); return !!l && getComputedStyle(l).display !== 'none' && l.textContent.includes('구간 색'); })()"
 VEIL = "!!document.querySelector('.hz-cv-marks rect[fill=\"var(--bg, #f4f5f7)\"]')"
 CHIPS = "[...document.querySelectorAll('.hz-cv-chip')].map((c) => c.textContent)"
 # 도면 칸의 한 곳을 누른다([x 비율, y 비율, 끈 거리, ctrl]). 합성 포인터 사건
@@ -152,6 +152,69 @@ class NodeFocusViewTest(ViewBase):
         self.assertTrue(wait_for(lambda: self.jsj(win, BADGES) == [a], 15))
         self.row(win, a)
         self.assertTrue(wait_for(lambda: self.jsj(win, BADGES) == [], 15), "고른 구간을 다시 누르면 기본 모습")
+
+
+# 패널 안에서 글이 옆으로 잘린 곳: 가로로 넘치는데 감추거나 말줄임 없이 잘라 버리는 요소(말줄임표를 단 줄은 뺀다)
+CLIPPED = """(() => { const out = [], panel = document.querySelector('.pwrap'); if (!panel) return ['패널 없음'];
+  for (const el of panel.querySelectorAll('*')) { if (!el.clientWidth || el.scrollWidth <= el.clientWidth + 1) continue; const cs = getComputedStyle(el);
+    if (cs.textOverflow === 'ellipsis' || cs.overflowX === 'auto' || cs.overflowX === 'scroll' || el.tagName === 'INPUT') continue;
+    if (cs.overflowX === 'visible' && el.getBoundingClientRect().left + el.scrollWidth <= panel.getBoundingClientRect().right + 1) continue;
+    out.push((el.className && el.className.baseVal === undefined ? el.className : el.tagName) + ' ' + el.scrollWidth + '>' + el.clientWidth + ' ' + (el.textContent || '').trim().slice(0, 40)); }
+  const r = panel.getBoundingClientRect().right;
+  for (const el of panel.querySelectorAll('button, .chip, b, span, label, h2')) { const b = el.getBoundingClientRect(); if (b.width && b.right > r + 1) out.push('패널 밖 ' + (el.textContent || '').trim().slice(0, 40)); }
+  return out.slice(0, 10); })()"""
+
+
+class FixedPanelTest(ViewBase):
+    def panel(self, win):
+        return self.js(win, "window.__hz.store.get().panel")
+
+    def key(self, win, key, ctrl=False):
+        self.js(win, "document.body.dispatchEvent(new KeyboardEvent('keydown', {key: %s, ctrlKey: %s, bubbles: true}))" % (json.dumps(key), "true" if ctrl else "false"))
+        pump(0.3)
+
+    def rail(self, win, label):
+        self.assertTrue(self.js(win, "(() => { const b = [...document.querySelectorAll('.rail button')].find((x) => x.getAttribute('aria-label').startsWith(%s)); if (!b) return false; b.click(); return true; })()" % json.dumps(label)))
+        pump(0.5)
+
+    def test_the_drawing_and_node_panels_are_always_there_and_cannot_be_closed(self):
+        win = self.open_app()
+        self.open_row(win, "SNP-M-101")
+        for label, name, number in (("도면", "drawings", "1"), ("구간", "nodes", "2")):
+            self.rail(win, label)
+            self.assertEqual(self.panel(win), name)
+            self.assertFalse(self.js(win, "!!document.querySelector(\".pwrap button[aria-label='패널 닫기']\")"), name + " 패널에 닫기 단추가 없다")
+            self.rail(win, label)
+            self.assertEqual(self.panel(win), name, "왼쪽 메뉴를 다시 눌러도 닫히지 않는다")
+            self.key(win, number, True)
+            self.key(win, "Escape")
+            self.key(win, "0", True)
+            self.assertEqual(self.panel(win), name, "Ctrl+숫자·Esc·Ctrl+0에도 그대로")
+            self.fitted(win, name + " 패널 옆 도면 칸")
+        # 다른 패널을 닫으면 마지막에 보던 고정 패널이 돌아온다
+        self.rail(win, "설정")
+        self.assertEqual(self.panel(win), "settings")
+        self.assertTrue(self.click(win, "section.panel button[aria-label='패널 닫기']"))
+        pump(0.5)
+        self.assertEqual(self.panel(win), "nodes")
+
+    def test_the_two_panels_are_four_fifths_as_wide_and_clip_no_text(self):
+        win = self.open_app()
+        self.open_row(win, "SNP-M-101")
+        nid = self.make_node(win, "가압기 살수 배관과 완충 배관을 함께 보는 긴 이름의 구간", [("SNP-M-101", 3), ("SNP-M-102", 5)])
+        full = float(self.js(win, "parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--panel-w'))"))
+        for name in ("drawings", "nodes"):
+            self.js(win, "window.__hz.store.set({panel: %s})" % json.dumps(name))
+            pump(1.0)
+            if name == "nodes":
+                self.assertTrue(wait_for(lambda: self.js(win, "(() => { const b = document.querySelector('.nrow .nrow-b'); if (!b) return false; if (b.getAttribute('aria-pressed') !== 'true') b.click(); return true; })()") is True, 20), nid)
+                pump(2.0)
+            else:
+                self.js(win, "(() => { const b = document.querySelector('.drow input[type=checkbox]'); if (b && !b.checked) b.click(); })()")
+                pump(0.5)
+            width = self.js(win, "document.querySelector('.pwrap').getBoundingClientRect().width")
+            self.assertAlmostEqual(width, full * 0.8, delta=1.5, msg=name)
+            self.assertEqual(self.jsj(win, CLIPPED), [], name + " 패널에서 잘린 글")
 
 
 if __name__ == "__main__":

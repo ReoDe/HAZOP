@@ -245,7 +245,7 @@ class ShellWindowTest(ShellBase):
         self.assertTrue(wait_for(lambda: self.jsj(win, "[...document.querySelectorAll('.ptabs button')].map(b => b.textContent)") == ["지식그래프", "설계 문서"], 10))
         self.assertEqual(self.jsj(win, "document.querySelector('.rail button.on').getAttribute('aria-label')").split(" (")[0], "지식그래프", "묶음의 메뉴 단추가 켜진다")
         self.assertTrue(self.click(win, ".rail button.on"))
-        self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10), "켜진 메뉴 단추를 누르면 닫힌다")
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "drawings", 10), "켜진 메뉴 단추를 누르면 닫히고 고정 패널이 돌아온다")
         for name in ("drawings", "titleblock", "aireview", "results"):
             self.js(win, "window.__hz.store.set({panel: %s})" % json.dumps(name))
             pump(0.4)
@@ -311,10 +311,16 @@ class ShellWindowTest(ShellBase):
         key = ("window.dispatchEvent(new KeyboardEvent('keydown', {key: %s, ctrlKey: %s, altKey: %s, bubbles: true}))")
         self.js(win, key % ('"Escape"', "false", "false"))
         pump(0.2)
-        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "도면 패널은 Esc로 닫히지 않는다(X와 도면 메뉴만)")
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "도면 패널은 Esc로 닫히지 않는다")
         self.js(win, key % ('"1"', "true", "false"))          # 왼쪽 메뉴의 도면 단추와 같은 단축키
         pump(0.2)
-        self.assertTrue(self.js(win, "window.__hz.store.get().panel === null"))
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "다시 눌러도 닫히지 않는다")
+        self.js(win, key % ('"3"', "true", "false"))
+        pump(0.2)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "results")
+        self.js(win, key % ('"3"', "true", "false"))          # 다른 패널은 다시 누르면 닫혀 고정 패널이 돌아온다
+        pump(0.2)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings")
         self.js(win, key % ('"1"', "true", "false"))
         pump(0.2)
         self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings")

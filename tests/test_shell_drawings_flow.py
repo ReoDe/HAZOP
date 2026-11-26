@@ -565,7 +565,7 @@ class ItemBubbleFlowTest(W.ShellBase):
         self.js(win, "(() => { const h = document.querySelector('header') || document.body; for (const t of ['pointerdown', 'pointerup']) h.dispatchEvent(new PointerEvent(t, {bubbles: true, clientX: 300, clientY: 5, button: 0})); })()")
         self.assertTrue(wait_for(lambda: picked() == "", 10), "머리 줄을 누르면 닫힌다")
 
-    def test_only_the_close_button_and_the_drawing_menu_button_close_the_drawing_panel(self):
+    def test_nothing_closes_the_drawing_panel(self):
         win = self.window()
         self.js(win, "window.__hz.store.set({panel: 'drawings'})")      # 앞 시험이 남긴 보기 상태와 무관하게
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.drow-open') !== null") is True, 15))
@@ -578,12 +578,10 @@ class ItemBubbleFlowTest(W.ShellBase):
         self.assertTrue(self.click(win, "button.sheet"))
         pump(0.3)
         self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "위 도면 이름 단추는 열기만 한다")
-        self.assertTrue(self.click(win, "section.panel button[aria-label='패널 닫기']"))
-        self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10), "X로 닫는다")
-        self.assertTrue(self.click(win, ".rail button"))
-        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "drawings", 10))
+        self.assertFalse(self.js(win, "!!document.querySelector(\"section.panel button[aria-label='패널 닫기']\")"), "닫기 단추가 없다")
         self.assertTrue(self.click(win, ".rail button.on"))
-        self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10), "왼쪽 메뉴의 도면 단추로 닫는다")
+        pump(0.4)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "왼쪽 메뉴의 도면 단추로도 닫히지 않는다")
 
 
 class ScanNoteFlowTest(W.ShellBase):

@@ -82,6 +82,19 @@ function saveUi() {
 
 /** 도면을 열 때 도면·구간 패널(늘 고정)은 그대로 둔다. 다른 패널은 도면을 가리므로 닫는다. */
 const FIXED_PANELS = ["drawings", "nodes"];
+/** 도면·구간 패널은 화면에 늘 고정이다: 어디서든 패널을 비우면(다른 패널 닫기 포함) 마지막에 보던 고정 패널이 된다. */
+function pinFixedPanels() {
+  const raw = store.set;
+  let last = "drawings";
+  store.set = (patch) => raw((s) => {
+    const next = typeof patch === "function" ? patch(s) : patch;
+    if (!next || !("panel" in next)) return next;
+    if (FIXED_PANELS.includes(next.panel)) last = next.panel;
+    else if (!next.panel) return Object.assign({}, next, { panel: last });
+    return next;
+  });
+  store.set({ panel: store.get().panel });
+}
 const fitSheet = () => store.set((s) => ({ command: { seq: s.command.seq + 1, type: "fit" } }));
 const keptPanel = () => (FIXED_PANELS.includes(store.get().panel) ? store.get().panel : null);
 export function openSheet(graphId) {
@@ -92,7 +105,7 @@ export function openSheet(graphId) {
 }
 
 export function togglePanel(name) {
-  store.set((s) => ({ panel: s.panel === name ? null : name, backTo: null }));
+  store.set((s) => ({ panel: s.panel === name && !FIXED_PANELS.includes(name) ? null : name, backTo: null }));
 }
 
 setOpenSheet(openSheet);      // 분석 결과의 '도면에서 보기'가 도면을 바꿀 때 쓴다
@@ -178,7 +191,7 @@ function RailButton({ p, on }) {
   const hint = useStore(p.hint || nothing);
   const dot = useStore(p.dot || nothing);
   const label = panelLabel(p) + (hint ? " · " + hint : "");
-  const press = () => { if (on) store.set({ panel: null, backTo: null }); else togglePanel(p.name); };
+  const press = () => { if (on && !FIXED_PANELS.includes(leadOf(byName(store.get().panel)))) store.set({ panel: null, backTo: null }); else if (!on) togglePanel(p.name); };      // 도면·구간은 다시 눌러도 닫히지 않는다
   return html`<button type="button" class=${on ? "on" : ""} title=${label} aria-label=${label} onClick=${press}>
     <${Icon} name=${p.icon} />${badge ? html`<span class="badge">${badge}</span>` : null}${dot ? html`<span class=${"conn " + dot}></span>` : null}</button>`;
 }
@@ -250,7 +263,7 @@ function App() {
         if (store.get().chatCollapsed) toggleChat();
         setTimeout(() => { const el = document.querySelector(".chat-input"); if (el) el.focus(); }, 0);
       } else if (e.ctrlKey && PANELS.some((p) => p.key === e.key)) { e.preventDefault(); togglePanel(PANELS.find((p) => p.key === e.key).name); }
-      else if ((e.ctrlKey && e.key === "0") || (e.key === "Escape" && !typing)) { if (store.get().panel && store.get().panel !== "drawings") { e.preventDefault(); store.set({ panel: null }); } }
+      else if ((e.ctrlKey && e.key === "0") || (e.key === "Escape" && !typing)) { if (store.get().panel && !FIXED_PANELS.includes(store.get().panel)) { e.preventDefault(); store.set({ panel: null }); } }
     }
     window.addEventListener("keydown", key);
     return () => { window.removeEventListener("keydown", key); };
@@ -275,6 +288,7 @@ async function boot() {
   wireQueue();
   setReviewOpeners(openQueue, openSheet, (gid) => queueStore.get().open && queueStore.get().kind === "ai" && queueStore.get().gid === gid);
   wireReview();
+  pinFixedPanels();
   render(html`<${App} />`, document.getElementById("app"));
   loadPanelCss();
   await loadIcons();

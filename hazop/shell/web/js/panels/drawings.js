@@ -81,7 +81,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const pick = () => cmd("register.pick").catch(toastError);
 
   return html`<section class="panel" aria-label="도면">
-    <div class="panel-h"><h2>도면</h2><span class="acts"><${Btn} kind="ghost" icon="x" label="패널 닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
+    <div class="panel-h"><h2>도면</h2></div>
     <div class="panel-b">
       <div class=${"drop" + (over ? " over" : "")} role="button" tabindex="0" aria-label="도면 파일 고르기" onClick=${pick}
         onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } }}>
