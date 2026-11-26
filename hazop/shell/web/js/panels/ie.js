@@ -11,7 +11,7 @@ import { OpenFolder } from "./open_folder.js";
 import { FmeaView, MldSection } from "./ie_p5.js";
 import { CandidateCard } from "./ie_judge.js";
 
-const STATUS = { draft: ["초안", "ai"], confirmed: ["확정", "ok"], split: ["나뉨", "plain"], deleted: ["삭제", "plain"] };
+const STATUS = { draft: ["초안", "plain"], confirmed: ["확정", "ok"], split: ["나뉨", "plain"], deleted: ["삭제", "plain"] };
 const JUDGE = { yes: ["후보", "accent"], no: ["제외", "plain"], undecided: ["보류", "warn"] };
 const COVER = { covered: ["대응 그룹 있음", "ok"], gap: ["빈 범주", "warn"], unclassified: ["미분류", "plain"], unmapped: ["범주 없음", "warn"], out_of_scope: ["범위 밖", "plain"], other_method: ["다른 기법", "plain"], not_applicable: ["해당 없음", "plain"] };
 const DISPOSITION = { out_of_scope: "범위 밖", other_method: "다른 기법으로 확인 예정", not_applicable: "해당 없음(설계 특성)" };

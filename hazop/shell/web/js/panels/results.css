@@ -42,7 +42,6 @@
 .worksheet .basis { margin-top: var(--sp-1); }
 .worksheet .basis-b { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-1) var(--sp-2); border-left: 2px solid var(--line); }
 .worksheet .warn-t { color: var(--warn); }
-.worksheet .draft { font-style: italic; }
 .edit-more { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-2); }
 .edit-more .sub-h { color: var(--muted); margin-top: var(--sp-1); }
 .edit-more .chk { flex-direction: row; align-items: center; gap: var(--sp-1); }

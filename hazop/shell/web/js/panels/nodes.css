@@ -20,7 +20,6 @@ textarea.textbox { resize: vertical; min-height: 64px; }
 .nd-h { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .nd-r { margin-left: auto; font-size: var(--fs-sm); }
 .ndetail .val { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-.ndetail .val.draft { padding: 4px 8px; border-radius: var(--r-sm); background: repeating-linear-gradient(135deg, var(--ai-a) 0 5px, var(--ai-b) 5px 10px); border: 1px dashed var(--ai-line); }
 .memlist { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 6px; max-height: 140px; overflow: auto; }
 .ndetail summary { cursor: pointer; color: var(--ink-2); }
 

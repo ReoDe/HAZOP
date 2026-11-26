@@ -299,7 +299,7 @@ export const tests = [
     assert.equal(opened.length, 2);
     host.remove();
   } },
-  { name: "구간 패널: 구간을 누르면 강조·상세, 확정·적용됨 상태 단추와 글은 없고 잠긴 구간만 고치기가 막힌다, AI 초안 표시", async run(assert) {
+  { name: "구간 패널: 구간을 누르면 강조·상세, 확정·적용됨 상태 단추와 글은 없고 잠긴 구간만 고치기가 막힌다, AI가 쓴 값에도 출처 꼬리표가 없다", async run(assert) {
     await setup();
     N.nodes.set({ scope: "all" });
     const host = mount(html`<${NodesPanel} onClose=${() => {}} />`);
@@ -308,7 +308,7 @@ export const tests = [
     host.querySelectorAll(".nrow-b")[1].click();         // S2
     await tick(); await tick();
     assert.equal(N.nodes.get().focus, "S2");
-    assert(host.querySelector(".ndetail").textContent.includes("AI 초안"), "AI가 쓴 이름 표시");
+    assert(!host.querySelector(".ndetail").textContent.includes("AI 초안") && !host.querySelector(".ndetail .draft, .ndetail .chip.ai"), "AI가 쓴 값도 그대로 보인다");
     host.querySelectorAll(".nrow-b")[2].click();         // S3: 옛 확정 기록이 있는 구간
     await tick(); await tick();
     const detail = host.querySelector(".ndetail").textContent;
@@ -416,7 +416,7 @@ export const tests = [
     const host = mount(html`<${NodeOverlay} />`);
     N.setSelection(["n1", "n2", "n3"]);
     await tick();
-    assert(host.textContent.includes("3개 고름"), "막대");
+    assert(host.querySelector(".selbar") && !host.textContent.includes("개 고름") && host.querySelector(".selbar .seg-dot"), "막대: 색 점·단추·X(수는 쓰지 않는다)");
     [...host.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "구간 만들기").click();
     await tick();
     const m = sent.find((x) => x.name === "nodes.create");
@@ -438,7 +438,7 @@ export const tests = [
     assert(!host.querySelector(".newnode"), "카드가 닫힘");
     host.remove();
   } },
-  { name: "도면 고르기: 구간을 고른 구간 탭의 Ctrl 고름은 '구간 수정'(더함·뺌)이고, 구간이 없거나 잠겼거나 다른 탭이면 '구간 만들기'", async run(assert) {
+  { name: "도면 고르기: 구간을 고른 구간 탭의 Ctrl 고름은 '구간 수정'(더함·뺌)이고, 구간을 고른 상태에서는 '구간 만들기'가 없다", async run(assert) {
     await setup();
     store.set({ panel: "nodes" });
     await N.loadSheet("graph-A");
@@ -450,7 +450,7 @@ export const tests = [
     const host = mount(html`<${NodeOverlay} />`);
     await tick();
     const bar = () => host.querySelector(".selbar");
-    assert(bar() && bar().textContent.includes("S1 수정 · 더함 1 · 뺌 1") && !bar().textContent.includes("구간 만들기"), bar() && bar().textContent);
+    assert(bar() && /^\s*S1\s*구간 수정\s*Enter\s*$/.test(bar().textContent) && bar().querySelector(".seg-dot"), bar() && bar().textContent);
     await N.applyEdit();
     await tick();
     const m = sent.filter((x) => x.name === "nodes.edit_members").pop();
@@ -468,6 +468,8 @@ export const tests = [
     store.set({ panel: "drawings" });
     N.nodes.set({ focus: "S1" });
     assert(!N.editTarget(), "구간 탭이 아니면 고치기가 아니다");
+    await tick();
+    assert(!bar() || !bar().textContent.includes("구간 만들기"), "구간을 고른 채면 다른 탭에서도 '구간 만들기'는 없다");
     N.clearSelection();
     host.remove();
     store.set({ panel: null });

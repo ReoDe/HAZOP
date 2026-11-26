@@ -75,7 +75,7 @@ export function ItemBubble() {
     setProps(null); setAi("");
     sheetFacts(b.sheet, rev).then((f) => {
       const ex = (((f && f.clean) || {}).items || {})[b.id] || {};
-      if (alive) setAi(ex.ai_answer === "not_symbol" ? "AI가 기호가 아니라고 봤습니다." : ex.review === "ai_auto" ? "AI가 채운 값이 들어 있습니다." : "");
+      if (alive) setAi(ex.ai_answer === "not_symbol" ? "AI가 기호가 아니라고 봤습니다." : "");
     });
     read("props/" + encodeURIComponent(b.sheet) + "/" + encodeURIComponent(b.id)).then((p) => { if (alive) setProps(p); }).catch(() => { if (alive) setProps({ items: [] }); });
     return () => { alive = false; };

@@ -6,7 +6,7 @@ import { useState } from "../../vendor/hooks.module.js";
 import { Btn, Chip } from "../ui/parts.js";
 import * as I from "./ie_state.js";
 
-const STATUS_KIND = { imported: "ai", approved: "ok", excluded: "plain" };
+const STATUS_KIND = { imported: "plain", approved: "ok", excluded: "plain" };
 const MLD_KIND = { confirmed: "ok", rule: "accent", gap: "warn", unmapped: "warn", not_applicable: "plain" };
 const FIELD_NAME = { tag: "기기 태그", failure_mode: "고장모드", failure_code: "고장모드 코드", cause: "원인", op_mode: "운전 모드", effect: "고장 영향",
   detection: "탐지 방법", compensation: "보상 수단", remark: "비고·조치", severity_class: "Severity Class", hazop_entry: "관련 HAZOP 항목" };

@@ -95,7 +95,6 @@ kbd { font-family: var(--font); font-size: 11px; color: var(--muted); border: 1p
 .chip.warn { background: var(--warn-bg); color: var(--warn); }
 .chip.err { background: var(--err-bg); color: var(--err); }
 .chip.accent { background: var(--accent-weak); color: var(--accent-ink); }
-.chip.ai { background: repeating-linear-gradient(135deg, var(--ai-a) 0 5px, var(--ai-b) 5px 10px); border: 1px dashed var(--ai-line); color: var(--ink-2); }
 .chip .ic { width: 14px; height: 14px; }
 .input { height: 34px; border: 1px solid var(--line-input); border-radius: var(--r-sm); padding: 0 10px; display: flex; align-items: center; gap: 8px; background: var(--surface); color: var(--faint); }
 .textarea { min-height: 64px; border: 1px solid var(--line-input); border-radius: var(--r-sm); padding: 8px 10px; background: var(--surface); }
@@ -149,7 +148,6 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .cell.r5 { background: var(--risk-deny-bg); color: var(--risk-deny-ink); }
 .cell.na { color: var(--faint); font-weight: 400; }
 .cell.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
-.cell.ai { border: 1px dashed var(--ai-line); }
 
 /* ── 채팅 ───────────────────────────────────────────────────────────── */
 .chat { background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; z-index: 4; }
@@ -227,7 +225,7 @@ table.matrix td.c { text-align: center; padding: 4px; }
 .qbody .change .now { color: var(--muted); text-decoration: line-through; }
 .qbody .change .to { font-weight: 700; color: var(--accent-ink); }
 .qbody .conf { font-size: var(--fs-sm); color: var(--ink-2); }
-.qbody .why { padding: 8px 10px; border-radius: var(--r-sm); border: 1px dashed var(--ai-line); background: repeating-linear-gradient(135deg, var(--ai-a) 0 5px, var(--ai-b) 5px 10px); font-size: var(--fs-sm); }
+.qbody .why { padding: 8px 10px; border-radius: var(--r-sm); background: var(--ai-a); font-size: var(--fs-sm); }
 .qbody .why .muted { display: block; font-size: var(--fs-xs); margin-bottom: 2px; }
 .qbody .edit input { width: 100%; box-sizing: border-box; height: 32px; padding: 0 8px; border: 1px solid var(--accent); border-radius: var(--r-sm); font: inherit; }
 .qbody .ask, .qmsg { padding: 6px 9px; border-radius: var(--r-sm); background: var(--warn-bg); color: var(--warn); font-size: var(--fs-sm); }

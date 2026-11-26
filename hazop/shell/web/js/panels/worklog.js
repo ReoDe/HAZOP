@@ -20,7 +20,7 @@ export function WorkLog() {
   if (!batches.length) return null;
   const askRest = () => cmd("chat.ask", { text: "나머지 구간도 나눠 줘" }).catch((e) => N.nodes.set({ error: e.message }));
   return html`<div class="card"><h3>작업 기록</h3>${batches.map((b, i) => html`<div class="kv" key=${b.batch_id}>
-    <div class="k"><b>${b.batch_id} · ${b.origin === "ai" ? "채팅" : "사람"} ${opsText(b.ops, b.kind)}</b><span>${b.node_ids.join(", ")}${b.request_text ? " · “" + b.request_text + "”" : ""} · ${when(b.at)}</span></div>
+    <div class="k"><b>${b.batch_id} · ${opsText(b.ops, b.kind)}</b><span>${b.node_ids.join(", ")}${b.request_text ? " · “" + b.request_text + "”" : ""} · ${when(b.at)}</span></div>
     <div class="acts-row">${b.origin === "ai" && i === 0 && list.pending_ai > 0 ? html`<${Btn} sm=${true} label="나머지도 나누기" title="채팅에 나머지 구간을 나누도록 시킵니다" onClick=${askRest}>나머지도 나누기<//>` : null}
       <${Btn} sm=${true} icon="arrow-back-up" label=${b.batch_id + " 되돌리기"} disabled=${busy} onClick=${() => N.undo(b.batch_id)}>되돌리기<//></div></div>`)}</div>`;
 }

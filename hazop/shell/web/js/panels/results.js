@@ -14,7 +14,7 @@ import { checkText, lostText } from "./nodes_logic.js";
 import { BasisBlock, CauseCell, ConsequenceCell, EditMore, SafeguardCell, changedFields, editState } from "./results_detail.js";
 
 // 상태 이름은 Excel(study_xlsx STATUS_LABELS)·이전 화면과 같게 '승인'으로 맞춘다(2026-11-14 A9 검토)
-const STATUS = { proposed: ["AI 초안", "ai"], approved: ["승인", "ok"], revised: ["수정", "accent"], rejected: ["기각", "plain"], on_hold: ["보류", "warn"] };
+const STATUS = { proposed: ["제안됨", "plain"], approved: ["승인", "ok"], revised: ["수정", "accent"], rejected: ["기각", "plain"], on_hold: ["보류", "warn"] };
 const RISK_CLASS = (r) => (r == null ? "" : "risk-" + Math.min(5, Math.max(1, r)));
 // 항목이 없는 칸의 종류: [칸에 쓰는 짧은 이름, 모양, Excel 행 이름(엔진이 label로도 준다)]. 이름은 Excel 칸 표시 행(study_xlsx.CELL_ROW_LABELS)과 같다.
 // 엔진(api_results.cell_kind)이 kind·reason·label을 준다. 없으면 '아직 분석 안 함'.
@@ -35,7 +35,7 @@ function Kpi({ kpi }) {
   return html`<div class="acts-row kpi">
     <${Chip}>분석 ${kpi.analyzed}/${kpi.cells}칸<//>
     <${Chip}>항목 ${kpi.entries}<//>
-    <${Chip} kind=${kpi.unreviewed ? "warn" : ""} title="검토하지 않은 항목(AI 초안·보류)">미검토 ${kpi.unreviewed}<//>
+    <${Chip} kind=${kpi.unreviewed ? "warn" : ""} title="검토하지 않은 항목(제안됨·보류)">미검토 ${kpi.unreviewed}<//>
     ${kpi.on_hold ? html`<${Chip} kind="warn">보류 ${kpi.on_hold}<//>` : null}
     <${Chip}>승인 ${kpi.approved}<//>
     ${kpi.failed_cells ? html`<${Chip} kind="warn" title="마지막 AI 실행이 실패한 칸">실패 ${kpi.failed_cells}<//>` : null}</div>`;
@@ -249,7 +249,7 @@ function Worksheet() {
     ${cell.ai_run && cell.ai_run.status === "failed" ? html`<${Notice} kind="warn" icon="alert-triangle">마지막 AI 실행이 이 칸에서 실패했습니다: ${cell.ai_run.error}<//>` : null}
     ${mk && KIND[mk.kind] && mk.kind !== "failed" && !cell.entries.length ? html`<${Notice} kind="info"><b>${mk.label || KIND[mk.kind][2]}</b> · ${mk.reason}<//>`
       : cell.ai_run && cell.ai_run.note ? html`<div class="muted small">${cell.ai_run.note}</div>` : null}
-    ${cell.entries.length === 0 ? html`<div class="muted">${mk && KIND[mk.kind] ? "항목이 없습니다." : "항목이 없습니다. '분석 실행'으로 AI 초안을 받으세요."}</div>` : cell.entries.map((e) => html`<div class="ent" key=${e.entry_id}>
+    ${cell.entries.length === 0 ? html`<div class="muted">${mk && KIND[mk.kind] ? "항목이 없습니다." : "항목이 없습니다."}</div>` : cell.entries.map((e) => html`<div class="ent" key=${e.entry_id}>
       <div class="entgrid">
         <div><div class="lbl">원인</div><${CauseCell} e=${e} c=${c} /></div>
         <div><div class="lbl">결과</div><${ConsequenceCell} e=${e} /></div>

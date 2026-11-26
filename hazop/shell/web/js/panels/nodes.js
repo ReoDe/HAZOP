@@ -40,7 +40,7 @@ function NodePicks({ ids, list, busy }) {
 
 /** 연필을 누르면 그 자리에서 바로 고친다. 이름은 Enter, 설계 의도는 Ctrl+Enter로 저장하고, 둘 다 바깥을 누르면(초점이 나가면) 저장한다.
  *  Esc는 버린다. 구간마다 따로 그려(key) 고치던 글이 다른 구간에 들어가지 않는다. */
-function Editable({ label, value, multiline, disabled, onSave, hint, aiDraft, required }) {
+function Editable({ label, value, multiline, disabled, onSave, hint, required }) {
   const [text, setText] = useState(null);
   const editing = text !== null;
   const box = useRef(null);
@@ -61,9 +61,9 @@ function Editable({ label, value, multiline, disabled, onSave, hint, aiDraft, re
     else if (e.key === "Enter" && (!multiline || e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); e.stopPropagation(); finish(true); }
   };
   const props = { class: "textbox", "aria-label": label, value: text, onInput: (e) => setText(e.target.value), onKeyDown, onBlur: () => finish(true) };
-  return html`<div class="field"><label>${label}${aiDraft ? html` <${Chip} kind="ai" icon="sparkles">AI 초안<//>` : null}</label>
+  return html`<div class="field"><label>${label}</label>
     ${editing ? (multiline ? html`<textarea ref=${box} rows="3" maxlength="2000" ...${props}></textarea>` : html`<input ref=${box} maxlength="120" ...${props} />`)
-    : html`<div class="kv"><span class=${"val" + (aiDraft ? " draft" : "")}>${value || html`<span class="muted">비어 있음</span>`}</span>
+    : html`<div class="kv"><span class="val">${value || html`<span class="muted">비어 있음</span>`}</span>
         <${Btn} sm=${true} kind="ghost" icon="pencil" label=${label + " 고치기"} disabled=${disabled} title=${disabled ? hint : label + " 고치기"} onClick=${() => { done.current = false; setText(value || ""); }} /></div>`}</div>`;
 }
 
@@ -101,8 +101,8 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
       ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 해제"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 해제<//>` : null}
       ${edit && selection.length && !added ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
       ${edit ? html`<${Btn} kind="ghost" icon="trash" label=${n.node_id + " 지우기"} disabled=${busy} onClick=${() => N.removeNode(n.node_id, false)}>지우기<//>` : null}</div>
-    <${Editable} key=${"name-" + n.node_id} required=${true} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} aiDraft=${n.name_by === "ai" && edit} />
-    <${Editable} key=${"intent-" + n.node_id} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} aiDraft=${!!(di && di.by === "ai" && edit)} />
+    <${Editable} key=${"name-" + n.node_id} required=${true} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} />
+    <${Editable} key=${"intent-" + n.node_id} label="설계 의도" multiline=${true} value=${di && di.text} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.setIntent(n.node_id, t)} />
     ${d && d.boundary && d.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${d.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
     ${n.sheets.length ? html`<div class="field"><label>도면</label><div class="acts-row" role="group" aria-label="도면별로 보기">${n.sheets.map((sh, i) => html`<button type="button" class="chip id" key=${sh.graph_id}
       title=${"이 구간을 " + sheetName(sh.graph_id, drawings) + " 도면에서 보기"} onClick=${() => N.goToSheet(sh.graph_id)}>${sheetName(sh.graph_id, drawings)} · ${sh.n}</button>`)}</div></div>` : null}

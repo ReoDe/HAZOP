@@ -19,14 +19,14 @@ export function CauseCell({ e, c }) {
   const d = e.detail || {};
   return html`<div>${text(e.cause) || none}
     ${d.cause_kind ? html`<div class="small muted">유형: ${c.cause_kinds[d.cause_kind] || d.cause_kind}</div>` : null}
-    ${(d.cause_refs || []).length ? html`<div class="small">위치: ${d.cause_refs.map((r, i) => html`<span key=${i} class=${r.draft ? "draft" : ""}>${i ? ", " : ""}${refLabel(r)}${r.failure_mode ? " · " + r.failure_mode : ""}${r.draft ? " (AI 초안)" : ""}</span>`)}</div>` : null}</div>`;
+    ${(d.cause_refs || []).length ? html`<div class="small">위치: ${d.cause_refs.map((r, i) => html`<span key=${i}>${i ? ", " : ""}${refLabel(r)}${r.failure_mode ? " · " + r.failure_mode : ""}</span>`)}</div>` : null}</div>`;
 }
 
 export function ConsequenceCell({ e }) {
   const d = e.detail || {};
   return html`<div>${text(e.consequence) || none}
     <div class="small">${d.consequence_basis === "unmitigated" ? html`<${Chip} kind="ok">비완화<//>` : html`<${Chip} kind="warn" title="보호수단이 모두 실패했다고 보고 쓴 결과인지 확인하지 않았습니다">비완화 여부 미확인<//>`}</div>
-    ${(d.consequence_refs || []).length ? html`<div class="small">영향 대상: ${d.consequence_refs.map((r) => refLabel(r) + (r.draft ? " (AI 초안)" : "")).join(", ")}</div>` : null}</div>`;
+    ${(d.consequence_refs || []).length ? html`<div class="small">영향 대상: ${d.consequence_refs.map((r) => refLabel(r)).join(", ")}</div>` : null}</div>`;
 }
 
 export function SafeguardCell({ e, c }) {
@@ -35,7 +35,7 @@ export function SafeguardCell({ e, c }) {
   return html`<ul class="tight">${items.map((s, i) => {
     const bits = [s.role !== "unknown" ? c.roles[s.role] : null, s.actuation !== "unknown" ? c.actuations[s.actuation] : "작동 방식 미확인"]
       .concat(s.refs.map(refLabel)).filter(Boolean);
-    return html`<li key=${i}>${s.text}<span class="small muted"> — ${bits.join(" · ") || "미정"}${s.draft ? " · AI 초안" : ""}</span></li>`;
+    return html`<li key=${i}>${s.text}<span class="small muted"> — ${bits.join(" · ") || "미정"}</span></li>`;
   })}</ul>`;
 }
 
