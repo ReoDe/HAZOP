@@ -57,8 +57,8 @@ export function go(t, onOpen) {
   if (t.kind === "sheet") { if (onOpen) onOpen(t.sheet); else applyDisplay({ op: "open", ok: true, sheet: t.sheet }); return true; }
   if (t.kind === "component") {
     const mark = { op: "mark", groups: [{ ids: [t.local_id], style: "focus", label: null }], dim_others: true, center: false };
-    applyDisplay({ op: "show", ok: true, sheet: t.sheet, ids: [t.local_id], marks: { [t.sheet]: [mark] } }, "actionlog");
     store.set({ panel: null });
+    applyDisplay({ op: "show", ok: true, sheet: t.sheet, ids: [t.local_id], marks: { [t.sheet]: [mark] } }, "actionlog");
     return true;
   }
   if (t.kind === "node") { store.set({ panel: "nodes" }); if (N.nodes.get().focus !== t.node_id) N.focusNode(t.node_id, { show: true }); return true; }

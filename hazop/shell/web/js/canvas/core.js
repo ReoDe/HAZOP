@@ -239,7 +239,7 @@ export class SheetCore {
     if (this.cb.onCleanBuilt) this.cb.onCleanBuilt(this.cleanInfo);
   }
 
-  /** 새로 온 경로(path) 표시가 화면 밖에 걸치면 경로가 들어오게 맞춘다(같은 경로는 한 번만). */
+  /** 새로 온 경로(path) 표시가 화면 밖에 걸치면 도면 전체를 다시 맞춘다(같은 경로는 한 번만). */
   _fitNewPath() {
     this._pathSeen = this._pathSeen || new Set();
     for (const m of this.marks) {
@@ -250,7 +250,7 @@ export class SheetCore {
       if (!b || !r.width) continue;
       const k = this.view.k, vx0 = -this.view.x / k, vy0 = -this.view.y / k, vx1 = vx0 + r.width / k, vy1 = vy0 + r.height / k;
       const inside = b.x0 >= vx0 && b.y0 >= vy0 && b.x1 <= vx1 && b.y1 <= vy1;
-      if (!inside) this.zoomTo(ids, 0.15);
+      if (!inside) this.fit();      // 경로가 화면 밖이면 도면 전체를 다시 맞춘다(확대해 들어가지 않는다)
     }
   }
 
@@ -360,8 +360,8 @@ export class SheetCore {
 
   _command(c) {
     if (c.type === "zoomTo") this.zoomTo(c.ids || [], c.pad);
-    else if (c.type === "inspect") {          // 미확인 자리로 가서 원본 조각 말풍선을 연다(N 키)
-      this.zoomTo([c.id], c.pad);
+    else if (c.type === "inspect") {          // 미확인 곳의 원본 조각 말풍선을 연다(N 키). 확대하지 않고 도면 전체를 맞춘다
+      this.fit();
       if (this.cb.onUnconfirmedClick) this.cb.onUnconfirmedClick({ id: c.id, reason: this._unconfirmedAt(c.id) || c.reason, fragment: this.fragmentOf(c.id), rect: null });
     }
     else if (c.type === "fit") this.fit();
@@ -565,7 +565,6 @@ export class SheetCore {
     if (!hit) return;
     const lk = this.cb.onLinkClick && hit.layer === "symbol" ? this._linkOf(hit.id) : null;       // 이어진 다른 도면 연결(오각형)은 두 번 누르면 맞은편으로(한 번은 고르기·말풍선)
     if (lk && lk.status === "linked") { this.cb.onLinkClick(lk); return; }
-    this.zoomTo([hit.id], 1.5);
     if (this.cb.onItemDblClick) this.cb.onItemDblClick({ id: hit.id });
   }
 

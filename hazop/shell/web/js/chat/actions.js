@@ -9,6 +9,7 @@ import { Icon } from "../ui/icon.js";
 import { Btn, Notice } from "../ui/parts.js";
 import * as N from "../panels/nodes_state.js";
 import * as R from "../panels/results_state.js";
+import { locate } from "../locate.js";
 
 export const REST_QUESTION = "방금 만든 대표 구간을 참고해서 나머지 구간도 나눠 주세요.";
 
@@ -42,9 +43,7 @@ function note(text) {
 export function applyDisplay(it, rid) {
   if (!it || !it.ok) return;
   if (it.op === "show") {
-    const opened = openSheet(it.sheet);
-    store.set({ marks: { rid, bySheet: it.marks || {} } });
-    later({ type: "zoomTo", ids: (it.ids || []).slice(0, 400), pad: 0.6 }, opened);
+    locate({ sheet: it.sheet, ids: it.ids || [], marks: it.marks, rid });
   } else if (it.op === "open") {
     later({ type: "fit" }, openSheet(it.sheet));
   } else if (it.op === "fit") {

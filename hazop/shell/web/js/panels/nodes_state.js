@@ -127,7 +127,7 @@ export function focusNode(id, { show = false } = {}) {
 
 export function unfocus() { if (nodes.get().focus) nodes.set({ focus: null, detail: null }); }
 
-const fitSheet = () => shell.set((s) => ({ command: { seq: s.command.seq + 1, type: "fit" } }));
+export const fitSheet = () => shell.set((s) => ({ command: { seq: s.command.seq + 1, type: "fit" } }));
 
 /** 구성요소가 가장 많은 도면(같으면 지금 도면, 그다음 앞의 것). */
 export function mainSheetOf(row, current) {
@@ -140,10 +140,6 @@ export function mainSheetOf(row, current) {
 export function showNode(id) {
   const target = mainSheetOf(nodes.get().list.nodes.find((n) => n.node_id === id), shell.get().sheet);
   if (target) goToSheet(target);
-}
-
-export function zoomToIds(ids) {
-  if (ids.length) shell.set((s) => ({ command: { seq: s.command.seq + 1, type: "zoomTo", ids: ids.slice(0, 400), pad: 0.15 } }));
 }
 
 export function openPanel() { shell.set({ panel: "nodes" }); }

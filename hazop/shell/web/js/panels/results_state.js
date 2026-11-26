@@ -102,8 +102,7 @@ export function openSheet(graphId) { if (!openSheetFn) return false; openSheetFn
 /** AI 근거 경로 하나를 도면에서 강조한다(채팅 답의 도면 칩과 같은 표시 형식, 돌아오기 칩은 분석 결과로). */
 export function showBasisPath(path) {
   if (!path || !path.sheet) { results.set({ error: "이 경로에는 도면에 그릴 구성요소가 없습니다." }); return false; }
-  if (openSheetFn) openSheetFn(path.sheet);
-  store.set({ sheet: path.sheet, panel: null, backTo: "results", marks: { rid: "results-basis", bySheet: path.marks || {} } });
+  import("../locate.js").then((L) => L.locate({ sheet: path.sheet, marks: path.marks || {}, rid: "results-basis", patch: { panel: null, backTo: "results" } }));
   return true;
 }
 
@@ -123,9 +122,8 @@ export async function viewOnSheet(nodeId) {
   const cur = store.get().sheet;
   const target = N.mainSheetOf(row, cur);
   if (!target) { results.set({ error: "이 구간의 구성요소가 놓인 도면을 찾지 못했습니다." }); return false; }
-  if (target !== cur && openSheetFn) openSheetFn(target);
+  (await import("../locate.js")).resetHighlights();      // 걸려 있던 강조를 풀고 이 구간만
   store.set({ panel: "nodes", backTo: "results" });      // 구간 강조는 구간 탭에서 그린다
-  N.nodes.set({ focus: null, detail: null });
   N.focusNode(nodeId, { show: true });
   return true;
 }

@@ -100,6 +100,10 @@ async function body({ CV, MK, SheetCore }, data) {
   core.update({ command: { seq: 1, type: "inspect", id: "x-open", reason: "open_end", pad: 0.5 } });
   const insp = ev.unconf[ev.unconf.length - 1];
   t("명령 inspect(N 키): 그 자리로 가서 같은 신호를 보냄", insp.id === "x-open" && insp.reason === "open_end" && !!insp.fragment);
+  const atInspect = JSON.stringify(core.view);
+  core.fit();
+  t("명령 inspect(N 키): 확대해 들어가지 않고 도면 전체 맞춤", JSON.stringify(core.view) === atInspect, atInspect);
+  core.zoomTo(["x-open"], 0.5);      // 아래 누르기·글자 검사는 확대한 보기에서 한다
   const nBefore = ev.unconf.length;
   const nk = items.find((i) => i.kind === "pump"), nb = nk.bbox;
   click((nb[0] + nb[2]) / 2, (nb[1] + nb[3]) / 2);
@@ -160,9 +164,10 @@ async function body({ CV, MK, SheetCore }, data) {
   core.update({ marks: [] });
 
   // ---- 글자: 화면 픽셀 하한, 겹침 숨김, 설비 태그는 설비 옆
+  core.zoomTo([near.id], 0.15);      // 확대한 보기에서 잰다(경로 표시는 이제 구성요소로 확대해 들어가지 않는다)
   const lt = [...core.cleanG.querySelectorAll("text")].filter((x) => x.style.display !== "none" && x.getAttribute("font-size"));
   const minOk = lt.filter((x) => +x.getAttribute("font-size") * core.view.k >= 10.9 || +x.getAttribute("font-size") <= 9).length;
-  t("맞춤 배율에서 보이는 태그·번호 글자는 대부분 화면에서 11px 이상(원 안 글자는 따로)", lt.length >= 10 && minOk >= lt.length * 0.8, minOk + "/" + lt.length + " k=" + core.view.k.toFixed(2));
+  t("확대한 보기에서 보이는 태그·번호 글자는 대부분 화면에서 11px 이상(원 안 글자는 따로)", lt.length >= 10 && minOk >= lt.length * 0.8, minOk + "/" + lt.length + " k=" + core.view.k.toFixed(2));
   const eq = items.find((i) => i.layer === "symbol" && i.category === "equipment" && i.tag && i.kind === "reactor_vessel");
   const eqText = [...core.cleanG.querySelectorAll("text")].find((x) => x.textContent === eq.tag);
   t("설비 태그는 설비 바로 옆 오른쪽 가운데에 있음(모든 설비 같은 규칙)", !!eqText && +eqText.getAttribute("x") >= eq.bbox[2] - 12 && +eqText.getAttribute("x") <= eq.bbox[2] + 14 && Math.abs(+eqText.getAttribute("y") - (eq.bbox[1] + eq.bbox[3]) / 2) <= 25, eqText && eqText.getAttribute("x") + "," + eqText.getAttribute("y") + " bbox " + eq.bbox.map(Math.round));

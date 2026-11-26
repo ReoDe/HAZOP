@@ -33,7 +33,7 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
       const act = keyAction(e, { selection: N.pickedIds(s), typing, panelWide: false, card: !!s.card });
       if (!act) return;
       e.preventDefault();
-      if (act === "fit") N.zoomToIds(s.selection);
+      if (act === "fit") N.fitSheet();      // F: 고른 것으로 확대하지 않고 도면 전체를 맞춘다
       else if (act === "card") N.openCard();
       else if (act === "submit") N.submitCard();
     }

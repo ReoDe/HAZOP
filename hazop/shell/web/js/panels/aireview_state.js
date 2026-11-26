@@ -4,6 +4,7 @@ import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore, store } from "../store.js";
 import { cmd, onChanged, read } from "../bridge.js";
 import { confirmRevert } from "../review/revert_guard.js";
+import { locate } from "../locate.js";
 
 const EMPTY = { available: false, reason: "", ver: "", counts: {}, groups: [], bulk: [], last_run: null };
 
@@ -119,21 +120,15 @@ export async function run() {
 }
 
 // ---------------------------------------------------------------- 도면에서 보기
-function bump(command) { store.set((s) => ({ command: Object.assign({ seq: s.command.seq + 1 }, command) })); }
 
-/** 후보 자리로 이동해 강조한다: 그 도면을 열고(다르면), 호박색 표시를 그리고, 그 자리로 확대한다. 패널은 도면을 가리므로 닫는다(지식그래프 패널의
+/** 후보 자리를 보인다: 그 도면을 전체 맞춤으로 열고 호박색 표시를 그린다(확대하지 않음). 패널은 도면을 가리므로 닫는다(지식그래프 패널의
  *  '도면에서 보기'와 같다). 다시 열면 고른 도면·고른 후보가 그대로 남아 있다. */
 export function showOnSheet(row) {
   const gid = ai.get().graphId;
   if (!gid || !row || !row.local_id) return false;
-  const opened = store.get().sheet !== gid;
   const mark = { op: "mark", groups: [{ ids: [row.local_id], style: "warn", label: "AI 후보 · " + row.field_label }], dim_others: false };
-  store.set({ sheet: gid, panel: null, marks: { rid: "aireview", bySheet: { [gid]: [mark] } } });
+  locate({ sheet: gid, marks: { [gid]: [mark] }, rid: "aireview", patch: { panel: null } });
   ai.set({ picked: row.cand_id });
-  if (opened) {
-    cmd("sheet.open", { graph_id: gid }).catch(() => {});
-    [350, 900, 1800].forEach((ms) => setTimeout(() => { if (store.get().sheet === gid) bump({ type: "zoomTo", ids: [row.local_id], pad: 4 }); }, ms));
-  } else bump({ type: "zoomTo", ids: [row.local_id], pad: 4 });
   return true;
 }
 

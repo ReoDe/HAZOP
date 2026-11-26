@@ -14,6 +14,7 @@ import { ScanNote } from "./scan_note.js";
 import { CompareCard, ComparePane, useCmp } from "./compare.js";
 import { ExtractLegend, sheetFacts, useExtractCheck } from "./canvas/extract_check.js";
 import * as N from "./panels/nodes_state.js";
+import { clearTempHighlight, locate } from "./locate.js";
 
 let SheetComponent = null;
 let tried = false;
@@ -83,7 +84,7 @@ export function ItemBubble() {
   const r = live || b.rect || {};
 
   const style = "left:" + Math.max(8, Math.round((r.x || 0) + (r.w || r.width || 0) + 8)) + "px;top:" + Math.max(8, Math.round(r.y || 0)) + "px";
-  const trace = () => { store.set({ bubble: null, panel: "results" }); R.loadTrace({ sheet: b.sheet, local: b.id }); };
+  const trace = () => { const at = { sheet: b.sheet, local: b.id }; locate({ sheet: at.sheet, ids: [at.local], patch: { panel: "results" } }); R.loadTrace(at); };
   const from = row ? (row.display || row.drawing_number || "") : "";      // 도면 번호만(제목은 길다)
   const src = (x) => !x ? null : x.kind === "document" ? (x.name || "설계 문서") : from;
   return html`<div class="float bubble props" ref=${card} role="dialog" aria-label="구성요소 속성" style=${style}>
@@ -106,6 +107,8 @@ export function SheetHost() {
   const rev = useStore((s) => s.drawings.rev);
   const sv = N.useNodes((s) => s.sheetView);
   const chatMarks0 = marks.bySheet && marks.bySheet[sheet];
+  // 일시 강조(채팅 답·찾아가기의 표시)는 바깥 누름·Esc로 풀린다. 도면을 끄는 것과 휠은 풀지 않는다
+  useLightDismiss(!!marks.rid && Object.values(marks.bySheet || {}).some((x) => x && x.length), () => [], clearTempHighlight, { esc: true });
   // 도면 탭(도면 패널이 열렸거나 닫힘)의 추출 네모는 원본·정리 어느 보기에서도, 고른 것·강조·말풍선이 있어도 늘 그린다. 구간 탭은 구간 색만.
   // 그 밖의 패널에서는 추적·채팅 강조가 있으면 끈다.
   const onDrawingTab = !panel || panel === "drawings";

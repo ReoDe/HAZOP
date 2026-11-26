@@ -75,14 +75,19 @@ export function onClean(gid, data) { clean.set((s) => ({ data: Object.assign({},
 export function openBubble(d) { clean.set({ bubble: { id: d.id, reason: d.reason, fragment: d.fragment || null } }); }
 export function closeBubble() { clean.set({ bubble: null }); }
 
-/** 다음(+1)·앞(-1) 미확인으로 옮긴다: 그 자리에 맞춰 확대하고 말풍선을 연다. 순서는 엔진이 준 위→아래, 왼→오른 순서다. */
+let locator = null;
+export function setLocator(fn) { locator = fn; }
+
+/** 다음(+1)·앞(-1) 미확인으로 옮긴다: 도면 전체를 보인 채 그 자리를 강조하고 말풍선을 연다. 순서는 엔진이 준 위→아래, 왼→오른 순서다. */
 export function stepUnconfirmed(gid, step = 1) {
   const s = clean.get(), list = (s.data[gid] && s.data[gid].unconfirmed) || [];
   if (!list.length) return null;
   if (!s.overlay.unconfirmed) clean.set({ overlay: Object.assign({}, s.overlay, { unconfirmed: true }) });     // 미확인을 찾아 가면 속성 미확인 자리도 함께 보인다
   const at = ((s.cursor + step) % list.length + list.length) % list.length, u = list[at];
   clean.set({ cursor: at });
-  shell.set((st) => ({ command: { seq: st.command.seq + 1, type: "inspect", id: u.id, reason: u.reason, pad: 4 } }));
+  const inspect = () => shell.set((st) => ({ command: { seq: st.command.seq + 1, type: "inspect", id: u.id, reason: u.reason } }));
+  if (locator) locator({ sheet: gid, ids: [u.id], fit: false });      // 그 자리만 강조(틀의 locate.js가 잇는다)
+  inspect();                                                          // 도면 전체를 맞추고 원본 조각 말풍선을 연다
   return u;
 }
 

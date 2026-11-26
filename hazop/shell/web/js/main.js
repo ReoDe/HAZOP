@@ -21,6 +21,7 @@ import { QueueCard, QueueLine } from "./queue/card.js";
 import { ReviewConfirm, setOpeners as setReviewOpeners, startReview, wire as wireReview } from "./review/review.js";
 import { ConfirmAllModal } from "./panels/nodes_confirm.js";
 import { RevertGuard } from "./review/revert_guard.js";
+import { locate } from "./locate.js";
 
 // '다음에 할 일' 단추가 가는 자리(엔진 next의 go). 도면 위 자리로 갈 때는 열린 패널을 닫는다(가리지 않게). 패널 모듈은 누를 때 읽는다
 setGo("panel:drawings#titleblock", async (t) => { const m = await import("./panels/titleblock.js"); if (t) m.focusMaterial(t); else store.set({ panel: "titleblock" }); });
@@ -117,20 +118,15 @@ export function toggleChat() {
   saveUi();
 }
 
-function zoomTo(ids) { store.set((s) => ({ command: { seq: s.command.seq + 1, type: "zoomTo", ids, pad: 0.15 } })); }
-
-/** 답 카드의 ID 칩: 그 칩의 도면을 열고 그 구성요소에 맞춰 확대한다. */
+/** 답 카드의 ID 칩: 그 칩의 도면을 전체 맞춤으로 보이고 그 구성요소만 강조한다. */
 function onChip(chip) {
-  if (chip.sheet && chip.sheet !== store.get().sheet) openSheet(chip.sheet);
-  if (chip.local_id) setTimeout(() => zoomTo([chip.local_id]), 0);
+  locate({ sheet: chip.sheet, ids: chip.local_id ? [chip.local_id] : [] });
 }
 
-/** 답 카드의 도면 칩: 그 도면을 열고 그 도면 몫의 경로를 그린다. */
+/** 답 카드의 도면 칩: 그 도면을 열고 그 도면 몫의 경로(차례 번호)를 그린다. */
 function onSheet(msg, pathIndex, sheet) {
   const path = msg.card.paths[pathIndex];
-  const bySheet = (path && path.marks) || {};
-  store.set({ sheet, panel: keptPanel(), marks: { rid: msg.key, bySheet } });
-  cmd("sheet.open", { graph_id: sheet }).catch(() => {});
+  locate({ sheet, marks: (path && path.marks) || {}, rid: msg.key });
 }
 
 // ---------------------------------------------------------------- 사건
