@@ -243,7 +243,7 @@ export async function run(hz, data, big) {
     await sleep(100);
     const spans = h2.querySelectorAll(".hz-cv-tag");
     t("보안: 태그 글자는 textContent로만(태그 요소가 생기지 않음)", spans.length === 1 && spans[0].textContent === evil && spans[0].querySelectorAll("*").length === 0, spans.length);
-    t("보안: 도면 연결 칩은 그리지 않는다(글자가 HTML이 될 자리가 없다)", h2.querySelectorAll(".hz-cv-chip").length === 0);
+    t("보안: 연결 칩 글자도 textContent로만", h2.querySelectorAll(".hz-cv-chip").length === 1 && h2.querySelector(".hz-cv-chip").querySelectorAll("*").length === 0);
     t("보안: 스크립트가 실행되지 않음", window.__xss === undefined);
     const bad = h2.querySelectorAll("img, b, script").length;
     t("보안: 도면 글자에서 img·b·script 요소가 생기지 않음", bad === 0, bad);
@@ -259,7 +259,22 @@ export async function run(hz, data, big) {
     c3.setData(withLinks);
     await sleep(200);
     const chips = h3.querySelectorAll(".hz-cv-chip");
-    t("연결 칩: 도면 위에는 이동 칩도 미연결 칩도 그리지 않는다(화면 단순화)", chips.length === 0 && !h3.textContent.includes("미연결") && !h3.textContent.includes("→ SNP-X"), Array.from(chips).map((x) => x.textContent).join("|"));
+    t("연결 칩: 짝 있는 이동 칩만 그린다(미연결 칩은 없다)", chips.length === 1 && chips[0].textContent === "→ SNP-X" && !h3.textContent.includes("미연결"), Array.from(chips).map((x) => x.textContent).join("|"));
+    chips[0].click();
+    t("연결 칩: 누르면 onLinkClick", ev.link.length === 1 && ev.link[0].peer_graph_id === "graph-X");
+    // 끄는 중간 프레임: 칩의 화면 자리가 도면 자리와 같이 움직인다(놓기 전, 다시 그리기 전)
+    const chip = () => h3.querySelector(".hz-cv-chip");
+    const vp = h3.querySelector(".hz-cv-vp"), vr = vp.getBoundingClientRect();
+    const pt = (type, x, y) => vp.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: vr.left + x, clientY: vr.top + y, button: 0, pointerId: 7, isPrimary: true }));
+    const before = chip().getBoundingClientRect(), rec = c3.index.rectOf(syms[0].id), sBefore = c3._toScreenRect(rec);
+    pt("pointerdown", 400, 300); pt("pointermove", 460, 330);
+    const mid = chip().getBoundingClientRect(), sMid = c3._toScreenRect(rec);
+    t("끄는 중간 프레임: 칩이 도면과 같은 만큼 움직임", Math.abs((mid.left - before.left) - (sMid.x - sBefore.x)) < 1.5 && Math.abs((mid.top - before.top) - (sMid.y - sBefore.y)) < 1.5 && Math.abs(sMid.x - sBefore.x - 60) < 1.5, JSON.stringify({ d: [mid.left - before.left, mid.top - before.top], s: [sMid.x - sBefore.x, sMid.y - sBefore.y] }));
+    pt("pointerup", 460, 330);
+    const wheelAt = () => vp.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -100, clientX: vr.left + 400, clientY: vr.top + 300 }));
+    wheelAt();
+    const z = chip().getBoundingClientRect(), sz = c3._toScreenRect(rec);
+    t("확대 직후(다시 그리기 전): 칩이 새 도면 자리의 아래 가운데를 따라감", Math.abs((z.left + z.width / 2) - (vr.left + sz.x + sz.w / 2)) < 3, JSON.stringify({ chip: z.left + z.width / 2, sym: vr.left + sz.x + sz.w / 2 }));
     c3.destroy();
     h3.remove();
   }

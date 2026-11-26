@@ -5,7 +5,7 @@
 // 보안: 도면·모델에서 온 글(태그, 라벨, 이름)은 textContent로만 넣는다. innerHTML·dangerouslySetInnerHTML을 쓰지 않는다(정적 검사 대상).
 
 import { SpatialIndex, MAX_SELECTION, capSelection, changeSelection, selectionEvent, normRect } from "./index.js";
-import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags, badgeBoxes } from "./marks.js";
+import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags, badgeBoxes, placeChips } from "./marks.js";
 import { buildBase, recolor, fragmentBox, layoutLabels, labelDescriptor } from "./clean_view.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -408,6 +408,9 @@ export class SheetCore {
   _applyView() {
     const v = this.view;
     this.world.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
+    this._followOverlays();
+    // 도면 위에 뜬 말풍선(틀이 그리는 것)도 같은 프레임에 따라가게 알린다
+    this.host.dispatchEvent(new CustomEvent("hz-view", { bubbles: true, detail: { x: v.x, y: v.y, k: v.k } }));
   }
 
   _scheduleSettle() {
@@ -516,7 +519,7 @@ export class SheetCore {
     const reason = this.cb.onUnconfirmedClick ? this._unconfirmedAt(hit.id) : null;
     if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }
     const rect = this.index.rectOf(hit.id), rec = (this.index.byId.get(hit.id) || [])[0];
-    if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, link: this._linkOf(hit.id), rect: rect ? this._toScreenRect(rect) : null, via: "click" });
+    if (this.cb.onItemClick) this.cb.onItemClick({ view: { x: this.view.x, y: this.view.y, k: this.view.k }, id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, link: this._linkOf(hit.id), rect: rect ? this._toScreenRect(rect) : null, via: "click" });
   }
 
   /** 그린 자리(정리된 보기는 정돈 좌표)의 점을 읽은(원본) 좌표로. 가장 가까운 기호 중심이나 배관 꼭짓점(60 단위 안)이 정돈으로 옮겨진 만큼 되돌린다.
@@ -691,7 +694,7 @@ export class SheetCore {
       if (fs * v.k >= TAG_MIN_PX) continue;      // 도면 글자가 읽히는 크기면 얹지 않는다
       const sr = this._toScreenRect(rec.rect);
       const w = Math.max(rec.tag.length * 7 + 8, 14);
-      const l = { id: rec.id, x: sr.x, y: sr.y, w, h: 15, rank: selected.has(rec.id) ? 0 : 2, text: rec.tag };
+      const l = { id: rec.id, x: sr.x, y: sr.y, w, h: 15, rank: selected.has(rec.id) ? 0 : 2, text: rec.tag, sx: rec.rect.x0, sy: rec.rect.y0 };
       labels.push(l); byId.set(rec.id + "|" + rec.order, l);
     }
     const r = this._rect();
@@ -702,12 +705,44 @@ export class SheetCore {
       if (!shown.has(l.id)) continue;
       const s = this.doc.createElement("span"); s.className = "hz-cv-tag"; s.textContent = l.text;
       s.style.left = l.x + "px"; s.style.top = l.y + "px"; frag.appendChild(s);
+      this._anchor(s, l.sx, l.sy, l.x, l.y);
     }
     box.appendChild(frag);
     this.tagCount = shown.size;
   }
 
   _renderChips() {
-    this.chipsDiv.textContent = "";      // 도면 위의 도면 연결 칩('→ SNP-…'·'미연결')은 그리지 않는다(화면 단순화). 칩 놓기 계산(marks.js placeChips)은 남겨 둔다
+    const box = this.chipsDiv;
+    box.textContent = "";
+    const all = this._links && this._links.length ? this._links : (this.data && Array.isArray(this.data.links) ? this.data.links : null);   // 도면 자료의 links 또는 구간 화면이 주는 links
+    if (!this.data || !all) return;
+    const linked = all.filter((l) => l && l.status === "linked");      // 짝이 없는 '미연결' 칩은 그리지 않는다(화면 단순화): 짝 있는 이동 칩만
+    for (const c of placeChips(linked, (id) => { const rect = this.index.rectOf(id); return rect ? this._toScreenRect(rect) : null; })) {
+      const b = this.doc.createElement("button");
+      b.type = "button"; b.className = "hz-cv-chip" + (c.warn ? " warn" : "");
+      b.textContent = c.text; b.title = c.title;
+      b.style.left = c.x + "px"; b.style.top = c.y + "px";
+      b.addEventListener("click", (ev) => { ev.stopPropagation(); if (this.cb.onLinkClick) this.cb.onLinkClick(c.link); });
+      const rect = this.index.rectOf(c.link.id);
+      if (rect) this._anchor(b, (rect.x0 + rect.x1) / 2, rect.y1, c.x, c.y);      // 기호 아래 가운데를 기준으로 도면을 따라 움직인다
+      box.appendChild(b);
+    }
+  }
+
+  /** 화면 좌표로 얹은 것(칩·태그 글자)이 도면을 따라가게, 도면 좌표의 기준점과 거기서의 화면 거리를 기억한다. */
+  _anchor(el, sx, sy, x, y) {
+    const v = this.view;
+    el._at = { sx, sy, dx: x - (sx * v.k + v.x), dy: y - (sy * v.k + v.y) };
+  }
+
+  /** 끌거나 확대하는 매 프레임: 얹은 것을 같은 변환으로 옮긴다(다시 놓는 계산은 움직임이 멈춘 뒤에). */
+  _followOverlays() {
+    const v = this.view;
+    for (const box of [this.chipsDiv, this.tagsDiv]) {
+      for (const el of box ? box.children : []) {
+        const a = el._at;
+        if (a) { el.style.left = a.sx * v.k + v.x + a.dx + "px"; el.style.top = a.sy * v.k + v.y + a.dy + "px"; }
+      }
+    }
   }
 }

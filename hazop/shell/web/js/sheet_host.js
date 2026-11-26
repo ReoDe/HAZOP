@@ -38,12 +38,33 @@ function Fallback({ sheet }) {
 /** 도면에서 구성요소를 누르면 뜨는 속성 카드(화면 단순화): 머리는 '태그 한글 종류', 아래는 그 구성요소 자체의 사양(지름·두께·재질 …)을 종류별 항목으로.
  *  이어진 곳·든 구간은 속성이 아니라서 넣지 않는다. 항목 표와 값은 엔진(읽기 props)이 주고, 값이 없으면 항목 이름과 '—'를 보인다.
  *  값 옆에 작은 글씨로 출처(도면 이름 또는 문서 이름)만. 영문 종류 이름과 내부 ID는 보이지 않는다. 고치기는 채팅이 한다. */
+/** 누른 때의 화면 자리와 보기를 지금 보기로 옮긴 자리. 도면 부품이 hz-view로 알리는 보기를 따른다(없으면 null: 누른 자리 그대로). */
+export function viewRect(rect, from, to) {
+  if (!rect || !from || !to || !(from.k > 0)) return null;
+  const k = to.k / from.k;
+  return { x: ((rect.x || 0) - from.x) * k + to.x, y: ((rect.y || 0) - from.y) * k + to.y, w: (rect.w || rect.width || 0) * k, h: (rect.h || rect.height || 0) * k };
+}
+
+function useViewRect(bubble) {
+  const [view, setView] = useState(null);
+  const key = bubble && bubble.view ? bubble.sheet + "|" + bubble.id : "";
+  useEffect(() => {
+    setView(null);
+    if (!key) return undefined;
+    const on = (e) => setView(e.detail);
+    document.addEventListener("hz-view", on);
+    return () => document.removeEventListener("hz-view", on);
+  }, [key]);
+  return bubble && view ? viewRect(bubble.rect, bubble.view, view) : null;
+}
+
 function ItemBubble() {
   const b = useStore((s) => s.bubble);
   const rev = useStore((s) => s.drawings.rev);
   const row = useStore((s) => s.drawings.drawings.find((d) => b && d.graph_id === b.sheet));
   const [props, setProps] = useState(null);
   const [ai, setAi] = useState("");          // AI가 이 구성요소에 한 일 한 줄(없으면 빈 글)
+  const live = useViewRect(b);               // 도면을 끌거나 확대할 때 말풍선이 같은 프레임에 따라간다
   useEffect(() => {
     if (!b) return undefined;
     let alive = true;
@@ -56,7 +77,7 @@ function ItemBubble() {
     return () => { alive = false; };
   }, [b && b.sheet, b && b.id, rev]);
   if (!b) return null;
-  const r = b.rect || {};
+  const r = live || b.rect || {};
 
   const style = "left:" + Math.max(8, Math.round((r.x || 0) + (r.w || r.width || 0) + 8)) + "px;top:" + Math.max(8, Math.round(r.y || 0)) + "px";
   const trace = () => { store.set({ bubble: null, panel: "results" }); R.loadTrace({ sheet: b.sheet, local: b.id }); };
@@ -97,5 +118,5 @@ export function SheetHost() {
   }
   if (!Comp) return html`<${Fallback} sheet=${sheet} />`;
   return html`<div class=${"canvas" + (split ? " cmp-side" : "")}><${Comp} sheet=${{ graph_id: sheet }} ...${nc.props} ...${cc.props} layers=${layers} onReady=${(g) => store.set({ readySheet: g })} marks=${items} dataRev=${rev}
-    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, kind_label: d.kind_label, rect: d.rect } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${ExtractLegend} counts=${check.counts} /><${ScanNote} sheet=${sheet} /><${ComparePane} /><${CompareCard} /><${ItemBubble} /></div>`;
+    command=${command} onItemClick=${(d) => { ui("itemClick", { id: d.id }); store.set({ bubble: { sheet, id: d.id, tag: d.tag, kind: d.kind, kind_label: d.kind_label, rect: d.rect, view: d.view } }); }} /><${NodeOverlay} /><${CleanOverlay} /><${ExtractLegend} counts=${check.counts} /><${ScanNote} sheet=${sheet} /><${ComparePane} /><${CompareCard} /><${ItemBubble} /></div>`;
 }
