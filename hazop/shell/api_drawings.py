@@ -69,15 +69,11 @@ def labels(engine):
     return out
 
 
-CONFIRM_FIRST_TEXT = ("도면 번호를 아직 확정하지 않았습니다. 표제란에서 번호를 확정하면 도면 연결·DEXPI 내보내기를 쓸 수 있습니다. "
-                      "만들어 둔 구간·분석 결과는 바뀐 도면 이름을 따라갑니다.")
-
-
 def _notice(n):
-    """도면 목록 행 알림. 번호 미확정 알림은 시트 정체 U5 뒤의 사실로 고친다('구간을 만들기 전에 확정하세요'가 아님, 설계 §6 4)."""
+    """도면 목록 행 알림. '번호를 아직 확정하지 않았습니다'는 내지 않는다: 화면에서 번호를 확정하는 길이 없어 사용자가 할 일이 없다(화면 단순화)."""
     from hazop.graph import sheets
     if isinstance(n, dict) and n.get("code") == sheets.CONFIRM_FIRST:
-        return dict(n, text=CONFIRM_FIRST_TEXT)
+        return None
     return n
 
 

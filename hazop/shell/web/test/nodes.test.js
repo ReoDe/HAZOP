@@ -175,6 +175,29 @@ export const tests = [
     assert.equal(L.keyAction({ key: "Enter" }, { selection: ["a"], typing: false, panelWide: false, card: true }), "submit", "카드가 열려 있으면 Enter는 만들기");
     assert.equal(L.keyAction({ key: "s" }, { selection: ["a"], typing: false, panelWide: false, card: true }), null);
   } },
+  { name: "같은 구성요소의 구간을 다시 만들면 알림·카드·토스트 없이 이미 있는 그 구간을 고른 상태가 된다", async run(assert) {
+    await setup();
+    engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "제안 이름", count: 2, asked: 2, boundary: [], overlaps: [] } }
+      : name === "nodes.create" ? { ok: false, error: { code: "refused", message: "구성요소가 같은 구간 S1가 이미 있음" } } : { ok: true, data: { set_rev: 6 } });
+    store.set({ toast: null });
+    N.setMode("pick");
+    N.setSelection(["n1", "n2"]);
+    await N.openCard();
+    await tick();
+    const st = N.nodes.get();
+    assert.equal(st.card, null, "빨간 카드가 남지 않는다");
+    assert.equal(st.error, null, "패널 알림도 없다");
+    assert.equal(store.get().toast, null, "토스트도 없다");
+    assert.equal(st.focus, "S1", "이미 있는 구간을 고른 상태");
+    assert.equal(st.selection, []);
+    engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "x", count: 2, asked: 2, boundary: [], overlaps: [] } }
+      : { ok: false, error: { code: "refused", message: "다른 이유로 거절" } });
+    N.setSelection(["n3"]);
+    await N.openCard();
+    await tick();
+    assert(N.nodes.get().card && N.nodes.get().card.error.includes("다른 이유"), "다른 거절은 그대로 보인다");
+    N.closeCard();
+  } },
   { name: "구간 만들기(실제 창 4차): 끌기 → Enter 한 번에 제안 이름으로 만들고, 만든 카드에서 이름을 고쳐 Enter로 저장한다", async run(assert) {
     await setup();
     engine.reply = (name) => (name === "nodes.suggest" ? { ok: true, data: { name: "제안 이름", count: 2, asked: 2, boundary: [], overlaps: [] } }

@@ -150,6 +150,7 @@ export async function openCard() {
     nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, loading: false, suggest: sg, name: s.card.name || sg.name || fallback }) }));
     return submitCard();
   } catch (e) {
+    if (await selectExisting(e)) return null;
     if (nodes.get().card) nodes.set((s) => ({ card: Object.assign({}, s.card, { busy: false, loading: false, submitWhenReady: false, error: errorText(e) }) }));
   }
   return null;
@@ -186,10 +187,22 @@ export async function submitCard() {
     if (made) focusNode(made);
     return r;
   } catch (e) {
+    if (await selectExisting(e)) return null;
     await afterError(e);
     editCard({ busy: false, error: errorText(e) });
     return null;
   }
+}
+
+/** 같은 구성요소의 구간이 이미 있어서 만들지 않은 것은 사용자가 할 일이 없다: 아무 알림 없이 카드를 닫고 그 구간을 고른 상태로 둔다. 맞으면 참. */
+const DUPLICATE = /^(?:.*?: )?구성요소가 같은 구간 (\S+?)가 이미 있음$/;
+async function selectExisting(e) {
+  const m = DUPLICATE.exec(String(errorText(e) || "").trim());
+  if (!m) return false;
+  nodes.set({ card: null, selection: [], truncated: false, error: null, busy: false });
+  await refresh();
+  if (nodes.get().focus !== m[1]) focusNode(m[1]);
+  return true;
 }
 
 /** 만든 구간 카드의 저장(Enter): 고친 이름·설계 의도만 보내고 카드를 닫는다. 안 고쳤으면 닫기만. */

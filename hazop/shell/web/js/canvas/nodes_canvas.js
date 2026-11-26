@@ -120,7 +120,6 @@ function NewNodeCard() {
     <div class="field"><label for="nn-intent">설계 의도</label>
       <textarea id="nn-intent" class="textbox" rows="3" maxlength="2000" value=${card.intent} onInput=${(e) => N.editCard({ intent: e.target.value })}></textarea></div>
     ${sg && sg.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${sg.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
-    ${sg && sg.asked > sg.count ? html`<${Notice} kind="warn" icon="alert-triangle">고른 ${sg.asked}개 가운데 ${sg.asked - sg.count}개는 구간에 넣을 수 없는 선(신호선·계측선)이라 뺐습니다.<//>` : null}
     ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//>` : null}
     <div class="muted small">이름과 설계 의도는 여기서 고칠 수 있습니다. 그대로 두려면 Esc나 다음 구간 고르기로 닫으세요.</div>
     <div class="acts-row"><${Btn} kind="primary" icon="check" label="이름·설계 의도 저장" disabled=${card.busy || !card.name.trim()} onClick=${submit}>저장 <kbd>Enter</kbd><//>
