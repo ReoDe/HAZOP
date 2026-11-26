@@ -258,7 +258,7 @@ ACTIONS = {a.name: a for a in (
            "초기사건 후보 {iecs}의 소속을 확인합니다."),
     Action("ie.confirm_group", CONFIRM, _spec(("group_id", "id")), "⑥", "그룹 확정(확정자는 확인한 사람)",
            "초기사건 그룹 {group_id}을(를) 확정합니다. 확정자로 확인한 사람 이름이 남습니다."),
-    Action("ie.reopen_group", CONFIRM, _spec(("group_id", "id")), "⑥", "그룹 확정 풀기", "초기사건 그룹 {group_id}의 확정을 풉니다."),
+    Action("ie.reopen_group", CONFIRM, _spec(("group_id", "id")), "⑥", "그룹 확정 해제", "초기사건 그룹 {group_id}의 확정을 해제합니다."),
     Action("ie.set_coverage", CONFIRM, _spec(("code", "str"), disposition="str", reason="text"), "⑥",
            "완전성 대조 빈 범주 판정: out_of_scope·other_method·not_applicable(사유 필수), 빈 글자면 지움",
            "완전성 대조 범주 {code}을(를) 판정합니다. 아래 사유는 AI가 쓴 글입니다."),
@@ -698,7 +698,7 @@ class ActionPlanner:
         if n is None:
             raise _Reject("없는 구간의 칸")
         if node_state(n) == "locked":
-            raise _Reject("잠긴 구간의 칸은 바꾸지 않음(④에서 사람이 이유를 적고 풀어야 함)")
+            raise _Reject("잠긴 구간의 칸은 바꾸지 않음(④에서 사람이 이유를 적고 해제해야 함)")
         cell = next((c for c in _cells(snap, a["node_id"]) if c.get("deviation_id") == a["deviation_id"]), None)
         if cell is None:
             raise _Reject("없는 칸")
@@ -847,7 +847,7 @@ class ActionPlanner:
     def _node_reason(n, op, snap):
         state = node_state(n)
         if state == "locked":
-            return "잠긴 구간(%s)은 채팅으로 바꾸지 않음. ④에서 사람이 이유를 적고 풀어야 함" % n["node_id"]
+            return "잠긴 구간(%s)은 채팅으로 바꾸지 않음. ④에서 사람이 이유를 적고 해제해야 함" % n["node_id"]
         if state == "confirmed":
             return "확정 구간(%s)은 사람이 확정을 해제한 뒤에 바꿀 수 있음" % n["node_id"]
         return "⑤ 칸이 있는 구간(%s)의 구성요소는 채팅으로 바꾸지 않음" % n["node_id"]

@@ -110,7 +110,7 @@ function MldRow({ b, m }) {
       ${b.disposition ? html`<span class="small">판정: <b>${DISPOSITION[b.disposition.disposition]}</b> · ${b.disposition.reason}</span>` : null}
       ${open ? html`<span class="ie-judge acts-row" role="group" aria-label=${b.id + " 판정·잇기"}>
           ${b.status === "rule" ? html`<${Btn} sm=${true} kind="primary" label=${b.id + " 사람 확인"} title="이 가지의 범주에 든 후보가 이 가지의 사건인지 보고 확인합니다" disabled=${busy} onClick=${() => I.mldConfirm(b.id, true)}>사람 확인<//>` : null}
-          ${b.confirmed_by ? html`<${Btn} sm=${true} kind="ghost" label=${b.id + " 확인 풀기"} disabled=${busy} onClick=${() => I.mldConfirm(b.id, false)}>확인 풀기<//>` : null}
+          ${b.confirmed_by ? html`<${Btn} sm=${true} kind="ghost" label=${b.id + " 확인 해제"} disabled=${busy} onClick=${() => I.mldConfirm(b.id, false)}>확인 해제<//>` : null}
           ${m.groups.length ? html`<span class="small">그룹 잇기:</span>${m.groups.map((g) => html`<label class="small" key=${g.group_id}><input type="checkbox" checked=${links.includes(g.group_id)} onChange=${() => toggle(g.group_id)} /> ${g.group_id}</label>`)}
             <${Btn} sm=${true} label=${b.id + " 그룹 잇기 저장"} disabled=${busy} onClick=${() => I.mldLink(b.id, links)}>잇기 저장<//>` : null}
           ${b.status !== "covered" ? html`<select class="textbox" aria-label=${code + " 처리"} value=${disp} onChange=${(e) => setDisp(e.target.value)}>${Object.keys(DISPOSITION).map((k) => html`<option value=${k} key=${k}>${DISPOSITION[k]}</option>`)}</select>

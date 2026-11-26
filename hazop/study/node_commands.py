@@ -176,7 +176,7 @@ def execute(pg, name, args, *, author, confirmed_by=None, set_rev=None, request=
     if (author == "user" or name in HUMAN_COMMANDS) and not confirmed_by:
         return _refused(name, [("confirmed_by", "사람이 한 일·확정·잠금·찾지 못한 구성요소 버리기에는 누른 사람 이름이 있어야 함")], code="bad_actor")
     if name in HUMAN_COMMANDS and author != "user":
-        return _refused(name, [("author", "확정·확정 해제·잠금·풀기·찾지 못한 구성요소 버리기는 사람만 함(채팅 규격 §4.2)")], code="bad_actor")
+        return _refused(name, [("author", "확정·확정 해제·잠금·잠금 해제·찾지 못한 구성요소 버리기는 사람만 함(채팅 규격 §4.2)")], code="bad_actor")
     if author == "ai" and set_rev is None:
         return _refused(name, [("set_rev", "AI 동작은 읽은 구간 판(set_rev)을 함께 보내야 함")], code="bad_actor")
     with project_lock(pg.get("project_id")):
@@ -290,7 +290,7 @@ def drawing_confirm_text(graph_id, number, held, approved=None, groups=None):
     if groups is not None:
         facts.append("초기사건 그룹 %d개" % groups)
     return ("%s 도면의 구성요소를 쓰는 것: %s. 도면을 빼면 새 구간 제안에서만 빠지고, 이것들은 그대로 분석·인계됩니다"
-            "(확정 그룹도 초안으로 내려가지 않음). 구간까지 분석에서 빼려면 그 구간의 확정을 푸세요."
+            "(확정 그룹도 초안으로 내려가지 않음). 구간까지 분석에서 빼려면 그 구간의 확정을 해제하세요."
             % (number or graph_id, ", ".join(facts)))
 
 

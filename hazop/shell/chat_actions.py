@@ -499,7 +499,7 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "aireview.revert": "AI 후보 되돌리기", "aireview.accept_bulk": "AI 후보 묶음 수락",
           "aireview.auto_run": "AI로 확정", "aireview.auto_revert": "자동 수락 되돌리기", "sources.choose": "원본 형식 고르기",
           "ie.move": "초기사건 후보 옮기기", "ie.split": "초기사건 그룹 나누기", "ie.edit_group": "초기사건 그룹 고치기",
-          "ie.accept_members": "초기사건 소속 확인", "ie.confirm_group": "초기사건 그룹 확정", "ie.reopen_group": "초기사건 그룹 확정 풀기",
+          "ie.accept_members": "초기사건 소속 확인", "ie.confirm_group": "초기사건 그룹 확정", "ie.reopen_group": "초기사건 그룹 확정 해제",
           "ie.set_coverage": "완전성 대조 판정", "ie.export": "초기사건 인계 묶음 내보내기", "docs.extract": "설계 문서 지식 추출",
           "docs.add": "설계 문서 등록", "docs.revision": "설계 문서 개정 대응",
           "titleblock.unconfirm": "표제란 확정 취소", "drawing.undo": "도면 고침 되돌리기", "drawing.redo": "도면 고침 다시 하기",
@@ -510,7 +510,7 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "register.exclude": "도면을 구간 분석에서 빼기·다시 넣기", "extract.suggest": "추출 값 후보", "kg.algorithm": "지식그래프 알고리즘",
           "kg.rebuild": "지식그래프 다시 만들기", "ie.draft_rules": "초기사건 규칙 초안", "ie.reset": "초기사건 새로 시작",
           "titleblock.confirm": "표제란 확정", "drawing.edit": "도면 고치기",
-          "extract.edit": "추출 편집", "nodes.unlock": "잠금 풀기", "sheet.compare": "원본과 견줌",
+          "extract.edit": "추출 편집", "nodes.unlock": "잠금 해제", "sheet.compare": "원본과 견줌",
           "settings.change": "설정 바꾸기", "settings.api_key": "API 키", "settings.work_root": "작업 루트", "settings.reviewer": "검토자 이름",
           "files.delete": "파일 지우기"}
 
@@ -530,7 +530,7 @@ def _done_text(item, out):
         tail = (" · 묶음 " + batch) if batch else ""
         label = (": " + ", ".join(str(n) for n in names[:6]) + (" …" if len(names) > 6 else "")) if names and kinds == {"add"} else ""
         return _clip(head + label + tail + ".")
-    return {"nodes.confirm": "확정했습니다.", "nodes.unconfirm": "확정을 풀었습니다.", "nodes.lock": "잠갔습니다."}.get(name, "처리했습니다.")
+    return {"nodes.confirm": "확정했습니다.", "nodes.unconfirm": "확정을 해제했습니다.", "nodes.lock": "잠갔습니다."}.get(name, "처리했습니다.")
 
 
 def _label(node_id, names):

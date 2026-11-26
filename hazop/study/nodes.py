@@ -207,7 +207,7 @@ def _begin(node_set, targets=()):
     for nid in targets:
         n = _find(node_set, nid)
         if node_state(n) == "locked":
-            raise ValueError("%s는 잠긴 구간이라 고칠 수 없음(잠금을 풀고 확정을 해제한 뒤)" % nid)
+            raise ValueError("%s는 잠긴 구간이라 고칠 수 없음(잠금과 확정을 해제한 뒤)" % nid)
         if is_active(n):
             raise ValueError("%s는 확정된 구간이라 확정을 해제한 뒤에 고칠 수 있음" % nid)
     return copy.deepcopy(node_set)
@@ -771,7 +771,7 @@ def reopen_node(node_set, node_id, at=None, by=None):
     """확정 해제: confirmed → applied. ⑤ 칸은 지우지 않고 보관(hold)으로 남는다(results.reconcile). 잠긴 구간은 잠금 풀기가 먼저."""
     n = _find(node_set, node_id)
     if node_state(n) == "locked":
-        raise ValueError("%s는 잠긴 구간이라 잠금을 먼저 풀어야 함" % node_id)
+        raise ValueError("%s는 잠긴 구간이라 잠금을 먼저 해제해야 함" % node_id)
     if node_state(n) != "confirmed":
         raise ValueError("%s는 확정된 구간이 아님" % node_id)
     out = copy.deepcopy(node_set)
@@ -785,7 +785,7 @@ def reopen(node_set, at=None):
     """확정된 구간을 모두 확정 해제한다(④의 집합 단위 단추). 잠긴 구간이 있으면 ValueError(잠금 풀기가 먼저)."""
     locked = [n["node_id"] for n in node_set["nodes"] if node_state(n) == "locked"]
     if locked:
-        raise ValueError("잠긴 구간이 있어 확정을 해제할 수 없음(잠금을 먼저 풀 것): %s" % ", ".join(locked))
+        raise ValueError("잠긴 구간이 있어 확정을 해제할 수 없음(잠금을 먼저 해제할 것): %s" % ", ".join(locked))
     todo = [n["node_id"] for n in node_set["nodes"] if node_state(n) == "confirmed"]
     if not todo:
         raise ValueError("확정되지 않은 검토구간")
@@ -839,7 +839,7 @@ def unlock_node(node_set, node_id, by, reason, at=None):
     """잠금 풀기: locked → confirmed. 사람 이름과 이유가 있어야 한다(§5.3)."""
     by, reason = (by or "").strip(), (reason or "").strip()
     if not by or not reason:
-        raise ValueError("잠금을 푸는 사람 이름과 이유 필요")
+        raise ValueError("잠금을 해제하는 사람 이름과 이유 필요")
     n = _find(node_set, node_id)
     if node_state(n) != "locked":
         raise ValueError("%s는 잠긴 구간이 아님" % node_id)

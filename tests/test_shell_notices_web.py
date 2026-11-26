@@ -35,7 +35,7 @@ class NoticeBarTest(ShellBase):
         win.bridge.send({"t": "event", "name": "study.lost", "data": {"sections": 0, "members": 0, "first_node": None, "demoted": ["S2"], "graph_version": "v-2"}})
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelectorAll('.notice-row').length") == 1, 10))
         text = self.js(win, "document.querySelector('.notice-row .nt').textContent")
-        self.assertIn("확정했던 구간 S2의 확정을 풀었습니다", text)
+        self.assertIn("확정했던 구간 S2의 확정을 해제했습니다", text)
 
 
 if __name__ == "__main__":

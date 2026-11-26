@@ -300,7 +300,7 @@ class InitiatingScreen(QWidget):
             ("고치기…", "그룹 이름·정의·범주·대표 후보·플랜트 응답 등을 고칩니다", lambda: self.edit_group()),
             ("나누기… (S)", "소속 후보 일부를 새 그룹으로 나눕니다(옛 ID는 '나뉨' 기록)", lambda: self.split_group()),
             ("지우기", "초안 그룹만 지웁니다(ID는 '삭제' 기록으로 남음)", lambda: self.delete_group()),
-            ("확정 풀기", "확정을 풀어 초안으로 되돌립니다", lambda: self.reopen_group()),
+            ("확정 해제", "확정을 해제해 초안으로 되돌립니다", lambda: self.reopen_group()),
             ("확정 (Ctrl+Enter)", "검토자 이름으로 그룹을 확정합니다. 확정 조건이 모두 맞을 때만 켜집니다",
              lambda: self.confirm_group()))
         self.confirm_btn.setObjectName("primary")
@@ -487,7 +487,7 @@ class InitiatingScreen(QWidget):
     def commands(self):
         return [("그룹 만들기…", "G", lambda: self.create_group()), ("그룹으로 옮기기…", "M", lambda: self.move_selected()),
                 ("그룹 나누기…", "S", lambda: self.split_group()), ("그룹 확정", "Ctrl+Enter", lambda: self.confirm_group()),
-                ("그룹 확정 풀기", "", lambda: self.reopen_group()), ("규칙 초안 만들기", "Ctrl+R", lambda: self.suggest()),
+                ("그룹 확정 해제", "", lambda: self.reopen_group()), ("규칙 초안 만들기", "Ctrl+R", lambda: self.suggest()),
                 ("IE 인계 묶음 내보내기…", "", lambda: self.export_bundle()),
                 ("완전성 대조 보기", "", lambda: self.tabs.setCurrentIndex(TAB_COVERAGE))]
 

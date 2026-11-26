@@ -434,7 +434,7 @@ def editable_problem(results, node_id, deviation_id, node_set=None):
         return "%s는 확정 해제한 구간이라 칸이 보관 중임(④에서 다시 확정한 뒤 고침)" % node_id
     node = next((n for n in (node_set or {}).get("nodes") or [] if n["node_id"] == node_id), None)
     if node is not None and node.get("state") == "locked":
-        return "%s는 잠긴 구간이라 항목을 고칠 수 없음(잠금을 먼저 풀 것)" % node_id
+        return "%s는 잠긴 구간이라 항목을 고칠 수 없음(잠금을 먼저 해제할 것)" % node_id
     return None
 
 

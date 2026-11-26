@@ -36,7 +36,7 @@ export function lostNoticeText(info) {
 export function demotedNoticeText(ids) {
   if (!ids || !ids.length) return "";
   const shown = ids.slice(0, 6).join(", ") + (ids.length > 6 ? " 외 " + (ids.length - 6) + "개" : "");
-  return "도면이 바뀌어 확정했던 구간 " + shown + "의 확정을 풀었습니다. 구성요소를 확인하고 다시 확정해 주세요.";
+  return "도면이 바뀌어 확정했던 구간 " + shown + "의 확정을 해제했습니다. 구성요소를 확인하고 다시 확정해 주세요.";
 }
 
 /** 찾지 못한 구성요소 버리기 단추 글: 고른 수(전부면 '모두'). */

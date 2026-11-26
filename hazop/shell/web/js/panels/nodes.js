@@ -73,7 +73,7 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
   const [reason, setReason] = useState("");
   const [unlocking, setUnlocking] = useState(false);
   const edit = canEdit(n);
-  const lockedHint = n.state === "locked" ? "잠긴 구간입니다. 먼저 잠금을 푸세요." : "확정한 구간입니다. 먼저 확정을 푸세요.";
+  const lockedHint = n.state === "locked" ? "잠긴 구간입니다. 먼저 잠금을 해제하세요." : "확정한 구간입니다. 먼저 확정을 해제하세요.";
   const chip = stateChip(n);
   const di = n.design_intent;
   const latest = d && d.history && d.history.length ? d.history[d.history.length - 1] : null;
@@ -87,7 +87,7 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
       ${n.state === "applied" ? html`<${Btn} kind="primary" icon="check" label=${n.node_id + " 확정"} disabled=${busy} onClick=${() => N.confirm([n.node_id])}>확정 <kbd>Ctrl+Enter</kbd><//>` : null}
       ${n.state === "confirmed" ? html`<${Btn} label=${n.node_id + " 확정 해제"} disabled=${busy} onClick=${() => N.unconfirm([n.node_id])}>확정 해제<//>
         <${Btn} icon="lock" label=${n.node_id + " 잠금"} disabled=${busy} onClick=${() => N.lock([n.node_id])}>분석 마침 · 잠금<//>` : null}
-      ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 풀기"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 풀기<//>` : null}
+      ${n.state === "locked" ? html`<${Btn} icon="lock-open" label=${n.node_id + " 잠금 해제"} disabled=${busy} onClick=${() => setUnlocking(!unlocking)}>잠금 해제<//>` : null}
       ${edit && selection.length ? html`<${Btn} label="고른 것을 떼어 새 구간으로" disabled=${busy} onClick=${() => N.splitSelection(n.node_id)}>고른 ${selection.length}개를 떼어 나누기<//>` : null}
       ${edit ? html`<${Btn} kind="ghost" icon="trash" label=${n.node_id + " 지우기"} disabled=${busy} onClick=${() => N.removeNode(n.node_id, false)}>지우기<//>` : null}</div>
     <${Editable} label="이름" value=${n.name} disabled=${!edit || busy} hint=${lockedHint} onSave=${(t) => N.rename(n.node_id, t)} aiDraft=${n.name_by === "ai" && n.state === "applied"} />
@@ -101,9 +101,9 @@ function Detail({ n, d, list, drawings, selection, busy, needArchive }) {
     <${LostItems} key=${n.node_id} n=${n} d=${d} busy=${busy} />
     ${d && d.members.length ? html`<details class="field"><summary>구성요소 ${d.members_total}개${d.members_total > d.members.length ? " (앞 " + d.members.length + "개)" : ""}</summary>
       <div class="memlist">${d.members.map((m, i) => html`<button type="button" class="chip id" key=${i} title=${(m.kind_label || "구성요소") + " · " + sheetName(m.sheet, drawings)} aria-label=${(m.tag || m.kind_label || "구성요소") + " · " + (m.kind_label || "구성요소") + " · " + sheetName(m.sheet, drawings)} onClick=${() => { if (m.sheet === store.get().sheet) N.zoomToIds([m.id]); }}>${m.tag || m.kind_label || "구성요소"}</button>`)}</div></details>` : null}
-    ${unlocking && n.state === "locked" ? html`<div class="field"><label for="unlock-reason">잠금을 푸는 이유(필수)</label>
+    ${unlocking && n.state === "locked" ? html`<div class="field"><label for="unlock-reason">잠금을 해제하는 이유(필수)</label>
       <input id="unlock-reason" class="textbox" value=${reason} onInput=${(e) => setReason(e.target.value)} />
-      <div class="acts-row"><${Btn} kind="primary" sm=${true} disabled=${busy || !reason.trim()} label="잠금 풀기 실행" onClick=${async () => { const r = await N.unlock([n.node_id], reason.trim()); if (r) { setUnlocking(false); setReason(""); } }}>풀기<//></div></div>` : null}
+      <div class="acts-row"><${Btn} kind="primary" sm=${true} disabled=${busy || !reason.trim()} label="잠금 해제 실행" onClick=${async () => { const r = await N.unlock([n.node_id], reason.trim()); if (r) { setUnlocking(false); setReason(""); } }}>해제<//></div></div>` : null}
     ${needArchive === n.node_id ? html`<${Notice} kind="warn" icon="alert-triangle">이 구간의 분석 칸에 판정이 있습니다. 보관하고 지우면 칸은 결과 파일의 보관 목록으로 옮겨집니다.
       <div class="acts-row"><${Btn} sm=${true} label="보관하고 지우기" disabled=${busy} onClick=${() => N.removeNode(n.node_id, true)}>보관하고 지우기<//></div><//>` : null}
     ${d && d.history && d.history.length ? html`<div class="field"><label>이 구간을 건드린 묶음</label>${d.history.slice(-4).reverse().map((h) => html`<div class="kv" key=${h.batch_id}>

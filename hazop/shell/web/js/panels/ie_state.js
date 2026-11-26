@@ -156,7 +156,7 @@ export function cancelAsk() { ie.set({ ask: null }); }
 
 export const suggest = () => write("ie.suggest", {}, "규칙 초안을 만들었습니다. 초안은 확정하지 않은 상태입니다.");
 export const confirmGroup = (gid) => write("ie.confirm", { group_id: gid }, gid + " 그룹을 확정했습니다.");
-export const reopenGroup = (gid) => write("ie.reopen", { group_id: gid }, gid + " 그룹의 확정을 풀었습니다.");
+export const reopenGroup = (gid) => write("ie.reopen", { group_id: gid }, gid + " 그룹의 확정을 해제했습니다.");
 
 export async function createGroup(name, iecs) {
   const r = await write("ie.create_group", { name, iecs }, (x) => x.group_id + " 그룹을 만들었습니다(초안).");
@@ -245,7 +245,7 @@ export const fmeaMark = (nodeId, mark) => sideWrite("ie.fmea_mark", { fver: fver
 const mver = () => (ie.get().mld || {}).mver || "none";
 export const mldImport = () => sideWrite("ie.mld_import", { mver: mver() }, (r) => (r.cancelled ? null : "MLD를 가져왔습니다: " + r.file + " · 가지 " + r.branches + "개"));
 export const mldConfirm = (branchId, on) => sideWrite("ie.mld_confirm", { mver: mver(), seen: seenMap(), branch_id: branchId, on },
-  branchId + (on ? " 가지를 사람이 확인했습니다." : " 가지의 확인을 풀었습니다."));
+  branchId + (on ? " 가지를 사람이 확인했습니다." : " 가지의 확인을 해제했습니다."));
 export const mldLink = (branchId, groupIds) => sideWrite("ie.mld_link", { mver: mver(), seen: seenMap(), branch_id: branchId, group_ids: groupIds },
   branchId + (groupIds.length ? " 가지에 " + groupIds.join(", ") + "을(를) 이었습니다." : " 가지의 연결을 지웠습니다."));
 

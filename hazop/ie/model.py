@@ -859,7 +859,7 @@ def delete_group(doc, gid, at=None):
     """초안 그룹만 지운다(확정 그룹은 먼저 reopen). 소속 후보는 그룹 없음이 되고 ID는 '삭제' 기록으로 남는다."""
     g = _live_group(doc, gid)
     if g["status"] != "draft":
-        raise ValueError("확정한 그룹은 먼저 확정을 풀어야 지울 수 있습니다")
+        raise ValueError("확정한 그룹은 먼저 확정을 해제해야 지울 수 있습니다")
 
     def apply(o):
         for m in members_of(o, gid):
