@@ -11,10 +11,3 @@ export function fixFor(reason) {
   }
   return null;      // 그 밖의 까닭은 화면에서 직접 고치지 않는다(화면 단순화: 잘못 읽은 곳은 채팅으로 고친다)
 }
-
-/** 미확인 말풍선에 원본 조각이 없을 때의 글(그냥 '없습니다'로 끝내지 않는다). */
-export function noFragmentText(reason) {
-  if (reason === "registration_unknown") return "표제란에서 온 항목이라 도면 위 자리가 없습니다. 표제란을 확정하면 사라집니다.";
-  if (!fixFor(reason)) return "이 도면은 원본 그림 조각이 없어 자리만 보입니다. 잘못 읽었으면 채팅으로 고치도록 요청하세요.";
-  return "이 도면은 원본 그림 조각이 없어 자리만 보입니다. 아래 '" + fixFor(reason).label + "' 단추로 처리하세요.";
-}

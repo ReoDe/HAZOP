@@ -64,7 +64,7 @@ class SheetNamesTest(SheetCase):
         self.assertEqual([r["display"] for r in rows], ["three.pdf · 1쪽", "three.pdf · 2쪽", "three.pdf · 3쪽"])
         for r in rows:
             self.assertEqual(r["number_state"], "unconfirmed")
-            self.assertTrue(r["notice"] and r["notice"]["text"], "번호가 없는 까닭(먼저 표제란을 확정하세요)")
+            self.assertIsNone(r["notice"], "화면에서 번호를 확정하는 길이 없어 안내를 내지 않는다")
         for t in self.shown_text(d):
             self.assertNotRegex(t, TEMP)
 

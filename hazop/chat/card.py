@@ -55,7 +55,7 @@ CARD_SCHEMA = _obj({
 })
 # 모델에게 알리는 '지금 채팅으로 할 수 있는 동작'(A11 1차). 앱(hazop/shell/chat_actions.py)이 다시 검사하고 확인 상자를 띄운다
 PROMPT_ACTIONS = ("show", "goto", "select", "layer", "fit", "register.extract", "register.reextract", "nodes.apply", "nodes.undo",
-                  "nodes.confirm", "nodes.unconfirm", "nodes.lock", "analysis.run", "results.set_status", "results.edit",
+                  "analysis.run", "results.set_status", "results.edit",
                   "export.excel", "export.ie_bundle", "sheet.confirm", "dexpi.export", "kg.find", "kg.judge", "aireview.accept",
                   "aireview.reject", "aireview.revert", "aireview.accept_bulk", "aireview.auto_run", "aireview.auto_revert", "sources.choose", "ie.draft_rules", "ie.move", "ie.split",
                   "ie.edit_group", "ie.accept_members", "ie.confirm_group", "ie.reopen_group", "ie.set_coverage", "ie.export",

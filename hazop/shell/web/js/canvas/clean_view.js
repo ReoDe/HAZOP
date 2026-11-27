@@ -337,13 +337,6 @@ export function recolor(ctx, rec, color, width, opts = {}) {
   return symbolShapes(sym || ctx.symbols.generic, bb, ex.orient, { color, width: Math.max(width || 2.2, 2.4), fill: filled ? color : (opts.fill || null), fillOpacity: filled ? 0.9 : opts.fillOpacity, dash: opts.dashed ? "4 3" : null });
 }
 
-/** 못 읽은 곳의 원본 조각: bbox를 사방 24 단위 넓힌 viewBox(도면 크기 안으로 자른다). 같은 원본 SVG를 <image>로 넣어 그 부분만 보인다(규격 §10.4). */
-export function fragmentBox(bbox, size, pad = 24) {
-  const x0 = Math.max(0, bbox[0] - pad), y0 = Math.max(0, bbox[1] - pad);
-  const x1 = Math.min(size[0], bbox[2] + pad), y1 = Math.min(size[1], bbox[3] + pad);
-  return { x: x0, y: y0, w: Math.max(x1 - x0, 1), h: Math.max(y1 - y0, 1) };
-}
-
 /** 기본 보기(규격 §10.5): drawio·dexpi는 정리, pdf_vector는 원본. 쪽이 확정되면 정리. */
 export function defaultView(sourceFormat, confirmed = false) {
   if (sourceFormat === "drawio" || sourceFormat === "dexpi") return "clean";

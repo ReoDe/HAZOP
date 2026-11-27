@@ -166,6 +166,7 @@ class CleanWithNodesTest(W.ShellBase):
         self.assertTrue(r["ok"], r)
         self.open_clean_sheet(win)
         self.js(win, "window.__hz.store.set({panel: 'nodes'})")      # 구간 색은 구간 탭에서만 나온다(화면 단순화)
+        self.assertTrue(wait_for(lambda: self.js(win, "(() => { const b = document.querySelector('.nrow .nrow-b'); if (!b) return false; if (b.getAttribute('aria-pressed') !== 'true') b.click(); return true; })()") is True, 20), "구간을 고른다(고른 구간만 강조)")
         # 정리된 자료·기호가 올 때까지는 원본으로 그리므로(core.js _effective) 바뀔 때까지 기다린 뒤 읽는다
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')") == "clean", 20), "정리된 보기로 바뀐다")
         self.assertTrue(wait_for(lambda: "S1" in (self.js(win, "document.querySelector('.hz-cv-vp').textContent") or "") or
@@ -173,13 +174,19 @@ class CleanWithNodesTest(W.ShellBase):
         self.key_o(win)
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('[data-view]').getAttribute('data-view')") == "orig", 10), "o 키로 원본")
         self.key_o(win)
-        # 정리된 보기에서 네모 고르기 모드로 바꾸면 도구 막대가 눌린 상태이고 같은 저장소에 선택이 들어간다
-        self.assertTrue(self.click(win, "button[aria-label^='네모로 고르기']"))
-        pump(0.3)
+        # 정리된 보기에서도 Ctrl+끌기로 고른 것이 같은 저장소에 들어간다. 구간을 고른 채면 '구간 수정'이므로 고름을 풀고 확인한다
+        self.js(win, "(() => { const b = document.querySelector('.nrow .nrow-b[aria-pressed=\\'true\\']'); if (b) b.click(); })()")
+        pump(0.6)
+        self.assertEqual(self.js(win, "document.querySelectorAll('.toolbar, button[aria-label=\\'전체 맞춤\\'], button[aria-label^=\\'네모로 고르기\\']').length"), 0, "이동·고르기·전체 맞춤 단추는 없다")
         self.js(win, "(() => { const vp = document.querySelector('.hz-cv-vp'); const r = vp.getBoundingClientRect();"
-                     "const ev = (t, x, y) => vp.dispatchEvent(new PointerEvent(t, {clientX: x, clientY: y, pointerId: 1, bubbles: true, button: 0, buttons: 1, isPrimary: true}));"
+                     "const ev = (t, x, y) => vp.dispatchEvent(new PointerEvent(t, {clientX: x, clientY: y, pointerId: 1, bubbles: true, button: 0, buttons: 1, isPrimary: true, ctrlKey: true}));"
                      "ev('pointerdown', r.left + 5, r.top + 5); ev('pointermove', r.right - 5, r.bottom - 5); ev('pointerup', r.right - 5, r.bottom - 5); })()")
-        self.assertTrue(wait_for(lambda: "개 고름" in self.text(win), 10), "정리된 보기에서도 고른 것 막대가 뜬다")
+        self.assertTrue(wait_for(lambda: self.js(win, "!!document.querySelector('.selbar')") is True, 10), "정리된 보기에서도 고른 것 막대가 뜬다")
+        from hazop.shell import api
+        read_nodes = lambda: json.loads(api.ReadApi(win.engine).read(["nodes"], {}).body.decode("utf-8"))["nodes"]
+        before = len(read_nodes())
+        self.js(win, "document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}))")      # Ctrl+끌기로 고른 것을 Enter로 구간으로
+        self.assertTrue(wait_for(lambda: len(read_nodes()) == before + 1, 20), "고른 것으로 구간이 만들어진다")
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [])
 
     def key_o(self, win):

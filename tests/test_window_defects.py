@@ -79,7 +79,7 @@ class WindowDefectTest(unittest.TestCase):
         next(a for a in sub.actions() if a.text() == STEPS[LEGACY_ANALYSIS]).trigger()
         self.assertEqual(win.stack.currentIndex(), LEGACY_ANALYSIS, "하위 메뉴에서도 옛 화면이 열린다")
 
-    # 결함 2: ④ 확정을 해제하면 ⑤ 본문·상태줄·관련 항목이 같은 상태를 말하고, 결과 파일은 그대로다
+    # 결함 2(구간 확정 단계를 없앰, 구간 규격 §0.2 뒤): ④ 확정을 해제해도 구간은 분석에 들어 ⑤ 행렬이 그대로 보이고, 결과 파일은 그대로다
     def test_unconfirm_keeps_results_and_screens_agree(self):
         from hazop.study import nodes
         from hazop.study import results as res
@@ -99,31 +99,9 @@ class WindowDefectTest(unittest.TestCase):
         pump(win, 0.05)
         win.go(RESULTS)
         pump(win, 0.05)
-        self.assertEqual(scr.stack.currentIndex(), 0, "확정본이 없으면 행렬 대신 빈 상태")
-        self.assertIn("확정을 해제", scr.empty_title.text(), "제목이 '결과 없음'이 아니라 숨긴 까닭을 말한다")
-        self.assertNotIn("확정을 해제", scr.empty.text(), "본문은 제목을 되풀이하지 않는다")
-        self.assertIn("보관", scr.empty.text(), "이미 만든 결과가 남아 있음을 알린다")
-        self.assertNotIn("미검토", win.count_label.text(), "상태줄도 결과 개수를 말하지 않는다")
-        self.assertIn("(제안)", win.count_label.text())
-        self.assertNotEqual((win.selection or {}).get("kind"), "cell", "보이지 않는 칸을 관련 항목 기준으로 두지 않음")
-        # 메뉴 내보내기도 본문과 같은 말을 한다: 결과가 없는 게 아니라 숨겨 둔 것
-        win.export_results_excel()
-        pump(win, 0.05)
-        msg = win.msg_label.text()
-        self.assertIn("숨긴 상태라 내보낼 수 없습니다", msg)
-        self.assertIn("다시 확정", msg)
-        self.assertNotIn("내보낼 분석 결과가 없습니다", msg)
+        self.assertEqual(scr.stack.currentIndex(), 1, "확정을 풀어도 행렬이 보인다")
+        self.assertIn("미검토", win.count_label.text(), "상태줄도 결과 개수를 그대로 말한다")
         self.assertEqual(_sha(res_file), before, "결과 파일은 그대로")
-        # 결과 파일이 있어도 분석한 칸이 하나도 없으면 '이미 만든 결과'를 말하지 않는다
-        res.write(res_file, res.empty_results(ns, scr.deviations))
-        win.go(STUDY)
-        win.go(RESULTS)
-        pump(win, 0.05)
-        self.assertNotIn("확정을 해제", scr.empty_title.text())
-        self.assertNotIn("보관", scr.empty.text())
-        win.export_results_excel()
-        pump(win, 0.05)
-        self.assertIn("내보낼 분석 결과가 없습니다", win.msg_label.text())
 
     # 결함 10: 실패 칸 다시 실행을 시작하면 대상 수와 이번 실행의 실패를 가른다
     def _progress(self, scr, scope, done, total, failed_now=0):

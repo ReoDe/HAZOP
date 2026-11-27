@@ -280,11 +280,12 @@ def lost_name(name, ref, sheet_name=None):
     return name
 
 
-def suggest(engine, sheet, ids):
+def suggest(engine, sheet, ids, more=()):
     """도면에서 고른 구성요소로 만들 구간의 카드 초안(저장하지 않음): 이름 제안, 경계, 겹치는 구간."""
     pg = _pg(engine)
     ns, _legacy = _peek(pg)
-    members = list(dict.fromkeys(chatview.lift(pg, sheet, ids)))
+    parts = [{"sheet": sheet, "ids": ids}] + list(more or [])
+    members = list(dict.fromkeys(m for x in parts for m in chatview.lift(pg, x["sheet"], x["ids"])))
     info = _describe(pg)
     majors = []
     for m in members:
@@ -301,7 +302,7 @@ def suggest(engine, sheet, ids):
         name = "구간 S%d" % (max(nums, default=0) + 1)
     owners = _owners(ns)
     shared = collections.Counter(o for m in members for o in owners.get(m, ()))
-    return {"count": len(members), "asked": len(ids), "name": name, "majors": majors[:MAJORS_SHOWN],
+    return {"count": len(members), "asked": sum(len(x["ids"]) for x in parts), "name": name, "majors": majors[:MAJORS_SHOWN],
             "boundary": [majors[0], majors[-1]] if len(majors) >= 2 else majors[:1],
             "overlaps": [{"node_id": o, "shared": c} for o, c in sorted(shared.items(), key=lambda kv: (-kv[1], kv[0]))],
             "set_rev": ns.get("set_rev") or 0}
@@ -370,7 +371,7 @@ def _drawing_texts():
 PROJECT_TEXT = "프로젝트가 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
 STALE_TEXT = "구간이 다른 곳에서 바뀌어 저장하지 않았습니다. 다시 읽었으니 한 번 더 눌러 주세요."
 SKIP_TEXT = "고른 것 가운데 %d개는 구성요소가 아닌 선(신호선·계측선)이라 뺐습니다."
-EDIT_COMMANDS = ("add_members", "remove_members", "rename", "set_design_intent", "merge", "split", "remove")
+EDIT_COMMANDS = ("add_members", "remove_members", "edit_members", "rename", "set_design_intent", "merge", "split", "remove")
 
 
 def _error(out, ns, targets, name):
@@ -385,13 +386,13 @@ def _error(out, ns, targets, name):
         return _api().CommandError("failed", text)
     if codes & {"bad_actor", "unknown_command", "bad_args"}:
         return _api().CommandError("bad_args", DISCARD_BAD if name == "discard_lost" else text)
-    held = [t["node_id"] for t in targets if nodes.node_state(node_tools._node(ns, t["node_id"]) or {}) != "applied"]
+    held = [t["node_id"] for t in targets if nodes.node_state(node_tools._node(ns, t["node_id"]) or {}) == "locked"]
     if name in EDIT_COMMANDS + ("discard_lost",) and held:
         return _api().CommandError("locked", DISCARD_HELD if name == "discard_lost" else text)
     return _api().CommandError("failed", DISCARD_GONE if name == "discard_lost" else text)
 
 
-DISCARD_HELD = "확정했거나 잠근 구간입니다. 확정을 해제한 뒤에 찾지 못한 구성요소를 버릴 수 있습니다."
+DISCARD_HELD = "잠근 구간입니다. 잠금을 푼 뒤에 찾지 못한 구성요소를 버릴 수 있습니다."
 DISCARD_GONE = "고른 구성요소를 이 구간의 찾지 못한 목록에서 찾지 못했습니다. 목록을 다시 읽었으니 다시 골라 주세요."
 DISCARD_BAD = "버릴 구성요소를 다시 골라 주세요."
 
@@ -429,10 +430,29 @@ def _check_targets(ns, a):
 def _members(pg, a):
     """고른 local_id -> (프로젝트 구성요소 ID, 뺀 개수). 그래프의 구성요소가 아닌 선(신호선·계측선)은 빼고 그 개수를 돌려준다.
     하나도 남지 않으면 거절한다."""
-    members = list(dict.fromkeys(chatview.lift(pg, a["sheet"], a["ids"])))
+    parts = [{"sheet": a["sheet"], "ids": a["ids"]}] + list(a.get("more") or [])      # more: 다른 도면에서 함께 고른 것
+    members = list(dict.fromkeys(m for x in parts for m in chatview.lift(pg, x["sheet"], x["ids"])))
     if not members:
         raise _api().CommandError("bad_args", "고른 것 가운데 구간에 넣을 수 있는 구성요소가 없습니다(신호선·계측선은 넣지 않습니다).")
-    return members, len(set(a["ids"])) - len(members)
+    return members, len({(x["sheet"], i) for x in parts for i in x["ids"]}) - len(members)
+
+
+def _side(pg, parts):
+    """[{sheet, ids}] -> (프로젝트 구성요소 ID 목록, 고른 수). 신호선·계측선처럼 구성요소가 아닌 것은 빠진다."""
+    members = list(dict.fromkeys(m for x in parts or [] for m in chatview.lift(pg, x["sheet"], x["ids"])))
+    return members, len({(x["sheet"], i) for x in parts or [] for i in x["ids"]})
+
+
+def _edit_members_args(pg, a):
+    """nodes.edit_members 인자: add·remove는 도면별 고름 [{sheet, ids}]. 더하기·빼기를 한 번에 저장한다(묶음 하나)."""
+    add, picked_add = _side(pg, a.get("add"))
+    remove, picked_remove = _side(pg, a.get("remove"))
+    if not add and not remove:
+        raise _api().CommandError("bad_args", "더하거나 뺄 구성요소가 없습니다(신호선·계측선은 구간에 넣지 않습니다).")
+    both = set(add) & set(remove)
+    if both:
+        raise _api().CommandError("bad_args", "같은 구성요소를 더하고 빼려 했습니다. 다시 골라 주세요.")
+    return {"node_id": a["node_id"], "add": add, "remove": remove}, picked_add + picked_remove - len(add) - len(remove)
 
 
 def _judged(pg, ns, nid):
@@ -543,6 +563,15 @@ def register(commands):
     proj = (v_str(1, 120), True)
     target = v_list(v_obj(node_id=v_str(1, 40), rev=v_int(0, INT_MAX), state=v_enum("applied", "confirmed", "locked")), 100)
     sheet, ids = (v_str(1, 200), True), (v_list(v_str(1, 200), MAX_IDS), True)
+    part = v_obj(sheet=sheet[0], ids=ids[0])
+
+    def whole_part(v):
+        out = part(v)
+        if set(out) != {"sheet", "ids"}:
+            raise ValueError("more의 항목에는 sheet와 ids가 모두 있어야 함")
+        return out
+
+    more = (v_list(whole_part, 60), False)          # 다른 도면에서 함께 고른 것
     nid, nids = (v_str(1, 40), True), (v_list(v_str(1, 40), 100), True)
 
     def put(name, spec_, handler, doc):
@@ -563,21 +592,25 @@ def register(commands):
             return dict(extra(a), members=members), skipped
         return build
 
-    add("create", dict(sheet=sheet, ids=ids, name=(v_str(1, 120), True), design_intent=(v_str(0, 2000), False)),
+    add("create", dict(sheet=sheet, ids=ids, more=more, name=(v_str(1, 120), True), design_intent=(v_str(0, 2000), False)),
         lambda pg, a: _create_args(pg, a), "고른 구성요소로 구간을 만든다", needs_target=False)
-    add("add_members", dict(node_id=nid, sheet=sheet, ids=ids), with_members(lambda a: {"node_id": a["node_id"]}), "구간에 구성요소를 더한다")
-    add("remove_members", dict(node_id=nid, sheet=sheet, ids=ids), with_members(lambda a: {"node_id": a["node_id"]}), "구간에서 구성요소를 뺀다")
+    add("add_members", dict(node_id=nid, sheet=sheet, ids=ids, more=more), with_members(lambda a: {"node_id": a["node_id"]}), "구간에 구성요소를 더한다")
+    add("remove_members", dict(node_id=nid, sheet=sheet, ids=ids, more=more), with_members(lambda a: {"node_id": a["node_id"]}), "구간에서 구성요소를 뺀다")
+    side = (v_list(whole_part, 60), False)          # 도면별 고름 [{sheet, ids}]
+    add("edit_members", dict(node_id=nid, add=side, remove=side), _edit_members_args,
+        "구간에 구성요소를 더하고 빼기를 한 번에 저장한다(묶음 하나. 하나라도 걸리면 아무것도 바꾸지 않음)")
     add("rename", dict(node_id=nid, name=(v_str(1, 120), True)), lambda pg, a: ({"node_id": a["node_id"], "name": a["name"]}, 0), "구간 이름을 고친다")
     add("set_intent", dict(node_id=nid, text=(v_str(0, 2000), True)), lambda pg, a: ({"node_id": a["node_id"], "text": a["text"]}, 0),
         "설계 의도를 고친다(빈 글이면 지움)")
     add("merge", dict(node_ids=(v_list(v_str(1, 40), 20), True)), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "구간을 합친다(첫 구간이 남음)")
-    add("split", dict(node_id=nid, sheet=sheet, ids=ids, name=(v_str(1, 120), False)),
+    add("split", dict(node_id=nid, sheet=sheet, ids=ids, more=more, name=(v_str(1, 120), False)),
         with_members(lambda a: {"node_id": a["node_id"], "name": a.get("name")}), "고른 구성요소를 떼어 새 구간으로 나눈다")
     add("remove", dict(node_id=nid, archive=(v_bool(), False)), lambda pg, a: ({"node_id": a["node_id"], "archive": bool(a.get("archive"))}, 0),
         "구간을 지운다(분석 칸에 판정이 있으면 지우지 않고 needs_archive를 답한다)")
-    add("confirm", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "구간을 확정한다")
-    add("unconfirm", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "구간 확정을 푼다")
-    add("lock", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "분석을 마치고 구간을 잠근다")
+    # 확정·확정 해제·잠금은 화면이 부르지 않는다(구간 확정 단계를 없앰, 규격 §0.2). 옛 기록·시험을 위해 명령은 남긴다
+    add("confirm", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "(옛 길) 구간을 확정한다. 화면은 부르지 않음")
+    add("unconfirm", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "(옛 길) 구간 확정을 푼다. 화면은 부르지 않음")
+    add("lock", dict(node_ids=nids), lambda pg, a: ({"node_ids": a["node_ids"]}, 0), "(옛 길) 분석을 마치고 구간을 잠근다. 화면은 부르지 않음")
     add("unlock", dict(node_ids=nids, reason=(v_str(1, 500), True)), lambda pg, a: ({"node_ids": a["node_ids"], "reason": a["reason"]}, 0),
         "잠금을 푼다(이유를 적어야 함)")
     add("discard_lost", dict(node_id=nid, keys=(v_list(v_str(1, 100), 500), False)),
@@ -589,8 +622,8 @@ def register(commands):
         _exclude_drawing, "도면을 구간 분석에서 빼거나(범례·기호표) 다시 넣는다. 그 도면의 구성요소를 품은 구간이 있으면 확인 글을 confirm으로 다시 보낸다")
     def h_suggest(eng, a):
         _check_project(eng, a)
-        return suggest(eng, a["sheet"], a["ids"])
-    put("suggest", {"project_id": proj, "sheet": sheet, "ids": ids}, h_suggest, "고른 구성요소로 만들 구간의 카드 초안(저장하지 않음)")
+        return suggest(eng, a["sheet"], a["ids"], a.get("more"))
+    put("suggest", {"project_id": proj, "sheet": sheet, "ids": ids, "more": more}, h_suggest, "고른 구성요소로 만들 구간의 카드 초안(저장하지 않음)")
     put("catch_up", {"project_id": proj}, _catch_up, "다시 추출 뒤 검토구간에 도면 변경을 지금 반영한다(이미 반영돼 있으면 아무것도 쓰지 않음). 이어진 수·찾지 못한 구성요소 수를 답한다")
     put("migrate", {"project_id": proj}, _migrate, "0.1 구간 파일을 새 판으로 바꾼다(사용자가 누를 때 한 번)")
     return commands

@@ -91,7 +91,7 @@ class IePanelTest(W.ShellBase):
         self.assertTrue(self.click(win, "button[aria-label='그룹 확정']"))
         self.assertTrue(wait_for(lambda: bool(ie_store.load(self.project)[0]["groups"][gid].get("confirmation")), 10))
         self.assertEqual(ie_store.load(self.project)[0]["groups"][gid]["confirmation"]["by"], "검토자A")
-        self.assertTrue(wait_for(lambda: "확정 풀기" in self.text(win), 10))
+        self.assertTrue(wait_for(lambda: "확정 해제" in self.text(win), 10))
 
 
     # ------------------------------------------------------------ A10 편집

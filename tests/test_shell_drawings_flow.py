@@ -344,7 +344,6 @@ class DexpiLineTest(W.ShellBase):
         os.makedirs(out, exist_ok=True)
         with mock.patch.object(dexpi_export, "list_exportable", lambda *a, **k: rows), mock.patch.object(dexpi_export, "export_names", lambda *a, **k: res):
             win = self.window()
-            win._save_dir = lambda kind: out
             self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector(\"button[aria-label='DEXPI로 내보내기']\").disabled") is False, 15))
             self.assertTrue(self.click(win, "button[aria-label='DEXPI로 내보내기']"))
             self.assertTrue(wait_for(lambda: "내보냈습니다" in self.text(win), 30), self.text(win)[-400:])
@@ -421,6 +420,19 @@ class ItemBubbleFlowTest(W.ShellBase):
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "results", 10))
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
 
+    def test_escape_closes_the_spec_card_first(self):
+        """사양 말풍선은 Esc로 닫힌다(패널은 남는다)."""
+        win = self.window()
+        gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
+        from hazop.shell import api
+        item = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"][0]
+        bubble = {"sheet": gid, "id": item["id"], "tag": "X", "kind": item["kind"], "kind_label": "밸브", "rect": {"x": 200, "y": 200, "w": 20, "h": 20}}
+        self.js(win, "window.__hz.store.set({sheet: %s, panel: 'drawings', bubble: %s})" % (json.dumps(gid), json.dumps(bubble)))
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble.props') !== null") is True, 15))
+        self.js(win, "document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")      # 실제 키처럼 문서에서 올라온다
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.bubble.props') === null") is True, 10), "Esc로 닫힘")
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "패널은 그대로")
+
     def test_a_value_is_shown_with_its_source_next_to_it(self):
         """값 옆에 작은 글씨로 출처(도면 번호 또는 문서 이름)만 보이고, 값이 없는 항목은 '—'다."""
         from unittest import mock
@@ -442,28 +454,134 @@ class ItemBubbleFlowTest(W.ShellBase):
         self.assertEqual(by["호칭 지름"], ["—"])
         self.assertTrue(self.js(win, "(() => { const v = document.querySelector('.bubble.props .pv'), s = document.querySelector('.bubble.props .ps'); return getComputedStyle(s).fontSize !== getComputedStyle(v).fontSize && getComputedStyle(v).textOverflow === 'ellipsis'; })()"), "출처는 더 작은 글씨, 값은 줄임표")
 
-    def test_the_drawing_tab_shows_extraction_boxes_and_no_segment_colors(self):
-        """도면 탭은 원본 위에 추출한 것을 네모로(색 범례가 뜸) 보이고, 구간 색 강조(S1 딱지)는 구간 탭에서만 나온다."""
+    BOXES = "new Set([...document.querySelectorAll('.hz-cv-marks [data-check]')].map((e) => e.getAttribute('data-check'))).size"
+    LEGEND_SUM = "[...document.querySelectorAll('.extract-legend .el-item')].reduce((n, e) => n + parseInt(e.textContent.replace(/[^0-9]/g, ''), 10), 0)"
+
+    # 범례와 원본·정리 단추는 그 자리를 눌렀을 때 자기 자신이 잡혀야 보이는 것이다(다른 칸 밑에 깔리거나 밀려 나가면 아니다). 도면 칸은 가운데 칸을 넘지 않는다.
+    VISIBLE = """(() => { const bad = [];
+      for (const q of ['.extract-legend', '.viewswitch']) { const el = document.querySelector(q); if (!el) continue; const r = el.getBoundingClientRect(),
+        hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); if (!hit || !el.contains(hit)) bad.push(q); }
+      const c = document.querySelector('.canvas').getBoundingClientRect(), m = document.querySelector('.center').getBoundingClientRect();
+      if (c.right > m.right + 1) bad.push('canvas가 ' + Math.round(c.right - m.right) + 'px 넘침');
+      return bad.join(', '); })()"""
+
+    def boxes_match(self, win, where):
+        ok = wait_for(lambda: (self.js(win, self.BOXES) or 0) > 0 and self.js(win, self.BOXES) == self.js(win, self.LEGEND_SUM), 15)
+        self.assertTrue(ok, "%s: 네모 %s / 추출 항목 %s" % (where, self.js(win, self.BOXES), self.js(win, self.LEGEND_SUM)))
+        self.assertTrue(self.js(win, "!!document.querySelector('.extract-legend')"), where + ": 범례")
+        self.assertTrue(wait_for(lambda: self.js(win, self.VISIBLE) == "", 10), "%s: 화면에 보이지 않는 것: %s" % (where, self.js(win, self.VISIBLE)))
+
+    def toggle_view(self, win, name):
+        self.js(win, "[...document.querySelectorAll('.clean-toggle button')].find((b) => b.textContent.startsWith(%s)).click()" % json.dumps(name))
+
+    def test_extraction_boxes_are_always_drawn_on_the_drawing_tab_in_every_state(self):
+        """도면 탭의 추출 네모는 패널이 열렸든 닫혔든, 줄을 눌러 연 직후, 원본·정리, 확대·이동 뒤, 고른 뒤, 말풍선·강조가 있어도 늘 그려진다. 구간 탭은 구간 색만."""
         win = self.window()
+        self.js(win, "window.__hz.store.set({panel: 'drawings'})")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.drow-open') !== null") is True, 15))
+        self.assertTrue(self.click(win, ".drow-open"))
         gid = self.jsj(win, "window.__hz.store.get().drawings.drawings")[0]["graph_id"]
-        self.js(win, "window.__hz.store.set({sheet: %s, panel: 'drawings'})" % json.dumps(gid))
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().sheet") == gid, 10))
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "줄을 눌러 열어도 도면 패널은 닫히지 않는다")
         self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.clean-toggle') !== null") is True, 30))
-        self.assertTrue(wait_for(lambda: self.js(win, "[...document.querySelectorAll('.clean-toggle button')].find((b) => b.textContent.startsWith('정리')).getAttribute('aria-pressed')") == "true", 15), "drawio 기본 보기는 정리(정리 자료가 오면)")
-        pump(1.5)
-        self.assertEqual(self.js(win, "document.querySelector('.extract-legend') === null"), True, "정리 보기에는 추출 네모·범례가 없다")
-        self.js(win, "[...document.querySelectorAll('.clean-toggle button')].find((b) => b.textContent.startsWith('원본')).click()")
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') !== null") is True, 30), "원본 보기의 도면 탭에 추출 확인 범례")
-        self.assertIn("읽음", self.js(win, "document.querySelector('.extract-legend').textContent"))
-        self.assertTrue(self.js(win, "(() => { const l = document.querySelector('.extract-legend').getBoundingClientRect(), p = document.querySelector('section.panel').getBoundingClientRect(); return l.left >= p.right; })()"), "범례가 도면 패널에 가려지지 않는다")
-        self.assertTrue(wait_for(lambda: (self.js(win, "document.querySelectorAll('.hz-sheet svg *').length") or 0) > 0, 10))
-        self.js(win, "window.__hz.store.set({panel: 'nodes'})")
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') === null") is True, 10), "구간 탭에는 추출 확인 범례가 없다")
+        self.boxes_match(win, "줄 눌러 연 직후(정리)")
+        self.assertTrue(self.js(win, "(() => { const c = document.querySelector('.canvas').getBoundingClientRect(), p = document.querySelector('section.panel').getBoundingClientRect(); return c.left >= p.right - 1; })()"), "도면은 패널 옆 남은 자리에 그린다")
+        self.toggle_view(win, "원본")
+        self.boxes_match(win, "원본")
+        self.toggle_view(win, "정리")
+        self.boxes_match(win, "정리로 돌아옴")
         self.js(win, "window.__hz.store.set({panel: null})")
-        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') === null") is True, 10), "패널을 닫고 도면만 볼 때는 켜지 않는다(차단 1)")
-        self.js(win, "window.__hz.store.set({panel: 'drawings', marks: {rid: 'results-basis', bySheet: {[%s]: [{op: 'mark', groups: [{ids: [], style: 'path'}], dim_others: false}]}}})" % json.dumps(gid))
         pump(1.0)
-        self.assertEqual(self.js(win, "document.querySelector('.extract-legend') === null"), True, "추적·채팅 강조 같은 다른 표시가 있으면 끈다(차단 1)")
+        self.boxes_match(win, "패널 닫힘")
+        self.js(win, "window.__hz.store.set({panel: 'results'})")
+        pump(0.5)
+        self.js(win, "window.__hz.store.set({panel: 'drawings'})")
+        pump(1.0)
+        self.boxes_match(win, "다른 탭에 갔다 돌아옴")
+        from hazop.shell import api
+        items = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"]
+        item = next(i for i in items if i.get("layer") == "symbol")
+        self.js(win, "window.__hz.store.set({bubble: {sheet: %s, id: %s, tag: 'X', kind: %s, kind_label: '기기', rect: {x: 300, y: 300, w: 20, h: 20}, view: {x: 0, y: 0, k: 1}}})" % (json.dumps(gid), json.dumps(item["id"]), json.dumps(item["kind"])))
+        pump(0.8)
+        self.boxes_match(win, "구성요소를 골라 말풍선이 뜸")
+        self.js(win, "window.__hz.store.set({bubble: null, marks: {rid: 'chat-1', bySheet: {[%s]: [{op: 'mark', groups: [{ids: [%s], style: 'path'}], dim_others: false}]}}})" % (json.dumps(gid), json.dumps(item["id"])))
+        pump(0.8)
+        self.boxes_match(win, "채팅 강조가 있어도")
+        self.js(win, "window.__hz.store.set((s) => ({command: {seq: s.command.seq + 1, type: 'zoomTo', ids: [%s], pad: 0.5}}))" % json.dumps(item["id"]))
+        pump(1.0)
+        self.boxes_match(win, "확대·이동 뒤")
+        self.js(win, "window.__hz.store.set({marks: {rid: null, bySheet: {}}, panel: 'nodes'})")
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.extract-legend') === null") is True, 10), "구간 탭에는 범례가 없다")
+        self.assertTrue(wait_for(lambda: (self.js(win, self.BOXES) or 0) == 0, 10), "구간 탭에는 추출 네모가 없다(구간 색만)")
         self.assertEqual([c for c in win.view.page().console if c[0] >= 2], [], "웹 콘솔 오류 없음")
+
+    PRESS = """(([id, dx]) => { const vp = document.querySelector('.hz-cv-vp'), v = vp.getBoundingClientRect();
+      let x = v.left + 4, y = v.bottom - 4;
+      if (id) { const r = document.querySelector('.hz-cv-marks [data-check="' + id + '"]').getBoundingClientRect(); x = r.left + r.width / 2; y = r.top + r.height / 2; }
+      const at = (type, ax) => vp.dispatchEvent(new PointerEvent(type, {bubbles: true, cancelable: true, clientX: ax, clientY: y, button: 0, pointerId: 9, isPrimary: true}));
+      at('pointerdown', x); if (dx) at('pointermove', x + dx); at('pointerup', x + dx); return true; })(%s)"""
+
+    def test_the_spec_bubble_closes_on_an_outside_press_and_is_replaced_by_another_component(self):
+        """실제 캔버스: 구성요소를 누르면 말풍선, 다른 구성요소를 누르면 그것으로 바뀌고, 빈 도면·머리 줄을 누르면 닫히며, 빈 도면을 끄는 것은 닫지 않는다."""
+        win = self.window()
+        pump(1.0)
+        self.js(win, "window.__hz.store.set({panel: 'drawings'})")      # 앞 시험이 저장한 패널 상태와 무관하게
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.drow-open') !== null") is True, 15))
+        self.assertTrue(self.click(win, ".drow-open"))
+        self.assertTrue(wait_for(lambda: (self.js(win, self.BOXES) or 0) > 1, 30))
+        self.js(win, "window.__hz.store.set({panel: null})")
+        pump(1.5)
+        from hazop.shell import api
+        gid = self.js(win, "window.__hz.store.get().sheet")
+        items = json.loads(api.ReadApi(win.engine).read(["sheet", gid], {}).body.decode("utf-8"))["items"]
+        has = lambda i: self.js(win, "!!document.querySelector('.hz-cv-marks [data-check=\\'%s\\']')" % i)
+        symbols = [i["id"] for i in items if i.get("layer") == "symbol" and has(i["id"])]
+        picked = lambda: self.js(win, "(window.__hz.store.get().bubble || {}).id || ''")
+
+        def press(i=None, dx=0):
+            self.js(win, self.PRESS % json.dumps([i, dx]))
+            pump(0.5)
+
+        first = None
+        for i in symbols:
+            press(i)
+            if picked() == i:
+                first = i
+                break
+        self.assertTrue(first, "구성요소를 눌러 말풍선이 뜬다")
+        for i in symbols:
+            if i != first:
+                press(i)
+                if picked() == i:
+                    break
+        keep = picked()
+        self.assertTrue(keep and keep != first, "다른 구성요소를 누르면 그 말풍선으로 바뀐다: %r" % keep)
+        press(None, 40)
+        self.assertEqual(picked(), keep, "도면을 끄는 것은 닫지 않는다")
+        press()
+        self.assertEqual(picked(), "", "빈 도면을 한 번 누르면 닫힌다")
+        press(keep)
+        self.assertEqual(picked(), keep)
+        self.js(win, "(() => { const h = document.querySelector('header') || document.body; for (const t of ['pointerdown', 'pointerup']) h.dispatchEvent(new PointerEvent(t, {bubbles: true, clientX: 300, clientY: 5, button: 0})); })()")
+        self.assertTrue(wait_for(lambda: picked() == "", 10), "머리 줄을 누르면 닫힌다")
+
+    def test_nothing_closes_the_drawing_panel(self):
+        win = self.window()
+        self.js(win, "window.__hz.store.set({panel: 'drawings'})")      # 앞 시험이 남긴 보기 상태와 무관하게
+        self.assertTrue(wait_for(lambda: self.js(win, "document.querySelector('.drow-open') !== null") is True, 15))
+        self.assertTrue(self.click(win, ".drow-open"))
+        pump(1.0)
+        self.js(win, "document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+        self.js(win, "document.body.dispatchEvent(new KeyboardEvent('keydown', {key: '0', ctrlKey: true, bubbles: true}))")
+        pump(0.6)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "Esc·Ctrl+0은 도면 패널을 닫지 않는다")
+        self.assertTrue(self.click(win, "button.sheet"))
+        pump(0.3)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "위 도면 이름 단추는 열기만 한다")
+        self.assertFalse(self.js(win, "!!document.querySelector(\"section.panel button[aria-label='패널 닫기']\")"), "닫기 단추가 없다")
+        self.assertTrue(self.click(win, ".rail button.on"))
+        pump(0.4)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "왼쪽 메뉴의 도면 단추로도 닫히지 않는다")
 
 
 class ScanNoteFlowTest(W.ShellBase):

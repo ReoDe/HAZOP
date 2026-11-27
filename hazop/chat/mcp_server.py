@@ -29,7 +29,7 @@ import traceback
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 SERVER_NAME = "hazop"
-CALL_LIMIT = 8
+CALL_LIMIT = 40  # 사용자 결정 2026-11-26: 질문이 도중에 멈추지 않게 넉넉히. 끝없이 도는 것만 막는다
 MAX_RESULT_CHARS = 8000
 CURSOR_MARGIN = 64          # 도구 cursor를 서버 토큰으로 바꿀 때 길이가 달라지는 몫
 MAX_REQUEST_BYTES = 256 * 1024

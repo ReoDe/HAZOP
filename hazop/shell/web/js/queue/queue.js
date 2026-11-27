@@ -6,6 +6,7 @@ import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore, store } from "../store.js";
 import { cmd, read } from "../bridge.js";
 import { asking as guardAsking, confirmRevert } from "../review/revert_guard.js";
+import { locate } from "../locate.js";
 
 const START = { open: false, kind: null, gid: null, items: [], i: 0, undo: [], busy: false, error: null, note: null, editing: null, ask: null,
   bulkAsk: false, done: false, setRev: null, projectId: null, bulk: [], inputs: {} };
@@ -86,9 +87,8 @@ export function closeQueue() {
 }
 
 // ---------------------------------------------------------------- 도면에 보이기
-function bump(command) { store.set((s) => ({ command: Object.assign({ seq: s.command.seq + 1 }, command) })); }
 
-/** 지금 건의 도면을 열고 그 자리로 확대한다. 지금 건은 파란 테두리와 번호, 같은 도면에서 처리한 것은 옅은 테두리로 남긴다. */
+/** 지금 건의 도면을 전체 맞춤으로 연다(확대하지 않음). 지금 건은 파란 테두리와 번호, 같은 도면에서 처리한 것은 옅은 테두리로 남긴다. */
 export function show() {
   const s = q.get(), it = current(s);
   if (!it || !it.graph_id) return;
@@ -97,15 +97,10 @@ export function show() {
   const groups = [];
   if (done.length) groups.push({ ids: done, style: "muted" });
   if (it.local_id) groups.push({ ids: [it.local_id], style: "focus", label: String(s.i + 1) });
-  const opened = store.get().sheet !== gid;
   const marks = groups.length ? [{ id: "queue", op: "mark", groups, dim_others: true }] : [];
   const pend = ((s.inputs || {})[gid] || {}).boxes || [];
   if (pend.length) marks.push({ id: "queue-inputs", op: "box", boxes: pend.map((b) => ({ rect: b.rect, label: "반영 전" })) });     // 수락했지만 아직 도면에 들지 않은 나누기(입력 연산 U2)
-  store.set({ sheet: gid, panel: null, marks: { rid: "queue", bySheet: { [gid]: marks } } });
-  if (opened) cmd("sheet.open", { graph_id: gid }).catch(() => {});
-  if (!it.local_id) return;
-  if (opened) [350, 900, 1800].forEach((ms) => setTimeout(() => { if (store.get().sheet === gid && current() === it) bump({ type: "zoomTo", ids: [it.local_id], pad: 4 }); }, ms));
-  else bump({ type: "zoomTo", ids: [it.local_id], pad: 4 });
+  locate({ sheet: gid, marks: { [gid]: marks }, rid: "queue", patch: { panel: null } });
 }
 
 /** 다음 열린 항목으로(뒤에 없으면 앞에서 찾는다). 열린 것이 없으면 끝 화면. */

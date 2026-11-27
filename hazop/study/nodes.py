@@ -5,9 +5,11 @@
 도면 연결 구간은 배관 경로 요소라 경로가 이어진 도면까지 한 구간에 든다. 도면별 저장본은 그대로 따로 읽힌다.
 편집 연산은 모두 순수 함수다. 입력을 바꾸지 않고 새 dict를 돌려주며 history에 한 줄 덧붙인다.
 
-저장 규격 0.3(docs/specs/study-node-segmentation.md §2. 0.2에 판 이전 묘비를 더한 것이고 0.2 파일은 읽을 때 바꾼다). 확정은 구간마다다(state: applied → confirmed → locked).
-구간끼리 겹쳐도 되고, 어느 구간에도 들지 않는 구성요소('구간 밖')가 있어도 확정할 수 있다.
-구성요소·이름·basis·설계 의도가 바뀌면 그 구간의 분석 판(rev)이 1 오르고, 확정·잠금 구간은 확정 해제 뒤에만 고친다.
+저장 규격 0.3(docs/specs/study-node-segmentation.md §2. 0.2에 판 이전 묘비를 더한 것이고 0.2 파일은 읽을 때 바꾼다).
+구간 상태(state)는 applied·confirmed·locked이지만 '확정' 단계는 없앴다(규격 §0.2, 2026-11-26): 만든 구간(applied)과 옛 확정 구간
+(confirmed)은 똑같이 분석·결과·인계에 들고 바로 고친다. 잠긴 구간(locked)만 고치지 못한다.
+구간끼리 겹쳐도 되고, 어느 구간에도 들지 않는 구성요소('구간 밖')가 있어도 된다.
+구성요소·이름·basis·설계 의도가 바뀌면 그 구간의 분석 판(rev)이 1 오르고, 칸의 판정은 '범위 바뀜'이 붙는다(results.reconcile).
 편집 하나가 묶음(batches, B<번호>) 하나이고 묶음마다 op의 before·after를 남긴다(되돌리기는 hazop.study.node_tools).
 0.1 파일은 nodes.load_fp가 읽을 때 hazop.study.convert로 바꾼다.
 """
@@ -28,7 +30,7 @@ PRE_TOMB_SCHEMA_VERSION = "0.2"  # 판 이전 묘비(tombstones·nodes[].lost) �
 LEGACY_SCHEMA_VERSION = "0.1"
 KIND = "hazop_study_nodes"
 STATES = ("applied", "confirmed", "locked")
-ACTIVE_STATES = ("confirmed", "locked")  # ⑤ 행이 있는 상태
+ACTIVE_STATES = STATES  # ⑤ 행이 있는 상태. 확정 단계를 없애 모든 구간이 든다(규격 §0.2)
 ORIGINS = ("ai", "user", "script")
 ANALYSIS_INPUTS = ("members", "name", "basis", "design_intent")  # 바뀌면 rev가 오르는 값(⑤ AI 분석 입력)
 BATCH_KEEP = 50
@@ -167,7 +169,7 @@ def node_state(node):
 
 
 def is_active(node):
-    """확정·잠금 구간(⑤ 행이 있음)."""
+    """분석에 드는 구간(⑤ 행이 있음). 확정 단계가 없어 상태가 무엇이든 든다(규격 §0.2)."""
     return node_state(node) in ACTIVE_STATES
 
 
@@ -176,9 +178,10 @@ def active_nodes(node_set):
 
 
 def all_confirmed(node_set):
-    """구간이 있고 모두 확정·잠금이면 True. ④가 집합 단위 단추를 쓰는 동안(N2 전) 옛 '확정본'과 같은 뜻으로 쓴다."""
+    """구간이 있고 모두 확정·잠금 상태면 True. 이전 Qt 화면(hazop/app)만 옛 '확정본'과 같은 뜻으로 쓴다. 분석에 드는지는 이 값이 아니라
+    is_active로 본다(확정 단계를 없앰, 규격 §0.2)."""
     ns = (node_set or {}).get("nodes") or []
-    return bool(ns) and all(is_active(n) for n in ns)
+    return bool(ns) and all(node_state(n) in ("confirmed", "locked") for n in ns)
 
 
 def intent_text(node):
@@ -203,13 +206,11 @@ def is_stale(node_set, graph):
 # ---------------------------------------------------------------- 편집(순수 함수)
 
 def _begin(node_set, targets=()):
-    """편집 대상 구간이 확정·잠금이면 ValueError. 아니면 깊은 사본."""
+    """편집 대상 구간이 잠금이면 ValueError. 아니면 깊은 사본(옛 확정 구간도 바로 고친다, 규격 §0.2)."""
     for nid in targets:
         n = _find(node_set, nid)
         if node_state(n) == "locked":
-            raise ValueError("%s는 잠긴 구간이라 고칠 수 없음(잠금을 풀고 확정을 해제한 뒤)" % nid)
-        if is_active(n):
-            raise ValueError("%s는 확정된 구간이라 확정을 해제한 뒤에 고칠 수 있음" % nid)
+            raise ValueError("%s는 잠긴 구간이라 고칠 수 없음(잠금을 먼저 해제할 것)" % nid)
     return copy.deepcopy(node_set)
 
 
@@ -224,13 +225,38 @@ def ever_confirmed(node_set, node_id):
                    for n in p.get("nodes") or []))
 
 
+def _judged_on_disk(node_set, node_ids):
+    """저장된 ⑤ 결과 파일에서 판정(항목이 있거나 칸 상태가 분석 전이 아님)이 있는 구간 ID. 결과 파일이 없으면 [].
+    읽지 못하거나 다른 도면의 결과면 None(판정이 있는지 알 수 없음)."""
+    from hazop.study import results as res
+    try:
+        doc, _fp = res.read_fp(res._readable_path(node_set.get("project_id"), node_set["graph_id"]))
+    except (OSError, ValueError, KeyError):
+        return None
+    if doc is None:
+        return []
+    if doc.get("graph_id") != node_set.get("graph_id") or not isinstance(doc.get("cells"), list):
+        return None
+    judged = {c.get("node_id") for c in doc["cells"]
+              if isinstance(c, dict) and (c.get("entries") or c.get("state") not in (None, "not_analyzed"))}
+    return [nid for nid in node_ids if nid in judged]
+
+
 def _refuse_drop(node_set, node_ids, what):
-    """결과를 받지 않는 옛 편집 길(④ nodes.merge·remove_member·remove_empty, AI 제안 받아들이기)이 확정한 적 있는 구간을
-    없애지 못하게 한다. 그 구간의 ⑤ 칸(보관 칸 포함)이 '없는 검토구간 참조'로 떨어지기 때문이다(규격 §4.4, 총괄 검토 R2).
-    결과를 함께 옮기거나 보관하는 길은 hazop.study.node_tools.apply_nodes다."""
-    hit = [nid for nid in node_ids if ever_confirmed(node_set, nid)]
+    """결과를 받지 않는 옛 편집 길(④ nodes.merge·remove_member·remove_empty, AI 제안 받아들이기. 이전 Qt 화면이 부름)이 판정이
+    있는 구간을 없애지 못하게 한다. 그 구간의 ⑤ 칸(보관 칸 포함)이 '없는 검토구간 참조'로 떨어지기 때문이다(규격 §4.4, 총괄 검토 R2).
+    확정 단계를 없애 확정한 적 없는 구간에도 판정이 생기므로(규격 §0.2), 확정 이력과 함께 저장된 결과 파일을 읽어 본다. 결과를
+    읽지 못하면 판정이 있는지 알 수 없어 모두 거절한다. 결과를 함께 옮기거나 보관하는 길은 hazop.study.node_tools.apply_nodes다."""
+    node_ids = list(node_ids)
+    if not node_ids:
+        return
+    on_disk = _judged_on_disk(node_set, node_ids)
+    if on_disk is None:
+        raise ValueError("⑤ 결과 파일을 읽지 못해 %s에 판정이 있는지 확인할 수 없음: %s는 결과를 함께 옮기는 길(apply_nodes)로만 함"
+                         % (", ".join(node_ids), what))
+    hit = [nid for nid in node_ids if ever_confirmed(node_set, nid) or nid in on_disk]
     if hit:
-        raise ValueError("%s는 확정한 적이 있어 ⑤ 칸이 있을 수 있음: %s는 결과를 함께 옮기는 길(apply_nodes)로만 함"
+        raise ValueError("%s는 ⑤ 칸에 판정이 있거나 있을 수 있음: %s는 결과를 함께 옮기는 길(apply_nodes)로만 함"
                          % (", ".join(hit), what))
 
 
@@ -476,8 +502,9 @@ def screen_excluded(node):
 
 
 def settle_screen(node_set):
-    """0.2 집합에 남은 옛 '스크리닝 제외' 구간(규칙 R3, B2 시험판의 사람 판정)을 '적용됨'(미확정)으로 읽는다(규격 §2.5, 총괄 판정
-    2026-11-14). 구성요소·칸은 그대로 두고 확정·잠금만 내려 ⑤ 행에 조용히 들어가지 않게 한다. 옛 판정은 legacy_screen에 남긴다.
+    """0.2 집합에 남은 옛 '스크리닝 제외' 구간(규칙 R3, B2 시험판의 사람 판정)을 '적용됨'으로 읽는다(규격 §2.5, 총괄 판정
+    2026-11-14). 구성요소·칸은 그대로 두고 잠금을 내린다. 확정 단계를 없앤 뒤로는 적용됨도 분석에 들므로(규격 §0.2: v2에는 제외
+    구간이 없다) rev를 하나 올려 그 칸의 판정을 '범위 바뀜'으로 둔다. 옛 판정은 legacy_screen에 남긴다.
     바꿀 것이 없으면 받은 집합을 그대로, 있으면 사본을 돌려준다(파일은 다음 저장 때 이 모양으로 쓰인다)."""
     hits = [n for n in node_set.get("nodes") or [] if screen_excluded(n)]
     if not hits:
@@ -487,6 +514,9 @@ def settle_screen(node_set):
         if screen_excluded(n):
             n["legacy_screen"] = n.pop("screen")
             n["state"], n["confirmed"], n["locked"] = "applied", None, None
+            # 분석 범위가 '제외'에서 '듦'으로 바뀌었으니 분석 판을 올린다. 그 칸의 판정에 '범위 바뀜'이 붙어 사람이 다시 볼 때까지
+            # 인계에 조용히 들지 않는다(results.reconcile, 총괄 판정 2026-11-26)
+            n["rev"] = (n.get("rev") or 1) + 1
     return out
 
 
@@ -768,16 +798,19 @@ def confirm(node_set, graph, reviewer, at=None):
 
 
 def reopen_node(node_set, node_id, at=None, by=None):
-    """확정 해제: confirmed → applied. ⑤ 칸은 지우지 않고 보관(hold)으로 남는다(results.reconcile). 잠긴 구간은 잠금 풀기가 먼저."""
+    """확정 해제(옛 길): confirmed → applied. 구간 확정 단계를 없애(규격 §0.2) 두 상태 모두 분석에 든다. 확정을 푼 것은 사람이
+    그 판정을 다시 보겠다는 뜻이라 분석 판(rev)을 올려 칸의 판정에 '범위 바뀜'을 붙인다(사람이 다시 승인할 때까지 인계에서 빠짐).
+    화면·채팅은 부르지 않는다. 잠긴 구간은 잠금 풀기가 먼저."""
     n = _find(node_set, node_id)
     if node_state(n) == "locked":
-        raise ValueError("%s는 잠긴 구간이라 잠금을 먼저 풀어야 함" % node_id)
+        raise ValueError("%s는 잠긴 구간이라 잠금을 먼저 해제해야 함" % node_id)
     if node_state(n) != "confirmed":
         raise ValueError("%s는 확정된 구간이 아님" % node_id)
     out = copy.deepcopy(node_set)
     n = _find(out, node_id)
     detail = {"node_id": node_id, "confirmed": n.get("confirmed"), "by": by}
     n["state"], n["confirmed"] = "applied", None
+    n["rev"] = (n.get("rev") or 1) + 1
     return _log(out, "reopen", detail, at)
 
 
@@ -785,7 +818,7 @@ def reopen(node_set, at=None):
     """확정된 구간을 모두 확정 해제한다(④의 집합 단위 단추). 잠긴 구간이 있으면 ValueError(잠금 풀기가 먼저)."""
     locked = [n["node_id"] for n in node_set["nodes"] if node_state(n) == "locked"]
     if locked:
-        raise ValueError("잠긴 구간이 있어 확정을 해제할 수 없음(잠금을 먼저 풀 것): %s" % ", ".join(locked))
+        raise ValueError("잠긴 구간이 있어 확정을 해제할 수 없음(잠금을 먼저 해제할 것): %s" % ", ".join(locked))
     todo = [n["node_id"] for n in node_set["nodes"] if node_state(n) == "confirmed"]
     if not todo:
         raise ValueError("확정되지 않은 검토구간")
@@ -839,7 +872,7 @@ def unlock_node(node_set, node_id, by, reason, at=None):
     """잠금 풀기: locked → confirmed. 사람 이름과 이유가 있어야 한다(§5.3)."""
     by, reason = (by or "").strip(), (reason or "").strip()
     if not by or not reason:
-        raise ValueError("잠금을 푸는 사람 이름과 이유 필요")
+        raise ValueError("잠금을 해제하는 사람 이름과 이유 필요")
     n = _find(node_set, node_id)
     if node_state(n) != "locked":
         raise ValueError("%s는 잠긴 구간이 아님" % node_id)
@@ -1181,6 +1214,6 @@ def any_confirmed(project_only=False):
             if (doc.get("schema_version") or LEGACY_SCHEMA_VERSION) == LEGACY_SCHEMA_VERSION:
                 if doc.get("status") == "confirmed":  # 0.1: 확정은 집합 status(구간에 state가 없음)
                     return True
-            elif any(isinstance(n, dict) and n.get("state") in ACTIVE_STATES for n in doc.get("nodes") or []):
+            elif any(isinstance(n, dict) and n.get("state") in ("confirmed", "locked") for n in doc.get("nodes") or []):  # 이전 Qt 화면의 레일 표시(옛 뜻)
                 return True
     return False

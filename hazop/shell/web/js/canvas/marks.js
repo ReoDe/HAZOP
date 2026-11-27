@@ -231,10 +231,11 @@ export function badgeBoxes(badges, k) {
   });
 }
 
-export function drawAll({ marks, seg, outside, selection, index, k = 1, size, recolor = null, veil = null }) {
+export function drawAll({ marks, seg, outside, leaving, selection, index, k = 1, size, recolor = null, veil = null }) {
   const nodes = [], missing = new Map();
   // 정리된 보기(recolor 있음)에서는 상자를 덧그리지 않고 그 객체의 색을 바꾼다(규격 §10.5). 못 그리는 층(태그 상자)은 그리지 않는다
   const mk = (item, w, extra, fillOpacity) => {
+    if (item.thin) return item.rec.layer === "tag" ? [] : shapeOf(item, k, w, Object.assign({ "data-check": item.id }, extra || {}));      // 추출 확인 네모는 정리 보기에서도 정리한 자리의 상자로 그린다(색 바꾸기 아님)
     if (!recolor) return shapeOf(item, k, w, extra);
     if (item.rec.layer === "tag") return [];
     const got = recolor(item.rec, item.color, w, { dashed: !!(extra && extra["stroke-dasharray"]) || !!item.dashed, fill: fillOpacity ? item.color : null, fillOpacity });
@@ -287,12 +288,19 @@ export function drawAll({ marks, seg, outside, selection, index, k = 1, size, re
     badges.push(...m.badges);
     arrows.push(...m.arrows);
   }
-  // 고른 것(파랑)
+  // 고른 것(파랑). 그 가운데 뺄 것(leaving)은 바탕색으로 눌러 흐리게 하고 점선 테두리만 둘러 더할 것과 갈린다
+  const out2 = new Set(leaving || []);
   const seen = new Set();
   for (const id of selection || []) {
     if (seen.has(id)) continue;
     seen.add(id);
-    for (const rec of recsOf(index, id)) nodes.push(...mk({ rec, color: STYLE_COLORS.focus, dashed: false }, 3, null, 0.14));
+    for (const rec of recsOf(index, id)) {
+      if (!out2.has(id)) { nodes.push(...mk({ rec, color: STYLE_COLORS.focus, dashed: false }, 3, null, 0.14)); continue; }
+      if (rec.layer === "tag") continue;
+      const wide = rec.layer === "pipe";
+      nodes.push(...shapeOf({ rec, color: "var(--bg, #f4f5f7)", dashed: false }, k, wide ? 6 : 4, { fill: wide ? "none" : "var(--bg, #f4f5f7)", "stroke-opacity": 0.85, "fill-opacity": wide ? 0 : 0.55 }));
+      nodes.push(...shapeOf({ rec, color: STYLE_COLORS.focus, dashed: true }, k, 1.8, { fill: "none", "stroke-opacity": 0.7, "data-leaving": id }));
+    }
   }
   for (const a of arrows) if (!(a.len * k < 48)) nodes.push(arrowEl(a, k));     // 화살촉 길이(16px)의 세 배보다 짧은 배관에는 넣지 않는다
   // 같은 자리에 겹치는 번호 원은 옆으로 비켜 놓는다(이어진 단계의 번호가 서로 가리지 않게)

@@ -254,10 +254,10 @@ def _removed_by(corrected, op, local_id):
 
 def _confirm_text(what, removed, impact):
     """지우기·되돌리기 확인 글. 걸리는 것이 바뀌면 글도 바뀐다(confirm으로 받은 글과 지금 글이 같아야 한다)."""
-    held = [n for n in impact["nodes"] if n["state"] != "applied"]
+    held = [n for n in impact["nodes"] if n["state"] == "locked"]
     text = "%s: %s을(를) 지웁니다%s. 되돌리기로 살릴 수 있습니다." % (what, removed[0], " (함께 지워지는 배관 %s)" % ", ".join(removed[1:]) if removed[1:] else "")
     if held:
-        text += " 확정·잠금 구간 %s에 든 구성요소입니다. 지우면 그 구간을 재확인해야 합니다." % ", ".join(n["node_id"] for n in held)
+        text += " 잠긴 구간 %s에 든 구성요소입니다. 지우면 그 구간을 재확인해야 합니다." % ", ".join(n["node_id"] for n in held)
     elif impact["nodes"]:
         text += " 구간 %s에 든 구성요소입니다." % ", ".join(n["node_id"] for n in impact["nodes"])
     if impact.get("sheet") in ("compared", "confirmed"):

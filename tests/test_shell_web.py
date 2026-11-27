@@ -245,7 +245,7 @@ class ShellWindowTest(ShellBase):
         self.assertTrue(wait_for(lambda: self.jsj(win, "[...document.querySelectorAll('.ptabs button')].map(b => b.textContent)") == ["지식그래프", "설계 문서"], 10))
         self.assertEqual(self.jsj(win, "document.querySelector('.rail button.on').getAttribute('aria-label')").split(" (")[0], "지식그래프", "묶음의 메뉴 단추가 켜진다")
         self.assertTrue(self.click(win, ".rail button.on"))
-        self.assertTrue(wait_for(lambda: not self.js(win, "window.__hz.store.get().panel"), 10), "켜진 메뉴 단추를 누르면 닫힌다")
+        self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().panel") == "drawings", 10), "켜진 메뉴 단추를 누르면 닫히고 고정 패널이 돌아온다")
         for name in ("drawings", "titleblock", "aireview", "results"):
             self.js(win, "window.__hz.store.set({panel: %s})" % json.dumps(name))
             pump(0.4)
@@ -300,7 +300,7 @@ class ShellWindowTest(ShellBase):
         self.assertTrue(self.click(win, ".panel .row button[aria-label$=' 열기']"))
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().sheet") is not None, 10))
         pump(0.5)
-        self.assertTrue(self.js(win, "window.__hz.store.get().panel === null"))
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "도면을 열어도 도면 패널은 그대로")
         self.assertEqual(win.engine.current_sheet, self.js(win, "window.__hz.store.get().sheet"))
         src = self.js(win, "(document.querySelector('.canvas img') || {}).src || ''")
         self.assertTrue(src == "" or src.startswith("hazop-app://shell/api/sheet/"), src)
@@ -311,7 +311,16 @@ class ShellWindowTest(ShellBase):
         key = ("window.dispatchEvent(new KeyboardEvent('keydown', {key: %s, ctrlKey: %s, altKey: %s, bubbles: true}))")
         self.js(win, key % ('"Escape"', "false", "false"))
         pump(0.2)
-        self.assertTrue(self.js(win, "window.__hz.store.get().panel === null"))
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "도면 패널은 Esc로 닫히지 않는다")
+        self.js(win, key % ('"1"', "true", "false"))          # 왼쪽 메뉴의 도면 단추와 같은 단축키
+        pump(0.2)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings", "다시 눌러도 닫히지 않는다")
+        self.js(win, key % ('"3"', "true", "false"))
+        pump(0.2)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "results")
+        self.js(win, key % ('"3"', "true", "false"))          # 다른 패널은 다시 누르면 닫혀 고정 패널이 돌아온다
+        pump(0.2)
+        self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings")
         self.js(win, key % ('"1"', "true", "false"))
         pump(0.2)
         self.assertEqual(self.js(win, "window.__hz.store.get().panel"), "drawings")
@@ -441,6 +450,9 @@ class ShellChatTest(ShellBase):
         pump(1.0)
         quiet = self.js(win, "(() => { const f = document.querySelector('aside.chat .foot'); return [...f.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join('') })()")
         self.assertEqual(quiet, "", "평상시 글자 없음")
+        self.js(win, "window.__hz.store.set({conn: {state: 'x', tone: 'err', label: '연결 안 됨', chip: '구독 · 연결 안 됨', guide: '', detail: ''}})")
+        pump(0.4)
+        self.assertEqual(self.js(win, "(() => { const f = document.querySelector('aside.chat .foot'); return [...f.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join('') })()"), "", "연결이 끊겨도 글은 없다(점만)")
         self.assertEqual(self.js(win, "document.querySelectorAll('aside.chat .foot button').length"), 1, "모델 단추 하나")
         self.assertEqual(self.js(win, "document.querySelectorAll('.rail .badge').length"), 0, "도면 아이콘에 숫자 배지가 없다")
 
@@ -529,7 +541,7 @@ class WebUnitTest(ShellBase):
         p2 = LogPage(win.view.profile)   # 틀 창의 전용 프로필(처리기가 붙어 있다)
         out = []
         p2.load(QUrl("hazop-app://shell/test/run.html"))
-        end = time.monotonic() + 60     # 숨은 페이지는 타이머가 느려 시험이 늘면 30초를 넘는다(2026-11-24)
+        end = time.monotonic() + 120    # 숨은 페이지는 타이머가 느려 시험이 늘면 30초를 넘는다(2026-11-24), 2026-11-26에는 60초 안팎
         while time.monotonic() < end:
             res = []
             p2.runJavaScript("JSON.stringify(window.__results || null)", 0, res.append)   # 배열은 문자열로 받는다

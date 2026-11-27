@@ -105,7 +105,8 @@ class StudyScreensTest(unittest.TestCase):
     def test_propose_edit_confirm_persist_and_results(self):
         win = self.window()
         win.go(RESULTS)
-        self.assertEqual(win.screens[RESULTS].stack.currentIndex(), 0, "확정 전 ⑤는 빈 화면 안내")
+        # 구간 확정 단계를 없앰(구간 규격 §0.2): 이전 화면이 처음 만든 제안 구간도 분석에 드는 구간이라 확정 전에도 ⑤가 열린다
+        self.assertEqual(win.screens[RESULTS].stack.currentIndex(), 1)
         scr = self.open_study(win)
         total = len(self.graph["nodes"])
         cov = scr._coverage()
@@ -298,11 +299,9 @@ class StudyScreensTest(unittest.TestCase):
         self.assertTrue(nodes_all_confirmed(nodes.load(pg)))
         self.assertTrue(scr.reopen())
         before = nodes.load(pg)
-
-        self.assertTrue(scr.repropose(ask=False))
-        self.assertNotEqual(nodes.load(pg), before)
-        self.assertTrue(win.toast_box.run_undo())
-        self.assertEqual(nodes.load(pg), before, "다시 제안으로 버린 집합도 되살림")
+        # 구간 확정 단계를 없앰, 구간 규격 §0.2: 확정을 풀어도 구간은 분석에 들어, 이전 화면은 다시 제안(구간 ID를 새로 매김)을 막는다
+        self.assertFalse(scr.repropose(ask=False))
+        self.assertEqual(nodes.load(pg), before, "다시 제안을 막으면 저장본은 그대로")
 
     def test_second_window_stale_save_is_refused(self):
         """두 창이 같은 구간 파일을 열었을 때, 먼저 저장한 창의 확정·이름 변경을 나중 창이 덮어쓰지 않는다."""
@@ -393,10 +392,12 @@ class StudyScreensTest(unittest.TestCase):
         scr = self.open_study(self.window())
         with mock.patch.object(scr, "ask_overwrite_unreadable", return_value=False) as ask:
             self.assertFalse(scr.repropose(ask=True))
-        ask.assert_called_once()
+        # 구간 확정 단계를 없앰, 구간 규격 §0.2: 이전 화면이 연 구간은 분석에 드는 구간이라 묻기 전에 다시 제안을 막는다
+        from hazop.study import nodes
+        self.assertTrue(nodes.active_nodes(scr.node_set))
+        ask.assert_not_called()
         with open(path, "rb") as fh:
-            self.assertEqual(fh.read(), raw, "다시 제안도 묻고, 아니요면 쓰지 않음")
-        self.assertIn("저장하지 않았", scr.msg.text())
+            self.assertEqual(fh.read(), raw, "다시 제안은 읽지 못한 파일을 덮어쓰지 않음")
 
     def test_file_locked_at_open_is_saved_over_after_one_backup(self):
         """열 때 OSError(권한·잠금)로 못 읽은 파일이 저장할 때는 읽히면, 한 번 묻고 백업한 뒤 저장한다
@@ -573,7 +574,8 @@ class StudyScreensTest(unittest.TestCase):
             self.assertTrue(scr.remove_selected(), scr.msg.text())
         self.assertIn("없앴", toast.call_args[0][0])
         self.assertNotIn(nid, [n["node_id"] for n in scr.node_set["nodes"]], "구성요소가 하나도 없는 구간은 남기지 않음")
-        saved = nodes.load(self.pg())
+        from hazop.study import nodes as study_nodes
+        saved = study_nodes.load(self.pg())
         self.assertEqual(saved, scr.node_set)
         self.assertTrue(all(n["members"] for n in saved["nodes"]))
         self.assertEqual(sorted(nodes.coverage(saved, self.pg())["uncovered"]), sorted(members), "뺀 구성요소는 미포함으로 남음")
@@ -755,7 +757,9 @@ class StudyScreensTest(unittest.TestCase):
         res._load()
         affected = set(nodes.nodes_of(ns, lost))
         self.assertEqual(res.stack.currentIndex(), 1, "v2: 나머지 확정 구간은 그대로 ⑤에 나옴")
-        self.assertFalse(affected & {n["node_id"] for n in res._rows()}, "재확인으로 내린 구간은 행이 없음")
+        # 구간 확정 단계를 없앰, 구간 규격 §0.2: 재확인 구간은 상태를 내리지 않고 분석 판을 올려 행에 남는다(판정은 '범위 바뀜')
+        self.assertTrue(affected <= {n["node_id"] for n in res._rows()})
+        self.assertEqual({n["rev"] for n in nodes.load(pg)["nodes"] if n["node_id"] in affected}, {2})
 
 
 if __name__ == "__main__":

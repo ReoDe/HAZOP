@@ -125,8 +125,8 @@ def project_recheck(project_id):
     if not ns or (ns.get("schema_version") or study_nodes.LEGACY_SCHEMA_VERSION) == study_nodes.LEGACY_SCHEMA_VERSION or not ns.get("nodes"):
         return out
     if study_nodes.is_stale(ns, pg):
-        held = [n["node_id"] for n in ns["nodes"] if study_nodes.node_state(n) != "applied"]
-        out.append("검토구간이 고치기 전 도면 기준입니다. 구간 패널에서 재확인하세요%s." % ("(확정·잠금 " + ", ".join(held[:8]) + ")" if held else ""))
+        held = [n["node_id"] for n in ns["nodes"] if study_nodes.node_state(n) == "locked"]
+        out.append("검토구간이 고치기 전 도면 기준입니다. 구간 패널에서 재확인하세요%s." % ("(잠금 " + ", ".join(held[:8]) + ")" if held else ""))
         try:
             doc, _fp = study_results.load_fp(ns)
         except (OSError, ValueError, KeyError):

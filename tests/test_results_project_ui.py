@@ -166,8 +166,8 @@ class ResultsProjectUiTest(unittest.TestCase):
             before = fh.read()
 
         _app, scr = self.screen("SNP-M-101")
-        self.assertEqual(scr.stack.currentIndex(), 0, "옮긴 프로젝트 집합은 제안 상태라 결과를 보이지 않음")
-        self.assertIn("④ 검토구간에서 구간을 확정", scr.empty.text())
+        # 구간 확정 단계를 없앰, 구간 규격 §0.2: 옮긴 프로젝트 집합이 제안(적용됨) 상태여도 분석에 들어 결과를 보인다
+        self.assertEqual(scr.stack.currentIndex(), 1)
         self.assertFalse(scr.banner.isHidden())
         self.assertIn("백업", scr.banner.label.text())
 
@@ -225,22 +225,21 @@ class ResultsProjectUiTest(unittest.TestCase):
         sn.save(sn.confirm(bucket_like, pg, "EJ", at="2026-11-10T00:00:00Z"))
         _app, scr = self.screen()
         rows = [scr._node_at(r) for r in range(scr.matrix.rowCount())]
-        self.assertNotIn(keeps[0], rows, "제외 구간은 행이 없음")
+        self.assertIn(keeps[0], rows, "옛 제외 구간도 적용됨으로 읽혀 행에 든다(판정은 '범위 바뀜', 구간 확정 단계를 없앰, 구간 규격 §0.2)")
         self.assertEqual(rows[-1], keeps[1], "낮음 구간은 맨 아래")
         self.assertEqual(sn.node_state(next(n for n in sn.load(pg)["nodes"] if n["node_id"] == keeps[0])), "applied",
-                         "옛 제외 구간은 미확정으로 읽힘")
+                         "옛 제외 구간은 적용됨으로 읽힘")
         self.assertNotIn("스크리닝 제외", scr.kpi.text(), "v2에는 제외 묶음 수가 없음")
-        self.assertNotIn(keeps[0], {u["node_id"] for u in scr._plan("all")}, "AI 일괄 범위에서 뺌")
+        self.assertIn(keeps[0], {u["node_id"] for u in scr._plan("all")}, "옛 제외 구간도 AI 일괄 범위에 듦(구간 확정 단계를 없앰, 구간 규격 §0.2)")
         self.assertIn(keeps[1], {u["node_id"] for u in scr._plan("all")}, "낮음은 AI 일괄 범위에 넣음")
         path = scr.export_excel(os.path.join(self.tmp, "x.xlsx"), scope="all", reviewer="EJ")
         import openpyxl
         names = [c.value for c in openpyxl.load_workbook(path).worksheets[1]["A"]]
-        self.assertFalse(any(v and keeps[0] == v for v in names), "Excel 구간 목록에도 없음")
+        self.assertTrue(any(v and keeps[0] == v for v in names), "Excel 구간 목록에도 든다(행렬과 같은 범위)")
         cover = {r[0].value: r[1].value for r in openpyxl.load_workbook(path).worksheets[0].iter_rows() if r[0].value}
         self.assertEqual(cover.get("구간 수", len(rows)), len(rows), "표지 구간 수 = 내보낸 구간")
         did = scr.deviations[0]["deviation_id"]
-        self.assertFalse(scr.open_cell(keeps[0], did), "미확정 구간 칸은 열지 않고 안내만")
-        self.assertNotIn(keeps[0], {u["node_id"] for u in scr._plan("failed")}, "미확정 구간은 다시 실행 범위에 없음")
+        self.assertTrue(scr.open_cell(keeps[0], did), "적용됨 구간 칸도 열린다(구간 확정 단계를 없앰, 구간 규격 §0.2)")
 
     def test_no_cell_open_hint(self):
         self.confirm_project_set()

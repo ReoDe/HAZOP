@@ -909,8 +909,8 @@ class ReadApi:
         return {"groups": [[g, qs] for g, qs in chatview.examples(pg)]}
 
     def connection(self):
-        ai = self.engine.ai
-        return (ai.status() if ai is not None else {"state": "unchecked", "detail": ""})
+        from hazop.shell import api_settings
+        return api_settings.current_state(self.engine)      # 설정 패널의 '지금 연결'과 같은 값
 
     def drawings(self):
         from hazop.app import data

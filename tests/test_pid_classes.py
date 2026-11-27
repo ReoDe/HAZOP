@@ -382,10 +382,10 @@ class SaveRebuildTest(unittest.TestCase):
         self.assertEqual(node["attributes"]["normal_position"], "NC")
         self.assertEqual(node["origin"], "human_edit")
         self.assertEqual(res["recheck"], ["④ 검토구간 확정본이 고치기 전 도면 기준입니다. 재확인이 필요합니다."])
-        moved = sn.load(g1)  # ④가 열면 판 이전: 고친 요소가 든 구간만 확정을 푼다(규격 §2.6)
+        moved = sn.load(g1)  # ④가 열면 판 이전: 고친 요소가 든 구간만 재확인(상태는 두고 분석 판을 올림, 구간 확정 단계를 없앰, 구간 규격 §0.2)
         self.assertFalse(sn.is_stale(moved, g1))
         n11 = node["entity_id"]
-        self.assertEqual({n["state"] for n in moved["nodes"] if n11 in n["members"]}, {"applied"})
+        self.assertEqual({(n["state"], n["rev"]) for n in moved["nodes"] if n11 in n["members"]}, {("confirmed", 2)})
         with open(corrections.store_path(name), encoding="utf-8") as fh:
             self.assertEqual(json.load(fh)["ops"][0]["op"], "set_normal_position")
 

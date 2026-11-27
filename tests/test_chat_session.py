@@ -348,13 +348,13 @@ class InjectionTest(SessionCase):
         self.assertEqual(last[3], {})  # 거절된 결과의 ID는 근거가 되지 않는다
 
     def test_server_call_limit(self):
-        calls = [{"name": "get_component", "args": {"id": "g1/e-pz01"}}] * 10
+        calls = [{"name": "get_component", "args": {"id": "g1/e-pz01"}}] * (mcp_server.CALL_LIMIT + 2)
         s = self.make([{"calls": calls}])
         s.ask("질문")
         got, last = self.finish()
         self.assertEqual(last[0], "answer")
         codes = [(e[4].get("error") or {}).get("code") for e in got if e[0] == "tool"]
-        self.assertEqual(codes, [None] * 8 + ["limit_reached"] * 2)
+        self.assertEqual(codes, [None] * mcp_server.CALL_LIMIT + ["limit_reached"] * 2)
 
     def test_app_tool_use_halt(self):
         calls = [{"name": "count"}] * (session.TOOL_USE_HALT + 3)

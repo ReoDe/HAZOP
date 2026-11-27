@@ -6,13 +6,14 @@ import { cmd, onChanged, read } from "../bridge.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
 import { SourceConflicts, choicesCount } from "./drawings_sources.js";
-import { DrawingExcludedChip, DrawingPicks } from "./nodes_screen.js";
+import { DrawingPicks, useRemovedDrawings } from "./nodes_screen.js";
+import { SelectAll } from "../ui/select_all.js";
 import { OpenFolder } from "./open_folder.js";
 import { ConsentAsk, UNREAD_TEXT, useAuto, waitsOf } from "./auto_state.js";
 
 function toastError(e) { store.set({ toast: { text: e.message, kind: "err" } }); }
 
-/** DEXPI 내보내기(항목 11): 단추 하나. 내보낼 수 있는(쪽 확정을 마친) 쪽을 모두 한 번에 낸다. 저장 폴더는 창이 대화상자로 한 번 묻고 웹은 경로를 보내지 않는다.
+/** DEXPI 내보내기(항목 11): 단추 하나. 내보낼 수 있는(쪽 확정을 마친) 쪽을 모두 한 번에 낸다. 대화상자 없이 작업 폴더의 내보내기 폴더에 쓰고(우리가 앞서 낸 파일만 바꾼다) 웹은 경로를 보내지 않는다.
  *  고르는 창·설명 줄은 없다. 낼 수 있는 쪽이 없으면 단추가 꺼져 있다. 끝나면 한 줄로 몇 쪽을 어느 폴더에 냈는지와 내보내지 못한 쪽 수만 보인다. */
 function DexpiExport() {
   const [info, setInfo] = useState(null);
@@ -45,6 +46,12 @@ function DexpiExport() {
     ${error ? html`<${Notice} kind="err" icon="alert-triangle"><span style="white-space:pre-wrap">${error}</span><//>` : null}</div>`;
 }
 
+/** 번호가 아직 빈 도면 줄은 파일 이름 한 줄(굵게)이다: 같은 파일의 줄이 하나뿐이면 '· 1쪽' 꼬리를 뗀다(여러 쪽이면 어느 쪽인지 알아야 해 둔다). */
+export function blankNumberName(d, rows) {
+  const only = !d.material_id || rows.filter((x) => x.material_id === d.material_id).length < 2;
+  return only ? String(d.display).replace(/ · 1쪽$/, "") : d.display;
+}
+
 /** 끝난 작업 카드를 닫는다(작업 기록은 엔진에 그대로). */
 function dismissJob(id) { store.set((s) => { const j = Object.assign({}, s.jobs); delete j[id]; return { jobs: j }; }); }
 
@@ -61,6 +68,8 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const ended = all.filter(([, j]) => j.state !== "running");
   const failedJobs = ended.filter(([, j]) => j.state === "failed");
   const [picked, setPicked] = useState([]);          // 줄 왼쪽 체크로 고른 도면
+  const removed = useRemovedDrawings();
+  const shown = data.drawings.filter((d) => !removed.has(d.graph_id));      // 지운 도면은 목록에 없다
   const toggle = (g) => setPicked((p) => (p.includes(g) ? p.filter((x) => x !== g) : [...p, g]));
   const sources = useStore((s) => s.sources);          // 원본 고르기 카드가 읽어 둔 값(같은 번호의 다른 원본)
   const many = choicesCount(sources);
@@ -73,7 +82,7 @@ export function DrawingsPanel({ onOpen, onClose }) {
   const pick = () => cmd("register.pick").catch(toastError);
 
   return html`<section class="panel" aria-label="도면">
-    <div class="panel-h"><h2>도면</h2><span class="acts"><${Btn} kind="ghost" icon="x" label="패널 닫기" title="닫기 (Esc)" onClick=${onClose} /></span></div>
+    <div class="panel-h"><h2>도면</h2></div>
     <div class="panel-b">
       <div class=${"drop" + (over ? " over" : "")} role="button" tabindex="0" aria-label="도면 파일 고르기" onClick=${pick}
         onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } }}>
@@ -85,16 +94,19 @@ export function DrawingsPanel({ onOpen, onClose }) {
           <b>${j.label}</b><span class="muted small">${j.state === "failed" ? j.message : (j.text || "")}</span>
           ${j.state === "done" && j.result && j.result.ai_review && j.result.ai_review.ran ? html`<${Chip} kind="ai" icon="sparkles">AI 후보 ${j.result.ai_review.candidates}개<//>` : null}
           <${Btn} sm=${true} kind="ghost" icon="x" label=${j.label + " 알림 닫기"} title="닫기" onClick=${() => dismissJob(id)} /></div>`)}</details>` : null}
-      <div>${picked.length ? html`<${DrawingPicks} ids=${picked} onDone=${() => setPicked([])} />` : null}
-        ${data.drawings.length === 0 && !unread.length ? html`<${Notice}>등록된 도면이 없습니다.<//>` : html`<div class="list">
-          ${data.drawings.map((d) => html`<div key=${d.graph_id} class=${"row drow" + (d.graph_id === sheet ? " on" : "")} onClick=${(e) => { if (!e.target.closest("input,label,.acts-end")) onOpen(d.graph_id); }}>
+      <div>${shown.length ? html`<${SelectAll} ids=${shown.filter((d) => d.drawing_number).map((d) => d.graph_id)} picked=${picked} label="도면 전체 선택"
+        onChange=${(ids, on) => setPicked((p) => (on ? Array.from(new Set(p.concat(ids))) : p.filter((x) => !ids.includes(x))))} />` : null}
+        ${picked.length ? html`<${DrawingPicks} ids=${picked} onDone=${() => setPicked([])} />` : null}
+        ${shown.length === 0 && !unread.length ? html`<${Notice}>등록된 도면이 없습니다.<//>` : html`<div class="list">
+          ${shown.map((d) => html`<div key=${d.graph_id} class=${"row drow" + (d.graph_id === sheet ? " on" : "")} onClick=${(e) => { if (!e.target.closest("input,label,.acts-end")) onOpen(d.graph_id); }}>
             <input type="checkbox" aria-label=${d.display + " 고르기"} checked=${picked.includes(d.graph_id)} onChange=${() => toggle(d.graph_id)} />
-            <button type="button" class="main drow-open" aria-label=${d.display + (d.title ? " " + d.title : "") + " 열기"}><b>${d.display}</b><span>${d.title || ""}</span></button>
+            ${d.number_state === "unconfirmed" && !d.drawing_number
+              ? html`<button type="button" class="main drow-open" aria-label=${blankNumberName(d, data.drawings) + " 열기"}><b>${blankNumberName(d, data.drawings)}</b></button>`
+              : html`<button type="button" class="main drow-open" aria-label=${d.display + (d.title ? " " + d.title : "") + " 열기"}><b>${d.display}</b><span>${d.title || ""}</span></button>`}
             <span class="acts-end">
               ${many[d.graph_id] ? html`<${Btn} sm=${true} kind="ghost" label=${d.display + " 원본 " + many[d.graph_id] + "개, 고르기 카드로 가기"}
                 title="같은 도면 자리에 원본이 둘 이상 있습니다. 분석에 쓸 원본은 아래 원본 고르기 카드에서 고릅니다." onClick=${toCard}>원본 ${many[d.graph_id]}개<//>` : null}
-              ${waits[d.graph_id] ? html`<span class="drow-dot" role="img" tabindex="0" title=${waits[d.graph_id]} aria-label=${d.display + ": " + waits[d.graph_id]}></span>` : null}
-              <${DrawingExcludedChip} graphId=${d.graph_id} />
+              ${waits[d.graph_id] && !(d.number_state === "unconfirmed" && !d.drawing_number) ? html`<span class="drow-dot" role="img" tabindex="0" title=${waits[d.graph_id]} aria-label=${d.display + ": " + waits[d.graph_id]}></span>` : null}
               </span></div>`)}
           ${unread.map((d) => html`<div key=${d.material_id} class="row drow"><div class="main"><b>${d.name || d.material_id}</b></div>
             <span class="acts-end"><span class="drow-dot" role="img" tabindex="0" title=${UNREAD_TEXT} aria-label=${(d.name || d.material_id) + ": " + UNREAD_TEXT}></span></span></div>`)}</div>`}</div>

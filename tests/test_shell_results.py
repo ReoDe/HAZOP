@@ -283,7 +283,8 @@ class ExportTest(Base):
         self.assertEqual(r["data"]["rows"], classic_rows)
         full = os.path.join(self.tmp, "all.xlsx")
         _p, all_rows = study_xlsx.export(full, doc, ns, self.g, doc["deviations"], scope="all", node_ids=None, reviewer="검토자A", now=now)
-        self.assertGreater(all_rows, classic_rows, "제외 구간(%s)을 넣으면 행이 더 많다: 그것이 새 화면에서 빠져야 한다" % excluded)
+        # 구간 확정 단계를 없앤 뒤(구간 규격 §0.2) 옛 제외 구간(%s)도 적용됨으로 읽혀 범위에 든다: 전체와 행 수가 같다
+        self.assertEqual(all_rows, classic_rows, excluded)
         self.assertEqual(self.read("results")["nodes"] and [n["node_id"] for n in self.read("results")["nodes"]], [n["node_id"] for n in classic_scope(ns)["nodes"]])
 
     def test_cancelled_dialog_writes_nothing(self):
@@ -443,7 +444,8 @@ class TraceTest(Base):
             if n["node_id"] == self.span:
                 n["screen"] = {"status": "excluded"}
         sn.save(ns)
-        self.assertEqual(self.read("results", "trace", entity=ent)["nodes"], [], "스크리닝 제외 구간은 분석 범위가 아니다")
+        # 구간 확정 단계를 없앤 뒤(구간 규격 §0.2) 옛 제외 구간도 분석에 든다(판정은 '범위 바뀜'으로 인계에서 빠짐)
+        self.assertIn(self.span, [n["node_id"] for n in self.read("results", "trace", entity=ent)["nodes"]])
 
 
 class ScopeAndVersionTest(Base):
@@ -451,7 +453,8 @@ class ScopeAndVersionTest(Base):
         super().setUp()
         self.engine.ai = FakeAi()
 
-    def test_screened_out_node_is_not_in_rows_plan_or_recs(self):
+    def test_old_screened_out_node_is_in_rows_and_plan(self):
+        """구간 확정 단계를 없앤 뒤(구간 규격 §0.2): 옛 제외 구간도 적용됨으로 읽혀 행·분석 계획에 든다(이전 화면 범위와 같음)."""
         before = self.call("results.run_plan", {"scope": "all"})["data"]
         ns = sn.load(self.g)
         ns["nodes"][1]["screen"] = {"status": "excluded"}
@@ -460,9 +463,8 @@ class ScopeAndVersionTest(Base):
         from hazop.study import ai_cells
         classic = ai_cells.plan_units(classic_scope(sn.load(self.g)), DEVS)
         self.assertEqual(after["calls"], len(classic), "이전 화면 범위의 호출 수와 같다")
-        self.assertLess(after["calls"], before["calls"])
-        self.assertEqual([n["node_id"] for n in self.read("results")["nodes"]], ["S1"])
-        self.assertFalse([r for r in self.read("results", "recs")["recs"] if r["node_id"] == "S2"])
+        self.assertEqual(after["calls"], before["calls"])
+        self.assertEqual([n["node_id"] for n in self.read("results")["nodes"]], ["S1", "S2"])
 
     def test_ver_none_is_refused_when_the_file_exists(self):
         old = self.first_cell()["ver"]
@@ -486,42 +488,40 @@ class ScopeAndVersionTest(Base):
 
 
 class LeftOutTest(Base):
-    """HZ-DSN-06 U9: 분석 실행 확인 카드가 확정하지 않아 빠지는 구간을 말없이 빼지 않는다(기준값 측정: '44칸'과 '0/88칸'이 맞지 않았다)."""
+    """HZ-DSN-06 U9: 분석 실행 확인 카드가 빠지는 구간을 말없이 빼지 않는다. 구간 확정 단계를 없앤 뒤(구간 규격 §0.2) 미확정으로 빠지는
+    구간은 없고(left_out은 늘 빈 목록), 잠가서 건너뛰는 구간만 수를 보인다."""
 
     def setUp(self):
         super().setUp()
         self.engine.ai = FakeAi()
 
-    def test_unconfirmed_nodes_are_named_in_the_plan(self):
-        from hazop.study import nodes as study_nodes
+    def test_applied_nodes_are_not_left_out(self):
         before = self.call("results.run_plan", {"scope": "all"})["data"]
-        self.assertEqual(before["left_out"], [], "모두 확정이면 빠지는 것 없음")
+        self.assertEqual(before["left_out"], [])
         ns = sn.load(self.g)
-        n = ns["nodes"][1]
-        n["state"] = "applied"
+        ns["nodes"][1]["state"] = "applied"
+        ns["nodes"][1]["confirmed"] = None
         sn.save(ns)
-        self.assertEqual(study_nodes.node_state(sn.load(self.g)["nodes"][1]), "applied", "시험 전제: 확정 안 함")
         after = self.call("results.run_plan", {"scope": "all"})["data"]
-        self.assertEqual([x["node_id"] for x in after["left_out"]], [n["node_id"]])
-        self.assertLess(after["calls"], before["calls"], "빠진 구간은 호출에 들지 않는다(설계 그대로)")
-        one = self.call("results.run_plan", {"scope": "node", "node_id": ns["nodes"][0]["node_id"]})["data"]
-        self.assertEqual(one["left_out"], [], "구간 하나만 돌릴 때는 다른 구간을 빠졌다고 하지 않는다")
+        self.assertEqual(after["left_out"], [])
+        self.assertEqual(after["calls"], before["calls"], "적용됨 구간도 분석에 든다")
 
     def test_released_and_locked_nodes_are_told_apart(self):
-        """6차 ⑤: 판 이전으로 확정이 풀린 구간(찾지 못한 구성요소가 남음)은 그냥 초안과 갈라 알리고, 잠가서 건너뛰는 구간은 수를 보인다."""
+        """찾지 못한 구성요소가 남은 구간도 분석에 들고(빠지지 않음), 잠가서 건너뛰는 구간은 수를 보인다."""
         ns = sn.load(self.g)
         ns["nodes"][1]["state"] = "applied"
         ns["nodes"][1]["lost"] = ["lost:project-P:pv-1:t-1"]
         sn.save(ns)
         with mock.patch.object(sn, "load", lambda *a, **k: ns), mock.patch.object(sn, "read_as_is", lambda *a, **k: ns):
             got = self.call("results.run_plan", {"scope": "all"})["data"]
-        self.assertEqual([(x["node_id"], x["lost"]) for x in got["left_out"]], [(ns["nodes"][1]["node_id"], 1)])
+        self.assertEqual(got["left_out"], [])
         self.assertEqual(got["locked_out"], 0)
         ns2 = sn.load(self.g)
         ns2["nodes"][0]["state"] = "locked"
         with mock.patch.object(sn, "load", lambda *a, **k: ns2), mock.patch.object(sn, "read_as_is", lambda *a, **k: ns2):
             got = self.call("results.run_plan", {"scope": "all"})["data"]
         self.assertEqual(got["locked_out"], 1, "잠가서 건너뛰는 구간 수")
+
 
 class RunTest(Base):
     def setUp(self):
@@ -833,6 +833,21 @@ class ExportScopeTest(ExportTest):
         _d, full = self.export(scope="all")
         self.assertGreater(len(full), len(rows))
 
+    def test_approved_scope_leaves_out_scope_changed_approvals(self):
+        """검토 4(구간 확정 단계를 없앰, 구간 규격 §0.2): '범위 바뀜' 승인은 '승인 항목만'에 넣지 않는다. 전체 범위에는 그대로 나간다."""
+        before, rows = self.export(scope="approved")
+        self.assertGreaterEqual(len(rows), 1)
+        ns = sn.load(self.g)
+        doc, fp = res.load_fp(ns)
+        moved = next(e for c in doc["cells"] for e in c["entries"] if e.get("status") == "approved")
+        moved["scope_changed"] = {"from_rev": 1, "to_rev": 2, "at": "2026-11-26T00:00:00Z"}
+        res.save_fp(doc, ns.get("project_id"), expect=fp)
+        after, rows2 = self.export(scope="approved")
+        self.assertEqual(len(rows2), len(rows) - 1)
+        self.assertEqual(after["rows"], len(rows2))
+        _d, full = self.export(scope="all")
+        self.assertGreater(len(full), len(rows2))
+
     def test_nodes_scope_has_only_the_chosen_nodes_and_needs_a_choice(self):
         scope = api_results.scope_rows(sn.load(self.g))
         pick = scope[0]["node_id"]
@@ -848,8 +863,9 @@ class ExportScopeTest(ExportTest):
         self.assertFalse(r["ok"], "구간을 고르지 않으면 내보내지 않는다")
 
     def test_nodes_outside_the_screens_scope_are_refused(self):
-        """재현 A2: 행렬에 없는 구간(스크리닝 제외)을 직접 명령으로 보내면 거절한다(빈 파일을 쓰지 않는다)."""
-        gone = self.exclude_last_node()
+        """재현 A2: 행렬에 없는 구간을 직접 명령으로 보내면 거절한다(빈 파일을 쓰지 않는다). 구간 확정 단계를 없앤 뒤(구간 규격 §0.2)
+        옛 제외 구간도 행에 들어, 집합에 없는 구간 ID로 본다."""
+        gone = "S999"
         self.engine.hooks["save_path"] = self.paths
         self.save_to = None
         r = self.call("results.export_excel", {"scope": "nodes", "node_ids": [gone]})

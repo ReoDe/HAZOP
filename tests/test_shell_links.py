@@ -222,13 +222,15 @@ class SaveRulesTest(Base):
         r = self.web("unlink", a)
         self.assertIn("S1", r["error"]["message"])
         done = self.confirmed("unlink", a)
-        # 도면 연결은 프로젝트 그래프 판에 들어 앱이 판 이전을 이어서 한다: 판은 맞춰져 '고치기 전 도면 기준' 안내는 없고, 확정을 푼 구간은 알림으로 알린다
+        # 도면 연결은 프로젝트 그래프 판에 들어 앱이 판 이전을 이어서 한다: 판은 맞춰져 '고치기 전 도면 기준' 안내는 없다.
+        # 구간 확정 단계를 없애(구간 규격 §0.2) 상태는 내리지 않고 분석 판(rev)을 올린다. 그 칸의 판정은 '범위 바뀜'으로 인계에서 빠진다
         self.assertEqual(done["data"]["recheck"], [], done)
         now = sn.read_as_is(self.pg())
         self.assertFalse(sn.is_stale(now, self.pg()))
-        self.assertEqual(sn.node_state(now["nodes"][0]), "applied", "짝이 바뀐 확정 구간은 확정을 푼다(엔진 판 이전)")
+        self.assertEqual((sn.node_state(now["nodes"][0]), now["nodes"][0]["rev"]), ("confirmed", 2), "상태는 두고 분석 판을 올린다")
+        self.assertIn("S1", now["history"][-1]["detail"]["recheck"], "재확인 사유는 이력에 남는다")
         told = [e["data"] for e in self.events if e.get("name") == "study.lost"]
-        self.assertEqual([d["demoted"] for d in told], [["S1"]], "확정을 푼 것을 조용히 넘기지 않고 알린다")
+        self.assertFalse(any(d.get("demoted") for d in told), "확정을 푸는 일이 없다")
 
     def test_sheet_confirmation_does_not_read_the_link_record(self):
         from hazop.extract import confirmation

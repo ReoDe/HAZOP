@@ -14,13 +14,14 @@ import { wirePrefetch } from "./clean_prefetch.js";
 import { clean } from "./canvas/clean_ui.js";
 import { setOpenSheet } from "./panels/results_state.js";
 import { SheetHost } from "./sheet_host.js";
-import { Notices, addNotice, demotedNotice, lostNotice, refreshLostNotice } from "./notices.js";
+import { Notices, addNotice, lostNotice, refreshLostNotice } from "./notices.js";
 import { go as nextGo, next as nextStore, setGo, wireNotice as wireNextNotice } from "./next/next.js";
 import { closeQueue, openQueue, q as queueStore, useQueue, wire as wireQueue } from "./queue/queue.js";
 import { QueueCard, QueueLine } from "./queue/card.js";
 import { ReviewConfirm, setOpeners as setReviewOpeners, startReview, wire as wireReview } from "./review/review.js";
-import { ConfirmAllModal } from "./panels/nodes_confirm.js";
 import { RevertGuard } from "./review/revert_guard.js";
+import { locate } from "./locate.js";
+import { wireUndo } from "./undo.js";
 
 // '다음에 할 일' 단추가 가는 자리(엔진 next의 go). 도면 위 자리로 갈 때는 열린 패널을 닫는다(가리지 않게). 패널 모듈은 누를 때 읽는다
 setGo("panel:drawings#titleblock", async (t) => { const m = await import("./panels/titleblock.js"); if (t) m.focusMaterial(t); else store.set({ panel: "titleblock" }); });
@@ -35,7 +36,6 @@ setGo("panel:drawings#sources", () => {      // 같은 번호 자리의 파일·
   [80, 400, 1200].forEach((ms) => setTimeout(() => { const el = document.querySelector(".src-card"); if (el) el.scrollIntoView({ block: "start" }); }, ms));
 });
 // 확정 안 한 구간 목록을 보인 확인 카드(한 번에 확정). 구간 패널은 열지 않는다: 카드는 도면 위 창으로(실제 창 3차, 클릭 줄이기)
-setGo("confirm:nodes.confirm", async () => { const N = await import("./panels/nodes_state.js"); await N.refresh(); N.askConfirmAll(); });
 setGo("panel:nodes#pick", async () => { store.set({ panel: null }); const N = await import("./panels/nodes_state.js"); N.setMode("pick"); });      // 도면 위 안내 줄이 할 일을 보인다(nodes_canvas PickHint)
 setGo("confirm:inputs.build", (t) => cmd("inputs.build", t ? { graph_id: t } : {}).catch((e) => toast((e && e.message) || "다시 읽지 못했습니다.", "err")));      // 반영 전 수락이 남은 도면 다시 읽기(작업 줄에 진행)
 setGo("confirm:ie.suggest", async () => {      // 초기사건 규칙 초안 만들기(확정하지 않음, 두 번 해도 더하는 것이 없다): 패널을 열고 만든다
@@ -80,14 +80,32 @@ function saveUi() {
   cmd("ui.save", { state: { sheet: s.sheet, chat_collapsed: s.chatCollapsed, panel: s.panel } }).catch(() => {});
 }
 
+/** 도면을 열 때 도면·구간 패널(늘 고정)은 그대로 둔다. 다른 패널은 도면을 가리므로 닫는다. */
+const FIXED_PANELS = ["drawings", "nodes"];
+/** 도면·구간 패널은 화면에 늘 고정이다: 어디서든 패널을 비우면(다른 패널 닫기 포함) 마지막에 보던 고정 패널이 된다. */
+function pinFixedPanels() {
+  const raw = store.set;
+  let last = "drawings";
+  store.set = (patch) => raw((s) => {
+    const next = typeof patch === "function" ? patch(s) : patch;
+    if (!next || !("panel" in next)) return next;
+    if (FIXED_PANELS.includes(next.panel)) last = next.panel;
+    else if (!next.panel) return Object.assign({}, next, { panel: last });
+    return next;
+  });
+  store.set({ panel: store.get().panel });
+}
+const fitSheet = () => store.set((s) => ({ command: { seq: s.command.seq + 1, type: "fit" } }));
+const keptPanel = () => (FIXED_PANELS.includes(store.get().panel) ? store.get().panel : null);
 export function openSheet(graphId) {
-  store.set({ sheet: graphId, panel: null, marks: { rid: null, bySheet: {} } });
+  if (store.get().sheet === graphId) fitSheet();      // 다른 도면은 도면 부품이 자료를 읽으며 맞춘다
+  store.set({ sheet: graphId, panel: keptPanel(), marks: { rid: null, bySheet: {} } });
   cmd("sheet.open", { graph_id: graphId }).catch(() => {});
   saveUi();
 }
 
 export function togglePanel(name) {
-  store.set((s) => ({ panel: s.panel === name ? null : name, backTo: null }));
+  store.set((s) => ({ panel: s.panel === name && !FIXED_PANELS.includes(name) ? null : name, backTo: null }));
 }
 
 setOpenSheet(openSheet);      // 분석 결과의 '도면에서 보기'가 도면을 바꿀 때 쓴다
@@ -99,20 +117,15 @@ export function toggleChat() {
   saveUi();
 }
 
-function zoomTo(ids) { store.set((s) => ({ command: { seq: s.command.seq + 1, type: "zoomTo", ids, pad: 0.15 } })); }
-
-/** 답 카드의 ID 칩: 그 칩의 도면을 열고 그 구성요소에 맞춰 확대한다. */
+/** 답 카드의 ID 칩: 그 칩의 도면을 전체 맞춤으로 보이고 그 구성요소만 강조한다. */
 function onChip(chip) {
-  if (chip.sheet && chip.sheet !== store.get().sheet) openSheet(chip.sheet);
-  if (chip.local_id) setTimeout(() => zoomTo([chip.local_id]), 0);
+  locate({ sheet: chip.sheet, ids: chip.local_id ? [chip.local_id] : [] });
 }
 
-/** 답 카드의 도면 칩: 그 도면을 열고 그 도면 몫의 경로를 그린다. */
+/** 답 카드의 도면 칩: 그 도면을 열고 그 도면 몫의 경로(차례 번호)를 그린다. */
 function onSheet(msg, pathIndex, sheet) {
   const path = msg.card.paths[pathIndex];
-  const bySheet = (path && path.marks) || {};
-  store.set({ sheet, panel: null, marks: { rid: msg.key, bySheet } });
-  cmd("sheet.open", { graph_id: sheet }).catch(() => {});
+  locate({ sheet, marks: (path && path.marks) || {}, rid: msg.key });
 }
 
 // ---------------------------------------------------------------- 사건
@@ -137,7 +150,7 @@ function wireEvents() {
   on("drop.hover", (d) => store.set({ dropOver: !!d.over }));
   on("drop.refused", (d) => toast(d.text, "err"));
   on("app.notice", (d) => { if (!QUIET_NOTICES.some((re) => re.test(d.text || ""))) toast(d.text); });      // 할 일이 없는 엔진 알림은 거른다
-  on("study.lost", (d) => { for (const n of [lostNotice(d), demotedNotice(d)]) if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
+  on("study.lost", (d) => { const n = lostNotice(d); if (n) addNotice(n); });      // 다시 추출 뒤 새로 찾지 못한 구성요소(엔진이 판 이전을 이어서 한 결과)
   const job = (state) => (d) => store.set((s) => ({ jobs: Object.assign({}, s.jobs, { [d.id]: Object.assign({}, s.jobs[d.id], d, { state }) }) }));
   on("job.progress", job("running"));
   on("job.done", (d) => {
@@ -173,7 +186,7 @@ function RailButton({ p, on }) {
   const hint = useStore(p.hint || nothing);
   const dot = useStore(p.dot || nothing);
   const label = panelLabel(p) + (hint ? " · " + hint : "");
-  const press = () => { if (on) store.set({ panel: null, backTo: null }); else togglePanel(p.name); };
+  const press = () => { if (on && !FIXED_PANELS.includes(leadOf(byName(store.get().panel)))) store.set({ panel: null, backTo: null }); else if (!on) togglePanel(p.name); };      // 도면·구간은 다시 눌러도 닫히지 않는다
   return html`<button type="button" class=${on ? "on" : ""} title=${label} aria-label=${label} onClick=${press}>
     <${Icon} name=${p.icon} />${badge ? html`<span class="badge">${badge}</span>` : null}${dot ? html`<span class=${"conn " + dot}></span>` : null}</button>`;
 }
@@ -218,7 +231,7 @@ function TopBar() {
   const queueOpen = useQueue((s) => s.open);
   const row = d.drawings.find((x) => x.graph_id === sheet);
   return html`<header class="topbar"><div class="crumb"><${ProjectBox} id=${d.project_id} /><span class="muted">›</span>
-    <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => togglePanel("drawings")}>${row ? (row.display || row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
+    <button type="button" class="sheet" aria-label="도면 바꾸기" title=${row && row.title ? row.title : null} onClick=${() => store.set({ panel: "drawings" })}>${row ? (row.display || row.drawing_number || row.name) : "도면 고르기"}<${Icon} name="chevron-down" size=${14} /></button>
     ${BACK_CHIPS[backTo] ? html`<button type="button" class="chip accent" aria-label=${BACK_CHIPS[backTo]} onClick=${() => store.set({ panel: backTo, backTo: null })}><${Icon} name=${(byName(backTo) || {}).icon || "arrow-left"} size=${14} /> ${BACK_CHIPS[backTo]}</button>` : null}</div>
     ${queueOpen ? html`<${QueueLine} />` : null}</header>`;     // 도면 제목은 도면 번호에 마우스를 올리면 보인다. '다음에 할 일' 한 줄은 화면에서 내렸다(화면 단순화, 코드는 next/에 남김)
 }
@@ -245,16 +258,16 @@ function App() {
         if (store.get().chatCollapsed) toggleChat();
         setTimeout(() => { const el = document.querySelector(".chat-input"); if (el) el.focus(); }, 0);
       } else if (e.ctrlKey && PANELS.some((p) => p.key === e.key)) { e.preventDefault(); togglePanel(PANELS.find((p) => p.key === e.key).name); }
-      else if ((e.ctrlKey && e.key === "0") || (e.key === "Escape" && !typing)) { if (store.get().panel) { e.preventDefault(); store.set({ panel: null }); } }
+      else if ((e.ctrlKey && e.key === "0") || (e.key === "Escape" && !typing)) { if (store.get().panel && !FIXED_PANELS.includes(store.get().panel)) { e.preventDefault(); store.set({ panel: null }); } }
     }
     window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    return () => { window.removeEventListener("keydown", key); };
   }, []);
   return html`<div class=${"app" + (collapsed && !queueOpen ? " chat-collapsed" : "") + (queueOpen ? " queue-open" : "")}>
     <${Rail} />
     <main class="center"><${TopBar} /><${Notices} /><${SheetHost} />
-      ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
-      <${Toast} /><${ReviewConfirm} /><${ConfirmAllModal} /><${RevertGuard} /></main>
+      ${PANELS.map((p) => (panel === p.name ? html`<div class="pwrap" key=${p.name} data-panel=${p.name}><${PanelTabs} panel=${p.name} /><${p.component} onOpen=${openSheet} onClose=${closePanel} /></div>` : null))}
+      <${Toast} /><${ReviewConfirm} /><${RevertGuard} /></main>
     ${queueOpen ? html`<${QueueCard} onChat=${() => { closeQueue(); if (store.get().chatCollapsed) toggleChat(); }} />`
       : html`<${ChatPanel} collapsed=${collapsed} onToggle=${toggleChat} onChip=${onChip} onSheet=${onSheet} />`}
   </div>`;      // 오른쪽 칸은 채팅 또는 대기열 카드 하나(HZ-DSN-06 §3.5)
@@ -270,6 +283,8 @@ async function boot() {
   wireQueue();
   setReviewOpeners(openQueue, openSheet, (gid) => queueStore.get().open && queueStore.get().kind === "ai" && queueStore.get().gid === gid);
   wireReview();
+  pinFixedPanels();
+  wireUndo();
   render(html`<${App} />`, document.getElementById("app"));
   loadPanelCss();
   await loadIcons();

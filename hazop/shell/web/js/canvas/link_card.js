@@ -80,7 +80,7 @@ function when(at) { return (at || "").replace("T", " ").replace(/:\d\dZ$/, "").r
 
 function stateLine(p) {
   if (p.status === "linked" && p.peer) {
-    return html`<span>짝: <b>${p.peer.drawing_number}</b> ${p.peer.label}${p.origin === "manual" ? " (사람이 지정)" : " (자동)"}</span>`;
+    return html`<span>짝: <b>${p.peer.drawing_number}</b> ${p.peer.label}</span>`;
   }
   return html`<span class="warn">미연결 · ${p.reason_text || p.reason || "짝 없음"}${p.origin === "manual" ? " (사람이 끊음)" : ""}</span>`;
 }

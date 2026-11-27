@@ -182,12 +182,12 @@ class EditTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             sn.confirm(self.s, self.g, "  ", at=AT)
 
-    def test_confirm_locks_until_reopen(self):
+    def test_old_confirm_and_reopen_still_work_and_confirmed_nodes_are_editable(self):
+        """옛 길(확정·확정 해제)은 엔진에 남는다. 확정 구간도 바로 고친다(구간 확정 단계를 없앰, 구간 규격 §0.2)."""
         done = sn.confirm(self.s, self.g, "김검토", at=AT)
         self.assertEqual(done["nodes"][0]["confirmed"], {"at": AT, "by": "김검토", "rev": 1})
         nid = done["nodes"][0]["node_id"]
-        with self.assertRaises(ValueError):
-            sn.rename(done, nid, "x")
+        self.assertEqual(sn.rename(done, nid, "y")["nodes"][0]["name"], "y")
         again = sn.reopen(done, at=AT)
         self.assertEqual({(n["state"], n["confirmed"]) for n in again["nodes"]}, {("applied", None)})
         self.assertEqual(sn.rename(again, nid, "x")["nodes"][0]["name"], "x")

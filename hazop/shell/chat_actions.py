@@ -20,7 +20,7 @@ from hazop.chat import actions_log
 from hazop.shell import auto_flow, chat_edits, chat_screens
 
 LOG = logging.getLogger("hazop.shell.chat_actions")
-NODE_ACTIONS = ("nodes.apply", "nodes.undo", "nodes.confirm", "nodes.unconfirm", "nodes.lock")
+NODE_ACTIONS = ("nodes.apply", "nodes.undo")  # 확정·확정 해제·잠금은 뺐다(구간 규격 §0.2)
 # A11 1차: 화면·엔진에 이미 있는 기능을 잇는 실행 동작(엔진 함수는 api_results·api_drawings·data를 부르기만 한다)
 RUN_ACTIONS = ("analysis.run", "results.set_status", "results.edit", "export.excel", "export.ie_bundle",
                "register.extract", "register.reextract", "sheet.confirm", "dexpi.export")
@@ -491,7 +491,7 @@ def _title(item):
     return TITLES.get(name, name or "동작")
 
 
-TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정", "nodes.unconfirm": "구간 확정 해제", "nodes.lock": "분석 마침 · 잠금",
+TITLES = {"nodes.undo": "묶음 되돌리기",
           "analysis.run": "AI 분석 실행", "results.set_status": "결과 판정", "results.edit": "결과 항목 고치기",
           "export.excel": "Excel로 내보내기", "export.ie_bundle": "초기사건 인계 묶음 내보내기", "register.extract": "추출",
           "register.reextract": "다시 추출", "sheet.confirm": "도면 쪽 확정", "dexpi.export": "DEXPI로 내보내기",
@@ -499,7 +499,7 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "aireview.revert": "AI 후보 되돌리기", "aireview.accept_bulk": "AI 후보 묶음 수락",
           "aireview.auto_run": "AI로 확정", "aireview.auto_revert": "자동 수락 되돌리기", "sources.choose": "원본 형식 고르기",
           "ie.move": "초기사건 후보 옮기기", "ie.split": "초기사건 그룹 나누기", "ie.edit_group": "초기사건 그룹 고치기",
-          "ie.accept_members": "초기사건 소속 확인", "ie.confirm_group": "초기사건 그룹 확정", "ie.reopen_group": "초기사건 그룹 확정 풀기",
+          "ie.accept_members": "초기사건 소속 확인", "ie.confirm_group": "초기사건 그룹 확정", "ie.reopen_group": "초기사건 그룹 확정 해제",
           "ie.set_coverage": "완전성 대조 판정", "ie.export": "초기사건 인계 묶음 내보내기", "docs.extract": "설계 문서 지식 추출",
           "docs.add": "설계 문서 등록", "docs.revision": "설계 문서 개정 대응",
           "titleblock.unconfirm": "표제란 확정 취소", "drawing.undo": "도면 고침 되돌리기", "drawing.redo": "도면 고침 다시 하기",
@@ -510,7 +510,7 @@ TITLES = {"nodes.undo": "묶음 되돌리기", "nodes.confirm": "구간 확정",
           "register.exclude": "도면을 구간 분석에서 빼기·다시 넣기", "extract.suggest": "추출 값 후보", "kg.algorithm": "지식그래프 알고리즘",
           "kg.rebuild": "지식그래프 다시 만들기", "ie.draft_rules": "초기사건 규칙 초안", "ie.reset": "초기사건 새로 시작",
           "titleblock.confirm": "표제란 확정", "drawing.edit": "도면 고치기",
-          "extract.edit": "추출 편집", "nodes.unlock": "잠금 풀기", "sheet.compare": "원본과 견줌",
+          "extract.edit": "추출 편집", "nodes.unlock": "잠금 해제", "sheet.compare": "원본과 견줌",
           "settings.change": "설정 바꾸기", "settings.api_key": "API 키", "settings.work_root": "작업 루트", "settings.reviewer": "검토자 이름",
           "files.delete": "파일 지우기"}
 
@@ -530,7 +530,7 @@ def _done_text(item, out):
         tail = (" · 묶음 " + batch) if batch else ""
         label = (": " + ", ".join(str(n) for n in names[:6]) + (" …" if len(names) > 6 else "")) if names and kinds == {"add"} else ""
         return _clip(head + label + tail + ".")
-    return {"nodes.confirm": "확정했습니다.", "nodes.unconfirm": "확정을 풀었습니다.", "nodes.lock": "잠갔습니다."}.get(name, "처리했습니다.")
+    return "처리했습니다."
 
 
 def _label(node_id, names):
@@ -657,7 +657,7 @@ def analysis_scope(engine, args):
 
 
 def analysis_details(item, snap, engine=None):
-    """분석 실행 확인 상자 줄: 호출 수 어림(규격 §4.2·§2.6)과 실제로 쓸 연결. API 키(과금)면 예상 비용 확인 글. 확정 구간만 분석한다."""
+    """분석 실행 확인 상자 줄: 호출 수 어림(규격 §4.2·§2.6)과 실제로 쓸 연결. API 키(과금)면 예상 비용 확인 글."""
     from hazop.shell import analysis_run
     ns = snap.node_set or {}
     ids = item.args.get("node_ids") or []
@@ -675,7 +675,7 @@ def analysis_details(item, snap, engine=None):
         LOG.exception("호출 수 어림을 만들지 못함")
         return [{"label": "호출 수 어림", "after": "셀 수 없음"}]
     if not n:
-        return [{"label": "호출 수 어림", "after": "0회(분석할 칸이 없음: 확정한 구간만 분석합니다)"}]
+        return [{"label": "호출 수 어림", "after": "0회(분석할 칸이 없음)"}]
     plan = analysis_conn(engine, item.args) if engine is not None else None
     if not isinstance(plan, dict):
         return [{"label": "호출 수 어림", "after": "약 %d회(구독 한도를 씁니다)" % n}]

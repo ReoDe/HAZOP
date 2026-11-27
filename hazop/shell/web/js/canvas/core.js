@@ -6,7 +6,7 @@
 
 import { SpatialIndex, MAX_SELECTION, capSelection, changeSelection, selectionEvent, normRect } from "./index.js";
 import { normalizeMarks, drawAll, buildSegments, legendEntries, uncrowdTags, badgeBoxes, placeChips } from "./marks.js";
-import { buildBase, recolor, fragmentBox, layoutLabels, labelDescriptor } from "./clean_view.js";
+import { buildBase, recolor, layoutLabels, labelDescriptor } from "./clean_view.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const K_MIN = 0.05, K_MAX = 12;
@@ -16,8 +16,9 @@ const SETTLE_MS = 120;          // 이동·확대가 멈춘 뒤 표시를 한 �
 
 const CSS = `
 .hz-cv { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--bg, #f4f5f7); outline: none; }
-.hz-cv-vp { position: absolute; inset: 0; overflow: hidden; touch-action: none; user-select: none; cursor: grab; }
-.hz-cv[data-mode="pick"] .hz-cv-vp { cursor: crosshair; }
+.hz-cv-vp { position: absolute; inset: 0; overflow: hidden; touch-action: none; user-select: none; cursor: default; }
+.hz-cv-vp.over { cursor: pointer; }
+.hz-cv.ctrl .hz-cv-vp { cursor: crosshair; }
 .hz-cv-vp.moving { cursor: grabbing; }
 .hz-cv-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .hz-cv-svg { display: block; overflow: visible; }
@@ -28,6 +29,7 @@ const CSS = `
 .hz-cv-chip { position: absolute; pointer-events: auto; cursor: pointer; font: 12px/18px var(--font, system-ui, sans-serif); padding: 0 8px;
   border-radius: 9px; border: 1.2px solid var(--ui, #0a5fc2); background: var(--card, #fff); color: var(--ui, #0a5fc2); font-weight: 700; white-space: nowrap; }
 .hz-cv-chip.warn { border-style: dashed; border-color: var(--warn-line, #a8740d); background: var(--warn-bg, #fdf0d2); color: var(--warn-ink, #74430a); }
+.hz-cv-chip.picked { border-color: var(--ui, #0a5fc2); background: var(--ui, #0a5fc2); color: #fff; }      /* 묶음에 든 연결 */
 .hz-cv-rubber { position: absolute; pointer-events: none; z-index: 5; border: 1.5px solid var(--ui, #0a5fc2); background: rgba(10,95,194,.10); box-sizing: border-box; }
 .hz-cv-rubber.minus { border-style: dashed; background: rgba(166,30,77,.08); }
 .hz-cv-legend { position: absolute; left: 16px; bottom: 64px; z-index: 4; display: none; max-width: calc(100% - 32px); box-sizing: border-box;
@@ -51,7 +53,7 @@ function build(desc, doc) {
 export class SheetCore {
   /**
    * @param {HTMLElement} host 마운트할 상자
-   * @param {object} cb 콜백: onReady, onItemClick, onItemDblClick, onHover, onSelection, onViewport, onMarkResult, onEsc, onLinkClick, onClearMarks, onSegmentClick, onUnconfirmedClick, onCleanBuilt
+   * @param {object} cb 콜백: onReady, onItemClick, onItemDblClick, onHover, onSelection, onViewport, onMarkResult, onEsc, onLinkClick, onClearMarks, onSegmentClick, onCleanBuilt
    */
   constructor(host, cb = {}) {
     this.host = host;
@@ -65,6 +67,7 @@ export class SheetCore {
     this.marks = [];
     this.segments = [];
     this.outside = [];
+    this.leaving = [];
     this.viewWanted = "orig";        // 'orig' | 'clean'(정리된 보기). 정리된 자료·기호가 아직 없으면 원본으로 그린다
     this.clean = null;               // /api/clean 자료 {items, text_items, unconfirmed, ...}
     this.symbols = null;             // symbols.json의 symbols
@@ -117,6 +120,7 @@ export class SheetCore {
     on(this.vp, "pointerleave", () => this._hover(null));
     on(d, "keydown", (e) => this._key(e, true));
     on(d, "keyup", (e) => this._key(e, false));
+    on(this.doc.defaultView || window, "blur", () => this._ctrl(false));      // Ctrl을 누른 채 창을 벗어나면 떼는 것을 못 듣는다
     this._ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => this._resized()) : null;
     if (this._ro) this._ro.observe(h);
   }
@@ -140,12 +144,12 @@ export class SheetCore {
     this._origIndex = new SpatialIndex(Array.isArray(data.items) ? data.items : []);
     this._ctxFor = null;
     this._syncIndex();
-    this._unconf = null;
     this.svg.setAttribute("width", this.size[0]); this.svg.setAttribute("height", this.size[1]);
     this.svg.setAttribute("viewBox", `0 0 ${this.size[0]} ${this.size[1]}`);
     this.world.style.width = this.size[0] + "px"; this.world.style.height = this.size[1] + "px";
     this.image.setAttribute("width", this.size[0]); this.image.setAttribute("height", this.size[1]);
-    this.sel = this.sel.filter((id) => this.index.has(id));
+    // 틀이 준 고름(다른 도면에서 되살린 것 포함)은 자료가 늦게 와도 잃지 않는다
+    this.sel = capSelection((this._selWanted || this.sel).filter((id) => this.index.has(id))).ids;
     this._cleanBuilt = false;        // 새 도면: 정리된 그림은 다시 만든다(자료는 update의 props로 새로 들어온다)
     this._leftBuilt = false;
     // 정리 자료·기호가 도면 자료보다 먼저 와 있었으면 지금에야 정리된 보기로 그릴 수 있다(뒤따르는 update는 같은 값이라 보기를 다시 고르지 않는다)
@@ -157,7 +161,7 @@ export class SheetCore {
     this.image.addEventListener("load", once, { once: true });
     this.image.addEventListener("error", once, { once: true });
     if (href) this.image.setAttribute("href", href); else once();
-    if (!this._viewGiven && !again) this.fit();
+    if (!again) { this._viewGiven = false; this.fit(); }      // 다른 도면을 열면 앞 도면의 확대·자리를 물려받지 않는다
     this._renderChips();
   }
 
@@ -204,7 +208,6 @@ export class SheetCore {
     this._applyOverlays(eff);
     this.tagsDiv.style.display = eff === "clean" ? "none" : "";
     this.host.setAttribute("data-view", eff);
-    this._unconf = null;
   }
 
   _buildClean() {
@@ -235,7 +238,7 @@ export class SheetCore {
     if (this.cb.onCleanBuilt) this.cb.onCleanBuilt(this.cleanInfo);
   }
 
-  /** 새로 온 경로(path) 표시가 화면 밖에 걸치면 경로가 들어오게 맞춘다(같은 경로는 한 번만). */
+  /** 새로 온 경로(path) 표시가 화면 밖에 걸치면 도면 전체를 다시 맞춘다(같은 경로는 한 번만). */
   _fitNewPath() {
     this._pathSeen = this._pathSeen || new Set();
     for (const m of this.marks) {
@@ -246,7 +249,7 @@ export class SheetCore {
       if (!b || !r.width) continue;
       const k = this.view.k, vx0 = -this.view.x / k, vy0 = -this.view.y / k, vx1 = vx0 + r.width / k, vy1 = vy0 + r.height / k;
       const inside = b.x0 >= vx0 && b.y0 >= vy0 && b.x1 <= vx1 && b.y1 <= vy1;
-      if (!inside) this.zoomTo(ids, 0.15);
+      if (!inside) this.fit();      // 경로가 화면 밖이면 도면 전체를 다시 맞춘다(확대해 들어가지 않는다)
     }
   }
 
@@ -294,18 +297,6 @@ export class SheetCore {
     }
   }
 
-  /** 못 읽은 곳의 원본 조각: 같은 도면 SVG 주소와 잘라 보일 viewBox. 자료가 없으면 null. */
-  fragmentOf(id) {
-    const r = (this._origIndex || this.index).rectOf(id);         // 원본 조각은 늘 읽은 좌표로 자른다
-    if (!r || !this.data || !this.data.svg) return null;
-    return { href: this.data.svg, size: this.size.slice(), box: fragmentBox([r.x0, r.y0, r.x1, r.y1], this.size) };
-  }
-
-  _unconfirmedAt(id) {
-    if (!this._unconf) this._unconf = new Map(((this.clean && this.clean.unconfirmed) || []).map((u) => [u.id, u.reason]));
-    return this._unconf.get(id) || null;
-  }
-
   // ------------------------------------------------------------ 입력(props)
   update(p) {
     let marksDirty = false;
@@ -325,6 +316,7 @@ export class SheetCore {
     }
     if (p.selection && p.selection !== this._selProp) {
       this._selProp = p.selection;
+      this._selWanted = p.selection;
       this.sel = capSelection(p.selection.filter((id) => this.index.has(id))).ids;
       marksDirty = true;
     }
@@ -335,6 +327,7 @@ export class SheetCore {
       this._fitNewPath();
     }
     if (p.outside && p.outside !== this._outProp) { this._outProp = p.outside; this.outside = p.outside; marksDirty = true; }
+    if (p.leaving && p.leaving !== this._leaveProp) { this._leaveProp = p.leaving; this.leaving = p.leaving; marksDirty = true; }
     if (p.segments && p.segments !== this._segProp) { this._segProp = p.segments; this.segments = p.segments; marksDirty = true; }
     if (p.viewport && p.viewport !== this._vpProp) {
       this._vpProp = p.viewport;
@@ -355,11 +348,12 @@ export class SheetCore {
 
   _command(c) {
     if (c.type === "zoomTo") this.zoomTo(c.ids || [], c.pad);
-    else if (c.type === "inspect") {          // 미확인 자리로 가서 원본 조각 말풍선을 연다(N 키)
-      this.zoomTo([c.id], c.pad);
-      if (this.cb.onUnconfirmedClick) this.cb.onUnconfirmedClick({ id: c.id, reason: this._unconfirmedAt(c.id) || c.reason, fragment: this.fragmentOf(c.id), rect: null });
-    }
     else if (c.type === "fit") this.fit();
+    else if (c.type === "view" && c.view && c.view.k > 0) {      // 되돌리기: 보던 자리·배율 그대로
+      this.view = { x: c.view.x, y: c.view.y, k: Math.min(Math.max(c.view.k, K_MIN), K_MAX) };
+      this._applyView();
+      this._viewChanged(true);
+    }
     else if (c.type === "clearMarks") {
       this.marks = c.id == null ? [] : this.marks.filter((m) => String(m.id).split("#")[0] !== String(c.id).split("#")[0]);
       this._renderMarks();
@@ -367,27 +361,14 @@ export class SheetCore {
   }
 
   // ------------------------------------------------------------ 보기(이동·확대)
-  /** 그려진 내용(기호·배관)의 범위 + 여백. 도면 용지의 여백이 커도 내용이 화면을 채우게 맞추는 기준이다. 내용이 없으면 도면 전체. */
-  _contentRect() {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const rec of this.index.items) {
-      if (rec.layer === "tag") continue;
-      x0 = Math.min(x0, rec.rect.x0); y0 = Math.min(y0, rec.rect.y0); x1 = Math.max(x1, rec.rect.x1); y1 = Math.max(y1, rec.rect.y1);
-    }
-    if (!isFinite(x0)) return { x0: 0, y0: 0, x1: this.size[0], y1: this.size[1] };
-    const pad = 16;
-    return { x0: Math.max(0, x0 - pad), y0: Math.max(0, y0 - pad), x1: Math.min(this.size[0], x1 + pad), y1: Math.min(this.size[1], y1 + pad) };
-  }
-
+  /** 도면 한 장 전체가 도면 칸 가운데에 한눈에 들어오게 맞춘다. 위아래 여백은 같게 두어(보기 단추 줄이 위에 겹친다) 가운데가 칸의 가운데다. */
   fit() {
     const r = this._rect();
     if (!r.width || !r.height || !this.data) return;
-    const c = this._contentRect(), cw = Math.max(c.x1 - c.x0, 1), ch = Math.max(c.y1 - c.y0, 1);
-    // 겹치는 화면 요소(위 보기 단추 줄, 아래 도구 막대, 표시가 있을 때의 범례)가 차지하는 자리만 빼고 그려진 내용의 둘레에 맞춘다
-    const top = Math.min(60, r.height * 0.09), bottom = Math.min(this.marks.length ? 108 : 64, r.height * 0.15);
-    const availH = Math.max(r.height - top - bottom, 1);
-    const k = Math.min(r.width / cw, availH / ch) * 0.985;
-    this.view = { k, x: (r.width - cw * k) / 2 - c.x0 * k, y: top + (availH - ch * k) / 2 - c.y0 * k };
+    const [sw, sh] = this.size;
+    const mx = Math.min(16, r.width * 0.02), my = Math.min(60, r.height * 0.09);
+    const k = Math.min(Math.max(r.width - 2 * mx, 1) / sw, Math.max(r.height - 2 * my, 1) / sh);
+    this.view = { k, x: (r.width - sw * k) / 2, y: (r.height - sh * k) / 2 };
     this._applyView();
     this._viewChanged(true);
   }
@@ -408,6 +389,9 @@ export class SheetCore {
   _applyView() {
     const v = this.view;
     this.world.style.transform = `translate(${v.x}px, ${v.y}px) scale(${v.k})`;
+    this._followOverlays();
+    // 도면 위에 뜬 말풍선(틀이 그리는 것)도 같은 프레임에 따라가게 알린다
+    this.host.dispatchEvent(new CustomEvent("hz-view", { bubbles: true, detail: { x: v.x, y: v.y, k: v.k } }));
   }
 
   _scheduleSettle() {
@@ -438,11 +422,13 @@ export class SheetCore {
   _layerSet() { return new Set(Object.entries(this.layers).filter(([, on]) => on).map(([k]) => k)); }
 
   // ------------------------------------------------------------ 포인터
+  /** 방식 전환 없이: Ctrl(⌘)을 누르지 않고 끌면 도면 이동, Ctrl을 누르고 끌면 네모로 고르기(Alt를 더하면 빼기). */
   _wantsPan(e) {
     if (e.button === 1 || this.space) return true;
-    if (this.mode === "pan" && !e.shiftKey && !e.altKey) return true;
-    return false;
+    return !(e.ctrlKey || e.metaKey);
   }
+
+  _ctrl(on) { this.host.classList.toggle("ctrl", !!on); }
 
   _down(e) {
     if (e.button !== 0 && e.button !== 1) return;
@@ -451,16 +437,17 @@ export class SheetCore {
     try { this.vp.setPointerCapture(e.pointerId); } catch (x) { /* 합성 이벤트는 캡처할 수 없다 */ }
     const pan = this._wantsPan(e);
     this.pointer = { x: e.clientX, y: e.clientY, vx: this.view.x, vy: this.view.y, pan, moved: false, alt: e.altKey, id: e.pointerId };
-    if (pan) this.vp.classList.add("moving");
   }
 
   _move(e) {
+    this._ctrl(e.ctrlKey || e.metaKey);
     const p = this.pointer;
     if (!p) { this._hoverSoon(e); return; }
     const dx = e.clientX - p.x, dy = e.clientY - p.y;
     if (Math.abs(dx) + Math.abs(dy) > CLICK_SLOP) p.moved = true;
     if (!p.moved) return;
     if (p.pan) {
+      this.vp.classList.add("moving");      // 끄는 동안만 잡는 모양
       this.view = { k: this.view.k, x: p.vx + dx, y: p.vy + dy };
       this._applyView();
     } else {
@@ -508,15 +495,14 @@ export class SheetCore {
     }
     const badge = this.cb.onSegmentClick ? this._badgeAt(s) : null;
     if (badge) { this.cb.onSegmentClick({ node_id: badge.node_id }); return; }
-    if (this.mode === "pick") {
+    if (e.ctrlKey || e.metaKey) {                 // Ctrl+누르기: 그 하나를 고른 것에 더하거나 뺀다(말풍선은 열지 않는다)
       if (hit) this._change([hit.id], "toggle", "click");
       return;
     }
+    if (this.cb.onPlainClick) this.cb.onPlainClick({ hit: !!hit });      // 묶어 둔 고름·구간 고름을 푸는 신호
     if (!hit) return;
-    const reason = this.cb.onUnconfirmedClick ? this._unconfirmedAt(hit.id) : null;
-    if (reason) { const rr = this.index.rectOf(hit.id); this.cb.onUnconfirmedClick({ id: hit.id, reason, fragment: this.fragmentOf(hit.id), rect: rr ? this._toScreenRect(rr) : null }); }
     const rect = this.index.rectOf(hit.id), rec = (this.index.byId.get(hit.id) || [])[0];
-    if (this.cb.onItemClick) this.cb.onItemClick({ id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, link: this._linkOf(hit.id), rect: rect ? this._toScreenRect(rect) : null, via: "click" });
+    if (this.cb.onItemClick) this.cb.onItemClick({ view: { x: this.view.x, y: this.view.y, k: this.view.k }, id: hit.id, kind: rec && rec.kind, kind_label: rec && rec.kind_label, tag: rec && rec.tag, link: this._linkOf(hit.id), rect: rect ? this._toScreenRect(rect) : null, via: "click" });
   }
 
   /** 그린 자리(정리된 보기는 정돈 좌표)의 점을 읽은(원본) 좌표로. 가장 가까운 기호 중심이나 배관 꼭짓점(60 단위 안)이 정돈으로 옮겨진 만큼 되돌린다.
@@ -566,7 +552,6 @@ export class SheetCore {
     if (!hit) return;
     const lk = this.cb.onLinkClick && hit.layer === "symbol" ? this._linkOf(hit.id) : null;       // 이어진 다른 도면 연결(오각형)은 두 번 누르면 맞은편으로(한 번은 고르기·말풍선)
     if (lk && lk.status === "linked") { this.cb.onLinkClick(lk); return; }
-    this.zoomTo([hit.id], 1.5);
     if (this.cb.onItemDblClick) this.cb.onItemDblClick({ id: hit.id });
   }
 
@@ -593,6 +578,7 @@ export class SheetCore {
   }
 
   _hover(id) {
+    this.vp.classList.toggle("over", !!id);      // 누를 수 있는 구성요소 위에서는 손가락 모양
     if (id === this.hoverId) return;
     this.hoverId = id;
     if (!this.cb.onHover) return;
@@ -601,12 +587,13 @@ export class SheetCore {
   }
 
   _key(e, down) {
+    if (e.key === "Control" || e.key === "Meta") this._ctrl(down);
     const t = e.target;
     if (t && t.closest && t.closest("input, textarea, select, [contenteditable]")) return;
     if (e.code === "Space") { this.space = down; return; }
     if (!down || e.key !== "Escape") return;
     if (this.cb.onEsc) this.cb.onEsc();
-    if (this.mode === "pick" && this.sel.length) this._change(this.sel.slice(), "remove", "clear");
+    if (this.sel.length) this._change(this.sel.slice(), "remove", "clear");
   }
 
   // ------------------------------------------------------------ 고르기
@@ -616,6 +603,7 @@ export class SheetCore {
     if (!ch) return null;
     const capped = capSelection(ch.selected);
     this.sel = capped.ids;
+    this._selWanted = capped.ids;
     const ev = selectionEvent({ selected: ch.selected, added: ch.added, removed: ch.removed }, via);
     if (capped.truncated) ev.truncated = true;
     this._renderMarks();
@@ -640,7 +628,7 @@ export class SheetCore {
     if (!this.data) return;
     const seg = this.segments.length ? buildSegments(this.segments, this.index) : null;
     const ctx = this._effective() === "clean" ? this._cleanCtx() : null;
-    const out = drawAll({ marks: this.marks, seg, outside: this.outside, selection: this.sel, index: this.index, k: this.view.k, size: this.size,
+    const out = drawAll({ marks: this.marks, seg, outside: this.outside, leaving: this.leaving, selection: this.sel, index: this.index, k: this.view.k, size: this.size,
       recolor: ctx ? (rec, color, width, opts) => recolor(ctx, rec, color, width, opts) : null, veil: ctx ? 0.62 : null });
     const g = this.marksG;
     while (g.firstChild) g.removeChild(g.firstChild);
@@ -650,6 +638,7 @@ export class SheetCore {
     this.lastDraw = out;
     this._legend(seg);
     this._renderTags();
+    for (const b of this.chipsDiv.children) b.classList.toggle("picked", this.sel.includes(b.getAttribute("data-link")));
     // 표시 결과 알림: 바뀐(또는 새) 표시만
     if (this.cb.onMarkResult) {
       const now = new Map(this.marks.map((m) => [m.id, m]));
@@ -691,7 +680,7 @@ export class SheetCore {
       if (fs * v.k >= TAG_MIN_PX) continue;      // 도면 글자가 읽히는 크기면 얹지 않는다
       const sr = this._toScreenRect(rec.rect);
       const w = Math.max(rec.tag.length * 7 + 8, 14);
-      const l = { id: rec.id, x: sr.x, y: sr.y, w, h: 15, rank: selected.has(rec.id) ? 0 : 2, text: rec.tag };
+      const l = { id: rec.id, x: sr.x, y: sr.y, w, h: 15, rank: selected.has(rec.id) ? 0 : 2, text: rec.tag, sx: rec.rect.x0, sy: rec.rect.y0 };
       labels.push(l); byId.set(rec.id + "|" + rec.order, l);
     }
     const r = this._rect();
@@ -702,6 +691,7 @@ export class SheetCore {
       if (!shown.has(l.id)) continue;
       const s = this.doc.createElement("span"); s.className = "hz-cv-tag"; s.textContent = l.text;
       s.style.left = l.x + "px"; s.style.top = l.y + "px"; frag.appendChild(s);
+      this._anchor(s, l.sx, l.sy, l.x, l.y);
     }
     box.appendChild(frag);
     this.tagCount = shown.size;
@@ -717,9 +707,30 @@ export class SheetCore {
       const b = this.doc.createElement("button");
       b.type = "button"; b.className = "hz-cv-chip" + (c.warn ? " warn" : "");
       b.textContent = c.text; b.title = c.title;
+      b.setAttribute("data-link", c.link.id);
+      if (this.sel.includes(c.link.id)) b.classList.add("picked");
       b.style.left = c.x + "px"; b.style.top = c.y + "px";
       b.addEventListener("click", (ev) => { ev.stopPropagation(); if (this.cb.onLinkClick) this.cb.onLinkClick(c.link); });
+      const rect = this.index.rectOf(c.link.id);
+      if (rect) this._anchor(b, (rect.x0 + rect.x1) / 2, rect.y1, c.x, c.y);      // 기호 아래 가운데를 기준으로 도면을 따라 움직인다
       box.appendChild(b);
+    }
+  }
+
+  /** 화면 좌표로 얹은 것(칩·태그 글자)이 도면을 따라가게, 도면 좌표의 기준점과 거기서의 화면 거리를 기억한다. */
+  _anchor(el, sx, sy, x, y) {
+    const v = this.view;
+    el._at = { sx, sy, dx: x - (sx * v.k + v.x), dy: y - (sy * v.k + v.y) };
+  }
+
+  /** 끌거나 확대하는 매 프레임: 얹은 것을 같은 변환으로 옮긴다(다시 놓는 계산은 움직임이 멈춘 뒤에). */
+  _followOverlays() {
+    const v = this.view;
+    for (const box of [this.chipsDiv, this.tagsDiv]) {
+      for (const el of box ? box.children : []) {
+        const a = el._at;
+        if (a) { el.style.left = a.sx * v.k + v.x + a.dx + "px"; el.style.top = a.sy * v.k + v.y + a.dy + "px"; }
+      }
     }
   }
 }

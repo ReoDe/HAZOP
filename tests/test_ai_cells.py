@@ -338,7 +338,9 @@ class StoreTest(Base):
         self.assertFalse(sr.is_stale(res, self.node_set))
         reconfirmed = sn.confirm(sn.reopen(self.node_set, at=AT2), self.graph, "김검토", at=AT2)
         self.assertFalse(sr.is_stale(res, reconfirmed), "v2: 구간을 다시 확정해도 결과 전체가 옛것이 되지 않음")
-        self.assertIs(sr.reconcile(res, reconfirmed, self.devs), res, "구성요소가 같으면 칸도 그대로")
+        again = sr.reconcile(res, reconfirmed, self.devs)
+        self.assertTrue(all(e.get("scope_changed") for c in again["cells"] for e in c["entries"]),
+                        "확정을 풀었다가 다시 확정하면 사람이 판정을 다시 봐야 함(확정 해제는 분석 판을 올림, 구간 규격 §0.2)")
 
     def test_load_rejects_foreign_file(self):
         path = sr.store_path(None, self.node_set["graph_id"])

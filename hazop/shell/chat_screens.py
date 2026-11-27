@@ -515,7 +515,7 @@ def _ie_execute(engine, action):
 
 
 TITLES_IE = {"ie.move": "후보 옮기기", "ie.split": "그룹 나누기", "ie.edit_group": "그룹 고치기", "ie.accept_members": "소속 확인",
-             "ie.confirm_group": "그룹 확정", "ie.reopen_group": "그룹 확정 풀기", "ie.set_coverage": "범주 대조 판정"}
+             "ie.confirm_group": "그룹 확정", "ie.reopen_group": "그룹 확정 해제", "ie.set_coverage": "범주 대조 판정"}
 
 
 def _ie_draft(engine):

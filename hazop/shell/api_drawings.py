@@ -4,15 +4,18 @@
   화면은 조건을 다시 세지 않는다. 읽기는 파일을 쓰지 않는다.
 - **쪽 확정 명령** `sheet.compare`·`sheet.confirm`·`sheet.unconfirm`: 화면이 읽은 세 파일 지문(`ver`)과 기록 판(`rev`)을 실어 보내고 어긋나면 stale로 거절한다. `by`는 설정의 검토자
   이름이고 `at`은 엔진이 채운다(웹 인자 아님). 조건을 못 채우면 엔진이 거절하고 사유(미확인 n곳·위치 없는 것·원본과 견줌 없음)를 그대로 올린다.
-- **DEXPI 내보내기** `dexpi`(읽기: 내보낼 수 있는 도면 목록과 사유), `dexpi.export`(명령): 확정된 쪽만 낸다. 저장할 폴더는 창이 Python 쪽 대화상자로 묻고(웹은 경로를 보내지 않는다),
-  이미 있는 파일을 덮어쓸 때는 확인을 받는다. 결과는 낸 도면(파일 이름만)과 뺀 목록(확정 안 된 쪽)과 도면별 뺀 항목 수로 보인다.
+- **DEXPI 내보내기** `dexpi`(읽기: 내보낼 수 있는 도면 목록과 사유), `dexpi.export`(명령): 확정된 쪽만 낸다. 대화상자 없이 작업 폴더의 내보내기 폴더(프로젝트마다 하나)에 쓴다(웹은 경로를 보내지 않는다).
+  이미 있는 파일은 우리가 앞서 낸 것(곁 파일·내용 지문이 맞는 것)만 바꾸고, 그 밖의 파일이 있으면 번호를 붙인 새 폴더에 쓴다. 결과는 낸 도면(파일 이름만)과 뺀 목록(확정 안 된 쪽)과
 - 채팅 동작 층(hazop/chat/actions.py의 sheet.confirm·dexpi.export)은 hazop/shell/chat_actions.py가 이 모듈의 `_sheet_command`·`_export`를 불러 잇는다(쪽 확정은 확인 상자에서 본 지문·판을 그대로 넘긴다). 웹의 `dexpi.export`는 `_export`를 작업 스레드에서 돌린다(`_export_command`).
 - **원본 선택** `sources`(읽기)·`sources.choose`(명령): 같은 도면 번호의 원본이 형식 둘 이상일 때 어느 형식을 쓸지 사람이 고른다(hazop.graph.sources).
 """
 
+import hashlib
+import json
 import logging
 import os
 
+from hazop import paths
 from hazop.extract import confirmation
 from hazop.shell import errtext
 
@@ -66,15 +69,11 @@ def labels(engine):
     return out
 
 
-CONFIRM_FIRST_TEXT = ("도면 번호를 아직 확정하지 않았습니다. 표제란에서 번호를 확정하면 도면 연결·DEXPI 내보내기를 쓸 수 있습니다. "
-                      "만들어 둔 구간·분석 결과는 바뀐 도면 이름을 따라갑니다.")
-
-
 def _notice(n):
-    """도면 목록 행 알림. 번호 미확정 알림은 시트 정체 U5 뒤의 사실로 고친다('구간을 만들기 전에 확정하세요'가 아님, 설계 §6 4)."""
+    """도면 목록 행 알림. '번호를 아직 확정하지 않았습니다'는 내지 않는다: 화면에서 번호를 확정하는 길이 없어 사용자가 할 일이 없다(화면 단순화)."""
     from hazop.graph import sheets
     if isinstance(n, dict) and n.get("code") == sheets.CONFIRM_FIRST:
-        return dict(n, text=CONFIRM_FIRST_TEXT)
+        return None
     return n
 
 
@@ -298,6 +297,70 @@ def _applied(engine):
     return not (s.get("available") and s.get("stale")) or engine.catching(engine.project_id())
 
 
+EXPORT_FOLDERS_TRIED = 99
+
+
+def dexpi_folder(project_id):
+    """DEXPI의 기본 내보내기 폴더: 작업 폴더의 내보내기 폴더 아래 프로젝트마다 하나."""
+    return os.path.join(paths.output_root("exports"), "DEXPI-%s" % paths.safe_name(project_id or "project"))
+
+
+def _own_export(folder, name):
+    """folder의 파일 name이 우리가 앞서 내보낸 그대로의 것인가. 아니면(사람이 놓았거나 고친 파일, 링크) 덮지 않는다.
+    manifest.json은 우리 manifest 꼴, 곁 파일은 우리 곁 파일 꼴, XML은 곁 파일에 적힌 내용 지문과 같아야 한다."""
+    from hazop.export import dexpi_export
+    path = os.path.join(folder, name)
+    if os.path.islink(path) or not os.path.isfile(path):
+        return False
+
+    def read_doc(p):
+        try:
+            with open(p, "rb") as fh:
+                doc = json.loads(fh.read().decode("utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return doc if isinstance(doc, dict) else {}
+    if name == "manifest.json":
+        return read_doc(path).get("schema") == dexpi_export.MANIFEST_SCHEMA
+    suffix = next((s for s in dexpi_export.DRAWING_SUFFIXES if name.endswith(s)), None)
+    if suffix is None:
+        return False
+    side_path = os.path.join(folder, name[:-len(suffix)] + ".hazop.json")
+    side = {} if os.path.islink(side_path) else read_doc(side_path)
+    if side.get("schema") != dexpi_export.SIDECAR_SCHEMA:
+        return False
+    if suffix == ".hazop.json":
+        return True
+    if suffix == ".excluded.json":
+        return read_doc(path).get("schema") == dexpi_export.EXCLUDED_SCHEMA
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha256(fh.read()).hexdigest() == side.get("dexpi_sha256")
+    except OSError:
+        return False
+
+
+def _export_to_default(engine, names):
+    """기본 폴더에 쓴다. 이미 있는 파일은 우리가 앞서 낸 것일 때만 바꾸고, 그 밖의 파일이 하나라도 걸리면 그 폴더는 두고 번호를 붙인
+    새 폴더에 쓴다(기존 파일은 덮지 않는다). -> (엔진 답, 쓴 폴더). 낼 수 없으면 엔진의 ExportError가 그대로 올라간다."""
+    from hazop.export import dexpi_export
+    base = dexpi_folder(engine.project_id())
+    for n in range(1, EXPORT_FOLDERS_TRIED + 1):
+        out_dir = base if n == 1 else "%s-%d" % (base, n)
+        if os.path.islink(out_dir) or (os.path.exists(out_dir) and not os.path.isdir(out_dir)):
+            continue
+        res = dexpi_export.export_names(names, out_dir)
+        if res.get("status") == "exists":
+            if not all(_own_export(out_dir, f) for f in res.get("existing") or []):
+                continue
+            res = dexpi_export.export_names(names, out_dir, overwrite=True)
+        note = getattr(engine.hooks, "note", None)
+        if note:
+            note("dexpi", os.path.join(out_dir, "manifest.json"))      # '폴더 열기'가 열 자리
+        return res, out_dir
+    raise OSError("내보낼 빈 폴더를 찾지 못했습니다")
+
+
 def _export(engine, a):
     from hazop.export import dexpi_export
     api = _api()
@@ -310,20 +373,21 @@ def _export(engine, a):
     if not names:
         raise api.CommandError("failed", "내보낼 도면이 없습니다.")
     # 못 내는 쪽(확정이 안 됐거나 번호가 확정되지 않은 쪽)을 미리 빼지 않는다: 엔진이 쪽마다 수준·까닭을 not_exported에 적고 나머지는 낸다.
-    pick = engine.hooks.get("save_dir")
-    if pick is None:
-        raise api.CommandError("failed", "저장 위치를 고를 수 없습니다.")
-    out_dir = pick("dexpi")
-    if not out_dir:
-        return {"cancelled": True}
+    pick = engine.hooks.get("save_dir")      # 창은 꽂지 않는다(대화상자 없이 정해진 자리에 쓴다). 채팅 실행이 자기 폴더를 꽂는다
     try:
-        res = dexpi_export.export_names(names, out_dir)
-        if res.get("status") == "exists":
-            # 엔진이 쓸 파일이 이미 있다고 알려 준 경우에만 묻고, 확인을 받은 뒤에만 덮어쓴다(거절하면 아무것도 쓰지 않았다)
-            confirm = engine.hooks.get("confirm_overwrite_files")
-            if confirm is None or not confirm(list(res.get("existing") or [])):
-                return {"cancelled": True, "overwrite_refused": True}
-            res = dexpi_export.export_names(names, out_dir, overwrite=True)
+        if pick is None:
+            res, out_dir = _export_to_default(engine, names)
+        else:
+            out_dir = pick("dexpi")
+            if not out_dir:
+                return {"cancelled": True}
+            res = dexpi_export.export_names(names, out_dir)
+            if res.get("status") == "exists":
+                # 엔진이 쓸 파일이 이미 있다고 알려 준 경우에만 묻고, 확인을 받은 뒤에만 덮어쓴다(거절하면 아무것도 쓰지 않았다)
+                confirm = engine.hooks.get("confirm_overwrite_files")
+                if confirm is None or not confirm(list(res.get("existing") or [])):
+                    return {"cancelled": True, "overwrite_refused": True}
+                res = dexpi_export.export_names(names, out_dir, overwrite=True)
     except dexpi_export.ExportError as exc:
         # 엔진의 사유는 내부 이름으로 적혀 있다: 화면에는 사람용 도면 이름과 쪽별 사유로 다시 쓴다
         lines = ["%s: %s" % (r["display"], (r.get("why") or ["내보낼 수 없음"])[0]) for r in exportable(engine)["drawings"] if r["name"] in names and not r["exportable"]]
@@ -372,4 +436,4 @@ def register(commands):
         _choose_source, "같은 시트 자리에 원본이 둘 이상일 때 프로젝트 그래프에 쓸 형식(format) 또는 파일(material_id)을 고른다. drawing_number는 번호나 graph_id. "
                         "갈아타면 검토구간을 이어서 맞추고(자동 반영), 잃은 것이 있으면 알림이 간다")
     put("dexpi.export", {"graph_ids": (v_list(v_str(1, 200), 200), True)}, _export_command,
-        "확정된 쪽을 DEXPI XML로 내보낸다(저장 폴더는 창이 대화상자로 묻고, 덮어쓰면 확인한다)")
+        "확정된 쪽을 DEXPI XML로 내보낸다(대화상자 없이 작업 폴더의 내보내기 폴더에 쓰고, 우리가 앞서 낸 파일만 바꾼다)")

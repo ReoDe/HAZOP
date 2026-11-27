@@ -131,16 +131,16 @@ class ApplyAndUndoTest(Base):
         self.assertTrue(r["ok"], r)
         self.assertEqual(self.ns()["nodes"], [], "묶음의 구간이 모두 사라진다")
 
-    def test_a_second_batch_in_the_same_message_is_refused_and_a_new_message_needs_confirmation(self):
+    def test_a_second_batch_applies_without_a_confirmation(self):
+        """'확인 전 AI 구간 5개' 상한을 없앴다(구간 규격 §0.2): 다음 묶음도 확인 없이 바로 들어가고, 한 요청 30개만 막는다."""
         first = self.ask([self.apply(self.candidates(3))])
         self.assertEqual(first["items"][0]["status"], "applied")
         rest = self.candidates(6)[3:]
         second = self.ask([self.apply(rest)], "나머지도 만들어 줘")
         item = second["items"][0]
-        self.assertEqual(item["status"], "confirm", "대표 단계 뒤 상한을 넘으면 확인 상자")
-        self.assertTrue(item["token"])
-        self.assertIn("확인하지 않았습니다", item["text"])
-        self.assertEqual(len(self.ns()["nodes"]), 3, "확인 전에는 만들지 않는다")
+        self.assertEqual(item["status"], "applied", item)
+        self.assertEqual(len(self.ns()["nodes"]), 6)
+        self.assertEqual({n["state"] for n in self.ns()["nodes"]}, {"applied"}, "확정을 부르지 않음")
 
     def test_nothing_happens_when_the_answer_has_no_actions(self):
         self.answers.append(self.answer([]))
@@ -149,13 +149,22 @@ class ApplyAndUndoTest(Base):
 
 
 class ConfirmTest(Base):
+    """확인 상자를 거치는 구간 동작: 앞 대화의 AI 구간 이름 고치기(옛 시험은 nodes.confirm을 썼다. 구간 확정 단계를 없앰, 구간 규격 §0.2)."""
+
     def setUp(self):
         super().setUp()
         self.ask([self.apply(self.candidates(3))])
         self.target = self.ns()["nodes"][0]["node_id"]
+        self.old_name = self.name()
+        self.chat.new_conversation()                      # 앞 대화의 AI 묶음 -> 고치려면 사람 확인
+
+    def name(self):
+        return next(n for n in self.ns()["nodes"] if n["node_id"] == self.target)["name"]
 
     def confirm_item(self):
-        out = self.ask([{"action": "nodes.confirm", "args": {"node_ids": [self.target]}, "why": "확정"}], "S1 확정해 줘")
+        out = self.ask([{"action": "nodes.apply", "args": {"set_rev": self.ns()["set_rev"],
+                                                          "ops": [{"op": "edit", "node_id": self.target, "name": "확인한 새 이름"}]},
+                         "why": "이름 고침"}], "S1 이름 고쳐 줘")
         item = out["items"][0]
         self.assertEqual(item["status"], "confirm", item)
         return item
@@ -166,7 +175,7 @@ class ConfirmTest(Base):
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["data"]["result"], "ok")
         node = next(n for n in self.ns()["nodes"] if n["node_id"] == self.target)
-        self.assertEqual(node["confirmed"]["by"], "홍길동")
+        self.assertEqual((node["name"], node["name_by"], node["confirmed"]), ("확인한 새 이름", "ai", None), "확정자 이름을 남기지 않음")
         res_ev = self.events.of("chat.action.result")[-1]
         self.assertEqual((res_ev["token"], res_ev["item"]["status"]), (item["token"], "applied"))
         self.assertEqual(self.records[-1]["confirmed_by"], "홍길동")
@@ -176,15 +185,14 @@ class ConfirmTest(Base):
         self.engine.settings["reviewer_name"] = ""
         r = self.engine.dispatch("chat.action.approve", {"token": item["token"]})
         self.assertEqual((r["ok"], r["error"]["code"]), (False, "no_reviewer"))
-        node = next(n for n in self.ns()["nodes"] if n["node_id"] == self.target)
-        self.assertFalse(node.get("confirmed"))
+        self.assertEqual(self.name(), self.old_name)
 
     def test_decline_does_not_run(self):
         item = self.confirm_item()
         r = self.engine.dispatch("chat.action.decline", {"token": item["token"]})
         self.assertTrue(r["ok"], r)
         self.assertEqual(self.events.of("chat.action.result")[-1]["item"]["status"], "declined")
-        self.assertFalse(next(n for n in self.ns()["nodes"] if n["node_id"] == self.target).get("confirmed"))
+        self.assertEqual(self.name(), self.old_name)
         again = self.engine.dispatch("chat.action.approve", {"token": item["token"]})
         self.assertTrue(again["ok"] and again["data"]["result"] == "duplicate" or not again["ok"], again)
 
@@ -193,7 +201,7 @@ class ConfirmTest(Base):
         r = self.engine.dispatch("chat.action.approve", {"token": "forged-token"})
         self.assertTrue(r["ok"])
         self.assertEqual(r["data"]["result"], "rejected")
-        self.assertFalse(any(n.get("confirmed") for n in self.ns()["nodes"]))
+        self.assertEqual(self.name(), self.old_name)
 
     def test_target_changed_after_the_box_was_shown_is_stale(self):
         item = self.confirm_item()
@@ -202,7 +210,7 @@ class ConfirmTest(Base):
         self.assertTrue(human["ok"], human)
         r = self.engine.dispatch("chat.action.approve", {"token": item["token"]})
         self.assertEqual(r["data"]["result"], "stale", r)
-        self.assertFalse(next(n for n in self.ns()["nodes"] if n["node_id"] == self.target).get("confirmed"))
+        self.assertEqual(self.name(), "사람이 고침")
 
     def test_new_conversation_drops_the_box(self):
         item = self.confirm_item()
@@ -211,7 +219,8 @@ class ConfirmTest(Base):
         self.assertFalse(r["ok"])
         self.assertEqual(r["error"]["code"], "closed")
 
-    def test_lock_unconfirmed_is_refused_with_a_reason(self):
+    def test_lock_is_refused_with_a_reason(self):
+        """잠금은 채팅 동작이 아니다(구간 규격 §0.2)."""
         out = self.ask([{"action": "nodes.lock", "args": {"node_ids": [self.target]}, "why": "잠금"}], "잠가 줘")
         item = out["items"][0]
         self.assertEqual(item["status"], "rejected", item)

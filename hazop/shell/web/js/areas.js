@@ -13,7 +13,7 @@ const EMPTY_NODES = { available: false, set_rev: 0, nodes: [], batches: [], outs
 
 export function resetAreas() {
   N.nodes.set({ list: EMPTY_NODES, sheetView: null, detail: null, focus: null, selection: [], card: null, checked: [], busy: false, error: null, needArchive: null });
-  clean.set({ choice: {}, lastByFormat: {}, data: {}, built: {}, bubble: null, cursor: -1 });      // 정리된 보기 자료·고른 보기도 앞 프로젝트의 것이다
+  clean.set({ choice: {}, lastByFormat: {}, data: {}, built: {} });      // 정리된 보기 자료·고른 보기도 앞 프로젝트의 것이다
   SC.reset();
   resetActionLog();
   resetAiReview();

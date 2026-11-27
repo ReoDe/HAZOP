@@ -140,7 +140,9 @@ class KgPanelFlowTest(ShellBase):
         self.search_and_pick(win, n["tag"])
         self.js(win, "import(new URL('js/panels/kg_state.js', document.baseURI).href).then((K) => K.showOnSheet(K.kg.get().detail.at))")
         self.assertTrue(wait_for(lambda: self.js(win, "window.__hz.store.get().sheet") == n["sheet"], 10))
-        self.assertEqual(self.js(win, "window.__hz.store.get().command.type"), "zoomTo")
+        lit = "JSON.stringify((((window.__hz.store.get().marks.bySheet || {})[window.__hz.store.get().sheet] || [])[0] || {groups: []}).groups.map((g) => g.ids))"
+        self.assertTrue(wait_for(lambda: self.js(win, lit) == json.dumps([[n["local_id"]]], separators=(",", ":")), 10), self.js(win, lit))
+        self.assertNotEqual(self.js(win, "window.__hz.store.get().command.type"), "zoomTo", "확대해 들어가지 않는다")
 
     def test_chat_open_event_opens_the_panel_state(self):
         win = self.window()

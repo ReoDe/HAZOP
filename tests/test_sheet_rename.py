@@ -66,7 +66,7 @@ class RenameTest(RenameCase):
         self.assertEqual(self.last_line()["sheets"], {old: "graph-SNP-M-101"})
         text = migrate.notice(nodes.load(project_ctx.project_graph(P)))
         self.assertIn("번호 미확정 도면 → SNP-M-101", text)
-        self.assertIn("확정은 그대로", text)
+        self.assertIn("구간 내용은 그대로", text)
 
     def test_r2_drawio_refs_move_to_the_new_name(self):
         a = self.add("SNP-M-101", "drawio")

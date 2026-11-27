@@ -20,7 +20,7 @@ from tests.test_screen_words import BANNED  # noqa: E402
 from tests.test_shell_auto_catch_up import Base as AutoBase  # noqa: E402
 from tests.test_shell_catch_up import PID  # noqa: E402
 
-SPEC_ORDER = ["apply_failed", "no_sheets", "recheck", "inputs_pending", "sheet_released", "sheet_choose", "sheet_skipped", "titleblock", "number_held", "ai_unreviewed", "ai_candidates", "sheet_confirm", "nodes_none", "nodes_draft",
+SPEC_ORDER = ["apply_failed", "no_sheets", "recheck", "inputs_pending", "sheet_released", "sheet_choose", "sheet_skipped", "titleblock", "number_held", "ai_unreviewed", "ai_candidates", "sheet_confirm", "nodes_none",
               "nodes_unrun", "results_unjudged", "ie_none", "ie_draft"]
 GO = re.compile(r"^(panel:[a-z]+(#[a-z_]+)?|queue:(ai|lost)|confirm:[a-z_]+\.[a-z_]+)$")
 

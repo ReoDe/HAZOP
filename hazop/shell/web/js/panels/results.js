@@ -1,8 +1,9 @@
 // 분석 결과 패널(규격 §2.1·§2.3 ⑤, 시안 4번): 구간×편차 행렬(가상 스크롤), 고른 칸의 워크시트와 행 동작 막대(승인·수정·기각·보류 + 사유),
 // 분석 실행·멈춤·한도 표시, 내보내기(Excel·초기사건 인계 묶음), 권고 목록과 추적(INTENT §3.6). 저장하는 자료는 엔진만 쓰고 여기서는 보여 주고 명령만 보낸다.
 // 모델·도면에서 온 글(원인·결과·권고·이름)은 ${}로만 넣는다(HTML로 해석되지 않는다).
+import { useLightDismiss } from "../ui/light_dismiss.js";
 import { html } from "../ui/html.js";
-import { useState } from "../../vendor/hooks.module.js";
+import { useRef, useState } from "../../vendor/hooks.module.js";
 import { store } from "../store.js";
 import { Icon } from "../ui/icon.js";
 import { Btn, Chip, Notice } from "../ui/parts.js";
@@ -13,7 +14,7 @@ import { checkText, lostText } from "./nodes_logic.js";
 import { BasisBlock, CauseCell, ConsequenceCell, EditMore, SafeguardCell, changedFields, editState } from "./results_detail.js";
 
 // 상태 이름은 Excel(study_xlsx STATUS_LABELS)·이전 화면과 같게 '승인'으로 맞춘다(2026-11-14 A9 검토)
-const STATUS = { proposed: ["AI 초안", "ai"], approved: ["승인", "ok"], revised: ["수정", "accent"], rejected: ["기각", "plain"], on_hold: ["보류", "warn"] };
+const STATUS = { proposed: ["제안됨", "plain"], approved: ["승인", "ok"], revised: ["수정", "accent"], rejected: ["기각", "plain"], on_hold: ["보류", "warn"] };
 const RISK_CLASS = (r) => (r == null ? "" : "risk-" + Math.min(5, Math.max(1, r)));
 // 항목이 없는 칸의 종류: [칸에 쓰는 짧은 이름, 모양, Excel 행 이름(엔진이 label로도 준다)]. 이름은 Excel 칸 표시 행(study_xlsx.CELL_ROW_LABELS)과 같다.
 // 엔진(api_results.cell_kind)이 kind·reason·label을 준다. 없으면 '아직 분석 안 함'.
@@ -34,7 +35,7 @@ function Kpi({ kpi }) {
   return html`<div class="acts-row kpi">
     <${Chip}>분석 ${kpi.analyzed}/${kpi.cells}칸<//>
     <${Chip}>항목 ${kpi.entries}<//>
-    <${Chip} kind=${kpi.unreviewed ? "warn" : ""} title="검토하지 않은 항목(AI 초안·보류)">미검토 ${kpi.unreviewed}<//>
+    <${Chip} kind=${kpi.unreviewed ? "warn" : ""} title="검토하지 않은 항목(제안됨·보류)">미검토 ${kpi.unreviewed}<//>
     ${kpi.on_hold ? html`<${Chip} kind="warn">보류 ${kpi.on_hold}<//>` : null}
     <${Chip}>승인 ${kpi.approved}<//>
     ${kpi.failed_cells ? html`<${Chip} kind="warn" title="마지막 AI 실행이 실패한 칸">실패 ${kpi.failed_cells}<//>` : null}</div>`;
@@ -76,11 +77,6 @@ function RunState({ run }) {
   return html`<${Notice} kind=${l.reason === "stopped" ? "info" : "warn"} icon="alert-triangle">AI 분석${l.reason === "stopped" ? "을 멈췄습니다" : "에서 호출이 실패했습니다"}${l.failed_calls ? "(실패 " + l.failed_calls + "회)" : ""}.${test}${resume}<//>`;
 }
 
-/** 빠지는 구간 가운데 도면이 바뀌어 찾지 못한 구성요소가 남은 것(판 이전이 확정을 푼 구간): 그냥 초안과 갈라 말한다. */
-function leftLost(left) {
-  const n = left.filter((x) => x.lost > 0).length;
-  return n ? ". 그 가운데 " + n + "개는 도면이 바뀌어 찾지 못한 구성요소가 있어 확정이 풀렸습니다(구간에서 다시 확인한 뒤 확정하세요)" : "";
-}
 
 function PlanCard() {
   const p = R.useResults((s) => s.plan);
@@ -91,8 +87,6 @@ function PlanCard() {
     ${p.empty_text ? html`<p>${p.empty_text}</p>` : html`<p>${p.cells}칸을 ${p.calls}번 호출해 분석합니다(약 ${Math.max(1, Math.round(p.seconds / 60))}분).</p>
       ${p.conn ? html`<div class=${"small" + (p.conn.paid ? " conn-paid" : "")} aria-label="쓸 연결">${p.conn.method_name} · ${p.conn.model_name} · ${p.conn.cost_text}</div>` : null}
       ${p.locked_out ? html`<div class="muted small">잠근 구간 ${p.locked_out}개는 다시 분석하지 않습니다.</div>` : null}`}
-    ${p.left_out && p.left_out.length ? html`<${Notice} kind="warn" icon="alert-triangle">확정하지 않은 구간 ${p.left_out.length}개는 빠집니다: ${p.left_out.slice(0, 5).map((n) => n.node_id).join(", ")}${p.left_out.length > 5 ? " 외 " + (p.left_out.length - 5) + "개" : ""}${leftLost(p.left_out)}
-      <div class="acts-row"><${Btn} sm=${true} label="빠지는 구간 보기" onClick=${() => { R.closePlan(); store.set({ panel: "nodes" }); import("./nodes_state.js").then((N) => { if (N.nodes.get().focus !== p.left_out[0].node_id) N.focusNode(p.left_out[0].node_id); }); }}>구간 보기<//></div><//>` : null}
     ${!p.can_start && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.guide || "AI 연결을 쓸 수 없습니다."}<//>` : null}
     ${p.needs_terms && p.can_start ? html`<${Notice} kind="info">구독 사용 안내를 확인한 것으로 기록합니다.<//>` : null}
     ${paid && !p.empty_text ? html`<${Notice} kind="warn" icon="alert-triangle">${p.conn.confirm_text}
@@ -131,8 +125,10 @@ function ExportCard({ s, onDone }) {
       <${Btn} label="취소" onClick=${onDone}>취소<//></div></div>`;
 }
 
-function Header({ s }) {
+export function Header({ s }) {
   const [menu, setMenu] = useState(false);
+  const runMenu = useRef(null);
+  useLightDismiss(menu, () => [runMenu.current, document.querySelector('.res-head button[aria-label="분석 실행"]')], () => setMenu(false), { esc: true });
   const [exp, setExp] = useState(false);
   const exporting = R.useResults((x) => x.exporting);
   const view = R.useResults((x) => x.view);
@@ -148,7 +144,7 @@ function Header({ s }) {
       <${Btn} sm=${true} icon="file-export" label="Excel 내보내기 범위 고르기" title=${s.stale ? "도면 변경을 반영한 뒤 내보냅니다(검토구간 패널)" : null} disabled=${exporting || !!s.stale} onClick=${() => setExp(!exp)}>Excel<//>
       <${Btn} sm=${true} icon="file-export" label="초기사건 인계 묶음 내보내기" disabled=${exporting} onClick=${R.exportIe}>초기사건 인계<//></span></div>
     ${exp ? html`<${ExportCard} s=${s} onDone=${() => setExp(false)} />` : null}
-    ${menu ? html`<div class="acts-row runmenu" role="menu">
+    ${menu ? html`<div class="acts-row runmenu" ref=${runMenu} role="menu">
       <${Btn} sm=${true} label="모든 구간 분석" onClick=${() => { setMenu(false); R.planRun("all"); }}>모든 구간<//>
       <${Btn} sm=${true} label="고른 구간 분석" onClick=${() => { setMenu(false); R.planRun("node"); }}>고른 구간<//>
       <${Btn} sm=${true} label="고른 칸 분석" onClick=${() => { setMenu(false); R.planRun("cell"); }}>고른 칸<//>
@@ -193,7 +189,7 @@ const text = (v) => (typeof v === "string" ? v : "");
 function Verdict({ e }) {
   const [st, label] = STATUS[e.status] || [e.status, ""];
   const v = e.verdict || {};
-  return html`<div><${Chip} kind=${label}>${st}<//>${v.by ? html` <span class="muted small">${v.by}</span>` : null}
+  return html`<div><${Chip} kind=${label}>${st}<//>${e.scope_changed ? html` <${Chip} kind="warn" title="구간 범위가 바뀐 뒤 아직 다시 확인하지 않은 항목">범위 바뀜<//>` : null}${v.by ? html` <span class="muted small">${v.by}</span>` : null}
     ${v.reason ? html`<div class="small reason">${v.reason}</div>` : null}</div>`;
 }
 
@@ -245,7 +241,7 @@ function Worksheet() {
     <div class="nd-h"><b>${c.node.node_id}</b> ${c.node.name || ""} <span class="muted">›</span> <b>${c.deviation.label || c.deviation.deviation_id}</b>${c.deviation.label_en ? html` <span class="muted en">${c.deviation.label_en}</span>` : null}
       <span class="muted small">가이드워드 ${withEn(c.deviation.guideword || "", c.deviation.guideword_en)}</span>
       <${Chip}>${cell.state === "analyzed" ? "분석함" : cell.state === "excluded" ? "제외" : "분석 전"}<//>
-      ${c.intent ? html`<div class="small intent"><span class="muted">설계 의도</span> ${c.intent.text} <span class="muted">(${c.intent.source})</span></div>` : html`<div class="small muted intent">설계 의도: 적힌 것 없음</div>`}
+      ${c.intent ? html`<div class="small intent"><span class="muted">설계 의도</span> ${c.intent.text}</div>` : html`<div class="small muted intent">설계 의도: 적힌 것 없음</div>`}
       ${cell.scope_changed ? html`<${Chip} kind="warn" title="구간 범위가 바뀐 뒤 아직 다시 확인하지 않은 칸">범위 바뀜<//>` : null}
       <span class="acts"><${Btn} sm=${true} label="도면에서 보기" title="패널을 닫고 이 구간을 도면에서 봅니다" onClick=${() => R.viewOnSheet(c.node.node_id)}>도면에서 보기<//>
         <${Btn} sm=${true} kind="ghost" icon="x" label="워크시트 닫기" onClick=${() => R.results.set({ active: null, cell: null })} /></span></div>
@@ -253,7 +249,7 @@ function Worksheet() {
     ${cell.ai_run && cell.ai_run.status === "failed" ? html`<${Notice} kind="warn" icon="alert-triangle">마지막 AI 실행이 이 칸에서 실패했습니다: ${cell.ai_run.error}<//>` : null}
     ${mk && KIND[mk.kind] && mk.kind !== "failed" && !cell.entries.length ? html`<${Notice} kind="info"><b>${mk.label || KIND[mk.kind][2]}</b> · ${mk.reason}<//>`
       : cell.ai_run && cell.ai_run.note ? html`<div class="muted small">${cell.ai_run.note}</div>` : null}
-    ${cell.entries.length === 0 ? html`<div class="muted">${mk && KIND[mk.kind] ? "항목이 없습니다." : "항목이 없습니다. '분석 실행'으로 AI 초안을 받으세요."}</div>` : cell.entries.map((e) => html`<div class="ent" key=${e.entry_id}>
+    ${cell.entries.length === 0 ? html`<div class="muted">${mk && KIND[mk.kind] ? "항목이 없습니다." : "항목이 없습니다."}</div>` : cell.entries.map((e) => html`<div class="ent" key=${e.entry_id}>
       <div class="entgrid">
         <div><div class="lbl">원인</div><${CauseCell} e=${e} c=${c} /></div>
         <div><div class="lbl">결과</div><${ConsequenceCell} e=${e} /></div>

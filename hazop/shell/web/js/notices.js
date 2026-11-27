@@ -5,7 +5,7 @@ import { store, useStore } from "./store.js";
 import { read } from "./bridge.js";
 import { Icon } from "./ui/icon.js";
 import { focusNode } from "./panels/nodes_state.js";
-import { demotedNoticeText, lostNoticeText } from "./panels/nodes_logic.js";
+import { lostNoticeText } from "./panels/nodes_logic.js";
 
 // 닫은 알림(id|판|글). 글이 바뀌거나, 같은 글이라도 도면이 다시 읽혀 판(key)이 바뀌면 새 알림이다(같은 수를 새로 잃어도 다시 알린다)
 const closed = new Set();
@@ -30,14 +30,6 @@ export function lostNotice(info) {
   const text = lostNoticeText(info);
   if (!text) return null;
   return { id: "lost", key: info.graph_version || "", kind: "warn", text, action: { label: "그 자리로", run: () => { store.set({ panel: "nodes" }); if (info.first_node) focusNode(info.first_node); } } };
-}
-
-/** 확정을 푼 구간 알림(study.lost 사건의 demoted). 첫 구간으로 가는 단추. */
-export function demotedNotice(info) {
-  const ids = (info && info.demoted) || [];
-  const text = demotedNoticeText(ids);
-  if (!text) return null;
-  return { id: "demoted", key: info.graph_version || "", kind: "warn", text, action: { label: "그 자리로", run: () => { store.set({ panel: "nodes" }); focusNode(ids[0]); } } };
 }
 
 /** 읽어 온 확인 필요(구간 목록의 check)로 알림을 맞춘다: 있으면 띄우고(닫은 글은 빼고) 없어졌으면 지운다. 읽기 실패는 조용히 넘어간다. */

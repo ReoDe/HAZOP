@@ -1,6 +1,7 @@
 // 도면 탭의 추출 확인 창(web/js/canvas/extract_check.js, 화면 단순화 B): 무엇을 어떤 색으로 칠할지와 구성요소 속성 글.
 import { LEGEND, extractGroups, neighborsOf, segmentsOf } from "../js/canvas/extract_check.js";
 import { resolveMark, styleColor } from "../js/canvas/marks.js";
+import { viewRect } from "../js/sheet_host.js";
 import { syncInputsNotice } from "../js/next/next.js";
 import { store } from "../js/store.js";
 import { deliver } from "../js/bridge.js";
@@ -25,6 +26,11 @@ const CLEAN_REASONS = { unconfirmed: [{ id: "f", reason: "unknown_symbol" }, { i
 const CLEAN = { items: { p1: { ends: [{ node: "a", status: "connected" }, { node: "b", status: "connected" }] }, p2: { ends: [{ node: "b", status: "connected" }, { node: null, status: "open" }] } } };
 
 export const tests = [
+  { name: "도면 위 말풍선은 보기(이동·확대)를 따라간다: 누른 때의 자리를 지금 보기로 옮긴다", run(assert) {
+    const r = viewRect({ x: 100, y: 50, w: 20, h: 10 }, { x: 10, y: 10, k: 1 }, { x: 40, y: 20, k: 2 });
+    assert.equal(r, { x: (100 - 10) * 2 + 40, y: (50 - 10) * 2 + 20, w: 40, h: 20 });
+    assert.equal(viewRect({ x: 1, y: 1 }, null, { x: 0, y: 0, k: 1 }), null);
+  } },
   { name: "추출 확인 창: 색은 셋(읽음·읽지 못함·AI 후보 있음). 끊긴 연결은 읽지 못함에, 도면 연결은 읽음에 든다", run(assert) {
     const g = extractGroups(SHEET, CLEAN_REASONS);
     assert.equal(g.counts, { ok: 3, unknown: 5, ai: 0 });

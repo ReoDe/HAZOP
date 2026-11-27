@@ -5,7 +5,9 @@ execute(pg, name, args, author=…, confirmed_by=…, set_rev=…)는 저장본�
 - author(누가 썼나, 기본값 없음): "user"는 사람이 화면에서 한 일, "ai"는 채팅에서 AI가 낸 동작이다. AI가 쓴 동작은 사람이
   확인 상자를 눌러도 origin ai·name_by ai로 저장하고 AI 누적 상한에 센다.
 - confirmed_by(누가 눌렀나): 사람 이름. 사람이 한 일(author user)과 확정·확정 해제·잠금·풀기에는 꼭 있어야 하고, AI 동작에서는
-  사람이 확인 상자를 눌렀을 때만 넣는다(그때 AI가 사람 구간을 고치는 동작과 '나머지' 단계가 열림).
+  사람이 확인 상자를 눌렀을 때만 넣는다(그때 AI가 사람 구간을 고치는 동작이 열림).
+- 구간 확정 단계는 없앴다(규격 §0.2, 2026-11-26). 새 구간은 만들면 곧바로 분석에 들고, 잠금이 아니면 바로 고친다. 더하기와 빼기는
+  edit_members 한 명령(묶음 하나, 저장 한 번)으로 한다. confirm·unconfirm·lock은 옛 기록과 시험을 위해 남기되 화면·채팅에서 부르지 않는다.
 - 시각(at)은 엔진이 채운다(부르는 쪽이 넘기지 않음).
 - 저장 순서(두 파일이 어긋나지 않게): 바뀐 ⑤ 결과를 먼저 옆 파일(<결과>.pending.json)에 '이 집합 판(지문)을 위한 것'으로
   적고, 집합을 지문 대조로 쓰고, 그다음 결과를 지문 대조로 쓴다. 집합 쓰기가 막히면 결과는 바뀌지 않는다. 집합을 쓴 뒤
@@ -59,6 +61,26 @@ def _one(op):
     return lambda ns, doc, pg, a, ctx: _edit(ns, doc, pg, [op(a)], ctx)
 
 
+def _ids(a, key):
+    v = a.get(key)
+    if v is None:
+        return []
+    if not (isinstance(v, list) and all(isinstance(x, str) and x for x in v)):
+        raise _BadArgs([(key, "%s는 구성요소 ID 글자의 목록이어야 함" % key)])
+    return list(dict.fromkeys(v))
+
+
+def _edit_members(ns, doc, pg, a, ctx):
+    """구성요소 더하기와 빼기를 한 번에(edit op 하나 = 묶음 하나 = 저장 한 번). 둘 다 비었거나 같은 구성요소가 양쪽에 있으면 bad_args."""
+    add, remove = _ids(a, "add"), _ids(a, "remove")
+    if not add and not remove:
+        raise _BadArgs([("add", "더하거나 뺄 구성요소가 없음")])
+    both = sorted(set(add) & set(remove))
+    if both:
+        raise _BadArgs([("remove", "같은 구성요소를 더하고 빼려 함(%s)" % ", ".join(both[:3]))])
+    return _edit(ns, doc, pg, [{"op": "edit", "node_id": a.get("node_id"), "add": add, "remove": remove}], ctx)
+
+
 def _each(fn):
     """node_ids 목록의 구간마다 fn을 차례로(하나라도 막히면 아무것도 저장하지 않음)."""
     def run(ns, doc, pg, a, ctx):
@@ -81,6 +103,7 @@ COMMANDS = {
     "create": _create,
     "add_members": _one(lambda a: {"op": "edit", "node_id": a.get("node_id"), "add": list(a.get("members") or [])}),
     "remove_members": _one(lambda a: {"op": "edit", "node_id": a.get("node_id"), "remove": list(a.get("members") or [])}),
+    "edit_members": _edit_members,
     "rename": _one(lambda a: {"op": "edit", "node_id": a.get("node_id"), "name": a.get("name") or ""}),
     "set_design_intent": _one(lambda a: {"op": "edit", "node_id": a.get("node_id"), "design_intent": a.get("text") or ""}),
     "merge": _one(lambda a: {"op": "merge", "node_ids": list(a.get("node_ids") or [])}),
@@ -121,6 +144,19 @@ class _BadArgs(ValueError):
     def __init__(self, reasons):
         super().__init__("; ".join("%s: %s" % r for r in reasons))
         self.reasons = reasons
+
+
+def _fresh_digests(ns, pg):
+    """고친 구간(지문이 빠진 구간)의 내용 지문(md3-)을 지금 그래프로 센다(ns를 고침). 확정 단계가 없어 적용됨 구간도 분석에 들므로,
+    다음에 도면을 다시 읽을 때 무엇이 바뀌었는지 가를 기준을 고친 그때 남긴다(규격 §0.2). 집합이 그래프보다 옛 판이면 세지 않는다."""
+    if nodes.is_stale(ns, pg):
+        return
+    from hazop.study import migrate
+    have = ns.get("member_digest") or {}
+    todo = {n["node_id"]: n["members"] for n in ns["nodes"]
+            if n.get("members") and not str(have.get(n["node_id"]) or "").startswith("md3-")}
+    if todo:
+        ns["member_digest"] = dict(have, **migrate.node_digests(pg, todo))
 
 
 def _refused(name, reasons, set_rev=None, code="rule"):
@@ -176,7 +212,7 @@ def execute(pg, name, args, *, author, confirmed_by=None, set_rev=None, request=
     if (author == "user" or name in HUMAN_COMMANDS) and not confirmed_by:
         return _refused(name, [("confirmed_by", "사람이 한 일·확정·잠금·찾지 못한 구성요소 버리기에는 누른 사람 이름이 있어야 함")], code="bad_actor")
     if name in HUMAN_COMMANDS and author != "user":
-        return _refused(name, [("author", "확정·확정 해제·잠금·풀기·찾지 못한 구성요소 버리기는 사람만 함(채팅 규격 §4.2)")], code="bad_actor")
+        return _refused(name, [("author", "확정·확정 해제·잠금·잠금 해제·찾지 못한 구성요소 버리기는 사람만 함(채팅 규격 §4.2)")], code="bad_actor")
     if author == "ai" and set_rev is None:
         return _refused(name, [("set_rev", "AI 동작은 읽은 구간 판(set_rev)을 함께 보내야 함")], code="bad_actor")
     with project_lock(pg.get("project_id")):
@@ -215,6 +251,7 @@ def _execute_locked(pg, name, args, fn, author, confirmed_by, set_rev, request):
     if new is ns and new_doc is base:  # 바뀐 것 없음: 아무것도 쓰지 않음
         return {"ok": True, "command": name, "changed": False, "set_rev": ns["set_rev"], "batch_id": None,
                 "node_ids": [], "refused": []}
+    _fresh_digests(new, pg)
     write_results = new_doc is not base and (doc is not None or any(c.get("entries") for c in new_doc.get("cells") or []))
     try:
         if write_results:
@@ -290,7 +327,7 @@ def drawing_confirm_text(graph_id, number, held, approved=None, groups=None):
     if groups is not None:
         facts.append("초기사건 그룹 %d개" % groups)
     return ("%s 도면의 구성요소를 쓰는 것: %s. 도면을 빼면 새 구간 제안에서만 빠지고, 이것들은 그대로 분석·인계됩니다"
-            "(확정 그룹도 초안으로 내려가지 않음). 구간까지 분석에서 빼려면 그 구간의 확정을 푸세요."
+            "(확정 그룹도 초안으로 내려가지 않음). 구간까지 분석에서 빼려면 그 구간을 지우세요(판정이 있으면 보관됩니다)."
             % (number or graph_id, ", ".join(facts)))
 
 

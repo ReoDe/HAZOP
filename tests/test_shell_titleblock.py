@@ -137,13 +137,11 @@ class CommandTest(Base):
         self.assertEqual([r["to"] for r in done["renames"]], ["graph-SNP-M-101"], "결과의 이름 바뀜(열린 도면을 새 이름으로)")
         self.assertEqual(done["carries"], dry["carries"], "dry와 결과가 같다")
 
-    def test_the_unconfirmed_number_notice_no_longer_says_confirm_before_sections(self):
-        """시트 정체 U5c(설계 §6 4): 번호를 나중에 확정해도 구간이 따라가므로 '구간을 만들기 전에 확정' 안내를 하지 않는다."""
+    def test_the_unconfirmed_number_notice_is_not_sent_to_the_screen(self):
+        """화면 단순화: 화면에서 번호를 확정하는 길이 없어 '번호를 아직 확정하지 않았습니다'는 내지 않는다. 다른 알림은 그대로다."""
         from hazop.graph import sheets
         from hazop.shell import api_drawings
-        n = api_drawings._notice({"code": sheets.CONFIRM_FIRST, "text": sheets.TEXTS[sheets.CONFIRM_FIRST]})
-        self.assertNotIn("만들기 전에", n["text"])
-        self.assertIn("따라갑니다", n["text"])
+        self.assertIsNone(api_drawings._notice({"code": sheets.CONFIRM_FIRST, "text": sheets.TEXTS[sheets.CONFIRM_FIRST]}))
         self.assertEqual(api_drawings._notice({"code": "x", "text": "y"}), {"code": "x", "text": "y"})
 
     def test_material_without_extraction_is_confirmed_without_a_job(self):

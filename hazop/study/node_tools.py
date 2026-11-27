@@ -3,16 +3,15 @@
 - apply_nodes: 채팅의 제안 동작(node.create·update·merge·split·remove)과 도면에서 고르기가 부른다. ops 전체를 묶음(B<번호>)
   하나로 적용하거나, 하나라도 규칙에 걸리면 아무것도 바꾸지 않고 ValueError(무엇이 왜인지 목록)를 낸다.
 - undo_batch: 묶음 하나를 되돌린다. op마다 '구간 삭제'(add 되돌림)·'편집 복원'(edit 되돌림)·'되살림'(remove 되돌림)을
-  구분하고, 그 사이 바뀐 구간·확정 구간·사람 판정이 있는 칸·AI가 사람 묶음을 되돌리는 경우를 막는다. 되돌리기도 새 묶음이다.
+  구분하고, 그 사이 바뀐 구간·잠긴 구간·사람 판정이 있는 칸·AI가 사람 묶음을 되돌리는 경우를 막는다. 되돌리기도 새 묶음이다.
 - 두 함수 모두 ⑤ 결과를 받는다(병합·삭제의 칸 처리와 되돌리기의 칸 검사). 결과가 없으면 None을 넘긴다(칸이 없는 상태).
 - AI가 부르는 읽기 도구(§6.2, 채팅 규격 §3.2): find_major_equipment·make_candidates·outside_components. 집합을 바꾸지
   않고, 결과에 상한과 쪽 나누기(cursor)가 있다. make_candidates는 분할 스크립트(segment.cut)를 크기 매개변수(§7)로 돌린
   후보이고, cand_id는 (그래프 판, 매개변수 지문, 구성요소 집합)의 해시라 같은 입력이면 같다. 같은 (판, 매개변수, 범위)면
   분할 결과를 캐시해 쪽을 넘길 때 다시 자르지 않는다.
-- 구간 만들기의 누적 상한(채팅 규격 §4.5): 사람이 아직 확인하지 않은 AI 구간(pending_ai)과 이번 요청의 새 구간을 합쳐
-  5개까지는 바로 적용(대표 단계). 넘으면 '나머지' 단계로, 대표 구간을 만든 메시지와 다른 새 사용자 메시지(user_turn)에서
-  사람이 확인 상자를 눌렀을 때(confirmed_rest)만 한 요청 30개까지 적용하고, 그때 앞의 AI 묶음은 확인된 것(human_seen)이 된다.
-  요청 하나는 묶음 하나다(같은 request_id로 두 번 적용하지 않음).
+- 구간 만들기의 상한(채팅 규격 §4.5, 2026-11-26 바뀜): AI 요청 하나는 새 구간 30개까지다. 확정 단계를 없애면서 '확인 전 AI
+  구간 5개'와 '대표 구간 뒤 나머지' 단계는 없앴다(규격 §0.2). AI 구간은 사람 확인 없이 분석에 들고, 인계에는 사람이 승인한 항목만
+  든다(hazop.ie.bundle.approved_entries). 요청 하나는 묶음 하나다(같은 request_id로 두 번 적용하지 않음).
 """
 
 import copy
@@ -26,8 +25,7 @@ from hazop.study import nodes, segment
 from hazop.study import results as res
 from hazop.study.node_review import TAG_LIKE, drawing_tags
 
-REPRESENTATIVE_LIMIT = 5
-REST_LIMIT = 30
+REST_LIMIT = 30            # AI 요청 하나에서 만드는 새 구간 상한
 CANDIDATE_LIMIT = 30       # make_candidates 한 쪽 상한
 LIST_LIMIT = 200           # find_major_equipment·outside_components 한 쪽 상한
 GRANULARITIES = ("coarse", "normal", "fine")
@@ -320,8 +318,8 @@ def outside_components(pg, node_set, scope=None, only_sources=True, limit=100, c
 # ---------------------------------------------------------------- 누적 상한(채팅 규격 §4.5)
 
 def pending_ai(node_set):
-    """사람이 아직 확인하지 않은 AI 구간 수: origin ai·적용됨이고, 지금 구간을 만든 묶음이 AI 묶음이며 human_seen이 아님.
-    사람이 고치면 구간의 batch_id가 사람 묶음으로 바뀌어 빠지고, 확정하면 적용됨이 아니라 빠진다."""
+    """사람이 아직 손대지 않은 AI 구간 수(화면 안내용, 상한이 아님): origin ai·적용됨이고, 지금 구간을 만든 묶음이 AI 묶음이며
+    human_seen이 아님. 사람이 고치면 구간의 batch_id가 사람 묶음으로 바뀌어 빠진다."""
     batches = {b["batch_id"]: b for b in node_set.get("batches") or []}
     out = 0
     for n in node_set["nodes"]:
@@ -330,13 +328,6 @@ def pending_ai(node_set):
                 and not b.get("human_seen"):
             out += 1
     return out
-
-
-def _pending_turns(node_set):
-    batches = {b["batch_id"]: b for b in node_set.get("batches") or []}
-    return {batches[n["batch_id"]].get("user_turn") for n in node_set["nodes"]
-            if n.get("origin") == "ai" and nodes.node_state(n) == "applied" and n.get("batch_id") in batches
-            and batches[n["batch_id"]].get("origin") == "ai" and not batches[n["batch_id"]].get("human_seen")}
 
 
 def _node(ns, nid):
@@ -427,10 +418,7 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
             why.append((label, "없는 구간"))
             return None
         if nodes.node_state(n) == "locked":
-            why.append((label, "잠긴 구간은 %s할 수 없음" % kind))
-            return None
-        if nodes.is_active(n):
-            why.append((label, "확정 구간은 %s할 수 없음(사람이 확정을 해제한 뒤)" % kind))
+            why.append((label, "잠긴 구간은 %s할 수 없음(사람이 이유를 적고 잠금을 푼 뒤)" % kind))
             return None
         if ai and n.get("origin") != "ai" and not confirmed_by:
             why.append((label, "AI가 사람·옛 규칙 구간을 %s하려면 사람이 확인해야 함(채팅 규격 §4.3)" % kind))
@@ -511,6 +499,11 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
             members = sorted((set(n["members"]) | set(op.get("add") or [])) - set(op.get("remove") or []))
             if not members_ok(label, members):
                 continue
+            if ai and set(members) != set(n["members"]) and (out_res is None or judged(out_res, n["node_id"])):
+                # 채팅 동작 층(hazop.chat.actions §4.3 마지막 줄)과 같은 규칙: 판정이 있는 구간의 구성요소는 사람만 바꾼다(§4.4)
+                why.append((label, "칸에 판정이 있는 구간의 구성요소는 사람만 바꿈(§4.4)" if out_res is not None
+                            else "⑤ 결과 없이 AI가 구성요소를 바꿀 수 없음(칸 검사가 필요함)"))
+                continue
             n["members"] = members
         elif kind == "merge":
             ids = list(dict.fromkeys(op.get("node_ids") or []))
@@ -559,23 +552,12 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
                 out_res = dict(out_res, cells=[c for c in out_res["cells"] if c.get("node_id") != n["node_id"]])
             out["nodes"] = [x for x in out["nodes"] if x is not n]
     adds = len({n["node_id"] for n in out["nodes"]} - {n["node_id"] for n in node_set["nodes"]})  # 분할로 생긴 구간도 셈
-    seen_rest = False
     if ai:
         rid = request.get("request_id")
         if rid and any(b.get("request_id") == rid for b in node_set.get("batches") or []):
             why.append(("요청", "요청 하나는 묶음 하나(같은 요청 %s로 이미 적용함)" % rid))
-        pending = pending_ai(node_set)
-        if adds and pending + adds > REPRESENTATIVE_LIMIT:
-            turn = request.get("user_turn")
-            if not (request.get("confirmed_rest") and confirmed_by):
-                why.append(("요청", "확인하지 않은 AI 구간 %d개 + 이번 %d개가 %d개를 넘음: 사람이 확인 상자를 눌러야 함"
-                            % (pending, adds, REPRESENTATIVE_LIMIT)))
-            elif not turn or turn in _pending_turns(node_set):
-                why.append(("요청", "'나머지'는 대표 구간을 본 뒤의 새 사용자 메시지에서만 함(같은 메시지 안에서 이어 만들지 않음)"))
-            elif adds > REST_LIMIT:
-                why.append(("요청", "한 요청에서 만들 수 있는 구간은 %d개, 요청은 %d개" % (REST_LIMIT, adds)))
-            else:
-                seen_rest = True
+        if adds > REST_LIMIT:
+            why.append(("요청", "한 요청에서 만들 수 있는 구간은 %d개, 요청은 %d개" % (REST_LIMIT, adds)))
     seen = {}
     for n in out["nodes"]:
         key = frozenset(n["members"])
@@ -588,10 +570,6 @@ def apply_nodes(node_set, results, pg, ops, request, origin, set_rev, at=None, b
         raise Refused(why)
     if not nodes.batch_ops(node_set, out):  # 바뀐 것이 없음: 묶음·판(set_rev)·이력을 건드리지 않고 묶음 ID 없이 돌려줌
         return node_set, results, None
-    if seen_rest:  # 확인 상자를 눌렀으므로 앞의 AI 묶음은 사람이 본 것
-        for b in out.get("batches") or []:
-            if b.get("origin") == "ai" and not b.get("human_seen"):
-                b["human_seen"] = {"at": at, "by": confirmed_by}
     out = nodes._record_batch(node_set, out, "apply", origin, at, request=request,
                               tool=request.get("tool"), model=request.get("model"))
     out["history"].append(nodes.store_io.history_row("apply", {"detail": {
@@ -639,17 +617,18 @@ def undo_problems(node_set, results, batch_id, requested_by):
         if requested_by == "ai" and nodes.ever_confirmed(node_set, nid):
             out.append((nid, "사람이 확정한 적 있는 구간이라 AI 되돌리기로 지우거나 바꾸지 않음(사람이 ④에서 되돌림)"))
             continue
-        if cur is not None and nodes.is_active(cur):
-            out.append((nid, "확정·잠금 구간(사람이 확정을 먼저 해제해야 함)"))
+        if cur is not None and nodes.node_state(cur) == "locked":
+            out.append((nid, "잠긴 구간(사람이 이유를 적고 잠금을 먼저 풀어야 함)"))
             continue
         if (cur is None) != (expect is None) or (cur is not None and cur != expect):
             out.append((nid, "그 사이 바뀜(뒤 묶음이나 사람이 고침. 뒤 묶음부터 되돌릴 것)"))
             continue
         if o["op"] == "add" and judged(results, nid):
             out.append((nid, "구간 삭제인데 칸에 판정이 있음(옮길 곳 또는 보관을 사람이 고를 것)"))
-        elif o["op"] == "edit" and nodes.analysis_input(o["before"]) != nodes.analysis_input(cur) \
+        elif o["op"] == "edit" and requested_by == "ai" and nodes.analysis_input(o["before"]) != nodes.analysis_input(cur) \
                 and _has_human(results, nid):
-            out.append((nid, "편집 복원으로 분석 판이 바뀌는데 칸에 사람 판정 항목이 있음"))
+            # 사람의 되돌리기는 고치기와 같다: 판정은 칸에 남고 '범위 바뀜'이 붙는다(규격 §0.2). AI는 사람 판정이 있는 구간을 바꾸지 않는다
+            out.append((nid, "편집 복원으로 분석 판이 바뀌는데 칸에 사람 판정 항목이 있음(사람이 ④에서 되돌림)"))
         elif o["op"] == "remove" and _node(node_set, nid) is not None:
             out.append((nid, "같은 ID의 구간이 이미 있음"))
     return out
@@ -670,6 +649,9 @@ def undo_batch(node_set, results, batch_id, set_rev, by, requested_by, at=None):
     b = next(x for x in node_set["batches"] if x["batch_id"] == batch_id)
     out = copy.deepcopy(node_set)
     out_res = results
+
+    def cur_of(nid):
+        return _node(node_set, nid)
     for o in reversed(b["ops"]):
         nid = o["node_id"]
         if o["op"] == "add":
@@ -677,8 +659,8 @@ def undo_batch(node_set, results, batch_id, set_rev, by, requested_by, at=None):
             if _cells_of(out_res, nid):
                 out_res = dict(out_res, cells=[c for c in out_res["cells"] if c.get("node_id") != nid])
         elif o["op"] == "edit":
-            restored = copy.deepcopy(o["before"])
-            restored["state"], restored["confirmed"] = "applied", None
+            restored = copy.deepcopy(o["before"])  # 상태는 지금 그대로(잠긴 구간은 위에서 막음): 옛 확정 기록을 지우지 않는다
+            restored["state"], restored["confirmed"] = nodes.node_state(cur_of(nid)), (cur_of(nid) or {}).get("confirmed")
             out["nodes"] = [restored if n["node_id"] == nid else n for n in out["nodes"]]
         else:
             restored = copy.deepcopy(o["before"])

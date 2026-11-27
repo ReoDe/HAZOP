@@ -129,9 +129,9 @@ def plan_units(node_set, deviations, cells=None, group=False):
     """cells=None: 구간마다 변수(parameter)별 묶음 하나씩(편차 파일 순서 유지).
     cells=[(node_id, deviation_id), ...]: 그 칸만, 칸 하나당 unit 하나(실패 칸 재실행용).
     group=True면 cells를 구간·변수별로 다시 묶어 일괄 실행과 같은 호출 단위로 만든다('남은 칸 이어서 실행', 기술 설계 §11 3번).
-    분석 대상은 확정 구간뿐이다. 잠긴 구간(분석을 마침)과 적용됨 구간(⑤ 행 없음)은 건너뛴다(검토구간 규격 §5.2)."""
+    분석 대상은 잠기지 않은 구간 전부다(확정 단계를 없앰, 검토구간 규격 §0.2). 잠긴 구간(분석을 마침)은 건너뛴다(§5.2)."""
     from hazop.study import nodes
-    open_ids = {n["node_id"] for n in node_set["nodes"] if nodes.node_state(n) == "confirmed"}
+    open_ids = {n["node_id"] for n in node_set["nodes"] if nodes.is_active(n) and nodes.node_state(n) != "locked"}
     if cells is not None:
         cells = [c for c in cells if c[0] in open_ids]
     if cells is not None and not group:

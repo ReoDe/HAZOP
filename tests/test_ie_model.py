@@ -79,7 +79,7 @@ class BugPathTest(unittest.TestCase):
         r, _, _, doc = fresh()
         doc, gid = model.create_group(doc, "주급수 상실", [iec(doc, r, "c1")], at=AT)
         doc = model.confirm(doc, gid, r, "김검토", at=AT)
-        with self.assertRaisesRegex(ValueError, "확정을 풀어야"):
+        with self.assertRaisesRegex(ValueError, "확정을 해제해야"):
             model.delete_group(doc, gid, at=AT)
         doc = model.delete_group(model.reopen(doc, gid, at=AT), gid, at=AT)
         self.assertEqual(doc["groups"][gid]["status"], "deleted")

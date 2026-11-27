@@ -13,14 +13,14 @@ async function body({ CV, MK, SheetCore }, data) {
   const items = data.sheet.items, symbols = data.symbols, ex = data.clean.items;
   const ev = { unconf: [], built: [] };
   const host = mount();
-  const core = new SheetCore(host, { onUnconfirmedClick: (d) => ev.unconf.push(d), onCleanBuilt: (i) => ev.built.push(i), onReady: () => {} });
+  const core = new SheetCore(host, { onCleanBuilt: (i) => ev.built.push(i), onReady: () => {} });
   core.setData(data.sheet);
   await sleep(200);
   const vp = host.querySelector(".hz-cv-vp"), vpR = () => vp.getBoundingClientRect();
   const sheetRect = (el) => { const r = el.getBoundingClientRect(), v = vpR(), k = core.view.k; return { x0: (r.left - v.left - core.view.x) / k, y0: (r.top - v.top - core.view.y) / k, x1: (r.right - v.left - core.view.x) / k, y1: (r.bottom - v.top - core.view.y) / k }; };
   const pe = (type, x, y, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, clientX: vpR().left + x, clientY: vpR().top + y, button: 0, pointerId: 1, isPrimary: true }, extra));
   const toScreen = (sx, sy) => ({ x: sx * core.view.k + core.view.x, y: sy * core.view.k + core.view.y });
-  const click = (sx, sy) => { const p = toScreen(sx, sy); vp.dispatchEvent(pe("pointerdown", p.x, p.y)); vp.dispatchEvent(pe("pointerup", p.x, p.y)); };
+  const click = (sx, sy, extra) => { const p = toScreen(sx, sy); vp.dispatchEvent(pe("pointerdown", p.x, p.y, extra)); vp.dispatchEvent(pe("pointerup", p.x, p.y, extra)); };
 
   // ---- 원본 보기
   core.update({ clean: data.clean, symbols, view: "orig" });
@@ -88,26 +88,12 @@ async function body({ CV, MK, SheetCore }, data) {
   t("흐름 화살촉은 기호 둘레와 겹치지 않음", clean.querySelectorAll("polygon").length >= 5 && arrowsInSymbols === 0, arrowsInSymbols);
   t("정돈 품질: 서버가 센 정돈 결과가 0(이어짐·이동·직각·축·크기·연결점·겹침)", !!data.clean.layout_lint && ["topology_changed", "moved_too_far", "off_axis", "inline_off_center", "size_mismatch", "port_miss", "symbol_overlap", "pipe_through_symbol", "pipe_overlap", "crossing_without_hop"].every((k) => data.clean.layout_lint[k] === 0), JSON.stringify(data.clean.layout_lint));
 
-  // ---- 누르기: 미확인 자리 → 원본 조각
   core.update({ mode: "pan" });
-  const ub = items.find((i) => i.id === "x-unknown").bbox;
-  click((ub[0] + ub[2]) / 2, (ub[1] + ub[3]) / 2);
-  const last = ev.unconf[ev.unconf.length - 1];
-  t("미확인 기호를 누르면 onUnconfirmedClick(id·reason·원본 조각)", !!last && last.id === "x-unknown" && last.reason === "unknown_symbol" && !!last.fragment, JSON.stringify(last && last.reason));
-  const fb = last.fragment.box;
-  const ex0 = Math.max(0, ub[0] - 24), ex1 = Math.min(data.sheet.width, ub[2] + 24);
-  t("원본 조각은 bbox를 사방 24 단위 넓힌(도면 안으로 자른) viewBox, 같은 도면 SVG 주소", Math.abs(fb.x - ex0) < 0.01 && Math.abs(fb.w - (ex1 - ex0)) < 0.01 && last.fragment.href === data.sheet.svg, JSON.stringify(fb));
-  core.update({ command: { seq: 1, type: "inspect", id: "x-open", reason: "open_end", pad: 0.5 } });
-  const insp = ev.unconf[ev.unconf.length - 1];
-  t("명령 inspect(N 키): 그 자리로 가서 같은 신호를 보냄", insp.id === "x-open" && insp.reason === "open_end" && !!insp.fragment);
-  const nBefore = ev.unconf.length;
-  const nk = items.find((i) => i.kind === "pump"), nb = nk.bbox;
-  click((nb[0] + nb[2]) / 2, (nb[1] + nb[3]) / 2);
-  t("읽은 기호를 누르면 미확인 신호는 없음", ev.unconf.length === nBefore);
+  core.zoomTo(["x-open"], 0.5);      // 아래 누르기·글자 검사는 확대한 보기에서 한다
 
   // ---- 누르기·표시는 그린 자리(정돈 좌표)에서: 그려진 기호의 가운데를 누르면 그 기호가 골라진다
   core.update({ mode: "pick" });
-  const pickAt = (x, y) => { core.update({ selection: [] }); click(x, y); return core.sel.slice(); };
+  const pickAt = (x, y) => { core.update({ selection: [] }); click(x, y, { ctrlKey: true }); return core.sel.slice(); };      // 고르기는 Ctrl+누르기
   const tbOf = (it) => (ex[it.id] && ex[it.id].tbox) || it.bbox;
   const wrongPick = drawn.filter((it) => { const b = tbOf(it); return !pickAt((b[0] + b[2]) / 2, (b[1] + b[3]) / 2).includes(it.id); });
   t("정리 보기: 그려진 기호 " + drawn.length + "개 모두 그 가운데를 누르면 그 기호가 골라짐", wrongPick.length === 0, wrongPick.slice(0, 5).map((i) => i.id).join(","));
@@ -160,9 +146,10 @@ async function body({ CV, MK, SheetCore }, data) {
   core.update({ marks: [] });
 
   // ---- 글자: 화면 픽셀 하한, 겹침 숨김, 설비 태그는 설비 옆
+  core.zoomTo([near.id], 0.15);      // 확대한 보기에서 잰다(경로 표시는 이제 구성요소로 확대해 들어가지 않는다)
   const lt = [...core.cleanG.querySelectorAll("text")].filter((x) => x.style.display !== "none" && x.getAttribute("font-size"));
   const minOk = lt.filter((x) => +x.getAttribute("font-size") * core.view.k >= 10.9 || +x.getAttribute("font-size") <= 9).length;
-  t("맞춤 배율에서 보이는 태그·번호 글자는 대부분 화면에서 11px 이상(원 안 글자는 따로)", lt.length >= 10 && minOk >= lt.length * 0.8, minOk + "/" + lt.length + " k=" + core.view.k.toFixed(2));
+  t("확대한 보기에서 보이는 태그·번호 글자는 대부분 화면에서 11px 이상(원 안 글자는 따로)", lt.length >= 10 && minOk >= lt.length * 0.8, minOk + "/" + lt.length + " k=" + core.view.k.toFixed(2));
   const eq = items.find((i) => i.layer === "symbol" && i.category === "equipment" && i.tag && i.kind === "reactor_vessel");
   const eqText = [...core.cleanG.querySelectorAll("text")].find((x) => x.textContent === eq.tag);
   t("설비 태그는 설비 바로 옆 오른쪽 가운데에 있음(모든 설비 같은 규칙)", !!eqText && +eqText.getAttribute("x") >= eq.bbox[2] - 12 && +eqText.getAttribute("x") <= eq.bbox[2] + 14 && Math.abs(+eqText.getAttribute("y") - (eq.bbox[1] + eq.bbox[3]) / 2) <= 25, eqText && eqText.getAttribute("x") + "," + eqText.getAttribute("y") + " bbox " + eq.bbox.map(Math.round));

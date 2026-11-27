@@ -2,7 +2,7 @@
 
 - **읽기** `ie`(요약: 머리 수치·그룹 목록·묶이지 않은 후보·완전성 대조·품질 경고·판 지문), `ie/group/<IEG>`(그룹 상세: 정의·소속 후보·표제·최종상태·기본사건·
   확정 조건). 읽기는 인계 묶음(hazop.ie.bundle.build_bundle)을 메모리에서 만들어 그 값을 그대로 보인다 — 화면과 내보내는 묶음이 같은 계산을 쓴다. 파일을 쓰지 않는다.
-- **명령** `ie.suggest`(규칙 초안 만들기), `ie.confirm`·`ie.reopen`(그룹 확정·확정 풀기), 편집(A10, 이전 화면 ⑥과 같은 model 함수):
+- **명령** `ie.suggest`(규칙 초안 만들기), `ie.confirm`·`ie.reopen`(그룹 확정·확정 해제), 편집(A10, 이전 화면 ⑥과 같은 model 함수):
   `ie.create_group`·`ie.move`·`ie.accept_members`(후보 묶기·옮기기·빼기·소속 확인), `ie.edit_group`·`ie.split`·`ie.delete_group`,
   `ie.add_record`·`ie.edit_record`·`ie.accept_record`·`ie.remove_record`(표제·최종상태·기본사건), `ie.set_coverage`(범주 대조 판정),
   `ie.export`(인계 묶음 Excel+JSON), `ie.replace_unreadable`(읽지 못한 파일 백업 뒤 새로 시작).
@@ -64,7 +64,7 @@ def _context(engine):
     if nodes.is_stale(ns, pg):  # 다시 추출 뒤 판 이전 전: 옛 판 참조를 새 판 그래프로 보거나 고치지 않는다(hazop.study.follow)
         return None, follow.STALE + "."
     if not [n for n in ns["nodes"] if nodes.is_active(n)]:
-        return None, "확정한 구간이 아직 없습니다. 구간을 확정하고 분석한 뒤 초기사건을 봅니다."
+        return None, "구간이 아직 없습니다. 구간을 만들고 분석한 뒤 초기사건을 봅니다."
     try:
         doc, _fp = R._load(ns)
     except (OSError, ValueError) as exc:
@@ -1051,7 +1051,7 @@ def register(commands):
 
     put("suggest", {"ver": ver, "rver": rver, "seen": seen}, _suggest, "규칙 초안 만들기(확정하지 않음, 두 번 돌려도 더하는 것이 없다)")
     put("confirm", {"group_id": (v_str(1, 20), True), "ver": ver, "rver": rver, "seen": seen}, _confirm, "그룹 확정(검토자 이름이 확정자로 남는다)")
-    put("reopen", {"group_id": (v_str(1, 20), True), "ver": ver, "rver": rver, "seen": seen}, _reopen, "그룹 확정 풀기")
+    put("reopen", {"group_id": (v_str(1, 20), True), "ver": ver, "rver": rver, "seen": seen}, _reopen, "그룹 확정 해제")
     gid = (v_str(1, 20), True)
     iecs = (v_list(v_str(1, 20), 2000), True)
     common = {"ver": ver, "rver": rver, "seen": seen, "confirmed": (api.v_bool(), False),
@@ -1093,7 +1093,7 @@ def register(commands):
                              take=(api.v_enum("file", "mine"), True)), _fmea_resolve,
         "다시 가져오기 충돌 고르기(file: 파일 값, mine: 사람이 고친 값). 파일 값을 쓰면 앞값을 이력에 남긴다")
     put("mld_confirm", {"mver": (v_str(1, 100), True), "seen": seen, "branch_id": (v_str(1, 40), True), "on": (api.v_bool(), True)},
-        _mld_confirm, "규칙 대조(범주 단위)로 맞은 MLD 가지를 사람이 확인하거나 확인 풀기")
+        _mld_confirm, "규칙 대조(범주 단위)로 맞은 MLD 가지를 사람이 확인하거나 확인 해제")
     put("fmea_replace_unreadable", {"confirmed": (api.v_bool(), False), "confirm_groups": (v_list(v_str(1, 20), 1), False)},
         lambda engine, a: _side_replace(engine, a, "fmea"), "읽지 못한 FMEA 파일을 백업하고 새로 시작(확인 필요)")
     put("mld_replace_unreadable", {"confirmed": (api.v_bool(), False), "confirm_groups": (v_list(v_str(1, 20), 1), False)},

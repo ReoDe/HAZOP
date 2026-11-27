@@ -7,18 +7,17 @@ import { store } from "../store.js";
 
 import { Btn } from "../ui/parts.js";
 import * as I from "./ie_state.js";
+import { locate } from "../locate.js";
 
 const KIND_NAME = { cell: "구간·편차", cause: "원인", location: "위치·고장모드", judgement: "IE 판정", group: "그룹", end_state: "최종상태", path: "근거" };
 
-async function go(node, d) {
+export async function go(node, d) {
   if ((node.kind === "cell" || node.kind === "cause") && node.node_id) {
     const R = await import("./results_state.js");
     store.set({ panel: "results", backTo: "ie" });
     R.openCell(node.node_id, node.deviation_id);
   } else if ((node.kind === "location" || node.kind === "path") && node.sheet) {
-    const R = await import("./results_state.js");
-    R.openSheet(node.sheet);
-    store.set({ sheet: node.sheet, panel: null, backTo: "ie", marks: { rid: "ie-trace", bySheet: node.marks || {} } });
+    locate({ sheet: node.sheet, marks: node.marks || {}, rid: "ie-trace", patch: { panel: null, backTo: "ie" } });
   } else if ((node.kind === "group" || node.kind === "end_state") && node.group_id) {
     I.ie.set({ view: "groups" });
     I.openGroup(node.group_id);

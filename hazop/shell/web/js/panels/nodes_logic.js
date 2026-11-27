@@ -1,17 +1,8 @@
 // 구간 패널·고르기 막대의 순수 계산(DOM·저장소 없음). 시험은 web/test/nodes.test.js.
 import { segColor } from "../canvas/marks.js";
 
-export const STATE_LABEL = { applied: "적용됨", confirmed: "확정", locked: "잠금" };
-
-/** 구간 행의 상태 칩: AI가 만들고 사람이 손대지 않은 적용됨 구간은 'AI 적용됨'. */
-export function stateChip(n) {
-  if (n.state === "locked") return { label: "잠금", kind: "ok", icon: "lock" };
-  if (n.state === "confirmed") return { label: "확정", kind: "ok", icon: "check" };
-  if (n.origin === "ai") return { label: "AI 적용됨", kind: "ai", icon: "sparkles" };
-  return { label: "적용됨", kind: "accent", icon: null };
-}
-
-export const canEdit = (n) => !!n && n.state === "applied";
+/** 잠긴 옛 구간만 고치지 못한다. */
+export const canEdit = (n) => !!n && n.state !== "locked";
 
 /** 판 이전 지금 하기(nodes.catch_up)가 끝났을 때의 알림 글. */
 export function catchUpText(r) {
@@ -20,9 +11,6 @@ export function catchUpText(r) {
   return "도면 변경을 반영했습니다: 이어진 구성요소 " + (r.matched || 0) + "개" + (lost ? " · 찾지 못한 구성요소 " + lost + "개(해당 구간을 확인하세요)" : "") + ".";
 }
 
-/** 확정한 구간이 잃은 구성요소를 둔 채 확정됐다면 그 글(confirmed.lost). */
-export const confirmedLostText = (n) => (n && n.confirmed && n.confirmed.lost ? "잃은 구성요소 " + n.confirmed.lost + "개를 둔 채 확정함" : "");
-
 /** 다시 추출 뒤 찾지 못한 구성요소가 있을 때의 알림 글: '도면이 바뀌어 n곳을 다시 확인해야 합니다'. info {sections, members}. 확인할 곳이 없으면 빈 글. */
 export function lostNoticeText(info) {
   const n = (info && info.sections) || 0, m = (info && info.members) || 0;
@@ -30,13 +18,6 @@ export function lostNoticeText(info) {
   // '다음에 할 일' 한 줄(api_next recheck)과 같은 단위: 찾지 못한 구성요소 수를 앞에, 걸린 구간 수를 괄호에(실제 창 3차 결함 6)
   if (!m) return "도면이 바뀌어 검토구간 " + n + "곳을 다시 확인해야 합니다.";
   return "도면이 바뀌어 찾지 못한 구성요소 " + m + "개를 다시 확인해야 합니다" + (n ? "(검토구간 " + n + "곳)" : "") + ".";
-}
-
-/** 도면 변경 반영이 확정을 푼 구간(엔진 migrate의 demoted) → 한 줄 알림. 없으면 빈 글. */
-export function demotedNoticeText(ids) {
-  if (!ids || !ids.length) return "";
-  const shown = ids.slice(0, 6).join(", ") + (ids.length > 6 ? " 외 " + (ids.length - 6) + "개" : "");
-  return "도면이 바뀌어 확정했던 구간 " + shown + "의 확정을 풀었습니다. 구성요소를 확인하고 다시 확정해 주세요.";
 }
 
 /** 찾지 못한 구성요소 버리기 단추 글: 고른 수(전부면 '모두'). */
@@ -116,8 +97,6 @@ export function keyAction(e, { selection, typing, panelWide, card }) {
   if (typing || panelWide || e.ctrlKey || e.metaKey || e.altKey) return null;
   if (card) return e.key === "Enter" ? "submit" : null;          // 새 구간 카드가 열려 있으면 Enter는 만들기(카드를 다시 열지 않는다)
   const k = (e.key || "").toLowerCase();
-  if (k === "v") return "pan";
-  if (k === "s") return "pick";
   if (k === "f" && selection.length) return "fit";
   if (e.key === "Enter" && selection.length) return "card";
   return null;

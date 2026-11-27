@@ -108,11 +108,12 @@ class Harness(unittest.TestCase):
 class TableTest(Harness):
     def test_every_spec_action_in_table(self):
         spec = ("show", "goto", "select", "layer", "fit", "register.extract", "register.reextract", "register.exclude",
-                "extract.suggest", "kg.algorithm", "kg.rebuild", "nodes.apply", "nodes.undo", "nodes.confirm",
-                "nodes.unconfirm", "nodes.lock", "analysis.run", "results.set_status", "results.edit", "export.excel",
+                "extract.suggest", "kg.algorithm", "kg.rebuild", "nodes.apply", "nodes.undo", "analysis.run", "results.set_status", "results.edit", "export.excel",
                 "export.ie_bundle", "ie.draft_rules", "ie.reset")
         for name in spec:
             self.assertIn(name, A.ACTIONS)
+        for name in ("nodes.confirm", "nodes.unconfirm", "nodes.lock"):  # 구간 확정 단계를 없앰(구간 규격 §0.2)
+            self.assertNotIn(name, A.ACTIONS)
         never = {r["name"] for r in A.table_rows() if r["class"] == A.NEVER}
         self.assertTrue({"nodes.unlock", "settings.change", "settings.api_key", "settings.work_root",
                          "settings.reviewer", "files.delete", "extract.edit"} <= never)
@@ -122,7 +123,7 @@ class TableTest(Harness):
 
     def test_classes(self):
         want = {"register.reextract": A.CONFIRM, "register.exclude": A.CONFIRM, "kg.rebuild": A.CONFIRM,
-                "nodes.confirm": A.CONFIRM, "nodes.lock": A.CONFIRM, "analysis.run": A.CONFIRM,
+                "analysis.run": A.CONFIRM,
                 "results.set_status": A.CONFIRM, "results.edit": A.CONFIRM, "ie.reset": A.CONFIRM,
                 "extract.suggest": A.CANDIDATE, "kg.algorithm": A.AUTO, "export.excel": A.AUTO, "show": A.DISPLAY}
         for name, klass in want.items():
@@ -219,7 +220,7 @@ class RoutingTest(Harness):
         """§4.3 표의 칸마다."""
         cases = [({"op": "edit", "node_id": "S1", "name": "x"}, A.CONFIRM),          # 사람 구간
                  ({"op": "edit", "node_id": "S2", "name": "x"}, A.CONFIRM),          # 다른 대화의 AI 묶음
-                 ({"op": "edit", "node_id": "S3", "name": "x"}, "rejected"),         # 확정
+                 ({"op": "edit", "node_id": "S3", "name": "x"}, A.CONFIRM),          # 옛 확정: 보통 사람 구간(구간 규격 §0.2)
                  ({"op": "edit", "node_id": "S4", "name": "x"}, "rejected"),         # 잠김
                  ({"op": "edit", "node_id": "S5", "name": "x"}, A.CONFIRM),          # 칸 있음: 이름은 확인
                  ({"op": "edit", "node_id": "S5", "add": ["g1/e30"]}, "rejected"),   # 칸 있음: 구성요소는 거절
@@ -254,39 +255,33 @@ class RoutingTest(Harness):
 
 
 class LimitTest(Harness):
-    """§4.5 누적 상한. 시작 상태의 pending_ai는 2(S2·S5, B1 AI 묶음). S6은 human_seen."""
+    """§4.5 상한(2026-11-26 바뀜, 구간 규격 §0.2): '확인 전 AI 구간 5개'와 '대표 뒤 나머지'를 없애고 한 요청 30개만 남겼다.
+    시작 상태의 pending_ai는 2(S2·S5, B1 AI 묶음). S6은 human_seen."""
 
     def test_pending_count(self):
         self.assertEqual(A.pending_ai(self.state), 2)
 
-    def test_representative_then_rest(self):
+    def test_ai_nodes_apply_at_once_without_the_five_cap(self):
         p = self.plan([self.act("nodes.apply", set_rev=10, ops=[add_op(i) for i in range(3)])], turn=1)
-        self.assertEqual(p.run[0].stage, "representative")
+        self.assertEqual(p.run[0].stage, None)
         self.assertEqual(self.planner.run(p.run[0])["result"], "ok")
         self.assertEqual(A.pending_ai(self.state), 5)
-        # 같은 질문의 다음 답에서 더 만들기 → 거절
+        # 같은 질문의 다음 답에서 더 만들기도 바로(확인 없이 분석에 들고, 인계에는 사람이 승인한 항목만 든다)
         p = self.plan([self.act("nodes.apply", set_rev=11, ops=[add_op(5)])], turn=1, answer="a-2")
-        self.assertTrue(p.rejected)
-        # 새 질문 → '나머지' 확인
-        p = self.plan([self.act("nodes.apply", set_rev=11, ops=[add_op(i) for i in range(6, 14)])], turn=2, answer="a-3")
-        item = p.confirm[0]
-        self.assertEqual(item.stage, "rest")
-        self.assertIn("5개를 아직 확인하지", item.confirm_text)
-        out = self.planner.approve(item, "검토자A")
-        self.assertEqual(out["result"], "ok")
+        self.assertEqual((len(p.run), len(p.confirm), len(p.rejected)), (1, 0, 0))
+        self.assertEqual(self.planner.run(p.run[0])["result"], "ok")
+        p = self.plan([self.act("nodes.apply", set_rev=12, ops=[add_op(i) for i in range(6, 14)])], turn=2, answer="a-3")
+        self.assertEqual((len(p.run), len(p.confirm)), (1, 0))
+        self.assertEqual(self.planner.run(p.run[0])["result"], "ok")
         call = self.calls[-1][2]
-        self.assertEqual((call.origin, call.stage, call.confirmed_rest, call.confirmed_by), ("ai", "rest", True, "검토자A"))
-        self.assertEqual(call.engine_request()["user_turn"], "q-a-3")
+        self.assertEqual((call.origin, call.stage, call.confirmed_rest, call.confirmed_by), ("ai", None, False, None))
 
     def test_split_into_two_actions_same_answer(self):
-        """생성 나눠 넣기: 한 답에 nodes.apply 둘(2+2) → 합쳐서 4 + pending 2 > 5 → 같은 질문이라 거절."""
-        self.planner.last_add_turn = 1
+        """한 답에 nodes.apply 둘(2+2)은 묶음 하나로 합쳐 센다."""
         p = self.plan([self.act("nodes.apply", set_rev=10, ops=[add_op(1), add_op(2)]),
                        self.act("nodes.apply", set_rev=10, ops=[add_op(3), add_op(4)])], turn=1)
-        self.assertEqual(len(p.rejected), 1)
-        self.assertEqual(p.rejected[0].keys, ["a-1#0", "a-1#1"])
-        self.assertEqual(self.calls, [])
-        self.assertEqual(len([r for r in self.records if r["result"] == "rejected"]), 2)
+        self.assertEqual((len(p.run), len(p.rejected)), (1, 0))
+        self.assertEqual(p.run[0].keys, ["a-1#0", "a-1#1"])
 
     def test_merge_into_one_batch(self):
         p = self.plan([self.act("nodes.apply", set_rev=10, ops=[add_op(1)]),
@@ -298,26 +293,28 @@ class LimitTest(Harness):
         self.assertEqual([r["index"] for r in self.records], [0, 1])
         self.assertEqual({r["batch_id"] for r in self.records}, {"B11"})
 
-    def test_first_request_over_five_rejected(self):
+    def test_first_request_of_seven_runs(self):
         self.state.node_set["nodes"] = [n for n in self.state.node_set["nodes"] if n["origin"] != "ai"]
         p = self.plan([self.act("nodes.apply", set_rev=10, ops=[add_op(i) for i in range(7)])])
-        self.assertTrue(p.rejected)
+        self.assertEqual((len(p.run), len(p.rejected)), (1, 0))
 
     def test_rest_over_thirty_rejected(self):
-        self.planner.last_add_turn = 1
         p = self.plan([self.act("nodes.apply", set_rev=10, ops=[add_op(i) for i in range(31)])], turn=2)
         self.assertTrue(p.rejected)
+        p = self.plan([self.act("nodes.apply", set_rev=10, ops=[add_op(i) for i in range(30)])], turn=2, answer="a-2")
+        self.assertEqual(len(p.run), 1)
 
 
 class ApprovalTest(Harness):
     def confirm_item(self):
-        return self.plan([self.act("nodes.confirm", node_ids=["S1"])]).confirm[0]
+        """구간을 대상으로 하는 확인 동작(옛 시험은 nodes.confirm을 썼다. 구간 확정 단계를 없애 analysis.run으로 바꿈)."""
+        return self.plan([self.act("analysis.run", node_ids=["S1"])]).confirm[0]
 
     def test_approve_runs_once(self):
         item = self.confirm_item()
         self.assertEqual(self.planner.approve(item, "검토자A")["result"], "ok")
         self.assertEqual(self.planner.approve(item, "검토자A")["result"], "duplicate")
-        self.assertEqual(self.names_called(), ["nodes.confirm"])
+        self.assertEqual(self.names_called(), ["analysis.run"])
         rec = self.records[-1]
         self.assertEqual((rec["klass"], rec["confirmed_by"], rec["result"]), ("confirm", "검토자A", "ok"))
         self.assertEqual(rec["approval_digest"], item.approval["digest"])
@@ -344,20 +341,20 @@ class ApprovalTest(Harness):
         item = self.confirm_item()
         self.now[0] += A.APPROVAL_TTL + 1
         self.assertEqual(self.planner.approve(item, "검토자A")["result"], "stale")
-        p = self.plan([self.act("nodes.confirm", node_ids=["S1"]), self.act("export.excel")], answer="a-2")
+        p = self.plan([self.act("analysis.run", node_ids=["S1"]), self.act("export.excel")], answer="a-2")
         self.planner.run(p.run[0])
         self.assertEqual(self.planner.approve(p.confirm[0], "검토자A")["result"], "stale")
 
     def test_next_confirm_reissued(self):
-        p = self.plan([self.act("nodes.confirm", node_ids=["S1"]), self.act("kg.rebuild")])
+        p = self.plan([self.act("analysis.run", node_ids=["S1"]), self.act("kg.rebuild")])
         first, second = p.confirm
         self.assertEqual(self.planner.approve(first, "검토자A")["result"], "ok")
         fresh = self.planner.reissue(second)
         self.assertNotEqual(fresh.approval["digest"], None)
         self.assertEqual(self.planner.approve(fresh, "검토자A")["result"], "ok")
-        self.assertEqual(self.names_called(), ["nodes.confirm", "kg.rebuild"])
+        self.assertEqual(self.names_called(), ["analysis.run", "kg.rebuild"])
         # 그 사이 대상이 잠기면 다시 띄울 때 거절
-        p = self.plan([self.act("export.excel"), self.act("nodes.unconfirm", node_ids=["S3"])], answer="a-2")
+        p = self.plan([self.act("export.excel"), self.act("analysis.run", node_ids=["S3"])], answer="a-2")
         self.planner.run(p.run[0])
         self.state.node_set["nodes"][2]["state"] = "locked"
         self.assertEqual(self.planner.reissue(p.confirm[0]).klass, "rejected")
@@ -399,7 +396,6 @@ class ReviewFixTest(Harness):
         self.assertEqual(out["refused"], [{"target": "1번째 add", "code": "rule", "reason": "도면에 없는 태그: ZZ-999"}])
         self.assertEqual(self.planner.exec_seq, 0)
         self.assertEqual(self.planner.conv_batches, set())
-        self.assertIsNone(self.planner.last_add_turn)
         rec = self.records[-1]
         self.assertEqual(rec["result"], "rejected")
         self.assertIn("engine_refused", rec["error"])
@@ -417,31 +413,30 @@ class ReviewFixTest(Harness):
         self.assertEqual(self.planner.exec_seq, 0)
 
     def test_r6_confirmed_edit_keeps_ai_author_and_limit(self):
-        """한 답에 사람 구간 고치기(확인)와 AI 추가가 섞여도, 확인 한 번이 AI 추가의 상한을 풀지 않는다(R6)."""
+        """한 답에 사람 구간 고치기(확인)와 AI 추가가 섞이면 확인 상자로 가고, 사람이 눌러도 글과 구간은 AI 것으로 남는다(R6).
+        '확인 전 5개' 상한은 없앴다(구간 규격 §0.2)."""
         self.state.node_set["nodes"] = [n for n in self.state.node_set["nodes"] if n["origin"] != "ai"]
         p = self.plan([self.act("nodes.apply", set_rev=10, ops=[{"op": "edit", "node_id": "S1", "name": "사람 구간 새 이름"}]
                                 + [add_op(i) for i in range(5)])], turn=1)
         item = p.confirm[0]
-        self.assertEqual(item.stage, "representative")
+        self.assertEqual(item.stage, None)
         out = self.planner.approve(item, "검토자A")
         self.assertEqual(out["result"], "ok")
         call = self.calls[-1][2]
         self.assertEqual((call.origin, call.author, call.confirmed_by, call.confirmed_rest), ("ai", "ai", "검토자A", False))
         self.assertEqual(call.engine_request()["confirmed_rest"], False)
-        self.assertEqual(A.pending_ai(self.state), 5, "확인받은 AI 구간도 AI 구간으로 남아 누적 상한에 든다")
-        p = self.plan([self.act("nodes.apply", set_rev=11, ops=[add_op(i) for i in range(10, 15)])], turn=1, answer="a-2")
-        self.assertTrue(p.rejected, "같은 질문에서 5개를 더 바로 적용하지 않음")
+        self.assertEqual(A.pending_ai(self.state), 5, "확인받은 AI 구간도 AI 구간으로 남는다")
         self.assertEqual(sum(1 for n in self.state.node_set["nodes"] if n["origin"] == "ai"), 5)
 
     def test_split_counts_as_new_node(self):
         self.planner.conv_batches.add("B1")
-        self.planner.last_add_turn = 1
-        # pending 2(S2·S5) + add 3 + split 1 = 6 > 5 → 같은 질문이라 거절
-        ops = [add_op(1), add_op(2), add_op(3), {"op": "split", "node_id": "S2", "members": ["g1/e02"]}]
-        p = self.plan([self.act("nodes.apply", set_rev=10, ops=ops)], turn=1)
+        split = {"op": "split", "node_id": "S2", "members": ["g1/e02"]}
+        # add 30 + split 1 = 31 > 30 → 거절. add 29 + split 1 = 30은 됨
+        p = self.plan([self.act("nodes.apply", set_rev=10, ops=[add_op(i) for i in range(30)] + [split])], turn=1)
         self.assertTrue(p.rejected)
-        p = self.plan([self.act("nodes.apply", set_rev=10, ops=ops)], turn=2, answer="a-2")
-        self.assertEqual(p.confirm[0].stage, "rest")
+        p = self.plan([self.act("nodes.apply", set_rev=10, ops=[add_op(i) for i in range(29)] + [split])], turn=1,
+                      answer="a-2")
+        self.assertFalse(p.rejected)
 
     def test_graph_id_checked(self):
         self.state.node_set["graph_id"] = "project-SNP"
@@ -481,11 +476,12 @@ class ReviewFixTest(Harness):
         self.assertEqual(out["item"].klass, A.CONFIRM)
         self.assertEqual(self.calls, [])
 
-    def test_unconfirm_lock_take_node_ids(self):
-        """엔진(a9c0193)과 같이 node_ids 목록. 구간 하나(node_id)는 서명 밖이라 거절."""
-        p = self.plan([self.act("nodes.unconfirm", node_ids=["S3"]), self.act("nodes.lock", node_ids=["S3"]),
-                       self.act("nodes.lock", node_id="S3")])
-        self.assertEqual((len(p.confirm), len(p.rejected)), (2, 1))
+    def test_confirm_unconfirm_lock_are_no_longer_chat_actions(self):
+        """구간 확정 단계를 없애 채팅 동작에서 뺐다(구간 규격 §0.2). 모델이 내도 아무것도 실행하지 않는다."""
+        p = self.plan([self.act("nodes.confirm", node_ids=["S1"]), self.act("nodes.unconfirm", node_ids=["S3"]),
+                       self.act("nodes.lock", node_ids=["S3"])])
+        self.assertEqual((len(p.run), len(p.confirm), len(p.rejected)), (0, 0, 3))
+        self.assertEqual(self.calls, [])
 
     def test_engine_kwargs(self):
         """누가 썼나(author)·누가 눌렀나(confirmed_by): 구간 편집은 확인해도 ai, 확정·잠금은 누른 사람이 있으면 user."""
@@ -494,9 +490,7 @@ class ReviewFixTest(Harness):
                          {"author": "ai", "confirmed_by": "검토자A"})
         self.assertNotIn("confirmed_by", call.engine_request())
         self.assertNotIn("author", call.engine_request())
-        for name in ("nodes.confirm", "nodes.unconfirm", "nodes.lock"):
-            self.assertEqual(A.Call("SNP", "q", "", [], "confirm", "검토자A", action=name).engine_author(), "user")
-            self.assertEqual(A.Call("SNP", "q", "", [], "auto", None, action=name).engine_author(), "ai")
+        self.assertEqual(A.STATE_ACTIONS, frozenset(), "확정·확정 해제·잠금은 채팅 동작이 아님(구간 규격 §0.2)")
 
     def test_tokens_live_only_in_planner(self):
         """웹 화면·모델이 확인 표지나 실행 표를 만들어 낼 수 없다(검토 8)."""
@@ -631,48 +625,40 @@ class RealEngineTest(unittest.TestCase):
         self.assertEqual(self.records[-1]["batch_id"], out["batch_id"])
 
     def test_flow_representative_edit_rest_undo(self):
-        """§9.1 흐름: 대표 구간 5개 → 사람이 하나 고침 → 나머지(확인) → 되돌리기, 그리고 확정·잠금까지 실제 엔진으로."""
+        """§9.1 흐름(2026-11-26 바뀜): AI 구간 5개 → 사람이 하나 고침 → 6개 더(확인 없이) → 되돌리기. 확정 동작은 없다."""
         cands = self.nt.make_candidates(self.pg, self.ns(), granularity="normal", limit=30)["candidates"]
         self.assertGreaterEqual(len(cands), 12)
 
         def add(cs):
             return [{"op": "add", "cand_id": c["cand_id"], "name": "구간 %d" % i} for i, c in enumerate(cs, 1)]
 
-        # 1. 대표 구간 5개: 바로 실행, AI 묶음 하나
-        out = self.pl.run(self.apply("a-1", "q-1", add(cands[:5]), "대표 구간 만들어 줘").run[0])
+        # 1. AI 구간 5개: 바로 실행, AI 묶음 하나, 확정 없이 분석에 든다
+        out = self.pl.run(self.apply("a-1", "q-1", add(cands[:5]), "구간 만들어 줘").run[0])
         self.assertEqual(out["result"], "ok", out)
         rep_batch, rep_ids = out["batch_id"], out["targets"]
         self.assertEqual(len(rep_ids), 5)
+        self.assertEqual({self.node(i)["state"] for i in rep_ids}, {"applied"})
+        self.assertTrue(all(self.sn.is_active(self.node(i)) for i in rep_ids))
         self.assertEqual(A.pending_ai(self.snap()), self.nt.pending_ai(self.ns()))
-        self.assertEqual(A.pending_ai(self.snap()), 5)
-        # 같은 질문에서 하나 더: 상한을 넘고 같은 사용자 메시지라 '나머지'로도 못 감 → 거절
-        p = self.apply("a-1b", "q-1", add(cands[5:6]))
-        self.assertEqual((len(p.run), len(p.confirm), len(p.rejected)), (0, 0, 1))
 
         # 2. 사람이 화면에서 하나를 고침(엔진에 author user)
         human = self.nc.execute(self.pg, "rename", {"node_id": rep_ids[0], "name": "충전펌프 토출"}, author="user",
                                 confirmed_by="홍길동", set_rev=self.ns()["set_rev"])
         self.assertTrue(human["ok"], human)
-        self.assertEqual(A.pending_ai(self.snap()), self.nt.pending_ai(self.ns()))
         self.assertEqual(A.pending_ai(self.snap()), 4)
 
-        # 3. 나머지 6개: 4 + 6 > 5라 확인 상자. 사람이 누르면 엔진이 '나머지'로 받고, 글은 여전히 AI 것
+        # 3. 6개 더: 상한(한 요청 30개) 안이라 확인 없이 바로. 글과 구간은 AI 것(요청 하나는 묶음 하나라 새 요청)
         p = self.apply("a-2", "q-2", add(cands[5:11]), "나머지도 만들어 줘")
-        self.assertEqual((len(p.run), len(p.confirm)), (0, 1))
-        self.assertEqual(p.confirm[0].stage, "rest")
-        out = self.pl.approve(p.confirm[0], "홍길동")
+        self.assertEqual((len(p.run), len(p.confirm), len(p.rejected)), (1, 0, 0), p)
+        out = self.pl.run(p.run[0])
         self.assertEqual(out["result"], "ok", out)
         rest_batch, rest_ids = out["batch_id"], out["targets"]
         self.assertEqual(len(rest_ids), 6)
         ns = self.ns()
-        self.assertEqual({self.node(i)["origin"] for i in rest_ids}, {"ai"})          # R6: 확인했어도 AI 출처
-        batches = {b["batch_id"]: b for b in ns["batches"]}
-        self.assertEqual(batches[rest_batch]["origin"], "ai")
-        self.assertEqual(batches[rep_batch]["human_seen"]["by"], "홍길동")         # 앞 AI 묶음은 사람이 본 것으로
-        self.assertEqual(A.pending_ai(self.snap()), self.nt.pending_ai(ns))
-        self.assertEqual(self.records[-1]["confirmed_by"], "홍길동")
+        self.assertEqual({self.node(i)["origin"] for i in rest_ids}, {"ai"})
+        self.assertEqual({b["batch_id"]: b for b in ns["batches"]}[rest_batch]["origin"], "ai")
 
-        # 4. 되돌리기: 이번 대화의 AI 묶음(나머지)은 바로 되돌린다
+        # 4. 되돌리기: 이번 대화의 AI 묶음은 바로 되돌린다
         p = self.pl.plan("a-3", [{"action": "nodes.undo", "args": {"batch_id_to_undo": rest_batch,
                                                                    "set_rev": self.ns()["set_rev"]}}],
                          "q-3", "q-3", "방금 것 되돌려 줘")
@@ -681,10 +667,10 @@ class RealEngineTest(unittest.TestCase):
         self.assertEqual(out["result"], "ok", out)
         self.assertEqual(sorted(n["node_id"] for n in self.ns()["nodes"]), sorted(rep_ids))
         self.assertEqual(self.records[-1]["undo_of"], rest_batch)
-        # 사람이 고친 구간이 든 대표 묶음: 앱이나 엔진이 막는다. 어느 쪽이든 성공으로 기록하지 않고 구간은 그대로
+        # 사람이 고친 구간이 든 묶음: 앱이나 엔진이 막는다. 어느 쪽이든 성공으로 기록하지 않고 구간은 그대로
         p = self.pl.plan("a-4", [{"action": "nodes.undo", "args": {"batch_id_to_undo": rep_batch,
                                                                    "set_rev": self.ns()["set_rev"]}}],
-                         "q-4", "q-4", "대표도 되돌려 줘")
+                         "q-4", "q-4", "앞의 것도 되돌려 줘")
         if p.run:
             self.assertEqual(self.pl.run(p.run[0])["result"], "rejected")
         elif p.confirm:
@@ -693,20 +679,13 @@ class RealEngineTest(unittest.TestCase):
             self.assertEqual(len(p.rejected), 1)
         self.assertEqual(len(self.ns()["nodes"]), 5)
 
-        # 5. 확정은 사람 판단: 확인 상자를 누른 사람이 엔진에 author user로 간다. 잠금은 분석 안 한 칸이 있어 엔진이 거절
+        # 5. 확정·잠금은 채팅 동작이 아니다: 아무것도 실행하지 않고 확정자 이름도 남지 않는다
         target = rep_ids[1]
         p = self.pl.plan("a-5", [{"action": "nodes.confirm", "args": {"node_ids": [target]}},
                                  {"action": "nodes.lock", "args": {"node_ids": [target]}}],
                          "q-5", "q-5", "확정하고 잠가 줘")
-        self.assertEqual((len(p.confirm), len(p.rejected)), (1, 1), p)   # 아직 확정 전이라 잠금은 앱이 먼저 거절
-        out = self.pl.approve(p.confirm[0], "홍길동")
-        self.assertEqual(out["result"], "ok", out)
-        self.assertEqual(self.node(target)["confirmed"]["by"], "홍길동")
-        p = self.pl.plan("a-6", [{"action": "nodes.lock", "args": {"node_ids": [target]}}], "q-6", "q-6", "잠가 줘")
-        self.assertEqual(len(p.confirm), 1, p)
-        out = self.pl.approve(p.confirm[0], "홍길동")
-        self.assertEqual((out["result"], out["code"]), ("rejected", "engine_refused"), out)
-        self.assertEqual(A.node_state(self.node(target)), "confirmed")
+        self.assertEqual((len(p.run), len(p.confirm), len(p.rejected)), (0, 0, 2), p)
+        self.assertEqual((A.node_state(self.node(target)), self.node(target)["confirmed"]), ("applied", None))
 
     def test_mixed_ops_refused_before_engine(self):
         """엔진에 묶음 하나로 받는 공개 명령이 없는 섞인 ops는 연결부가 거절(unsupported)하고 아무것도 저장하지 않는다."""

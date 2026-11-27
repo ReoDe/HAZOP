@@ -71,32 +71,8 @@ export const tests = [
     C.toggleView("자료-없음");                                           // 자료가 없으면 바꾸지 않는다
     assert.equal(C.clean.get().choice["자료-없음"], undefined);
   } },
-  { name: "정리된 보기: 다음·앞 미확인은 순서대로 돌고 확대 명령과 말풍선 신호를 보냄", run(assert) {
-    reset();
-    C.onClean("g1", data("drawio", U));
-    const ids = [];
-    for (let i = 0; i < 4; i++) { const u = C.stepUnconfirmed("g1", 1); ids.push(u.id); }
-    assert.equal(ids, ["a", "b", "c", "a"]);
-    assert.equal(C.clean.get().overlay.unconfirmed, true);          // 미확인을 찾아 가면 속성 미확인 자리도 함께 보인다
-    assert.equal(C.stepUnconfirmed("g1", -1).id, "c");                  // 앞으로(Shift+N)
-    const cmd = store.get().command;
-    assert.equal([cmd.type, cmd.id, cmd.reason, cmd.seq], ["inspect", "c", "missing_tag", 5]);
-    C.onClean("g1", data("drawio", []));
-    assert.equal(C.stepUnconfirmed("g1", 1), null);
-  } },
-  { name: "정리된 보기: 말풍선 열기·Esc로 닫기(닫았으면 다른 Esc 동작은 하지 않음)", run(assert) {
-    reset();
-    let cc = null;
-    function Probe() { cc = C.useCleanCanvas("g1"); return html`<i></i>`; }
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    render(html`<${Probe} />`, host);
-    assert.equal(cc.closeIfOpen(), false);
-    cc.props.onUnconfirmedClick({ id: "a", reason: "unknown_symbol", fragment: null });
-    assert.equal(C.clean.get().bubble.reason, "unknown_symbol");
-    assert.equal(cc.closeIfOpen(), true);
-    assert.equal(C.clean.get().bubble, null);
-    render(null, host); host.remove();
+  { name: "정리된 보기: 못 읽은 곳 말풍선·N 키·미확인 걸어가기는 없다(O·L 키는 그대로)", run(assert) {
+    assert(!C.stepUnconfirmed && !C.openBubble && !C.REASON_TEXT, "말풍선과 걸어가기 함수가 없다");
   } },
   { name: "정리된 보기: 단추는 자료가 없으면 '정리'가 꺼지고, 칩은 '미확인 n곳'이며 도면에서 온 글은 텍스트로만", async run(assert) {
     reset();
@@ -117,10 +93,6 @@ export const tests = [
     btn("원본").click();
     await tick();
     assert.equal(C.viewOf(C.clean.get(), "g1"), "orig");
-    C.openBubble({ id: "x", reason: "missing_tag", fragment: { href: "/api/sheet/g1.svg", size: [100, 100], box: { x: 0, y: 0, w: 50, h: 50 } } });
-    await tick();
-    assert(host.textContent.includes("태그가 없음") && !!host.querySelector(".cleanpop svg image"), "원본 조각 말풍선");
-    assert(host.querySelector(".cleanpop svg image").getAttribute("href") === "/api/sheet/g1.svg");
     render(null, host); host.remove();
   } },
   { name: "정리된 보기: 기호 맞추기 계산(keep·stretch·회전·뒤집기·연결점)", run(assert) {
@@ -133,7 +105,6 @@ export const tests = [
     assert(Math.abs(wx - 15) < 0.01 && Math.abs(wy - 50) < 0.01, wx + "," + wy);
     const s = V.placement(stretch, [0, 0, 40, 80], { rot: 0, flip_h: true });
     assert.equal([s.sx, s.sy], [-0.4, 0.8]);
-    assert.equal(V.fragmentBox([10, 10, 30, 30], [100, 100]), { x: 0, y: 0, w: 54, h: 54 });
   } },
   { name: "정리된 보기: 자료가 늦게 와도 <Sheet>에 줄 view가 바뀜(선택 함수가 처음 도면 ID를 붙들지 않음)", async run(assert) {
     reset();

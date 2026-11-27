@@ -257,7 +257,7 @@ class StudyNodesScreen(QWidget):
         self.list_head = section("검토구간")
         head.addWidget(self.list_head, 1)
         self.overview_btn = QPushButton("전체 보기 Esc")
-        self.overview_btn.setToolTip("구간 선택을 풀고 모든 구간 색을 다시 보여 줍니다 (Esc)")
+        self.overview_btn.setToolTip("구간 선택을 해제하고 모든 구간 색을 다시 보여 줍니다 (Esc)")
         self.overview_btn.clicked.connect(self.show_overview)
         head.addWidget(self.overview_btn)
         v.addLayout(head)

@@ -19,9 +19,10 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
   const list = N.useNodes((s) => s.list.nodes);
   const focus = N.useNodes((s) => s.focus);
   const showOutside = N.useNodes((s) => s.showOutside);
-  const segments = useMemo(() => (panel === "nodes" && sheetView && sheetView.graph_id === sheet ? sheetSegments(sheetView, list, focus) : []), [panel, sheetView, list, focus, sheet]);
+  // 고른 구간 하나만 그린다(나머지는 흐리게). 고른 것이 없으면 구간 색·S 배지 없이 도면 기본 모습
+  const segments = useMemo(() => (panel === "nodes" && focus && sheetView && sheetView.graph_id === sheet ? sheetSegments(sheetView, list, focus).filter((s) => s.active) : []), [panel, sheetView, list, focus, sheet]);
   const links = useMemo(() => (sheetView && sheetView.graph_id === sheet && Array.isArray(sheetView.links) ? sheetView.links : []), [sheetView, sheet]);
-  const outside = useMemo(() => (panel === "nodes" && showOutside && sheetView && sheetView.graph_id === sheet && sheetView.segments.length ? sheetView.outside_ids : []), [panel, sheetView, showOutside, sheet]);
+  const outside = useMemo(() => (panel === "nodes" && showOutside && sheetView && sheetView.graph_id === sheet && segments.length ? sheetView.outside_ids : []), [panel, sheetView, showOutside, sheet, segments]);
 
   useLayoutEffect(() => {          // 그린 바로 뒤에 키를 잇는다(끌기 → Enter가 바로 먹게)
     function key(e) {
@@ -29,26 +30,37 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
       const typing = tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || (t && t.isContentEditable);
       const s = N.nodes.get();
       if (t && t.closest && t.closest(".newnode")) return;          // 카드 안의 키는 카드가 처리한다
-      const act = keyAction(e, { selection: s.selection, typing, panelWide: false, card: !!s.card });
+      const act = keyAction(e, { selection: N.pickedIds(s), typing, panelWide: false, card: !!s.card });
       if (!act) return;
       e.preventDefault();
-      if (act === "pan" || act === "pick") N.setMode(act);
-      else if (act === "fit") N.zoomToIds(s.selection);
-      else if (act === "card") N.openCard();
+      if (act === "fit") N.fitSheet();      // F: 고른 것으로 확대하지 않고 도면 전체를 맞춘다
+      else if (act === "card") { if (N.editTarget()) N.applyEdit(); else if (!N.nodes.get().focus) N.openCard(); }      // Enter: 고치던 구간을 저장하거나 새 구간을 만든다
       else if (act === "submit") N.submitCard();
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
 
+  const members = N.useNodes((s) => s.members);
+  const leaving = useMemo(() => {
+    const have = new Set(panel === "nodes" && focus && list.some((n) => n.node_id === focus && n.state !== "locked") ? members[sheet] || [] : []);
+    return selection.filter((i) => have.has(i));
+  }, [selection, members, sheet, panel, focus, list]);
+
   return {
     props: {
-      mode, selection, segments, outside, links,
+      mode, selection, segments, outside, links, leaving,
       onLinkClick: (link) => N.followLink(link),
       onSelection: (d) => N.setSelection(d.selected, d.truncated),
       onSegmentClick: (d) => { N.focusNode(d.node_id); N.openPanel(); },
+      onPlainClick: (d) => {
+        if (N.pickParts().length) N.clearSelection();                     // Ctrl 없이 한 번 누르면 묶어 둔 고름이 모두 풀린다
+        if (!d.hit && shell.get().panel === "nodes") N.unfocus();         // 빈 곳을 누르면 구간 고름도 풀린다
+      },
       onEsc: () => {
+        if (!N.nodes.get().card && N.editTarget() && N.pickParts().length) { N.clearSelection(); return; }      // 고치던 것만 버리고 구간 고름은 둔다
         const s = N.nodes.get(), step = escStep({ card: !!s.card, focus: s.focus, mode: s.mode, selection: s.selection });
+        if (step !== "card" && Object.keys(s.picks).length) N.nodes.set({ picks: {} });      // Esc: 다른 도면에서 묶어 둔 것도 푼다(이 도면 것은 도면 부품이 푼다)
         if (step === "card") N.closeCard();
         else if (step === "focus") N.focusNode(s.focus);
         else if (step === "pan") N.setMode("pan");
@@ -58,44 +70,31 @@ export function useNodeCanvas(sheet, { onEsc } = {}) {
   };
 }
 
-function Toolbar() {
-  const mode = N.useNodes((s) => s.mode);
-  const b = (m, icon, label, key) => html`<button type="button" class=${mode === m ? "on" : ""} aria-pressed=${mode === m ? "true" : "false"} aria-label=${label + " (" + key + ")"}
-    title=${label + " (" + key + ")"} onClick=${() => N.setMode(m)}><${Icon} name=${icon} />${m === "pick" ? html`<span>고르기</span>` : null}</button>`;
-  return html`<div class="float toolbar" role="toolbar" aria-label="도면 도구">
-    ${b("pan", "arrows-move", "이동", "V")}${b("pick", "select", "네모로 고르기", "S")}<span class="sep"></span>
-    <button type="button" aria-label="전체 맞춤" title="전체 맞춤" onClick=${() => shell.set((s) => ({ command: { seq: s.command.seq + 1, type: "fit" } }))}><${Icon} name="zoom-scan" /></button></div>`;
-}
-
 function SelectionBar() {
-  const selection = N.useNodes((s) => s.selection);
+  const here = N.useNodes((s) => s.selection);
+  const picks = N.useNodes((s) => s.picks);
+  const members = N.useNodes((s) => s.members);
   const focus = N.useNodes((s) => s.focus);
-  const list = N.useNodes((s) => s.list.nodes);
+  const list = N.useNodes((s) => s.list);
   const card = N.useNodes((s) => s.card);
   const busy = N.useNodes((s) => s.busy);
   const truncated = N.useNodes((s) => s.truncated);
+  useStore((s) => s.panel);
+  const state = { selection: here, picks, members, focus, list };
+  const selection = N.pickedIds(state);      // 모든 도면에서 묶어 둔 것
   if (!selection.length || card) return null;
-  const node = list.find((n) => n.node_id === focus);
-  const edit = canEdit(node);
+  const target = N.editTarget(state);
+  const cut = truncated ? html`<${Chip} kind="warn" icon="alert-triangle" title="한 번에 고르는 수의 상한입니다. 네모를 나누어 고르세요.">앞 ${selection.length}개만 골랐습니다<//>` : null;
+  if (focus) {          // 구간을 고른 상태에서는 새로 만들지 않는다. 고칠 수 없으면(잠긴 구간·다른 탭) 번호와 X만
+    return html`<div class="float selbar" role="group" aria-label="고치는 구간">
+      <span class="count"><span class="seg-dot" style=${"background:" + colorOf(list.nodes, focus)}></span> ${focus}</span>${cut}
+      ${target ? html`<${Btn} kind="primary" icon="check" label="구간 수정" disabled=${busy} onClick=${() => N.applyEdit()}>구간 수정 <kbd>Enter</kbd><//>` : null}
+      <${Btn} kind="ghost" sm=${true} icon="x" label="고치던 것 버리기" title="버리기 (Esc)" onClick=${() => N.clearSelection()} /></div>`;
+  }
   return html`<div class="float selbar" role="group" aria-label="고른 것">
-    <span class="count">${selection.length}개 고름</span>
-    ${truncated ? html`<${Chip} kind="warn" icon="alert-triangle" title="한 번에 고르는 수의 상한입니다. 네모를 나누어 고르세요.">앞 ${selection.length}개만 골랐습니다<//>` : null}
-    <span class="hint">끌기: 더하기 · Alt+끌기: 빼기 · 클릭: 넣고 빼기 · Esc: 비우기</span>
-    ${node ? html`<${Chip} kind="accent" title="강조한 구간"><span class="seg-dot" style=${"background:" + colorOf(list, node.node_id)}></span> ${node.node_id}<//>` : null}
-    ${node && edit ? html`<${Btn} sm=${true} disabled=${busy} label=${node.node_id + "에 더하기"} onClick=${() => N.addSelectionTo(node.node_id)}>${node.node_id}에 더하기<//>
-      <${Btn} sm=${true} disabled=${busy} label=${node.node_id + "에서 빼기"} onClick=${() => N.removeSelectionFrom(node.node_id)}>빼기<//>` : null}
+    <span class="seg-dot" style="background:var(--accent, #0a5fc2)"></span>${cut}
     <${Btn} kind="primary" icon="plus" label="구간 만들기" onClick=${() => N.openCard()}>구간 만들기 <kbd>Enter</kbd><//>
     <${Btn} kind="ghost" sm=${true} icon="x" label="고른 것 비우기" title="비우기 (Esc)" onClick=${() => N.clearSelection()} /></div>`;
-}
-
-function PickHint() {
-  const mode = N.useNodes((s) => s.mode);
-  const selection = N.useNodes((s) => s.selection);
-  const card = N.useNodes((s) => s.card);
-  if (mode !== "pick" || selection.length || card) return null;
-  return html`<div class="float selbar pickhint" role="status"><${Icon} name="select" size=${15} />
-    <span>구간에 넣을 구성요소를 도면에서 네모로 끌어 고르세요. 고른 뒤 Enter를 누르면 바로 만들고, 이름은 만든 뒤 고칠 수 있습니다.</span>
-    <${Btn} kind="ghost" sm=${true} label="고르기 그만두기" title="그만두기 (Esc)" onClick=${() => N.setMode("pan")}>그만두기<//></div>`;
 }
 
 function NewNodeCard() {
@@ -113,26 +112,23 @@ function NewNodeCard() {
   }
   return html`<form class="float newnode" role="dialog" aria-label=${"새 구간 " + nextNo} onSubmit=${submit}
     onKeyDown=${(e) => { if (e.key === "Escape") { e.stopPropagation(); N.closeCard(); } else if (e.key === "Enter" && (e.ctrlKey || e.target.tagName !== "TEXTAREA")) { e.preventDefault(); N.submitCard(); } }}>
-    <div class="nn-h"><span class="seg-dot" style=${"background:" + colorOf(list.concat([{ node_id: nextNo }]), nextNo)}></span><b>구간 ${nextNo}을 만들었습니다</b>
-      ${sg ? html`<${Chip}>구성요소 ${sg.count}<//>` : null}<${Btn} kind="ghost" sm=${true} icon="x" label="카드 닫기" title="닫기 (Esc)" onClick=${N.closeCard} /></div>
+    <div class="nn-h"><span class="seg-dot" style=${"background:" + colorOf(list.concat([{ node_id: nextNo }]), nextNo)}></span><b>${nextNo}</b>
+      <${Btn} kind="ghost" sm=${true} icon="x" label="카드 닫기" title="닫기 (Esc)" onClick=${N.closeCard} /></div>
     <div class="field"><label for="nn-name">이름</label>
       <input id="nn-name" class="textbox" autofocus value=${card.name} maxlength="120" onInput=${(e) => N.editCard({ name: e.target.value })} /></div>
     <div class="field"><label for="nn-intent">설계 의도</label>
       <textarea id="nn-intent" class="textbox" rows="3" maxlength="2000" value=${card.intent} onInput=${(e) => N.editCard({ intent: e.target.value })}></textarea></div>
     ${sg && sg.boundary.length ? html`<div class="field"><label>경계</label><div class="acts-row">${sg.boundary.map((t, i) => html`${i ? html`<${Icon} name="chevron-right" size=${15} />` : null}<span class="chip id">${t}</span>`)}</div></div>` : null}
-    ${sg && sg.asked > sg.count ? html`<${Notice} kind="warn" icon="alert-triangle">고른 ${sg.asked}개 가운데 ${sg.asked - sg.count}개는 구간에 넣을 수 없는 선(신호선·계측선)이라 뺐습니다.<//>` : null}
     ${card.error ? html`<${Notice} kind="err" icon="alert-triangle">${card.error}<//>` : null}
-    <div class="muted small">이름과 설계 의도는 여기서 고칠 수 있습니다. 그대로 두려면 Esc나 다음 구간 고르기로 닫으세요.</div>
-    <div class="acts-row"><${Btn} kind="primary" icon="check" label="이름·설계 의도 저장" disabled=${card.busy || !card.name.trim()} onClick=${submit}>저장 <kbd>Enter</kbd><//>
-      <${Btn} label="이 구간 만들기 되돌리기" disabled=${card.busy} onClick=${N.undoMade}>되돌리기<//>
-      <${Btn} kind="ghost" label="카드 닫기" onClick=${N.closeCard}>닫기<//></div></form>`;
+    <div class="acts-row"><${Btn} kind="primary" icon="check" label="이름·설계 의도 저장" disabled=${card.busy || !card.name.trim()} onClick=${submit}>저장 <kbd>Enter</kbd><//></div></form>`;
 }
 
 function OutsideChip() {
   const view = N.useNodes((s) => s.sheetView);
   const showOutside = N.useNodes((s) => s.showOutside);
   const sheet = shell.get().sheet;
-  if (!view || view.graph_id !== sheet || !view.segments.length) return null;
+  const panel = useStore((s) => s.panel);
+  if (panel !== "nodes" || !view || view.graph_id !== sheet || !view.segments.length) return null;      // 구간 탭에서만(도면 탭에는 없다)
   return html`<div class="float chipbar">
     <button type="button" class="chip" aria-pressed=${showOutside ? "true" : "false"} title="구간에 들지 않은 구성요소를 흐리게 보입니다" onClick=${() => N.nodes.set({ showOutside: !showOutside })}>
       <${Icon} name="eye" size=${14} /> 구간 밖 ${view.outside_ids.length}개</button></div>`;
@@ -140,5 +136,5 @@ function OutsideChip() {
 
 export function NodeOverlay() {
   N.wire();
-  return html`<${OutsideChip} /><${SelectionBar} /><${PickHint} /><${NewNodeCard} /><${Toolbar} />`;
+  return html`<${OutsideChip} /><${SelectionBar} /><${NewNodeCard} />`;
 }

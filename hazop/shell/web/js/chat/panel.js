@@ -30,7 +30,6 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
   const conn = useStore((s) => s.conn);
   const chatConn = useChatConn();
   const connText = chatConn ? chatConn.chip : "구독 · " + (conn.label || "");
-  const connLoud = ["warn", "err"].includes(((chatConn || conn).tone) || "");      // 연결이 끊겼거나 한도에 닿았을 때만 글자를 낸다. 평상시는 점 하나와 모델 단추
   const [text, setText] = useState("");
   const input = useRef(null);
   const list = useRef(null);
@@ -86,7 +85,7 @@ export function ChatPanel({ collapsed, onToggle, onChip, onSheet }) {
           ? html`<button type="button" class="send stop" title="멈추기" aria-label="멈추기" onClick=${() => cmd("chat.stop")}><${Icon} name="player-stop" size=${16} /></button>`
           : html`<button type="button" class="send" title="보내기 (Enter)" aria-label="보내기" disabled=${blocked || !text.trim()} onClick=${send}><${Icon} name="send" size=${16} /></button>`}
       </div>
-      <div class="foot"><span class=${"dot " + ((chatConn || conn).tone || "plain")} title=${connText}></span>${connLoud ? html` ${connText}` : null}
+      <div class="foot"><span class=${"dot " + ((chatConn || conn).tone || "plain")} title=${connText} role="img" aria-label=${"AI 연결: " + connText}></span>
         <button type="button" class="btn ghost sm" title="모델 바꾸기" aria-label=${"모델: " + NAMES[chat.model]} style="margin-left:auto" onClick=${nextModel}>
           <${Icon} name="cpu" size=${14} />${NAMES[chat.model]}</button></div>
     </div></aside>`;

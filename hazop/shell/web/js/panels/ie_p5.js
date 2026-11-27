@@ -6,7 +6,7 @@ import { useState } from "../../vendor/hooks.module.js";
 import { Btn, Chip } from "../ui/parts.js";
 import * as I from "./ie_state.js";
 
-const STATUS_KIND = { imported: "ai", approved: "ok", excluded: "plain" };
+const STATUS_KIND = { imported: "plain", approved: "ok", excluded: "plain" };
 const MLD_KIND = { confirmed: "ok", rule: "accent", gap: "warn", unmapped: "warn", not_applicable: "plain" };
 const FIELD_NAME = { tag: "기기 태그", failure_mode: "고장모드", failure_code: "고장모드 코드", cause: "원인", op_mode: "운전 모드", effect: "고장 영향",
   detection: "탐지 방법", compensation: "보상 수단", remark: "비고·조치", severity_class: "Severity Class", hazop_entry: "관련 HAZOP 항목" };
@@ -110,7 +110,7 @@ function MldRow({ b, m }) {
       ${b.disposition ? html`<span class="small">판정: <b>${DISPOSITION[b.disposition.disposition]}</b> · ${b.disposition.reason}</span>` : null}
       ${open ? html`<span class="ie-judge acts-row" role="group" aria-label=${b.id + " 판정·잇기"}>
           ${b.status === "rule" ? html`<${Btn} sm=${true} kind="primary" label=${b.id + " 사람 확인"} title="이 가지의 범주에 든 후보가 이 가지의 사건인지 보고 확인합니다" disabled=${busy} onClick=${() => I.mldConfirm(b.id, true)}>사람 확인<//>` : null}
-          ${b.confirmed_by ? html`<${Btn} sm=${true} kind="ghost" label=${b.id + " 확인 풀기"} disabled=${busy} onClick=${() => I.mldConfirm(b.id, false)}>확인 풀기<//>` : null}
+          ${b.confirmed_by ? html`<${Btn} sm=${true} kind="ghost" label=${b.id + " 확인 해제"} disabled=${busy} onClick=${() => I.mldConfirm(b.id, false)}>확인 해제<//>` : null}
           ${m.groups.length ? html`<span class="small">그룹 잇기:</span>${m.groups.map((g) => html`<label class="small" key=${g.group_id}><input type="checkbox" checked=${links.includes(g.group_id)} onChange=${() => toggle(g.group_id)} /> ${g.group_id}</label>`)}
             <${Btn} sm=${true} label=${b.id + " 그룹 잇기 저장"} disabled=${busy} onClick=${() => I.mldLink(b.id, links)}>잇기 저장<//>` : null}
           ${b.status !== "covered" ? html`<select class="textbox" aria-label=${code + " 처리"} value=${disp} onChange=${(e) => setDisp(e.target.value)}>${Object.keys(DISPOSITION).map((k) => html`<option value=${k} key=${k}>${DISPOSITION[k]}</option>`)}</select>

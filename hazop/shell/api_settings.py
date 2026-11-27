@@ -61,6 +61,20 @@ def _conn(engine):
     return conn
 
 
+def current_state(engine):
+    """지금 AI 연결 상태 한 벌: 창 머리(읽기 connection)와 설정 패널(aisettings의 current)이 같은 값을 본다. 연결 설정 객체가 있으면 그 상태,
+    없고 연결 창구만 있으면 창구의 상태, 둘 다 없으면 '연결 안 됨'."""
+    try:
+        return adapter_status(_conn(engine))
+    except Refused:
+        pass
+    none = dict(NONE_STATE, via=None, method_name="연결 안 됨", model=None, model_name="", chip="연결 안 됨")
+    if engine.ai is None:
+        return none
+    st = dict(engine.ai.status() or {})
+    return dict(none, **st, chip=st.get("chip") or st.get("label") or none["chip"], method_name=st.get("method_name") or st.get("label") or none["method_name"])
+
+
 def _views():
     from hazop.app import conn_view
     return conn_view
@@ -110,8 +124,7 @@ def view(engine):
     try:
         conn = _conn(engine)
     except Refused:
-        return {"available": False, "current": dict(NONE_STATE, via=None, method_name="연결 안 됨", model=None, model_name="", chip="연결 안 됨"),
-                "reason": "AI 연결 설정을 쓸 수 없습니다."}
+        return {"available": False, "current": current_state(engine), "reason": "AI 연결 설정을 쓸 수 없습니다."}
     cv = _views()
     methods = []
     for m in conn.methods():

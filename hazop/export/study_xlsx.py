@@ -283,7 +283,7 @@ def worksheet_rows(results, view, pg, deviations, scope="all", node_ids=None, ex
                     "parameter": d["parameter"], "guideword": guideword_text(d, en), "deviation": d["label"],
                     "deviation_id": cell["deviation_id"], "intent": (intents or {}).get(nid) or ""}
             for e in cell["entries"]:
-                if scope == "approved" and e.get("status") != "approved":
+                if scope == "approved" and (e.get("status") != "approved" or e.get("scope_changed")):  # '범위 바뀜'은 다시 볼 것
                     continue
                 rows.append(dict(base, kind="entry", status_key=e.get("status"), risk_value=e.get("risk"),
                                  cause=tagged(e.get("cause")), cause_kind=res.cause_kind_label(e),
@@ -310,7 +310,8 @@ def counts(results, node_ids=None, approved_only=False):
     """요약 수치. node_ids를 주면 그 구간 칸만 센다. scenarios는 모든 상태의 항목 수(approved_only면 승인 항목만 센다)."""
     keep = (lambda c: True) if node_ids is None else (lambda c: c["node_id"] in node_ids)
     cells = [c for c in results["cells"] if keep(c)]
-    entries = [e for c in cells for e in c["entries"] if not approved_only or e.get("status") == "approved"]
+    entries = [e for c in cells for e in c["entries"]
+               if not approved_only or (e.get("status") == "approved" and not e.get("scope_changed"))]
     by_status = {s: sum(e.get("status") == s for e in entries) for s in res.ENTRY_STATUSES}
     unreviewed = sum(e.get("status") in res.UNDECIDED_STATUSES or (res.is_ai_draft(e) and e.get("status") != "rejected")
                      for e in entries)

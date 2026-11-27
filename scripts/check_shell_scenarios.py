@@ -47,7 +47,7 @@ SCENARIOS = [
     ("N4", "도면 고치기(태그 고침·되돌리기·다시 하기)", "offscreen", ("N3",)),
     ("N5", "쪽 확정(원본과 견줌 → 확정)", "offscreen", ("N4",)),
     ("N6", "채팅 질문과 경로 표시", "offscreen", ("N1", "N2")),
-    ("N7", "채팅으로 구간 만들기·확정", "offscreen", ("N1", "N2")),
+    ("N7", "채팅으로 구간 만들기(확정 없이 바로 분석에 듦)", "offscreen", ("N1", "N2")),
     ("N8", "일괄 분석", "offscreen", ("N7",)),
     ("N9", "결과 판정(승인·보류)", "offscreen", ("N8",)),
     ("N10", "Excel 내보내기", "offscreen", ("N9",)),
@@ -553,20 +553,25 @@ def n7_chat_nodes(run, c):
     made = [n for n in view.get("nodes", []) if str(n.get("name", "")).startswith("시나리오 구간")]
     c.need("채팅 동작으로 구간 둘이 생김", len(made) == 2, json.dumps(view, ensure_ascii=False)[:400])
     ids = [n["node_id"] for n in made]
+    # 구간 확정 단계를 없앰(구간 규격 §0.2, 2026-11-26): 만든 구간은 확정 없이 적용됨 상태로 곧바로 분석에 든다
+    states = {n["node_id"]: n.get("state") for n in view.get("nodes", []) if n["node_id"] in ids}
+    c.ok("두 구간은 확정 없이 적용됨", set(states.values()) == {"applied"}, states)
+    saved = nodes.load(pg) or {}
+    c.ok("두 구간이 분석에 듦(확정자 이름 없음)",
+         all(nodes.is_active(n) and not n.get("confirmed") for n in saved.get("nodes", []) if n["node_id"] in ids),
+         [(n["node_id"], n.get("state"), n.get("confirmed")) for n in saved.get("nodes", []) if n["node_id"] in ids])
+    rows = [n["node_id"] for n in (run.read("results") or {}).get("nodes") or []]
+    c.ok("분석 결과 행에 두 구간", set(ids) <= set(rows), rows)
+    # 채팅의 확정 동작은 없다: 모델이 내도 확인 상자 없이 거절되고 아무것도 바뀌지 않는다
     run.queue.append(([], {"text": "두 구간을 확정할까요?", "actions": [
         {"action": "nodes.confirm", "args": {"node_ids": ids}, "why": "확정"}]}))
     m = run.mark()
     run.cmd("chat.ask", {"text": "두 구간 확정해 줘"})
     wait_for(lambda: run.events_since(m, "chat.actions"), 15)
     items = [i for e in run.events_since(m, "chat.actions") for i in e.get("items", [])]
-    tokens = [i["token"] for i in items if i.get("token")]
-    c.need("확정은 확인 상자(토큰)로 묻는다", tokens, items or [(e.get("name"), e.get("data")) for e in run.events[m:] if e.get("t") == "event"])
-    c.ok("화면: 채팅에 확인 상자", wait_for(lambda: "실행" in run.text(), 10), run.text()[-300:])
-    r = run.cmd("chat.action.approve", {"token": tokens[0]})
-    c.need("chat.action.approve", r["ok"], r)
-    view = run.read("nodes") or {}
-    states = {n["node_id"]: n.get("state") for n in view.get("nodes", []) if n["node_id"] in ids}
-    c.ok("두 구간 확정", set(states.values()) == {"confirmed"}, states)
+    c.ok("채팅의 확정 동작은 거절(확인 상자 없음)", items and all(i.get("status") == "rejected" and not i.get("token") for i in items), items)
+    again = {n["node_id"]: n.get("state") for n in (run.read("nodes") or {}).get("nodes", []) if n["node_id"] in ids}
+    c.ok("거절 뒤에도 두 구간은 그대로", again == states, again)
     path = nodes.store_path(pid, pg.get("graph_id") or "project-%s" % pid) if hasattr(nodes, "store_path") else None
     c.ok("구간 파일 저장", path is None or os.path.isfile(path) or glob.glob(os.path.join(nodes.store_dir(), "*", "*.json")), path)
     c.ok("화면: 구간 패널에 이름", run.panel("nodes", "시나리오 구간 1"), run.text()[-300:])

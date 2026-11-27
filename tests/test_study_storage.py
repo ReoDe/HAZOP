@@ -152,15 +152,15 @@ class ConvertTest(WorkRoot):
         self.assertEqual({n["state"] for n in ns["nodes"]}, {"applied"})
         doc = res.load(ns)
         held = {c["node_id"]: c for c in doc["cells"] if c["entries"]}
-        self.assertTrue(all(c["hold"] for c in held.values()), "확정 해제 상태라 칸은 보관")
+        self.assertFalse(any(c["hold"] for c in held.values()), "적용됨 구간도 분석에 들어 칸을 보관하지 않음(구간 확정 단계를 없앰, 구간 규격 §0.2)")
         self.assertEqual(sorted(e["entry_id"] for c in held.values() for e in c["entries"]), ["e1", "e2"],
                          "사람이 승인한 항목이 백업에만 남지 않음")
         self.assertFalse(held["S1"]["entries"][0].get("scope_changed"), "구성요소가 같은 구간은 그대로")
         self.assertTrue(held["S2"]["entries"][0].get("scope_changed"), "넓어진 구간은 범위 바뀜")
         ns = sn.confirm_nodes(ns, self.g, ["S1"], "검토자", at=AT)
         doc = res.reconcile(doc, ns, DEVS)
-        self.assertFalse(self.cells(doc)[("S1", "D01")]["hold"], "확정하면 바로 ⑤에 나타남")
-        self.assertTrue(self.cells(doc)[("S2", "D02")]["hold"])
+        self.assertFalse(self.cells(doc)[("S1", "D01")]["hold"])
+        self.assertFalse(self.cells(doc)[("S2", "D02")]["hold"])
 
     def test_4_unmapped_cells_are_archived_and_the_rest_converts(self):
         prev = [remap.snapshot(set01(self.g, [("S1", ["TK"]), ("S9", ["LT"])]), "t0")]
@@ -249,7 +249,9 @@ class ConvertTest(WorkRoot):
         ns = sn.load(self.g)
         self.assertEqual([(n["node_id"], n["state"]) for n in ns["nodes"]], [("S1", "confirmed"), ("S3", "applied")])
         self.assertEqual([n["node_id"] for n in ns["legacy"]["excluded_nodes"]], ["S2"])
-        self.assertTrue(self.cells(res.load(ns))[("S3", "D01")]["hold"])
+        cell = self.cells(res.load(ns))[("S3", "D01")]
+        # 항목이 있어 남긴 옛 제외 구간도 분석에 든다. 분석 판을 올려(nodes.settle_screen) 판정은 '범위 바뀜'으로 인계에서 빠진다(구간 확정 단계를 없앰, 구간 규격 §0.2)
+        self.assertEqual((cell["hold"], bool(cell["entries"][0].get("scope_changed"))), (False, True))
         self.assertIn("S2", sn.issued_node_ids(ns), "숨긴 구간 번호도 다시 내지 않음")
 
 
@@ -359,14 +361,20 @@ class CellTest(WorkRoot):
         put_entries(self.doc, "S2", "I2", [entry("e2")])
 
     def test_8_repro4_reopen_one_node_holds_only_its_cells(self):
+        """확정 해제(옛 길)는 이제 분석 범위를 바꾸지 않는다: 칸을 보관하지 않고 고칠 수 있다(구간 확정 단계를 없앰, 구간 규격 §0.2). 옛 파일에 남은 보관 칸은 풀린다."""
         ns = sn.reopen_node(self.ns, "S1", at=AT)
         doc = res.reconcile(self.doc, ns, DEVS)
         hold = {(c["node_id"], c["item_id"]): c["hold"] for c in doc["cells"]}
-        self.assertEqual(hold, {("S1", "I1"): True, ("S1", "I2"): True, ("S2", "I1"): False, ("S2", "I2"): False})
-        self.assertEqual(res.validate(doc, ns), [], "보관 칸은 문제가 아님(재현 4b)")
+        self.assertEqual(hold, {("S1", "I1"): False, ("S1", "I2"): False, ("S2", "I1"): False, ("S2", "I2"): False})
+        self.assertEqual(res.validate(doc, ns), [])
         self.assertEqual(sum(len(c["entries"]) for c in doc["cells"]), 2, "결과 전체가 비지 않음")
-        with self.assertRaises(ValueError):
-            res.set_status(doc, "S1", "D01", "e1", "rejected", reason="시험 사유", node_set=ns)
+        res.set_status(doc, "S1", "D01", "e1", "rejected", reason="시험 사유", node_set=ns)
+        old = copy.deepcopy(self.doc)
+        for c in old["cells"]:
+            c["hold"] = c["node_id"] == "S1"
+        self.assertFalse(any(c["hold"] for c in res.reconcile(old, ns, DEVS)["cells"]))
+        with self.assertRaises(ValueError):  # 보관 칸을 맞추지 않은 채로는 고치지 않는다
+            res.set_status(old, "S1", "D01", "e1", "rejected", reason="시험 사유", node_set=ns)
 
     def test_9_one_bad_cell_is_quarantined_and_written_back(self):
         bad = copy.deepcopy(self.doc)
@@ -381,16 +389,16 @@ class CellTest(WorkRoot):
     def test_10_design_intent_change_bumps_rev_and_marks_entries(self):
         ns = sn.reopen_node(self.ns, "S1", at=AT)
         ns = sn.set_design_intent(ns, "S1", "탱크에서 펌프로 보냄", at=AT)
-        self.assertEqual(sn._find(ns, "S1")["rev"], 2)
+        self.assertEqual(sn._find(ns, "S1")["rev"], 3, "확정 해제와 설계 의도가 한 번씩 올림(확정 해제는 분석 판을 올림, 구간 규격 §0.2)")
         ns = sn.confirm_nodes(ns, self.g, ["S1"], "검토자", at=AT)
         doc = res.reconcile(self.doc, ns, DEVS)
         e = next(c for c in doc["cells"] if (c["node_id"], c["item_id"]) == ("S1", "I1"))["entries"][0]
-        self.assertEqual((e["scope_changed"]["from_rev"], e["scope_changed"]["to_rev"], e["status"]), (1, 2, "approved"))
+        self.assertEqual((e["scope_changed"]["from_rev"], e["scope_changed"]["to_rev"], e["status"]), (1, 3, "approved"))
         self.assertIs(res.reconcile(doc, ns, DEVS), doc, "같은 입력이면 그대로")
         doc = res.set_status(doc, "S1", "D01", "e1", "approved", at=AT, node_set=ns)
         cell = next(c for c in doc["cells"] if (c["node_id"], c["item_id"]) == ("S1", "I1"))
         self.assertNotIn("scope_changed", cell["entries"][0])
-        self.assertEqual(cell["node_rev"], 2, "다시 확인하면 칸 판을 맞춤")
+        self.assertEqual(cell["node_rev"], 3, "다시 확인하면 칸 판을 맞춤")
         self.assertIs(res.reconcile(doc, ns, DEVS), doc)
 
     def test_17_inserted_deviation_keeps_item_id_and_removed_one_is_archived(self):
@@ -493,7 +501,7 @@ class IeTest(WorkRoot):
         put_entries(self.doc, "S1", "I1", [self.cause("e1")])
         put_entries(self.doc, "S3", "I1", [self.cause("e3", ref_soid="PP")])
         self.doc["cells"][-2]["entries"][0]["scope_changed"] = True  # S3/I1
-        self.ns = sn.reopen_node(self.ns, "S1", at=AT)
+        sn._find(self.ns, "S1")["rev"] = 2  # S1의 구성요소가 바뀜: 확정 해제 대신 '범위 바뀜'으로 빠진다(구간 확정 단계를 없앰, 구간 규격 §0.2)
         doc = res.reconcile(self.doc, self.ns, DEVS)
         b, _d = self.bundle(doc)
         self.assertEqual(b["candidates"], [])
@@ -567,10 +575,11 @@ class EditTest(WorkRoot):
         with self.assertRaises(nt.Refused) as why:
             nt.undo_batch(later, self.doc, bid, later["set_rev"], "검토자", "user", at=AT)
         self.assertIn("그 사이 바뀜", str(why.exception))
-        conf = sn.confirm_nodes(ns, self.g, ["S3"], "검토자", at=AT)
+        conf = copy.deepcopy(ns)
+        sn._find(conf, "S3").update(state="locked", locked={"at": AT, "by": "검토자", "reason": None})
         with self.assertRaises(nt.Refused) as why:
             nt.undo_batch(conf, self.doc, bid, conf["set_rev"], "검토자", "user", at=AT)
-        self.assertIn("확정", str(why.exception))
+        self.assertIn("잠긴", str(why.exception), "확정이 아니라 잠금이 되돌리기를 막음(구간 확정 단계를 없앰, 구간 규격 §0.2)")
         held, doc = self.held_entries(ns, "S3")
         with self.assertRaises(nt.Refused):
             nt.undo_batch(held, doc, bid, held["set_rev"], "검토자", "user", at=AT)
@@ -644,7 +653,7 @@ class VersionTest(WorkRoot):
                 n["kind"] = "compressor"
         out, plan = migrate.migrate_set(ns, g2, at=AT)
         self.assertEqual(sorted(plan["recheck"]), ["S2"])
-        self.assertEqual([(n["state"], n["rev"]) for n in out["nodes"]], [("confirmed", 1), ("applied", 2)])
+        self.assertEqual([(n["state"], n["rev"]) for n in out["nodes"]], [("confirmed", 1), ("confirmed", 2)], "상태는 내리지 않음(구간 확정 단계를 없앰, 구간 규격 §0.2)")
         self.assertEqual(set(out["nodes"][0]["members"]), set(ids(g2, "TK", "V1")), "ID는 새 판으로")
         same, plan2 = migrate.migrate_set(build(self.g, [("A", ["TK", "V1"])]), graph("v2", shift=10), at=AT)
         self.assertEqual((plan2["recheck"], same["nodes"][0]["state"]), ({}, "confirmed"), "구간 밖이 있어도 늘 재확인 아님")
@@ -671,10 +680,10 @@ class AdversaryTest(WorkRoot):
         ops = [{"op": "add", "name": "후보 %d" % i, "members": ids(self.g, x)}
                for i, x in enumerate(["TK", "V1", "V2", "PP"])]
         ops.append({"op": "add", "name": "큰 후보", "members": ids(self.g, "LT", "L1", "L2")})
-        ok, _r, _b = nt.apply_nodes(ns, empty, self.g, ops, {"stage": "representative"}, "ai", ns["set_rev"], at=AT)
-        with self.assertRaises(nt.Refused):  # 한 요청에서 추가 5 + 분할 1 = 새 구간 6
+        ok, _r, _b = nt.apply_nodes(ns, empty, self.g, ops, {}, "ai", ns["set_rev"], at=AT)
+        with mock.patch.object(nt, "REST_LIMIT", 5), self.assertRaises(nt.Refused):  # 한 요청에서 추가 5 + 분할 1 = 새 구간 6
             nt.apply_nodes(ns, empty, self.g, ops + [{"op": "split", "node_id": "S5", "members": ids(self.g, "LT")}],
-                           {"stage": "representative"}, "ai", ns["set_rev"], at=AT)
+                           {}, "ai", ns["set_rev"], at=AT)
         with self.assertRaises(nt.Refused):
             nt.apply_nodes(ok, empty, self.g, [{"op": "edit", "node_id": "S1", "name": "   "}], {}, "user",
                            ok["set_rev"], at=AT)
@@ -688,7 +697,8 @@ class AdversaryTest(WorkRoot):
                                       ns["set_rev"], at=AT)
         g2 = graph("v2", shift=10)
         moved, plan = migrate.migrate_set(ns, g2, at=AT)
-        self.assertEqual(plan["recheck"], {}, "확정한 적 없는 적용됨 구간은 판만 옮김")
+        self.assertEqual(plan["recheck"], {"S1": "옛 판의 구간 내용 기록이 없음"},
+                         "적용됨 구간도 분석했을 수 있어 내용 기록이 없으면 다시 확인(구간 확정 단계를 없앰, 구간 규격 §0.2)")
         undone, _d = nt.undo_batch(moved, doc, bid, moved["set_rev"], "검토자", "user", at=AT)
         self.assertEqual(sn._find(undone, "S2")["members"], ids(g2, "V1"))
 
@@ -809,7 +819,7 @@ class ReviewFixTest(WorkRoot):
         ns2 = sn.confirm(sn.add_member(sn.reopen(ns, at=AT), "S1", ids(self.g, "V1")[0], at=AT), self.g, "검토자", at=AT)
         doc2 = res.reconcile(doc, ns2, DEVS)
         cell = next(c for c in doc2["cells"] if c["item_id"] == "I2")
-        self.assertEqual((cell["scope_changed"]["from_rev"], cell["scope_changed"]["to_rev"]), (1, 2))
+        self.assertEqual((cell["scope_changed"]["from_rev"], cell["scope_changed"]["to_rev"]), (1, 3), "확정 해제 + 구성요소 더하기(확정 해제는 분석 판을 올림, 구간 규격 §0.2)")
         doc3 = res.set_status(doc2, "S1", "D01", "e9", "approved", at=AT, node_set=ns2)
         self.assertTrue(sn.lock_problems(ns2, "S1", doc3), "칸 판정을 다시 보기 전에는 잠글 수 없음")
         doc4 = res.recheck_cell(doc3, "S1", cell["deviation_id"], "검토자", at=AT, node_set=ns2)

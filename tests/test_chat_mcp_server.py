@@ -315,15 +315,15 @@ class StdioTest(unittest.TestCase):
 
     def test_roundtrip(self):
         calls = [{"jsonrpc": "2.0", "id": 10 + i, "method": "tools/call",
-                  "params": {"name": "get_component", "arguments": {"id": "g1/e-pz01"}}} for i in range(9)]
+                  "params": {"name": "get_component", "arguments": {"id": "g1/e-pz01"}}} for i in range(mcp_server.CALL_LIMIT + 1)]
         p, out = run_stdio([sys.executable, "-E", "-s", FAKE_TOOLS, "--project", "p", "--question-file", self.qfile],
                            [INIT, INITED, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}] + calls)
         self.assertEqual(p.returncode, 0, p.stderr.decode("utf-8", "replace"))
-        self.assertEqual([m["id"] for m in out], [1, 2] + [10 + i for i in range(9)])
+        self.assertEqual([m["id"] for m in out], [1, 2] + [10 + i for i in range(mcp_server.CALL_LIMIT + 1)])
         self.assertIn("trace_path", [t["name"] for t in out[1]["result"]["tools"]])
         envs = [json.loads(m["result"]["content"][0]["text"].split("\n", 1)[1]) for m in out[2:]]
-        self.assertTrue(all(e["ok"] for e in envs[:8]))
-        self.assertEqual(envs[8]["error"]["code"], "limit_reached")
+        self.assertTrue(all(e["ok"] for e in envs[:mcp_server.CALL_LIMIT]))
+        self.assertEqual(envs[mcp_server.CALL_LIMIT]["error"]["code"], "limit_reached")
 
     def test_reread_when_data_changes(self):
         vfile = os.path.join(self.tmp, "version.txt")

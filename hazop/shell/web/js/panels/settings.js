@@ -10,6 +10,7 @@ import { cmd, on, onChanged, read } from "../bridge.js";
 import { Btn, Chip, Switch } from "../ui/parts.js";
 import { setChat } from "../chat/panel.js";
 import { ConsentSetting } from "./auto_state.js";
+import { WorkLog } from "./worklog.js";
 
 const TONE = (t) => (t === "ok" || t === "warn" || t === "err" ? t : "");
 
@@ -143,6 +144,7 @@ export function SettingsPanel({ onClose }) {
         <div class="acts-row" style="margin-top:8px"><${Btn} sm=${true} kind="primary" disabled=${!name.trim()} onClick=${saveName}>저장<//></div></div>
       <${AiConnection} />
       <${ConsentSetting} />
+      <${WorkLog} />
       <div class="card"><h3>프로젝트</h3><div class="kv"><div class="k"><b>${data.project_id || "프로젝트 없음"}</b><span>도면 ${data.drawings.length}장 · 등록 자료 ${data.documents.length}건</span></div></div></div>
       <div class="card"><h3>시작 화면</h3>
         <div class="kv"><div class="k"><b>시작할 때 새 화면 쓰기</b><span>새 화면이 기본입니다. 끄면 다음 실행부터 이전 화면으로 열립니다. 아래 '이전 화면 열기'는 언제나 쓸 수 있습니다.</span></div>

@@ -119,7 +119,7 @@ class MigrateTest(unittest.TestCase):
         last = got["history"][-1]
         self.assertEqual((last["op"], last["detail"]["from"], last["detail"]["to"], last["detail"]["matched"]),
                          ("migrate_version", "v-1", "v-2", len(g2["nodes"])))
-        self.assertEqual(migrate.notice(got), "그래프 판이 바뀌어(v-1 → v-2) 구성요소 %d개를 새 판에 다시 맞췄습니다. 확정은 그대로입니다."
+        self.assertEqual(migrate.notice(got), "그래프 판이 바뀌어(v-1 → v-2) 구성요소 %d개를 새 판에 다시 맞췄습니다. 구간 내용은 그대로입니다."
                          % len(g2["nodes"]))
         self.assertEqual(got["history"][:-1], self.ns["history"])
         self.assertEqual(last["detail"]["recheck"], {})
@@ -137,7 +137,8 @@ class MigrateTest(unittest.TestCase):
         self.assertEqual(sorted(p["recheck"]), lost)
         self.assertIn("새 판에서 찾지 못한", p["recheck"][lost[0]])
         for n in got["nodes"]:
-            self.assertEqual((n["state"], n["rev"]), ("applied", 2) if n["node_id"] in lost else ("confirmed", 1))
+            # 재확인 구간도 상태는 그대로 두고 분석 판(rev)만 올린다(구간 확정 단계를 없앰, 구간 규격 §0.2)
+            self.assertEqual((n["state"], n["rev"]), ("confirmed", 2) if n["node_id"] in lost else ("confirmed", 1))
 
     def test_added_component_is_not_a_reason_but_ambiguity_is(self):
         extra = graph("v-2", objects=OBJECTS + [("FT", "transmitter", "instrument")])
@@ -338,7 +339,8 @@ class ShiftedSymbolTest(unittest.TestCase):
         detail = got["history"][-1]["detail"]
         self.assertEqual(sorted(detail["recheck"]), holder)
         self.assertIn("새 판에서 찾지 못한", detail["recheck"][holder[0]])
-        self.assertTrue(all(n["state"] == "applied" for n in got["nodes"] if n["node_id"] in holder))
+        self.assertTrue(all(n["state"] == "confirmed" and n["rev"] == 2 for n in got["nodes"] if n["node_id"] in holder),
+                        "상태를 내리지 않고 분석 판을 올림(구간 확정 단계를 없앰, 구간 규격 §0.2)")
 
     def test_same_place_on_another_drawing_is_not_the_same_symbol(self):
         g2 = drawn("v-2", dict(PLACES, V2=[200, 0, 5, 5]))
@@ -402,7 +404,7 @@ class ShiftedSymbolTest(unittest.TestCase):
         rpath = res.save(results_for(self.ns, self.g1), None)
         got = sn.load(drawn("v-2", PLACES))
         self.assertEqual([m for n in got["nodes"] for m in n["members"]], [])
-        self.assertEqual({n["state"] for n in got["nodes"]}, {"applied"})
+        self.assertEqual({(n["state"], n["rev"]) for n in got["nodes"]}, {("confirmed", 2)}, "상태는 두고 분석 판을 올림(구간 확정 단계를 없앰, 구간 규격 §0.2)")
         with open(rpath, encoding="utf-8") as fh:
             moved = json.load(fh)
         self.assertTrue(all(idmap.is_tomb(r["ref"]) for c in moved["cells"] for e in c["entries"]
@@ -480,8 +482,8 @@ class LostMemberTest(unittest.TestCase):
         c = sn.load(g3)
         node = next(n for n in c["nodes"] if n["node_id"] == holder)
         self.assertNotIn(gone, node["members"])
-        self.assertEqual(node["state"], "applied", "사람이 다시 확인할 때까지 재확인 상태")
-        self.assertTrue(node["lost"])
+        self.assertEqual(node["state"], "confirmed", "상태는 내리지 않음(구간 확정 단계를 없앰, 구간 규격 §0.2)")
+        self.assertTrue(node["lost"], "사람이 다시 확인할 때까지 찾지 못한 구성요소 표시가 남음")
 
     def test_lost_member_id_reused_by_a_moved_member(self):
         """잃은 구성요소의 옛 entity_id를 새 판의 다른 구성요소가 받아도(번호가 한 칸 당겨짐) 이전이 멈추지 않는다."""
@@ -502,7 +504,7 @@ class LostMemberTest(unittest.TestCase):
         node = next(n for n in c["nodes"] if n["node_id"] == holder)
         self.assertIn(entity(g3, "V1"), node["members"])
         self.assertFalse(node.get("lost"))
-        self.assertEqual(node["state"], "applied", "되찾아도 재확인")
+        self.assertEqual((node["state"], node["rev"]), ("confirmed", 3), "되찾아도 재확인: 상태는 두고 분석 판을 올림(구간 확정 단계를 없앰, 구간 규격 §0.2)")
         self.assertEqual(self.cause_ref(), REF("V1"), "⑤ 잃은 참조도 되찾음")
 
     def test_block4_check_needed_reports_nodes_and_counts(self):

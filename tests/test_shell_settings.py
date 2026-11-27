@@ -394,5 +394,34 @@ class KeyDialogTest(unittest.TestCase):
         self.assertEqual(dlg.key_edit.text(), "")
 
 
+class HeaderAndSettingsSameStateTest(unittest.TestCase):
+    """창 머리(읽기 connection)와 설정 패널(aisettings의 current)은 같은 값을 본다."""
+
+    def engine(self, ai):
+        from hazop.shell import api
+        tmp = tempfile.mkdtemp(prefix="hazop-hdr-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        return api.Engine(settings_path=os.path.join(tmp, "settings.json"), emit=lambda *a: None, ai=ai)
+
+    def both(self, engine):
+        from hazop.shell import api, api_settings
+        head = json.loads(api.ReadApi(engine).read(["connection"], {}).body.decode("utf-8"))
+        return head, api_settings.view(engine)["current"]
+
+    def test_a_connection_without_settings_object_shows_the_same_state_in_both(self):
+        class Fake:
+            def status(self):
+                return {"state": "ok", "label": "정상", "tone": "ok"}
+        head, cur = self.both(self.engine(Fake()))
+        self.assertEqual((head["state"], head["label"], head["tone"]), (cur["state"], cur["label"], cur["tone"]))
+        self.assertEqual(head["label"], "정상")
+        self.assertEqual(head["chip"], cur["chip"])
+
+    def test_no_connection_says_not_connected_in_both(self):
+        head, cur = self.both(self.engine(None))
+        self.assertEqual((head["state"], head["label"]), (cur["state"], cur["label"]))
+        self.assertEqual(head["label"], "연결 안 됨")
+
+
 if __name__ == "__main__":
     unittest.main()

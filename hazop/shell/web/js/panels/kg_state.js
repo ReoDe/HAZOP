@@ -4,6 +4,7 @@
 import { useLayoutEffect, useState } from "../../vendor/hooks.module.js";
 import { createStore, store } from "../store.js";
 import { cmd, on, onChanged, read } from "../bridge.js";
+import { locate } from "../locate.js";
 
 const EMPTY = { available: false, reason: "", ver: "none", cap: 1500, total: 0, mode: "full", expand: [], groups: [], layers: {}, expect: { states: [], recheck: 0 }, notes: [] };
 
@@ -229,17 +230,10 @@ export async function judge(id, action, reason, evidence) {
   }
 }
 
-/** 도면에서 보기: 그 도면을 열고 패널을 닫은 뒤 구성요소에 맞춰 확대한다(main.js의 답 카드 ID 칩과 같은 길). */
+/** 도면에서 보기: 패널을 닫고 그 도면을 전체 맞춤으로 보이며 그 구성요소만 강조한다(답 카드 ID 칩과 같은 길). */
 export function showOnSheet(at) {
   if (!at || !at.sheet) return false;
-  const cur = store.get().sheet;
-  if (at.sheet !== cur) {
-    store.set({ sheet: at.sheet, marks: { rid: null, bySheet: {} } });
-    cmd("sheet.open", { graph_id: at.sheet }).catch(() => {});
-  }
-  store.set({ panel: null });
-  if (at.local_id) setTimeout(() => store.set((s) => ({ command: { seq: s.command.seq + 1, type: "zoomTo", ids: [at.local_id], pad: 0.15 } })), 0);
-  return true;
+  return locate({ sheet: at.sheet, ids: at.local_id ? [at.local_id] : [], patch: { panel: null } });
 }
 
 // ---------------------------------------------------------------- 엔진 알림

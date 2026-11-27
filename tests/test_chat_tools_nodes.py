@@ -359,7 +359,8 @@ class RepresentativeFlowTest(NodeToolsBase):
         node = self.rpc("get_node", node_id="S1")
         self.assertEqual((node["data"]["design_intent"], node["data"]["design_intent_by"]), ("초안 1", "ai"))
 
-    def test_rest_needs_the_human_to_confirm_first(self):
+    def test_more_ai_nodes_apply_without_a_human_check(self):
+        """'확인 전 5개' 상한을 없앴다(구간 규격 §0.2, 2026-11-26): 앞 구간 3개 뒤에 3개를 더 만들어도 확인 없이 들어간다."""
         cand = self.rpc("make_candidates", limit=10)
         picks = cand["data"]["candidates"]
         first = [{"op": "add", "cand_id": p["cand_id"], "name": "구간 %d" % i} for i, p in enumerate(picks[:3])]
@@ -368,20 +369,21 @@ class RepresentativeFlowTest(NodeToolsBase):
         more = [{"op": "add", "cand_id": p["cand_id"], "name": "나머지 %d" % i} for i, p in enumerate(picks[3:6])]
         if len(more) < 3:
             self.skipTest("후보가 6개 미만")
-        with self.assertRaises(node_tools.Refused) as cm:     # 사람이 확인하기 전에는 누적 5개를 넘길 수 없다
-            self.apply(more, "q-2-bbbb")
-        self.assertIn("확인", str(cm.exception))
-        self.assertEqual(len(self.state["set"]["nodes"]), 3)
+        self.apply(more, "q-2-bbbb")
+        self.assertEqual(len(self.state["set"]["nodes"]), 6)
 
-    def test_locked_and_confirmed_nodes_are_not_touched_by_ai_edits(self):
+    def test_locked_nodes_are_not_touched_by_ai_edits(self):
+        """잠긴 구간은 AI가 바꾸지 못한다. 옛 확정 구간은 보통 구간이라 AI가 만든 것이면 고칠 수 있다(구간 규격 §0.2)."""
         picks = self.rpc("make_candidates", limit=3)["data"]["candidates"]
         self.apply([{"op": "add", "cand_id": picks[0]["cand_id"], "name": "구간 1"}], "q-1-aaaa")
-        self.state["set"]["nodes"][0]["state"] = "confirmed"
+        self.state["set"]["nodes"][0]["state"] = "locked"
         listed = self.rpc("list_nodes")["data"]["items"][0]
-        self.assertEqual(listed["state"], "confirmed")     # 도구가 상태를 보여 주므로 모델이 건드리지 않을 수 있다
+        self.assertEqual(listed["state"], "locked")     # 도구가 상태를 보여 주므로 모델이 건드리지 않을 수 있다
         with self.assertRaises(node_tools.Refused):
             self.apply([{"op": "edit", "node_id": "S1", "name": "바꿈"}], "q-3-cccc")
-
+        self.state["set"]["nodes"][0]["state"] = "confirmed"
+        self.apply([{"op": "edit", "node_id": "S1", "name": "바꿈"}], "q-4-dddd")
+        self.assertEqual(self.state["set"]["nodes"][0]["name"], "바꿈")
 
 if __name__ == "__main__":
     unittest.main()

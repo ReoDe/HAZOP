@@ -1,6 +1,7 @@
 // 초기사건 패널(규격 §2.1·§2.3 ⑥): 보기 셋 — 그룹(묶이지 않은 후보 + 그룹 목록 + 그룹 상세), 완전성 대조(범주 표), 품질 경고. 머리에 규칙 초안 만들기와
 // 인계 묶음 내보내기. 편집(A10)은 이전 화면 ⑥과 같은 엔진 함수를 부른다: 후보 묶기·옮기기·빼기, 그룹 고치기·나누기·지우기, 표제·최종상태·기본사건
 // 고치기·받아들이기·지우기, 빈 범주 판정. 저장하는 자료는 엔진만 쓰고 여기서는 보여 주고 명령만 보낸다. 모델·도면에서 온 글은 ${}로만 넣는다.
+import { useLightDismiss } from "../ui/light_dismiss.js";
 import { html } from "../ui/html.js";
 import { useEffect, useRef, useState } from "../../vendor/hooks.module.js";
 import { store } from "../store.js";
@@ -10,7 +11,7 @@ import { OpenFolder } from "./open_folder.js";
 import { FmeaView, MldSection } from "./ie_p5.js";
 import { CandidateCard } from "./ie_judge.js";
 
-const STATUS = { draft: ["초안", "ai"], confirmed: ["확정", "ok"], split: ["나뉨", "plain"], deleted: ["삭제", "plain"] };
+const STATUS = { draft: ["초안", "plain"], confirmed: ["확정", "ok"], split: ["나뉨", "plain"], deleted: ["삭제", "plain"] };
 const JUDGE = { yes: ["후보", "accent"], no: ["제외", "plain"], undecided: ["보류", "warn"] };
 const COVER = { covered: ["대응 그룹 있음", "ok"], gap: ["빈 범주", "warn"], unclassified: ["미분류", "plain"], unmapped: ["범주 없음", "warn"], out_of_scope: ["범위 밖", "plain"], other_method: ["다른 기법", "plain"], not_applicable: ["해당 없음", "plain"] };
 const DISPOSITION = { out_of_scope: "범위 밖", other_method: "다른 기법으로 확인 예정", not_applicable: "해당 없음(설계 특성)" };
@@ -123,7 +124,7 @@ function PickBar({ s, members }) {
     : html`${active ? html`<${Btn} sm=${true} kind="primary" label="열린 그룹에 넣기" disabled=${busy} onClick=${() => I.moveTo(sel, active)}>${active}에 넣기<//>` : null}
       <input class="textbox" aria-label="새 그룹 이름" placeholder="새 그룹 이름" maxlength="200" value=${name} onInput=${(e) => setName(e.target.value)} />
       <${Btn} sm=${true} kind=${active ? "" : "primary"} label="새 그룹으로 묶기" disabled=${busy || !name.trim()} onClick=${async () => { if (await I.createGroup(name.trim(), sel)) setName(""); }}>새 그룹<//>${move}`}
-    <${Btn} sm=${true} kind="ghost" label="고르기 풀기" onClick=${I.clearPicked}>풀기<//></div>`;
+    <${Btn} sm=${true} kind="ghost" label="고르기 해제" onClick=${I.clearPicked}>해제<//></div>`;
 }
 
 function Groups({ s }) {
@@ -157,10 +158,12 @@ function RecordRow({ kind, id, label, sub, d }) {
     ${edit ? html`<${FieldForm} title=${id + " 고치기"} fields=${RECORD_FIELDS[kind]} values=${rec} choices=${d.choices} onSave=${(f) => I.editRecord(kind, id, f)} onCancel=${() => setEdit(false)} />` : null}</div>`;
 }
 
-function Detail({ s, d, gid }) {
+export function Detail({ s, d, gid }) {
   const busy = I.useIe((x) => x.busy);
   const [mode, setMode] = useState(null);       // null | "edit" | "heading" | "end_state"
   const [more, setMore] = useState(false);
+  const moreMenu = useRef(null);
+  useLightDismiss(more, () => [moreMenu.current, document.querySelector('.ndetail button[aria-label="그룹 동작 더 보기"]')], () => setMore(false), { esc: true });
   if (!d) return html`<div class="muted">불러오는 중…</div>`;
   const g = d.group;
   const st = STATUS[g.status] || [g.status, ""];
@@ -169,15 +172,15 @@ function Detail({ s, d, gid }) {
   return html`<div class="card ndetail" aria-label=${gid + " 상세"}>
     <div class="nd-h"><b>${g.group_id}</b> ${g.name} <${Chip} kind=${st[1]}>${st[0]}<//>${g.confirmed_by ? html` <span class="muted small">${g.confirmed_by}</span>` : null}
       <span class="acts">
-        ${g.status === "confirmed" ? html`<${Btn} sm=${true} label="확정 풀기" disabled=${busy} onClick=${() => I.reopenGroup(gid)}>확정 풀기<//>`
+        ${g.status === "confirmed" ? html`<${Btn} sm=${true} label="확정 해제" disabled=${busy} onClick=${() => I.reopenGroup(gid)}>확정 해제<//>`
           : html`<${Btn} sm=${true} kind="primary" label="그룹 확정" disabled=${busy || g.problems.length > 0} title=${g.problems.length ? "확정할 수 없는 이유가 있습니다" : "검토자 이름으로 그룹을 확정합니다"} onClick=${() => I.confirmGroup(gid)}>확정<//>`}
         <${Btn} sm=${true} label="그룹 고치기" disabled=${busy} onClick=${() => pick("edit")}>고치기<//>
         <${Btn} sm=${true} kind="ghost" label="그룹 동작 더 보기" aria-expanded=${more ? "true" : "false"} onClick=${() => setMore(!more)}>더 보기<//>
         <${Btn} sm=${true} kind="ghost" icon="x" label="그룹 상세 닫기" onClick=${() => I.ie.set({ active: null, detail: null, picked: [] })} /></span></div>
-    ${more ? html`<div class="acts-row ie-more" role="menu" aria-label="그룹 동작">
+    ${more ? html`<div class="acts-row ie-more" ref=${moreMenu} role="menu" aria-label="그룹 동작">
       <${Btn} sm=${true} label="표제 더하기" onClick=${() => pick("heading")}>표제 더하기<//>
       <${Btn} sm=${true} label="최종상태 더하기" onClick=${() => pick("end_state")}>최종상태 더하기<//>
-      <${Btn} sm=${true} label="그룹 지우기" disabled=${busy || !draft} title=${draft ? "초안 그룹을 지웁니다(확인을 받습니다)" : "확정한 그룹은 먼저 확정을 풀어야 지울 수 있습니다"} onClick=${() => { setMore(false); I.deleteGroup(gid); }}>그룹 지우기<//></div>` : null}
+      <${Btn} sm=${true} label="그룹 지우기" disabled=${busy || !draft} title=${draft ? "초안 그룹을 지웁니다(확인을 받습니다)" : "확정한 그룹은 먼저 확정을 해제해야 지울 수 있습니다"} onClick=${() => { setMore(false); I.deleteGroup(gid); }}>그룹 지우기<//></div>` : null}
     ${g.problems.length ? html`<${Notice} kind="warn" icon="alert-triangle"><b>확정할 수 없는 이유</b><ul class="tight">${g.problems.map((p, i) => html`<li key=${i}>${p}</li>`)}</ul><//>` : null}
     ${mode === "edit" ? html`<${FieldForm} title=${gid + " 고치기"} fields=${GROUP_FIELDS} values=${d.editable} choices=${d.choices} members=${d.members} onSave=${(f) => I.editGroup(gid, f)} onCancel=${() => setMode(null)} />` : null}
     ${mode === "heading" ? html`<${FieldForm} title="표제 더하기" fields=${RECORD_FIELDS.heading} values=${{ role: "mitigative", actuation: "unknown" }} choices=${d.choices} onSave=${(f) => I.addRecord("heading", gid, Object.assign({ role: "mitigative", actuation: "unknown" }, f))} onCancel=${() => setMode(null)} />` : null}
